@@ -1,0 +1,132 @@
+# Build results
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+*.so
+*.dylib
+
+# Visual Studio cache/options directory
+.vs/
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# JetBrains IDEs
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# User-specific files
+*.user
+*.userosscache
+*.sln.docstates
+.vscode-test/
+
+# Rider
+.idea/
+*.sln.iml
+
+# Nuget personal repository
+nuget.config
+
+# NuGet packages
+*.nupkg
+*.snupkg
+*.nuget.props
+*.nuget.targets
+
+# Local .NET Core tools
+.dotnet/
+.tool-versions
+
+# Test Results
+TestResults/
+coverage/
+*.coverage
+
+# Application files
+*.log
+*.log.*
+appsettings.local.json
+appsettings.*.local.json
+
+# Secrets and environment files
+.env
+.env.local
+.env.*.local
+secrets.json
+user-secrets.json
+*.pem
+*.key
+*.crt
+
+# OS files
+.DS_Store
+Thumbs.db
+*.tmp
+
+# Build artifacts
+publish/
+PublishProfiles/
+
+# Package files
+packages/
+packages.lock.json
+
+# SQL Server files
+*.mdf
+*.ldf
+*.ndf
+
+# ReSharper
+_ReSharper*/
+*.DotSettings.user
+
+# BenchmarkDotNet
+BenchmarkDotNet.Artifacts/
+
+# StyleCop cache
+StyleCopCache/
+
+# NPM
+node_modules/
+npm-debug.log
+package-lock.json
+
+# Webpack
+dist/
+
+# SonarQube
+.sonarqube/
+
+# OpenCover
+OpenCover/
+
+# Backup files
+*.bak
+*.backup
+*.swp
+*~
+
+# Profiler files
+*.prof
+*.trace
+
+# Generated files
+*.generated.cs
+*.g.cs
+
+# Entity Framework
+Migrations/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Azure
+azure-pipelines.yml.bak
+local.settings.json

@@ -1,0 +1,25 @@
+# Auto detect text files and normalize line endings to LF
+* text=auto
+
+# Binary files
+*.dll binary
+*.exe binary
+*.so binary
+*.dylib binary
+*.db binary
+*.sqlite binary
+
+# Source code
+*.cs text eol=lf
+*.csproj text eol=lf
+*.json text eol=lf
+*.xml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+*.ps1 text eol=lf
+*.sh text eol=lf
+
+# Visual Studio
+*.sln text eol=lf
+*.vsixmanifest text eol=lf
