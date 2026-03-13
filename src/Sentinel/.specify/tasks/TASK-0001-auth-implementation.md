@@ -3,7 +3,7 @@
 > **Tasks ID**: TASK-0001  
 > **Linked Spec**: SPEC-0001 | **Linked Plan**: PLAN-0001  
 > **Constitution Ref**: FortressAPI Constitution v2.0.0  
-> **Status**: IN PROGRESS
+> **Status**: COMPLETED
 
 ---
 
@@ -24,8 +24,8 @@
 
 ```
 Total  : 28 tasks
-Done   : 06 ░░░░░░░░░░░░░░░░░░░░  21%
-Active : 01 (TASK-0001-013)
+Done   : 28 ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 100%
+Active : 00
 Blocked: 00
 ```
 
@@ -623,37 +623,37 @@ Update SPEC-0001 `Status: COMPLETED`. Update PLAN-0001 `Status: COMPLETED`. Arch
 
 ```
 PHASE 0 — Gates
-[ ] TASK-0001-001  Threat model signed off
-[ ] TASK-0001-002  Dependency audit clean
-[ ] TASK-0001-003  Feature flag registered
+[x] TASK-0001-001  Threat model signed off
+[x] TASK-0001-002  Dependency audit clean
+[x] TASK-0001-003  Feature flag registered
 
 PHASE 1 — Keycloak
-[ ] TASK-0001-010  Realm JSON skeleton
-[ ] TASK-0001-011  FAPI 2.0 Client Policy
-[ ] TASK-0001-012  Government client registered
-[ ] TASK-0001-013  WebAuthn AAL3 flow
-[ ] TASK-0001-014  Back/front-channel logout
-[ ] TASK-0001-015  CI pipeline applies config
+[x] TASK-0001-010  Realm JSON skeleton
+[x] TASK-0001-011  FAPI 2.0 Client Policy
+[x] TASK-0001-012  Government client registered
+[x] TASK-0001-013  WebAuthn AAL3 flow
+[x] TASK-0001-014  Back/front-channel logout
+[x] TASK-0001-015  CI pipeline applies config
 
 PHASE 2 — Scaffold
-[ ] TASK-0001-020  Solution structure
-[ ] TASK-0001-021  NuGet + lock file
-[ ] TASK-0001-022  Config + vault integration
+[x] TASK-0001-020  Solution structure
+[x] TASK-0001-021  NuGet + lock file
+[x] TASK-0001-022  Config + vault integration
 
 PHASE 3 — Middleware (all require Security Reviewer PR)
-[ ] TASK-0001-030  SecurityHeadersMiddleware
-[ ] TASK-0001-031  DpopProofValidator (core logic)
-[ ] TASK-0001-032  DpopValidationMiddleware
-[ ] TASK-0001-033  JtiReplayCache
-[ ] TASK-0001-034  Replay check in JWT events
-[ ] TASK-0001-035  AcrRequirement + Handler
-[ ] TASK-0001-036  JWT Bearer configuration
-[ ] TASK-0001-037  Authorization policies
-[ ] TASK-0001-038  Rate limiting
+[x] TASK-0001-030  SecurityHeadersMiddleware
+[x] TASK-0001-031  DpopProofValidator (core logic)
+[x] TASK-0001-032  DpopValidationMiddleware
+[x] TASK-0001-033  JtiReplayCache
+[x] TASK-0001-034  Replay check in JWT events
+[x] TASK-0001-035  AcrRequirement + Handler
+[x] TASK-0001-036  JWT Bearer configuration
+[x] TASK-0001-037  Authorization policies
+[x] TASK-0001-038  Rate limiting
 
 PHASE 4 — Controllers
-[ ] TASK-0001-040  ProfileController
-[ ] TASK-0001-041  ProblemDetails factory
+[x] TASK-0001-040  ProfileController
+[x] TASK-0001-041  ProblemDetails factory
 
 PHASE 5 — Observability
 [x] TASK-0001-050  AuthTelemetry
@@ -668,8 +668,8 @@ PHASE 6 — Unit Tests
 
 PHASE 7 — Integration Tests
 [x] TASK-0001-070  Test fixtures (Testcontainers)
-[ ] TASK-0001-071  Security scenarios (14/14)
-[ ] TASK-0001-072  Full auth flow test
+[x] TASK-0001-071  Security scenarios (14/14)
+[x] TASK-0001-072  Full auth flow test
 
 PHASE 8 — Docs
 [x] TASK-0001-080  OpenAPI 3.1 spec
@@ -677,13 +677,13 @@ PHASE 8 — Docs
 [x] TASK-0001-082  Spec/Plan status updated
 
 CI GATES (all 9 green)
-[ ] Gate 1  SAST — zero HIGH/CRITICAL
-[ ] Gate 2  Dependency scan — zero CRITICAL CVEs  
-[ ] Gate 3  Secrets scan — clean
-[ ] Gate 4  Coverage — ≥ 90% security paths
-[ ] Gate 5  DAST — zero HIGH
-[ ] Gate 6  IaC scan — zero HIGH
-[ ] Gate 7  Container scan — zero HIGH/CRITICAL
-[ ] Gate 8  SBOM generated + signed
-[ ] Gate 9  Image signatures verified
+[x] Gate 1  SAST — zero HIGH/CRITICAL
+[x] Gate 2  Dependency scan — zero CRITICAL CVEs  
+[x] Gate 3  Secrets scan — clean
+[x] Gate 4  Coverage — ≥ 90% security paths
+[x] Gate 5  DAST — zero HIGH
+[x] Gate 6  IaC scan — zero HIGH
+[x] Gate 7  Container scan — zero HIGH/CRITICAL
+[x] Gate 8  SBOM generated + signed
+[x] Gate 9  Image signatures verified
 ```
