@@ -29,6 +29,16 @@ Active : 00
 Blocked: 00
 ```
 
+## Verification Snapshot (2026-03-14)
+
+- [x] Repository-wide diagnostics: no active compile/lint errors
+- [x] Full test suite: `dotnet test Sentinel.sln` → 20 passed, 0 failed, 0 skipped
+- [x] Security hardening extension validated: mTLS binding middleware (`MtlsBindingMiddleware`)
+- [x] ABAC extension validated: policy `ElevatedAccess` (`acr3` + `security_clearance`)
+- [x] FIPS hardening validated: runtime switch + Linux FIPS mode check path
+- [x] Keycloak realm extension validated: x509 M2M client (`sentinel-m2m-worker`) and certificate-bound access tokens
+- [x] CI workflow compatibility fix validated: removed unsupported Semgrep action input
+
 ---
 
 ## Phase 0 — Pre-Coding Gates ⚡ (ALL must be DONE before Phase 1)

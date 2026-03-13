@@ -16,7 +16,7 @@
 | **Author(s)** | IAM Architect |
 | **Security Reviewer** | Security Working Group |
 | **Created** | 2026-03-13 |
-| **Last Updated** | 2026-03-13 |
+| **Last Updated** | 2026-03-14 |
 | **Target Version** | 1.0.0 |
 | **Linked Plan** | PLAN-0001 |
 | **Linked Tasks** | TASK-0001 |
@@ -514,6 +514,23 @@ Step-Up Trigger:
 | 1 | Redis failure mode: fail-open or fail-closed? | **Fail-closed** — 503 returned; replay check is safety-critical |
 | 2 | TOTP as fallback — how many WebAuthn failures before TOTP offered? | **3 consecutive failures** within the same session |
 | 3 | DPoP nonce rotation frequency? | **Per token response** — new nonce issued with every access/refresh token |
+
+---
+
+## 10. Implementation Verification Addendum (2026-03-14)
+
+This addendum records post-completion verification performed against the current repository state.
+
+- [x] Build/test verification completed: `dotnet test Sentinel.sln` passed (20 passed, 0 failed, 0 skipped)
+- [x] API pipeline includes DPoP validation, replay fail-closed behavior, and ACR enforcement
+- [x] mTLS workload sender-constraining implemented via `MtlsBindingMiddleware` and certificate-thumbprint binding (`cnf.x5t#S256`)
+- [x] Kestrel hardened for internal mTLS negotiation with TLS 1.3 defaults
+- [x] ABAC policy `ElevatedAccess` implemented (`acr3` + `security_clearance` claim requirement)
+- [x] Runtime FIPS compatibility switch and Linux FIPS host-mode detection added
+- [x] Realm configuration includes x509 M2M client (`sentinel-m2m-worker`) and certificate-bound token attribute
+- [x] CI workflow correctness patch applied for Semgrep input compatibility
+
+Note: M2M mTLS and ABAC additions are security hardening increments that extend the baseline user-auth scope while preserving backward compatibility with SPEC-0001 requirements.
 
 ---
 
