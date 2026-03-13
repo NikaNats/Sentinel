@@ -1,139 +1,305 @@
 # Sentinel
 
-A high-security ASP.NET Core Web API implementing FAPI 2.0-compliant authentication with Keycloak 26+, DPoP (Demonstrating Proof-of-Possession), PKCE S256, WebAuthn AAL3, and Redis-backed token replay detection.
+Sentinel is a security-focused ASP.NET Core Web API that enforces sender-constrained token validation patterns aligned with FAPI 2.0 Baseline and Advanced hardening goals.
 
-## Project Status
+The current implementation provides:
+- DPoP access token handling with proof validation and nonce issuance
+- Redis-backed replay detection for both access token jti and DPoP proof jti
+- ACR and scope-based authorization requirements
+- mTLS certificate binding checks for cnf.x5t#S256-bound tokens
+- Strict JWT algorithm constraints and zero clock skew lifetime validation
+- Security telemetry, security headers, rate limiting, and structured error handling
 
-**Specification**: [SPEC-0001 - User Authentication & Token Issuance (PAR + PKCE + DPoP)](./src/Sentinel/.specify/specs/SPEC-0001-auth-token-issuance.md)  
-**Implementation Plan**: [PLAN-0001 - Auth Implementation](./src/Sentinel/.specify/plans/PLAN-0001-auth-implementation.md)  
-**Tasks**: [TASK-0001 - Development Tasks](./src/Sentinel/.specify/tasks/TASK-0001-auth-implementation.md)
+## Specifications And Delivery Artifacts
 
-## Directory Structure
+- Specification: [SPEC-0001 - User Authentication and Token Issuance](./src/Sentinel/.specify/specs/SPEC-0001-auth-token-issuance.md)
+- Implementation plan: [PLAN-0001 - Auth Implementation](./src/Sentinel/.specify/plans/PLAN-0001-auth-implementation.md)
+- Task breakdown: [TASK-0001 - Auth Implementation Tasks](./src/Sentinel/.specify/tasks/TASK-0001-auth-implementation.md)
+- Operational runbook: [Auth Token Issuance Runbook](./docs/runbooks/auth-token-issuance.md)
 
-```
+## Implementation Status
+
+| Area | Status | Notes |
+|---|---|---|
+| API host and middleware pipeline | Implemented | Security middleware chain and centralized exception handling are active |
+| JWT validation and policy authorization | Implemented | Issuer, audience, lifetime, algorithms, ACR and scope enforcement |
+| DPoP proof validation | Implemented | htm, htu, iat window, typ, alg, jwk, cnf.jkt checks |
+| Replay protection | Implemented | Redis-backed jti cache, fail-closed behavior on cache outage |
+| mTLS token binding | Implemented | cnf.x5t#S256 compared with presented client certificate hash |
+| OpenTelemetry and metrics endpoint | Implemented | Tracing, metrics counters/histograms, Prometheus scrape endpoint |
+| Integration and unit testing | Implemented | 20 tests passing in current main branch state |
+| Full OAuth PAR and PKCE orchestration endpoint set | Planned/Externalized | Keycloak-driven flow orchestration remains infrastructure and client-driven |
+
+## Architecture Overview
+
+### Runtime Pipeline
+
+The API pipeline applies controls in a defense-in-depth sequence:
+
+1. Global exception handler and problem details formatting
+2. Security response header hardening
+3. Global fixed-window rate limiter
+4. DPoP validation middleware
+5. Replay cache failure middleware (fail-closed guard)
+6. HTTPS redirection and routing
+7. JWT authentication
+8. mTLS certificate binding middleware
+9. ACR presence validation middleware
+10. Authorization policy enforcement
+11. Controller endpoint execution and Prometheus scrape endpoint
+
+### Core Security Components
+
+- DPoP validator validates proof structure, algorithm, type, signature, claims, key thumbprint, and replay state
+- Replay cache stores and checks jti keys with explicit TTL to block token or proof reuse
+- Security event emitter produces structured warning/critical events with correlation IDs
+- ACR and scope authorization handlers apply fine-grained policy checks at endpoint authorization time
+
+## Repository Layout
+
+```text
 Sentinel/
-├── .git/                        ← Git repository
-├── .github/                     ← GitHub configuration
-├── .gitignore                   ← Git ignore rules
-├── .gitattributes              ← Git line ending settings
-├── Sentinel.sln                 ← Visual Studio solution
-├── README.md                    ← This file
-│
-├── src/                         ← Source code
-│   └── Sentinel/                ← Main Web API project
-│       ├── Sentinel.csproj
-│       ├── Program.cs
-│       ├── Properties/
-│       ├── .github/             ← Spec-Kit agents & prompts
-│       ├── .specify/            ← Specifications & plans
-│       │   ├── specs/           ← Feature specifications
-│       │   ├── plans/           ← Implementation plans
-│       │   ├── tasks/           ← Development tasks
-│       │   ├── templates/       ← Document templates
-│       │   ├── scripts/         ← Automation scripts
-│       │   └── memory/          ← Spec-Kit memory files
-│       ├── Controllers/         ← API endpoints
-│       ├── Middleware/          ← Custom middleware
-│       ├── Services/            ← Business logic
-│       └── Models/              ← Data models
-│
-└── tests/                       ← Test projects
-    └── (Reserved for test assemblies)
+|- Sentinel.sln
+|- docker-compose.yml
+|- Makefile
+|- docs/
+|  |- runbooks/
+|     |- auth-token-issuance.md
+|- infra/
+|  |- keycloak/
+|     |- realms/
+|        |- sentinel.json
+|- src/
+|  |- Sentinel/
+|     |- Program.cs
+|     |- Sentinel.csproj
+|     |- Controllers/
+|     |- Middleware/
+|     |- Infrastructure/
+|     |- Application/
+|- tests/
+|  |- Sentinel.Tests/
+|     |- Integration/
+|     |- Unit/
 ```
-
-## Features
-
-### Implemented
-- ✅ ASP.NET Core Web API scaffold
-- ✅ Spec-Kit integration (Spec-Driven Development)
-- ✅ FAPI 2.0 security specification
-- ✅ Implementation plan with 28 development tasks
-- ✅ Threat model & security analysis
-
-### In Development (Phase 0-8)
-- 🔶 Pre-coding gates & security reviews
-- 🔶 Keycloak infrastructure setup
-- 🔶 Security middleware (DPoP, jti replay, ACR validation)
-- 🔶 Integration testing
-- 🔶 OpenTelemetry observability
 
 ## Technology Stack
 
-| Component | Version | Purpose |
+| Component | Version | Usage |
 |---|---|---|
-| .NET | 11.0 (Preview) | Runtime |
-| ASP.NET Core | 11.0 | Web framework |
-| Keycloak | 26+ | Authorization server |
-| Redis | 7.4+ | Token replay cache |
-| OpenTelemetry | 1.9+ | Observability |
+| .NET SDK | 11.0 preview | Build and runtime |
+| ASP.NET Core | 11.0 preview packages | API framework and middleware |
+| Keycloak | 26.1 image in compose | Authorization server and realm management |
+| Redis | 7.4 alpine | Replay cache backing store |
+| OpenTelemetry | 1.13 to 1.14 packages | Tracing, metrics, exporter integration |
+| xUnit + Testcontainers | Current project references | Unit and integration validation |
 
-## Getting Started
+## Prerequisites
 
-### Prerequisites
-- .NET 11.0 SDK or later
-- Docker (for Keycloak & Redis in development)
-- Git
+- Windows, Linux, or macOS development environment
+- .NET 11 SDK preview installed
+- Docker Desktop or Docker Engine
+- Optional: Trivy for image vulnerability scanning
 
-### Build
+## Quick Start
+
+### 1. Restore, Build, Test
+
 ```powershell
-dotnet build
+dotnet restore Sentinel.sln --locked-mode
+dotnet build Sentinel.sln -c Release
+dotnet test Sentinel.sln
 ```
 
-### Run
+### 2. Start Local Infrastructure And API With Docker Compose
+
+```powershell
+docker-compose up --build -d
+```
+
+Services:
+- Keycloak: https://localhost:8443 and http://localhost:8080
+- Redis: localhost:6379
+- Sentinel API: http://localhost:5260
+
+### 3. Run API Directly (Without Compose)
+
 ```powershell
 cd src/Sentinel
 dotnet run
 ```
 
-Visit `https://localhost:5001/swagger` for API documentation.
+### 4. Stop Local Stack
+
+```powershell
+docker-compose down -v
+```
+
+## Make Targets
+
+```text
+make build      # locked restore + release build
+make test       # run all tests
+make lint       # dotnet format verification
+make sec-scan   # build image + trivy scan (critical/high)
+make up         # docker-compose up --build -d
+make down       # docker-compose down -v
+make all        # build + lint + test + sec-scan
+```
+
+## Configuration Reference
+
+Minimum required keys:
+
+| Key | Purpose | Example |
+|---|---|---|
+| ConnectionStrings:Redis | Replay cache backend | localhost:6379 |
+| Keycloak:Authority | Token issuer authority | https://localhost:8443/realms/sentinel |
+| Keycloak:Audience | Expected access token audience | sentinel-api |
+| Keycloak:RequireHttpsMetadata | Dev metadata over HTTP toggle | false (development only) |
+| FeatureFlags:Auth:DpopFlow | Feature toggle placeholder | true |
+
+Notes:
+- Production deployments should keep HTTPS metadata required.
+- Redis availability is part of the security boundary; service degrades fail-closed for replay-protected flows when unavailable.
+
+## API Surface
+
+### Protected Endpoint
+
+- GET /v1/Profile
+
+Requirements:
+- Authenticated JWT passed in Authorization header with DPoP scheme
+- Matching DPoP proof in DPoP header
+- Policy ReadProfile satisfied:
+    - scope includes profile
+    - acr claim meets minimum acr2
+
+Example response model:
+
+```json
+{
+    "sub": "subject-id",
+    "displayName": "display name",
+    "roles": ["user"]
+}
+```
+
+## Security Controls
+
+Implemented hardening controls include:
+
+- JWT validation:
+    - issuer and audience required
+    - lifetime required with zero clock skew
+    - signed tokens required
+    - algorithm allow-list limited to PS256 and ES256
+- DPoP validation:
+    - token and proof format checks
+    - typ must be dpop+jwt
+    - proof alg restricted to PS256 or ES256
+    - embedded jwk required and private jwk material rejected
+    - signature validated against embedded jwk
+    - htm and htu binding enforced
+    - iat freshness window enforced
+    - access token cnf.jkt must match proof jwk thumbprint
+    - proof jti replay blocked with Redis
+    - DPoP-Nonce response header generated on valid proof
+- Access token replay defense:
+    - jti claim required and cached until token exp
+    - duplicate jti rejected and emitted as critical security event
+    - Redis outage triggers fail-closed behavior and 503 for protected paths
+- mTLS sender-constraining:
+    - cnf.x5t#S256 is validated against the presented client certificate SHA-256 hash
+- HTTP response hardening:
+    - HSTS, CSP, no-sniff, frame deny, referrer policy, cache-control no-store, and permissions policy
+    - Server and X-Powered-By headers removed
+- Request abuse control:
+    - fixed-window global limiter: 100 requests/minute with queue size 2
+
+## Observability
+
+### Tracing
+
+- Activity source: Sentinel.Auth.Tracing
+- Includes DPoP validation and replay cache operations
+
+### Metrics
+
+- Meter: Sentinel.Auth.Metrics
+- Counters:
+    - auth.dpop.failures
+    - auth.jti.replays_total
+    - auth.token.issued
+- Histogram:
+    - auth.token.validation.duration_ms
+
+### Operational Signals
+
+- Security events include correlation IDs for SIEM pivoting
+- Replay and auth failure events map to runbook actions in docs/runbooks/auth-token-issuance.md
+
+## Testing Strategy
+
+### Unit Tests
+
+Focus areas:
+- DPoP validator acceptance and replay rejection
+- Replay cache error semantics and TTL storage
+- mTLS binding checks with cert/no-cert branches
+- ACR authorization ranking behavior
+- Security response header enforcement
+
+### Integration Tests
+
+Focus areas:
+- End-to-end protected endpoint access with valid DPoP proof
+- Expired token rejection
+- Invalid audience rejection
+- Missing required scope rejection
+- DPoP key mismatch attack scenario rejection
+- Replay detection across repeated proofs
+- Rate limiter behavior under burst traffic
+
+Current baseline:
+- 20 tests passing on main branch in the latest local validation run
+
+## Containerization And Runtime Hardening
+
+- Multi-stage Docker build with locked restore and release publish
+- Runtime image runs as non-root user 1654
+- DOTNET_EnableDiagnostics disabled in container runtime
+- Kestrel configured for TLS 1.3 and delayed client certificate mode
+- FIPS compatibility switch enabled; Linux FIPS kernel flag is detected and logged
 
 ## Development Workflow
 
-This project follows **Spec-Driven Development** using the Spec-Kit framework:
+This project follows a spec-driven workflow:
 
-1. **Specification** (`SPEC-0001`) — Detailed security requirements
-2. **Planning** (`PLAN-0001`) — Technical implementation strategy
-3. **Tasks** (`TASK-0001`) — Actionable development items
-4. **Implementation** — Code the features
-5. **Testing** — Comprehensive test coverage
-6. **Release** — Documentation & deployment
+1. Define or refine security behavior in SPEC-0001
+2. Plan implementation scope in PLAN-0001
+3. Track execution in TASK-0001
+4. Implement code and tests together
+5. Validate with unit/integration tests and security scan
+6. Update runbook and project documentation
 
-## Security
+## Contributing Standards
 
-### Threat Model Mitigations
-- ✅ FAPI 2.0 compliance
-- ✅ PKCE S256 authorization code protection
-- ✅ DPoP sender-constrained tokens
-- ✅ WebAuthn AAL3 phishing resistance
-- ✅ Redis jti replay cache (fail-closed)
-- ✅ Algorithm restriction (PS256/ES256 only)
-- ✅ Zero clock skew token validation
-- ✅ Rate limiting on auth endpoints
+All changes should:
 
-See [SPEC-0001 §5 Threat Model](./src/Sentinel/.specify/specs/SPEC-0001-auth-token-issuance.md#5-threat-model) for details.
+1. Align with the specification and threat model
+2. Preserve or improve fail-closed security posture
+3. Include tests for both happy path and abuse-path behavior
+4. Maintain structured logging and telemetry semantics
+5. Update documentation and runbooks when behavior changes
 
-## Contributing
+## Known Considerations
 
-This is a spec-driven project using AI-assisted development. All changes must:
-
-1. ✅ Match the linked specification (SPEC-0001)
-2. ✅ Follow the implementation plan (PLAN-0001)
-3. ✅ Pass security review (threat model checklist)
-4. ✅ Include comprehensive tests
-5. ✅ Update relevant documentation
+- The solution currently targets .NET 11 preview packages, which may introduce breaking changes before GA.
+- HTTPS metadata validation is disabled in local development configuration and must be enforced in production.
+- Some OAuth orchestration steps (for example PAR and PKCE client choreography) are primarily handled by Keycloak and external clients rather than API endpoints in this service.
 
 ## License
 
-Proprietary. See LICENSE file for details.
-
-## Support
-
-For issues, questions, or security concerns:
-- 📋 File an issue in GitHub
-- 🔒 Security issues: Contact security team
-- 📧 Email: [contact information]
-
----
-
-**Built with Spec-Driven Development** 🌱  
-**Powered by GitHub Spec-Kit** 🚀
+Proprietary. See LICENSE for usage terms.
