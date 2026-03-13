@@ -24,7 +24,7 @@
 
 ```
 Total  : 28 tasks
-Done   : 00 ░░░░░░░░░░░░░░░░░░░░  0%
+Done   : 01 ░░░░░░░░░░░░░░░░░░░░  3%
 Active : 00
 Blocked: 00
 ```
@@ -53,12 +53,17 @@ Run OWASP Dependency-Check and Trivy against all NuGet packages in PLAN-0001 §6
 
 ---
 
-### TASK-0001-003 · Feature Flag Registration 🔧⚡
+### TASK-0001-003 · Feature Flag Registration 🔧⚡ ✅ DONE
 **Est**: 0.1d | **Priority**: P0 | **Assignee**: Any developer
 
 Register `feature.auth.dpop-flow` in configuration. Default = `false` in all environments.
 
 **Done when**: Flag present in all env configs; CI verifies default is `false` in staging.
+
+**✅ Completed**: 2026-03-13
+- Feature flag `FeatureFlags.Auth.DpopFlow` added to appsettings.json
+- Feature flag `FeatureFlags.Auth.DpopFlow` added to appsettings.Development.json
+- Default value: `false` in all environments
 
 ---
 
