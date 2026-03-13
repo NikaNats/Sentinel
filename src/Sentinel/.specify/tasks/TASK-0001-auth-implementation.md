@@ -667,13 +667,13 @@ PHASE 6 — Unit Tests
 [x] TASK-0001-063  SecurityHeaders tests
 
 PHASE 7 — Integration Tests
-[ ] TASK-0001-070  Test fixtures (Testcontainers)
+[x] TASK-0001-070  Test fixtures (Testcontainers)
 [ ] TASK-0001-071  Security scenarios (14/14)
 [ ] TASK-0001-072  Full auth flow test
 
 PHASE 8 — Docs
-[ ] TASK-0001-080  OpenAPI 3.1 spec
-[ ] TASK-0001-081  Operational runbook
+[x] TASK-0001-080  OpenAPI 3.1 spec
+[x] TASK-0001-081  Operational runbook
 [ ] TASK-0001-082  Spec/Plan status updated
 
 CI GATES (all 9 green)

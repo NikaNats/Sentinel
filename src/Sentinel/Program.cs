@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using Sentinel.Application.Auth.Models;
@@ -12,7 +13,31 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer((document, _, _) =>
+    {
+        if (document.Paths is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var dpopScheme = new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.Http,
+            Scheme = "DPoP",
+            BearerFormat = "JWT",
+            In = ParameterLocation.Header,
+            Description = "FAPI 2.0 Demonstrating Proof-of-Possession (DPoP) bound access token."
+        };
+
+        document.Components ??= new OpenApiComponents();
+        document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+        document.Components.SecuritySchemes["DPoP"] = dpopScheme;
+
+        return Task.CompletedTask;
+    });
+});
 builder.Services.AddProblemDetails();
 builder.Services.AddControllers();
 
@@ -165,3 +190,5 @@ app.MapPrometheusScrapingEndpoint();
 app.MapControllers();
 
 app.Run();
+
+public partial class Program;
