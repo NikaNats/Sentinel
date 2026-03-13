@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using OpenTelemetry.Metrics;
@@ -12,6 +14,15 @@ using Sentinel.Middleware;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ConfigureHttpsDefaults(httpsOptions =>
+    {
+        httpsOptions.ClientCertificateMode = ClientCertificateMode.DelayCertificate;
+        httpsOptions.SslProtocols = System.Security.Authentication.SslProtocols.Tls13;
+    });
+});
 
 builder.Services.AddOpenApi(options =>
 {
@@ -161,6 +172,18 @@ builder.Services
                 }
             }
         };
+    })
+    .AddCertificate(options =>
+    {
+        options.AllowedCertificateTypes = CertificateTypes.All;
+        options.Events = new CertificateAuthenticationEvents
+        {
+            OnCertificateValidated = context =>
+            {
+                // Workload CA validation hook for mTLS client certificates.
+                return Task.CompletedTask;
+            }
+        };
     });
 
 builder.Services.AddAuthorization(options =>
@@ -196,6 +219,7 @@ app.UseHttpsRedirection();
 app.UseRouting();
 
 app.UseAuthentication();
+app.UseMiddleware<MtlsValidationMiddleware>();
 app.UseMiddleware<AcrValidationMiddleware>();
 app.UseAuthorization();
 

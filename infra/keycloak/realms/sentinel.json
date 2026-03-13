@@ -146,7 +146,8 @@
             "client-secret-basic",
             "client-secret-post",
             "client-secret-jwt",
-            "client-jwt"
+            "client-jwt",
+            "client-x509"
           ]
         }
       },
@@ -291,6 +292,29 @@
       "optionalClientScopes": [
         "offline_access"
       ]
+    },
+    {
+      "clientId": "sentinel-m2m-worker",
+      "name": "Sentinel M2M Worker",
+      "description": "Service account client authenticated with mTLS certificate and bound access tokens",
+      "clientAuthenticatorType": "client-x509",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "redirectUris": [],
+      "webOrigins": [],
+      "attributes": {
+        "tls.client.certificate.bound.access.tokens": "true",
+        "access.token.signed.response.alg": "PS256",
+        "access.token.lifespan": "300"
+      },
+      "defaultClientScopes": [
+        "roles"
+      ],
+      "optionalClientScopes": []
     }
   ],
   "clientScopes": [
