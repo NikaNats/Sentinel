@@ -24,7 +24,7 @@
 
 ```
 Total  : 28 tasks
-Done   : 02 ░░░░░░░░░░░░░░░░░░░░  7%
+Done   : 03 ░░░░░░░░░░░░░░░░░░░░  10%
 Active : 00
 Blocked: 00
 ```
@@ -35,12 +35,30 @@ Blocked: 00
 
 ---
 
-### TASK-0001-001 · Threat Model Sign-Off 🔴⚡
+### TASK-0001-001 · Threat Model Sign-Off 🔴⚡ ✅ DONE
 **Est**: 0.5d | **Priority**: P0 | **Assignee**: Security Reviewer
 
 Verify all 14 threats in SPEC-0001 §5.2 are `✅ Mitigated`. No T-XX open items.
 
 **Done when**: Security reviewer comments `THREAT-MODEL-APPROVED: SPEC-0001` on spec PR.
+
+**✅ Completed**: 2026-03-13
+- All 14 threats in SPEC-0001 §5.2 verified as MITIGATED:
+  - T-01: Authorization code interception → PKCE S256
+  - T-02: Access token replay → DPoP binding
+  - T-03: `jti` replay → Redis cache
+  - T-04: Phishing attack → WebAuthn origin-bound
+  - T-05: Algorithm confusion (RS256) → PS256 allowlist
+  - T-06: Direct auth request (bypass PAR) → PAR enforcement
+  - T-07: Credential brute-force → Account lockout (5 fails/10min)
+  - T-08: Stolen refresh token → Rotation + reuse detection
+  - T-09: JWKS endpoint spoofing → mTLS + pinning
+  - T-10: DPoP proof replay → `htm` + `htu` scoping
+  - T-11: Redis cache tampering → mTLS + auth + network policy
+  - T-12: Keycloak admin exposure → Internal network only
+  - T-13: Excessive token lifetime → Client Policy cap
+  - T-14: Bearer downgrade attack → Middleware rejection
+- Security sign-off: APPROVED ✅
 
 ---
 
