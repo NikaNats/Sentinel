@@ -15,8 +15,8 @@ RUN dotnet publish "src/Sentinel/Sentinel.csproj" \
 	--no-restore \
 	-p:UseAppHost=false
 
-# Runtime stage (chiseled + rootless).
-FROM mcr.microsoft.com/dotnet/aspnet:11.0-preview-jammy-chiseled AS final
+# Runtime stage (rootless).
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS final
 WORKDIR /app
 
 EXPOSE 8080
