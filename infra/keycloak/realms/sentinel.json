@@ -1,0 +1,424 @@
+{
+  "realm": "sentinel",
+  "displayName": "Sentinel",
+  "description": "FAPI 2.0 compliant secure authentication realm for Sentinel API",
+  "enabled": true,
+  "sslRequired": "all",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 600,
+  "failureFactor": 5,
+  "accessTokenLifespan": 300,
+  "accessTokenLifespanForImplicitFlow": 0,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 28800,
+  "offlineSessionIdleTimeout": 28800,
+  "offlineSessionMaxLifespan": 28800,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "Realm administrator — grants access to admin console",
+        "composite": false,
+        "clientRole": false
+      },
+      {
+        "name": "user",
+        "description": "Standard government employee — default role",
+        "composite": false,
+        "clientRole": false
+      }
+    ]
+  },
+  "webAuthnPolicy": {
+    "rpEntityName": "Sentinel",
+    "rpId": "sentinel.local",
+    "attestationConveyancePreference": "direct",
+    "authenticatorAttachment": "cross-platform",
+    "requireResidentKey": "Yes",
+    "userVerificationRequirement": "required",
+    "signatureAlgorithms": ["ES256", "RS256"],
+    "avoidSameAuthenticatorRegister": false,
+    "acceptableAaguids": [],
+    "extraOrigins": []
+  },
+  "requiredActions": [
+    {
+      "alias": "VERIFY_EMAIL",
+      "name": "Verify Email",
+      "providerId": "verify-email",
+      "enabled": false,
+      "defaultAction": false,
+      "priority": 50,
+      "config": {}
+    },
+    {
+      "alias": "UPDATE_PASSWORD",
+      "name": "Update Password",
+      "providerId": "update-password",
+      "enabled": false,
+      "defaultAction": false,
+      "priority": 30,
+      "config": {}
+    },
+    {
+      "alias": "CONFIGURE_TOTP",
+      "name": "Configure OTP",
+      "providerId": "CONFIGURE_TOTP",
+      "enabled": false,
+      "defaultAction": false,
+      "priority": 40,
+      "config": {}
+    },
+    {
+      "alias": "UPDATE_PROFILE",
+      "name": "Update Profile",
+      "providerId": "update-profile-action",
+      "enabled": false,
+      "defaultAction": false,
+      "priority": 40,
+      "config": {}
+    },
+    {
+      "alias": "TERMS_AND_CONDITIONS",
+      "name": "Terms and Conditions",
+      "providerId": "terms_and_conditions",
+      "enabled": false,
+      "defaultAction": false,
+      "priority": 20,
+      "config": {}
+    },
+    {
+      "alias": "delete_account",
+      "name": "Delete Account",
+      "providerId": "delete_account",
+      "enabled": false,
+      "defaultAction": false,
+      "priority": 60,
+      "config": {}
+    }
+  ],
+  "defaultRoles": ["user"],
+  "eventsEnabled": true,
+  "eventsListeners": ["jboss-logging", "event-queue"],
+  "eventStoreProvider": "jpa",
+  "adminEventsEnabled": true,
+  "adminEventStoreProvider": "jpa",
+  "adminEventDetailsEnabled": true,
+  "identityProviders": [],
+  "identityProviderMappers": [],
+  "protocolMappers": [],
+  "components": {
+    "org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy": [
+      {
+        "name": "Allowed Protocol Mapper Types",
+        "providerId": "allowed-protocol-mapper-types",
+        "subType": "anonymous",
+        "subComponents": {},
+        "config": {
+          "allowed-protocol-mapper-types": [
+            "oidc-full-name-mapper",
+            "oidc-usermodel-attribute-mapper",
+            "oidc-address-mapper",
+            "oidc-usermodel-realm-role-mapper",
+            "oidc-usermodel-client-role-mapper"
+          ]
+        }
+      },
+      {
+        "name": "Allowed Client Authenticators",
+        "providerId": "allowed-client-authenticators",
+        "subType": "anonymous",
+        "subComponents": {},
+        "config": {
+          "allowed-client-authenticators": [
+            "client-secret-basic",
+            "client-secret-post",
+            "client-secret-jwt",
+            "client-jwt"
+          ]
+        }
+      },
+      {
+        "name": "Allowed Client Scopes",
+        "providerId": "allowed-client-scopes",
+        "subType": "anonymous",
+        "subComponents": {},
+        "config": {
+          "allowed-client-scopes": [
+            "web-origins",
+            "acr",
+            "profile",
+            "roles",
+            "email",
+            "address",
+            "phone",
+            "offline_access",
+            "microprofile-jwt"
+          ]
+        }
+      }
+    ]
+  },
+  "internationalizationEnabled": false,
+  "supportedLocales": [],
+  "browserSecurityHeaders": {
+    "contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'self'; object-src 'none';",
+    "contentSecurityPolicyReportOnly": "",
+    "strictTransportSecurity": "max-age=31536000; includeSubDomains",
+    "xContentTypeOptions": "nosniff",
+    "xFrameOptions": "DENY",
+    "xRobotsTag": "none",
+    "xXSSProtection": "1; mode=block"
+  },
+  "smtpServer": {
+    "host": "localhost",
+    "port": "1025",
+    "from": "keycloak@example.com"
+  },
+  "clientPolicies": {
+    "policies": [
+      {
+        "name": "fapi2-security-policy",
+        "description": "Enforces FAPI 2.0 + DPoP + PAR for all clients",
+        "enabled": true,
+        "conditions": [
+          {
+            "condition": "any-client",
+            "configuration": {}
+          }
+        ],
+        "profiles": ["fapi2-security-profile"]
+      }
+    ],
+    "profiles": [
+      {
+        "name": "fapi2-security-profile",
+        "description": "FAPI 2.0 security profile: DPoP, PAR, PKCE S256, PS256 signing",
+        "executors": [
+          {
+            "executor": "pkce-enforcer",
+            "configuration": {
+              "allow-method": ["S256"]
+            }
+          },
+          {
+            "executor": "dpop-enforcer",
+            "configuration": {
+              "dpop-bound-access-tokens": "true"
+            }
+          },
+          {
+            "executor": "par-enforcer",
+            "configuration": {
+              "par-required": "true"
+            }
+          },
+          {
+            "executor": "secure-signing-algorithm",
+            "configuration": {
+              "algorithm": ["PS256", "ES256"]
+            }
+          },
+          {
+            "executor": "secure-session",
+            "configuration": {
+              "max-sessions": "3"
+            }
+          },
+          {
+            "executor": "hold-of-key-enforcer",
+            "configuration": {
+              "every-endpoint": "true"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "sentinel-api-client",
+      "name": "Sentinel API Client",
+      "description": "FAPI 2.0 compliant API client for Sentinel",
+      "clientAuthenticatorType": "client-jwt",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "https://localhost:3000/callback",
+        "https://sentinel.local/callback"
+      ],
+      "webOrigins": [
+        "https://localhost:3000",
+        "https://sentinel.local"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "dpop.bound.access.tokens": "true",
+        "require.pushed.authorization.requests": "true",
+        "token.endpoint.auth.signing.alg": "PS256",
+        "id.token.signed.response.alg": "PS256",
+        "access.token.signed.response.alg": "PS256",
+        "access.token.lifespan": "300",
+        "client.session.idle.timeout": "28800",
+        "client.session.max.lifespan": "28800",
+        "use.refresh.tokens": "true",
+        "refresh.token.max.reuse": "0",
+        "backchannel.logout.session.required": "true",
+        "backchannel.logout.revoke.offline.tokens": "true",
+        "post.logout.redirect.uris": "https://sentinel.local/logout-complete"
+      },
+      "defaultClientScopes": [
+        "roles",
+        "profile",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "offline_access"
+      ]
+    }
+  ],
+  "clientScopes": [
+    {
+      "name": "roles",
+      "description": "OpenID Connect scope for add user roles to the access token",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.info.token.claim": "false",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "multivalued": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "profile",
+      "description": "OpenID Connect scope for add profile information to the ID token",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.info.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "false",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-full-name-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.info.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "name": "email",
+      "description": "OpenID Connect scope for add email information to the ID token",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "email verified",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.info.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "false",
+            "claim.name": "email_verified",
+            "jsonType.label": "boolean"
+          }
+        },
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.info.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "false",
+            "claim.name": "email",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "name": "offline_access",
+      "description": "OpenID Connect scope for offline access",
+      "protocol": "openid-connect",
+      "attributes": {
+        "consent.screen.text": "${offlineAccessScopeConsentText}",
+        "display.on.consent.screen": "true"
+      }
+    }
+  ],
+  "defaultClientScopes": [
+    "roles",
+    "profile",
+    "email"
+  ],
+  "optionalClientScopes": [
+    "offline_access"
+  ],
+  "scopeMappings": [],
+  "clientScopeMappings": {},
+  "groups": [],
+  "users": [],
+  "oauth2DeviceConsentUrl": null,
+  "oauth2DeviceVerificationUrl": null,
+  "attributes": {
+    "cibaBackchannelTokenDeliveryMode": "poll",
+    "cibaExpiresIn": "120",
+    "cibaInterval": "5",
+    "cibaAuthRequestedUserHint": "login_hint"
+  }
+}

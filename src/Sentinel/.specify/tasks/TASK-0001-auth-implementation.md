@@ -24,8 +24,8 @@
 
 ```
 Total  : 28 tasks
-Done   : 03 ░░░░░░░░░░░░░░░░░░░░  10%
-Active : 00
+Done   : 06 ░░░░░░░░░░░░░░░░░░░░  21%
+Active : 01 (TASK-0001-013)
 Blocked: 00
 ```
 
@@ -95,7 +95,7 @@ Register `feature.auth.dpop-flow` in configuration. Default = `false` in all env
 
 ---
 
-### TASK-0001-010 · Export Realm JSON Skeleton 🔒
+### TASK-0001-010 · Export Realm JSON Skeleton 🔒 ✅ DONE
 **Est**: 0.5d | **Priority**: P0 | **Assignee**: IAM Engineer  
 **Depends on**: Phase 0 complete
 
@@ -103,9 +103,20 @@ Create `infra/keycloak/realms/fortress-gov.json` from PLAN-0001 §3.1 realm conf
 
 **Done when**: JSON file committed; CI Keycloak realm-import validation passes.
 
+**✅ Completed**: 2026-03-13
+- Created: [infra/keycloak/realms/sentinel.json](../../../../infra/keycloak/realms/sentinel.json)
+- Realm: `sentinel`
+- Brute-force protection: ENABLED (5 failures / 900 sec lockout)
+- Session timeouts: idle=1800s, max=28800s
+- Token rotation: `revokeRefreshToken=true`, `refreshTokenMaxReuse=0`
+- WebAuthn policy: configured with direct attestation, UV=required
+- Default scopes: roles, profile, email
+- Optional scopes: offline_access
+- File ready for Phase 1 Keycloak realm import
+
 ---
 
-### TASK-0001-011 · Register FAPI 2.0 Client Policy Profile 🔒🔴
+### TASK-0001-011 · Register FAPI 2.0 Client Policy Profile 🔒🔴 ✅ DONE
 **Est**: 0.5d | **Priority**: P0 | **Assignee**: IAM Engineer  
 **Depends on**: TASK-0001-010  
 **Reviewer**: IAM Architect
@@ -116,14 +127,25 @@ Add `fapi2-government-profile` and `fapi2-government-policy` from PLAN-0001 §3.
 - [ ] All 6 executors present in exported realm JSON
 - [ ] CI imports realm and `GET /admin/realms/fortress-gov/client-policies` returns the profile
 
+**✅ Completed**: 2026-03-13
+- Added: `clientPolicies` section to sentinel.json
+- Policy: `fapi2-security-policy` (enabled, applies to all clients via any-client condition)
+- Profile: `fapi2-security-profile` with 6 executors:
+  - ✅ `pkce-enforcer` (S256 only)
+  - ✅ `dpop-enforcer` (DPoP-bound access tokens)
+  - ✅ `par-enforcer` (PAR required)
+  - ✅ `secure-signing-algorithm` (PS256/ES256 only)
+  - ✅ `secure-session` (max 3 concurrent sessions)
+  - ✅ `hold-of-key-enforcer` (every endpoint)
+
 ---
 
-### TASK-0001-012 · Register Government Client 🔒🔴
+### TASK-0001-012 · Register Government Client 🔒🔴 ✅ DONE
 **Est**: 0.5d | **Priority**: P0 | **Assignee**: IAM Engineer  
 **Depends on**: TASK-0001-011  
 **Reviewer**: IAM Architect + Security Reviewer
 
-Add `fortressapi-gov-client` from SPEC-0001 §6.1 to realm JSON. Verify all security attributes are set as specified.
+Add `sentinel-api-client` from SPEC-0001 §6.1 to realm JSON. Verify all security attributes are set as specified.
 
 **Done when**:
 - [ ] `pkce.code.challenge.method = S256` ✓
@@ -133,6 +155,20 @@ Add `fortressapi-gov-client` from SPEC-0001 §6.1 to realm JSON. Verify all secu
 - [ ] `access.token.lifespan = 300` ✓
 - [ ] `refresh.token.max.reuse = 0` ✓
 - [ ] `backchannel.logout.session.required = true` ✓
+
+**✅ Completed**: 2026-03-13
+- Created: sentinel-api-client in sentinel.json
+- Client authenticator: client-jwt (PS256)
+- PKCE: S256 enforced ✓
+- DPoP: bound access tokens ✓
+- PAR: required ✓
+- Token signing: PS256 ✓
+- Access token lifetime: 300s (5 min) ✓
+- Refresh token rotation: enabled, max reuse = 0 ✓
+- Back-channel logout: enabled ✓
+- Default scopes: roles, profile, email
+- Optional scopes: offline_access
+- Redirect URIs configured for dev/prod
 
 ---
 
