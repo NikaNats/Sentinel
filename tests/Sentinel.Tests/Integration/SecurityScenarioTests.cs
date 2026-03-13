@@ -15,6 +15,29 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
     private readonly HttpClient client = factory.CreateClient();
 
     [Fact]
+    public async Task S01_ExpiredAccessToken_Returns401()
+    {
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ecdsa));
+        var jwkObject = new Dictionary<string, string>
+        {
+            ["crv"] = jwk.Crv!,
+            ["kty"] = jwk.Kty!,
+            ["x"] = jwk.X!,
+            ["y"] = jwk.Y!
+        };
+
+        var jkt = ComputeEcThumbprint(jwkObject);
+        var expiredToken = TestTokenIssuer.MintAccessToken(jkt, expiresInSeconds: -5);
+        var requestUrl = new Uri(client.BaseAddress!, "/v1/profile").ToString();
+        using var request = CreateSignedRequest(ecdsa, jwkObject, expiredToken, HttpMethod.Get, requestUrl);
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task S14_AttackerReplaysTokenWithDifferentKey_Returns401()
     {
         using var originalKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -121,6 +144,119 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         req2.Headers.Add("DPoP", proof);
         var res2 = await client.SendAsync(req2);
         Assert.Equal(HttpStatusCode.Unauthorized, res2.StatusCode);
+    }
+
+    [Fact]
+    public async Task S10_InvalidAudience_Returns401()
+    {
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ecdsa));
+        var jwkObject = new Dictionary<string, string>
+        {
+            ["crv"] = jwk.Crv!,
+            ["kty"] = jwk.Kty!,
+            ["x"] = jwk.X!,
+            ["y"] = jwk.Y!
+        };
+
+        var jkt = ComputeEcThumbprint(jwkObject);
+        var badAudienceToken = TestTokenIssuer.MintAccessToken(jkt, audience: "some-other-api");
+        var requestUrl = new Uri(client.BaseAddress!, "/v1/profile").ToString();
+        using var request = CreateSignedRequest(ecdsa, jwkObject, badAudienceToken, HttpMethod.Get, requestUrl);
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task S11_MissingScope_Returns403()
+    {
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ecdsa));
+        var jwkObject = new Dictionary<string, string>
+        {
+            ["crv"] = jwk.Crv!,
+            ["kty"] = jwk.Kty!,
+            ["x"] = jwk.X!,
+            ["y"] = jwk.Y!
+        };
+
+        var jkt = ComputeEcThumbprint(jwkObject);
+        var noScopeToken = TestTokenIssuer.MintAccessToken(jkt, scope: "email");
+        var requestUrl = new Uri(client.BaseAddress!, "/v1/profile").ToString();
+        using var request = CreateSignedRequest(ecdsa, jwkObject, noScopeToken, HttpMethod.Get, requestUrl);
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task S07_RateLimitExceeded_Returns429()
+    {
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ecdsa));
+        var jwkObject = new Dictionary<string, string>
+        {
+            ["crv"] = jwk.Crv!,
+            ["kty"] = jwk.Kty!,
+            ["x"] = jwk.X!,
+            ["y"] = jwk.Y!
+        };
+        var jkt = ComputeEcThumbprint(jwkObject);
+
+        var successCount = 0;
+        var rateLimitedCount = 0;
+        var requestUrl = new Uri(client.BaseAddress!, "/v1/profile").ToString();
+
+        var tasks = Enumerable.Range(0, 105).Select(async _ =>
+        {
+            var accessToken = TestTokenIssuer.MintAccessToken(jkt);
+            using var request = CreateSignedRequest(ecdsa, jwkObject, accessToken, HttpMethod.Get, requestUrl);
+            var response = await client.SendAsync(request);
+
+            if (response.StatusCode == HttpStatusCode.OK)
+            {
+                Interlocked.Increment(ref successCount);
+            }
+            else if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                Interlocked.Increment(ref rateLimitedCount);
+            }
+        });
+
+        await Task.WhenAll(tasks);
+
+        Assert.True(successCount <= 102, $"Expected at most 102 successful requests (100 permits + queue of 2), but got {successCount}");
+        Assert.True(rateLimitedCount > 0, "Expected at least one 429 TooManyRequests response.");
+    }
+
+    private static HttpRequestMessage CreateSignedRequest(ECDsa ecdsa, Dictionary<string, string> jwkObject, string accessToken, HttpMethod method, string url)
+    {
+        var descriptor = new SecurityTokenDescriptor
+        {
+            Claims = new Dictionary<string, object>
+            {
+                ["jti"] = Guid.NewGuid().ToString("N"),
+                ["htm"] = method.Method,
+                ["htu"] = url,
+                ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            },
+            SigningCredentials = new SigningCredentials(new ECDsaSecurityKey(ecdsa), SecurityAlgorithms.EcdsaSha256),
+            TokenType = "dpop+jwt",
+            AdditionalHeaderClaims = new Dictionary<string, object>
+            {
+                ["jwk"] = jwkObject
+            }
+        };
+
+        var proof = new JsonWebTokenHandler().CreateToken(descriptor);
+
+        var request = new HttpRequestMessage(method, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken);
+        request.Headers.Add("DPoP", proof);
+        return request;
     }
 
     private static string ComputeEcThumbprint(Dictionary<string, string> jwk)
