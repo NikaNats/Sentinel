@@ -134,8 +134,8 @@ Create `infra/keycloak/realms/fortress-gov.json` from PLAN-0001 §3.1 realm conf
 Add `fapi2-government-profile` and `fapi2-government-policy` from PLAN-0001 §3.2 to the realm JSON. Verify all 6 executors are configured: `pkce-enforcer`, `dpop-enforcer`, `par-enforcer`, `secure-signing-algorithm`, `secure-session`, `hold-of-key-enforcer`.
 
 **Done when**:
-- [ ] All 6 executors present in exported realm JSON
-- [ ] CI imports realm and `GET /admin/realms/fortress-gov/client-policies` returns the profile
+- [x] All 6 executors present in exported realm JSON
+- [x] CI imports realm and `GET /admin/realms/fortress-gov/client-policies` returns the profile
 
 **✅ Completed**: 2026-03-13
 - Added: `clientPolicies` section to sentinel.json
@@ -158,13 +158,13 @@ Add `fapi2-government-profile` and `fapi2-government-policy` from PLAN-0001 §3.
 Add `sentinel-api-client` from SPEC-0001 §6.1 to realm JSON. Verify all security attributes are set as specified.
 
 **Done when**:
-- [ ] `pkce.code.challenge.method = S256` ✓
-- [ ] `dpop.bound.access.tokens = true` ✓
-- [ ] `require.pushed.authorization.requests = true` ✓
-- [ ] `access.token.signed.response.alg = PS256` ✓
-- [ ] `access.token.lifespan = 300` ✓
-- [ ] `refresh.token.max.reuse = 0` ✓
-- [ ] `backchannel.logout.session.required = true` ✓
+- [x] `pkce.code.challenge.method = S256` ✓
+- [x] `dpop.bound.access.tokens = true` ✓
+- [x] `require.pushed.authorization.requests = true` ✓
+- [x] `access.token.signed.response.alg = PS256` ✓
+- [x] `access.token.lifespan = 300` ✓
+- [x] `refresh.token.max.reuse = 0` ✓
+- [x] `backchannel.logout.session.required = true` ✓
 
 **✅ Completed**: 2026-03-13
 - Created: sentinel-api-client in sentinel.json
@@ -190,10 +190,10 @@ Add `sentinel-api-client` from SPEC-0001 §6.1 to realm JSON. Verify all securit
 Create `government-aal3-browser` flow per PLAN-0001 §3.4. Configure WebAuthn authenticator policy (PLAN-0001 §3.3). Map flow to ACR level `acr3`.
 
 **Done when**:
-- [ ] Flow JSON committed to realm export
-- [ ] Integration test: login without WebAuthn → fails
-- [ ] Integration test: login with WebAuthn → succeeds, `acr=acr3` in token
-- [ ] Integration test: TOTP offered only after 3 consecutive WebAuthn failures
+- [x] Flow JSON committed to realm export
+- [x] Integration test: login without WebAuthn → fails
+- [x] Integration test: login with WebAuthn → succeeds, `acr=acr3` in token
+- [x] Integration test: TOTP offered only after 3 consecutive WebAuthn failures
 
 ---
 
@@ -254,8 +254,8 @@ Add all packages from PLAN-0001 §6. Enable `RestorePackagesWithLockFile = true`
 Create `appsettings.json` with non-secret config. Wire vault provider (Azure Key Vault / HashiCorp) for secrets: Keycloak authority, Redis connection string, mTLS certificates. **Zero secrets in source code or `appsettings.json`**.
 
 **Done when**:
-- [ ] Secrets scan (Gitleaks) passes on commit — zero findings
-- [ ] App starts locally without any secrets in code — all sourced from vault/user-secrets
+- [x] Secrets scan (Gitleaks) passes on commit — zero findings
+- [x] App starts locally without any secrets in code — all sourced from vault/user-secrets
 
 ---
 
@@ -270,9 +270,9 @@ Create `appsettings.json` with non-secret config. Wire vault provider (Azure Key
 Implement `SecurityHeadersMiddleware` per PLAN-0001 §4.5. Registers first in pipeline. Removes `Server` and `X-Powered-By` headers. Applies all 8 security headers to every response.
 
 **Done when**:
-- [ ] Unit test: all 8 required headers present on every response type (200, 401, 403, 500)
-- [ ] Unit test: `Server` and `X-Powered-By` headers absent
-- [ ] `Cache-Control: no-store` present on token-related responses
+- [x] Unit test: all 8 required headers present on every response type (200, 401, 403, 500)
+- [x] Unit test: `Server` and `X-Powered-By` headers absent
+- [x] `Cache-Control: no-store` present on token-related responses
 
 ---
 
@@ -296,9 +296,9 @@ Implement `DpopProofValidator` in `FortressApi.Infrastructure/Auth/`. This is th
 11. Validate `cnf.jkt` in access token matches JWK thumbprint (SHA-256) of the DPoP proof's `jwk`
 
 **Done when**:
-- [ ] 100% unit test coverage on all 11 validation steps
-- [ ] Each validation step has an individual failure test
-- [ ] RFC 9449 compliance verified against test vectors
+- [x] 100% unit test coverage on all 11 validation steps
+- [x] Each validation step has an individual failure test
+- [x] RFC 9449 compliance verified against test vectors
 
 **Test matrix** (each row = one unit test):
 
@@ -327,10 +327,10 @@ Implement `DpopProofValidator` in `FortressApi.Infrastructure/Auth/`. This is th
 Wire `DpopProofValidator` into ASP.NET Core middleware. Extract `Authorization: DPoP <token>` and `DPoP: <proof>` headers. Call validator. On failure: 401 + `WWW-Authenticate: DPoP error="invalid_dpop_proof"`. Issue new `DPoP-Nonce` in response on success.
 
 **Done when**:
-- [ ] `Authorization: Bearer <token>` (not DPoP) → 401
-- [ ] Missing `DPoP` header → 401
-- [ ] Valid token + valid proof → passes to next middleware
-- [ ] New `DPoP-Nonce` header present in every successful response
+- [x] `Authorization: Bearer <token>` (not DPoP) → 401
+- [x] Missing `DPoP` header → 401
+- [x] Valid token + valid proof → passes to next middleware
+- [x] New `DPoP-Nonce` header present in every successful response
 
 ---
 
@@ -341,11 +341,11 @@ Wire `DpopProofValidator` into ASP.NET Core middleware. Extract `Authorization: 
 Implement `JtiReplayCache` backed by Redis. Key: `replay:jti:{value}`. TTL = remaining token lifetime. **Fail-closed**: Redis unavailability throws `ReplayCacheUnavailableException` (→ 503).
 
 **Done when**:
-- [ ] First call with `jti` = `false` (not seen), key written with correct TTL
-- [ ] Second call with same `jti` = `true` (seen) → blocked
-- [ ] Redis connection failure → `ReplayCacheUnavailableException` thrown (NOT fail-open)
-- [ ] Key TTL verified in integration test (Redis `TTL` command checked)
-- [ ] `replay:jti:` prefix isolation verified (no collisions with other cache namespaces)
+- [x] First call with `jti` = `false` (not seen), key written with correct TTL
+- [x] Second call with same `jti` = `true` (seen) → blocked
+- [x] Redis connection failure → `ReplayCacheUnavailableException` thrown (NOT fail-open)
+- [x] Key TTL verified in integration test (Redis `TTL` command checked)
+- [x] `replay:jti:` prefix isolation verified (no collisions with other cache namespaces)
 
 ---
 
@@ -357,9 +357,9 @@ Implement `JtiReplayCache` backed by Redis. Key: `replay:jti:{value}`. TTL = rem
 Hook `IJtiReplayCache.ExistsAsync` into `JwtBearerEvents.OnTokenValidated`. Emit `SecurityEvent.TokenReplay` SIEM event before failing. Wire `ReplayCacheUnavailableException` → 503 `ProblemDetails`.
 
 **Done when**:
-- [ ] Replayed `jti` → 401 within same token TTL window
-- [ ] SIEM event `TOKEN_REPLAY` emitted (verified by test spy)
-- [ ] Redis down → 503 (not 200 or 401)
+- [x] Replayed `jti` → 401 within same token TTL window
+- [x] SIEM event `TOKEN_REPLAY` emitted (verified by test spy)
+- [x] Redis down → 503 (not 200 or 401)
 
 ---
 
@@ -370,11 +370,11 @@ Hook `IJtiReplayCache.ExistsAsync` into `JwtBearerEvents.OnTokenValidated`. Emit
 Implement `AcrRequirement`, `AcrAuthorizationHandler` per PLAN-0001 §4.4. Map ACR levels to integer ranks. Insufficient ACR returns `AuthorizationFailureReason` (caller turns this into 401 + step-up hint header).
 
 **Done when**:
-- [ ] `acr1` on `acr2`-required endpoint → fails
-- [ ] `acr2` on `acr2`-required endpoint → succeeds
-- [ ] `acr3` on `acr2`-required endpoint → succeeds (higher level satisfies lower requirement)
-- [ ] Missing `acr` claim → fails
-- [ ] Unknown `acr` value → fails
+- [x] `acr1` on `acr2`-required endpoint → fails
+- [x] `acr2` on `acr2`-required endpoint → succeeds
+- [x] `acr3` on `acr2`-required endpoint → succeeds (higher level satisfies lower requirement)
+- [x] Missing `acr` claim → fails
+- [x] Unknown `acr` value → fails
 
 ---
 
@@ -385,11 +385,11 @@ Implement `AcrRequirement`, `AcrAuthorizationHandler` per PLAN-0001 §4.4. Map A
 Configure `AddJwtBearer` in `Program.cs` per PLAN-0001 §4.1. Critical parameters: `ClockSkew = Zero`, `ValidAlgorithms = ["PS256","ES256"]`, `RequireHttpsMetadata = true`. Wire `OnTokenValidated` event (from TASK-0001-034). Wire `OnAuthenticationFailed` to emit structured log.
 
 **Done when**:
-- [ ] RS256 token → 401 (algorithm rejected)
-- [ ] Expired token (1 second past `exp`) → 401 (ClockSkew=Zero verified)
-- [ ] Wrong `aud` → 401
-- [ ] Wrong `iss` → 401
-- [ ] Valid PS256 token from test Keycloak → 200
+- [x] RS256 token → 401 (algorithm rejected)
+- [x] Expired token (1 second past `exp`) → 401 (ClockSkew=Zero verified)
+- [x] Wrong `aud` → 401
+- [x] Wrong `iss` → 401
+- [x] Valid PS256 token from test Keycloak → 200
 
 ---
 
@@ -415,8 +415,8 @@ Configure `AddRateLimiter` with separate policies:
 Apply `[EnableRateLimiting("ApiEndpoints")]` to all controllers.
 
 **Done when**:
-- [ ] 21st request to auth-proxied path within 60s → 429 with `Retry-After` header
-- [ ] Rate limit resets after window expires
+- [x] 21st request to auth-proxied path within 60s → 429 with `Retry-After` header
+- [x] Rate limit resets after window expires
 
 ---
 
@@ -431,10 +431,10 @@ Apply `[EnableRateLimiting("ApiEndpoints")]` to all controllers.
 Implement `GET /v1/profile` with `[Authorize(Policy = Policies.ReadProfile)]`. Returns `ProfileResponse` DTO (from token claims — no DB call for this endpoint). Response: `sub`, `displayName` (from token `name` claim), `roles` (from token `realm_access.roles`).
 
 **Done when**:
-- [ ] Valid token with `profile` scope + `acr2` → 200 with correct DTO
-- [ ] Token missing `profile` scope → 403
-- [ ] Token with `acr1` → 401 (step-up hint in `WWW-Authenticate`)
-- [ ] Response never contains raw token claims beyond specified DTO fields
+- [x] Valid token with `profile` scope + `acr2` → 200 with correct DTO
+- [x] Token missing `profile` scope → 403
+- [x] Token with `acr1` → 401 (step-up hint in `WWW-Authenticate`)
+- [x] Response never contains raw token claims beyond specified DTO fields
 
 ---
 
@@ -445,9 +445,9 @@ Implement `GET /v1/profile` with `[Authorize(Policy = Policies.ReadProfile)]`. R
 Implement `IProblemDetailsService` extension that produces RFC 7807 responses. Always includes `correlationId` and `traceId`. Never includes stack traces, exception messages, or internal service names.
 
 **Done when**:
-- [ ] 401 response body is valid `ProblemDetails` JSON with `correlationId`
-- [ ] 500 response contains `correlationId` but ZERO internal detail
-- [ ] Stack trace never appears in any response (tested by triggering exception in integration test)
+- [x] 401 response body is valid `ProblemDetails` JSON with `correlationId`
+- [x] 500 response contains `correlationId` but ZERO internal detail
+- [x] Stack trace never appears in any response (tested by triggering exception in integration test)
 
 ---
 
@@ -478,10 +478,10 @@ Add activity spans wrapping DPoP validation and jti cache operations.
 Implement `ISecurityEventEmitter` that publishes audit log events per PLAN-0001 §5.2 schema. Events published asynchronously to SIEM channel (structured log sink → OTel → SIEM). IP and UA hashed before any log write.
 
 **Done when**:
-- [ ] `AUTH_FAILURE` event emitted on failed login (verified in integration test log output)
-- [ ] `TOKEN_REPLAY` event emitted on `jti` replay (verified in integration test)
-- [ ] No PII in any log event (log audit: no email, no full IP, no name)
-- [ ] `correlationId` present in every event
+- [x] `AUTH_FAILURE` event emitted on failed login (verified in integration test log output)
+- [x] `TOKEN_REPLAY` event emitted on `jti` replay (verified in integration test)
+- [x] No PII in any log event (log audit: no email, no full IP, no name)
+- [x] `correlationId` present in every event
 
 ---
 
@@ -697,3 +697,4 @@ CI GATES (all 9 green)
 [x] Gate 8  SBOM generated + signed
 [x] Gate 9  Image signatures verified
 ```
+

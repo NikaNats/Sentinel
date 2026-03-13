@@ -468,28 +468,28 @@ Step-Up Trigger:
 
 ### 7.1 Functional
 
-- [ ] FR-01–07: PAR flow — client cannot initiate auth without PAR; `request_uri` is single-use and expires in 60s
-- [ ] FR-08–14: WebAuthn AAL3 — login without hardware key fails; `acr3` present in tokens; account locks after 5 failures
-- [ ] FR-15–23: Token issuance — DPoP-bound PS256 tokens, ≤5 min lifetime, `jti` unique, `cnf` claim present
-- [ ] FR-24–30: API validation — all 7 validation checks enforced independently (each one tested in isolation)
-- [ ] FR-31–34: Logout — front-channel + back-channel tested; all tokens invalidated
+- [x] FR-01–07: PAR flow — client cannot initiate auth without PAR; `request_uri` is single-use and expires in 60s
+- [x] FR-08–14: WebAuthn AAL3 — login without hardware key fails; `acr3` present in tokens; account locks after 5 failures
+- [x] FR-15–23: Token issuance — DPoP-bound PS256 tokens, ≤5 min lifetime, `jti` unique, `cnf` claim present
+- [x] FR-24–30: API validation — all 7 validation checks enforced independently (each one tested in isolation)
+- [x] FR-31–34: Logout — front-channel + back-channel tested; all tokens invalidated
 
 ### 7.2 Security Scenarios
 
-- [ ] T-01: Intercepted auth code without verifier → token endpoint rejects
-- [ ] T-02: Replayed access token without DPoP key → API rejects
-- [ ] T-03: Second request with same `jti` → 401 + SIEM event fired
-- [ ] T-05: RS256 token submitted → rejected before any claim check
-- [ ] T-06: Direct authorization request (no PAR) → Keycloak rejects
-- [ ] T-08: Consumed refresh token reused → session invalidated
-- [ ] T-14: `Authorization: Bearer` on DPoP endpoint → 401
+- [x] T-01: Intercepted auth code without verifier → token endpoint rejects
+- [x] T-02: Replayed access token without DPoP key → API rejects
+- [x] T-03: Second request with same `jti` → 401 + SIEM event fired
+- [x] T-05: RS256 token submitted → rejected before any claim check
+- [x] T-06: Direct authorization request (no PAR) → Keycloak rejects
+- [x] T-08: Consumed refresh token reused → session invalidated
+- [x] T-14: `Authorization: Bearer` on DPoP endpoint → 401
 
 ### 7.3 Non-Functional
 
-- [ ] API token validation p99 ≤ 10 ms under 500 rps sustained load
-- [ ] Redis unavailable → API returns 503 (fail-closed verified)
-- [ ] OTel traces visible end-to-end for full auth flow
-- [ ] SIEM receives `AUTH_SUCCESS`, `AUTH_FAILURE`, `TOKEN_REPLAY` events
+- [x] API token validation p99 ≤ 10 ms under 500 rps sustained load
+- [x] Redis unavailable → API returns 503 (fail-closed verified)
+- [x] OTel traces visible end-to-end for full auth flow
+- [x] SIEM receives `AUTH_SUCCESS`, `AUTH_FAILURE`, `TOKEN_REPLAY` events
 
 ---
 
@@ -553,3 +553,4 @@ Note: M2M mTLS and ABAC additions are security hardening increments that extend 
 | Feature Owner | Product Lead | [PR #42 Approved](link) | 2026-03-14 |
 | Security Reviewer | Sec WG | [PR #42 Approved](link) | 2026-03-14 |
 | IAM Architect | Identity Team | [PR #42 Approved](link) | 2026-03-14 |
+
