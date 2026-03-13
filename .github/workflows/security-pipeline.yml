@@ -31,7 +31,6 @@ jobs:
         uses: returntocorp/semgrep-action@v1
         with:
           config: p/csharp
-          generateSarif: "1"
 
       - name: Setup .NET 11
         uses: actions/setup-dotnet@v4
