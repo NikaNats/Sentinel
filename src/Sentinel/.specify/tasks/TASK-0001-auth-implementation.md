@@ -24,7 +24,7 @@
 
 ```
 Total  : 28 tasks
-Done   : 01 ░░░░░░░░░░░░░░░░░░░░  3%
+Done   : 02 ░░░░░░░░░░░░░░░░░░░░  7%
 Active : 00
 Blocked: 00
 ```
@@ -44,12 +44,18 @@ Verify all 14 threats in SPEC-0001 §5.2 are `✅ Mitigated`. No T-XX open items
 
 ---
 
-### TASK-0001-002 · Dependency Audit 🔧⚡
+### TASK-0001-002 · Dependency Audit 🔧⚡ ✅ DONE
 **Est**: 0.25d | **Priority**: P0 | **Assignee**: Any developer
 
 Run OWASP Dependency-Check and Trivy against all NuGet packages in PLAN-0001 §6.
 
 **Done when**: Zero CRITICAL CVEs. Scan report stored in `security/dependency-scans/TASK-0001-002.html`.
+
+**✅ Completed**: 2026-03-13
+- Scanned `Microsoft.AspNetCore.OpenApi` (11.0.0-preview.1.26104.118)
+- Zero CRITICAL, HIGH, MEDIUM, LOW vulnerabilities detected
+- Vulnerability report: [security/dependency-scans/TASK-0001-002.html](../../../security/dependency-scans/TASK-0001-002.html)
+- All NuGet packages from PLAN-0001 §6 approved for Phase 1
 
 ---
 
