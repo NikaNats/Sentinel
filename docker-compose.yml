@@ -1,0 +1,56 @@
+name: sentinel-fapi2-stack
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    container_name: sentinel-keycloak
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_FEATURES: dpop,par,fips:preview
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+    ports:
+      - "8443:8443"
+      - "8080:8080"
+    volumes:
+      - ./infra/keycloak/realms:/opt/keycloak/data/import:ro
+    command:
+      - start-dev
+      - --import-realm
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: sentinel-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  sentinel-api:
+    build:
+      context: .
+      dockerfile: src/Sentinel/Dockerfile
+    container_name: sentinel-api
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "5260:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Redis: redis:6379
+      Keycloak__Authority: http://keycloak:8080/realms/sentinel
+      Keycloak__Audience: sentinel-api
+      Keycloak__RequireHttpsMetadata: "false"

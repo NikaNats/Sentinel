@@ -38,6 +38,7 @@ builder.Services.AddOpenApi(options =>
         return Task.CompletedTask;
     });
 });
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 builder.Services.AddControllers();
 
@@ -84,7 +85,7 @@ builder.Services
     {
         options.Authority = builder.Configuration["Keycloak:Authority"];
         options.Audience = builder.Configuration["Keycloak:Audience"];
-        options.RequireHttpsMetadata = true;
+        options.RequireHttpsMetadata = builder.Configuration.GetValue<bool>("Keycloak:RequireHttpsMetadata", true);
         options.RefreshOnIssuerKeyNotFound = true;
 
         options.TokenValidationParameters = new TokenValidationParameters
