@@ -1,10 +1,14 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Cache;
+using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Middleware;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,8 +23,35 @@ builder.Services.AddStackExchangeRedisCache(options =>
 
 builder.Services.AddSingleton<IJtiReplayCache, JtiReplayCache>();
 builder.Services.AddSingleton<IDpopProofValidator, DpopProofValidator>();
+builder.Services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
 builder.Services.AddSingleton<IAuthorizationHandler, AcrAuthorizationHandler>();
 builder.Services.AddSingleton<IAuthorizationHandler, ScopeAuthorizationHandler>();
+
+builder.Services.AddOpenTelemetry()
+    .WithTracing(t => t
+        .AddAspNetCoreInstrumentation()
+        .AddSource(AuthTelemetry.SourceName))
+    .WithMetrics(m => m
+        .AddAspNetCoreInstrumentation()
+        .AddMeter(AuthTelemetry.MeterName)
+        .AddPrometheusExporter());
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+    {
+        var key = httpContext.Request.Path.HasValue ? httpContext.Request.Path.Value! : "default";
+
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 100,
+            Window = TimeSpan.FromMinutes(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 2
+        });
+    });
+});
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -63,6 +94,9 @@ builder.Services
                     var isReplayed = await cache.ExistsAsync(jti, context.HttpContext.RequestAborted);
                     if (isReplayed)
                     {
+                        var emitter = context.HttpContext.RequestServices.GetRequiredService<ISecurityEventEmitter>();
+                        var ipHash = SecurityContextHasher.HashIp(context.HttpContext);
+                        emitter.EmitTokenReplay(jti, context.Principal?.FindFirst("sub")?.Value, "sentinel-api-client", ipHash);
                         context.Fail("Token replay detected.");
                         return;
                     }
@@ -82,6 +116,8 @@ builder.Services
                 }
                 catch (ReplayCacheUnavailableException)
                 {
+                    var emitter = context.HttpContext.RequestServices.GetRequiredService<ISecurityEventEmitter>();
+                    emitter.EmitAuthFailure("replay_cache_unavailable", context.Principal?.FindFirst("sub")?.Value, SecurityContextHasher.HashIp(context.HttpContext));
                     context.HttpContext.Items["ReplayCacheUnavailable"] = true;
                     context.Fail("Replay cache unavailable.");
                 }
@@ -114,6 +150,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseMiddleware<SecurityHeadersMiddleware>();
+app.UseRateLimiter();
 app.UseMiddleware<DpopValidationMiddleware>();
 app.UseMiddleware<ReplayCacheFailureMiddleware>();
 
@@ -124,6 +161,7 @@ app.UseAuthentication();
 app.UseMiddleware<AcrValidationMiddleware>();
 app.UseAuthorization();
 
+app.MapPrometheusScrapingEndpoint();
 app.MapControllers();
 
 app.Run();

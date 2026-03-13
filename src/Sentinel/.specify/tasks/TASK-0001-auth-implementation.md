@@ -656,15 +656,15 @@ PHASE 4 — Controllers
 [ ] TASK-0001-041  ProblemDetails factory
 
 PHASE 5 — Observability
-[ ] TASK-0001-050  AuthTelemetry
-[ ] TASK-0001-051  SecurityEventEmitter
-[ ] TASK-0001-052  OTel pipeline
+[x] TASK-0001-050  AuthTelemetry
+[x] TASK-0001-051  SecurityEventEmitter
+[x] TASK-0001-052  OTel pipeline
 
 PHASE 6 — Unit Tests
-[ ] TASK-0001-060  DpopProofValidator tests (12/12)
-[ ] TASK-0001-061  JtiReplayCache tests (5/5)
-[ ] TASK-0001-062  AcrHandler tests (5/5)
-[ ] TASK-0001-063  SecurityHeaders tests
+[x] TASK-0001-060  DpopProofValidator tests (12/12)
+[x] TASK-0001-061  JtiReplayCache tests (5/5)
+[x] TASK-0001-062  AcrHandler tests (5/5)
+[x] TASK-0001-063  SecurityHeaders tests
 
 PHASE 7 — Integration Tests
 [ ] TASK-0001-070  Test fixtures (Testcontainers)

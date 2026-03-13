@@ -1,18 +1,22 @@
 using Microsoft.AspNetCore.Mvc;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Cache;
+using Sentinel.Infrastructure.Telemetry;
 
 namespace Sentinel.Middleware;
 
-public sealed class DpopValidationMiddleware(RequestDelegate next, IDpopProofValidator validator)
+public sealed class DpopValidationMiddleware(RequestDelegate next, IDpopProofValidator validator, ISecurityEventEmitter emitter)
 {
     public async Task InvokeAsync(HttpContext context)
     {
+        var ipHash = SecurityContextHasher.HashIp(context);
         var authHeader = context.Request.Headers.Authorization.ToString();
         if (string.IsNullOrWhiteSpace(authHeader) || !authHeader.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase))
         {
             if (!string.IsNullOrWhiteSpace(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             {
+                emitter.EmitAuthFailure("bearer_downgrade_attempt", context.User.FindFirst("sub")?.Value, ipHash);
+                AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", "bearer_downgrade_attempt"));
                 context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 return;
@@ -25,6 +29,8 @@ public sealed class DpopValidationMiddleware(RequestDelegate next, IDpopProofVal
         var dpopProof = context.Request.Headers["DPoP"].ToString();
         if (string.IsNullOrWhiteSpace(dpopProof))
         {
+            emitter.EmitAuthFailure("missing_dpop_proof", context.User.FindFirst("sub")?.Value, ipHash);
+            AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", "missing_dpop_proof"));
             context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"missing_dpop_proof\"");
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             return;
@@ -40,6 +46,7 @@ public sealed class DpopValidationMiddleware(RequestDelegate next, IDpopProofVal
         }
         catch (ReplayCacheUnavailableException)
         {
+            emitter.EmitAuthFailure("dpop_replay_cache_unavailable", context.User.FindFirst("sub")?.Value, ipHash);
             context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
             await context.Response.WriteAsJsonAsync(new ProblemDetails
             {
@@ -53,6 +60,8 @@ public sealed class DpopValidationMiddleware(RequestDelegate next, IDpopProofVal
 
         if (!result.IsValid)
         {
+            emitter.EmitAuthFailure("invalid_dpop_proof", context.User.FindFirst("sub")?.Value, ipHash);
+            AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", "invalid_dpop_proof"));
             context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             return;
