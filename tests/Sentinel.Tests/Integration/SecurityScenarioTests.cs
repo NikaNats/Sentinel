@@ -14,58 +14,21 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
 {
     private readonly HttpClient client = factory.CreateClient();
 
-    [Fact(Skip = "Requires Docker-backed Keycloak/Redis integration environment.")]
-    public async Task S05_AttackerInjectsRS256DpopProof_Returns401()
-    {
-        var accessToken = CreateUnsignedAccessToken("placeholder-thumbprint");
-
-        using var rsa = RSA.Create(2048);
-        var rsaKey = new RsaSecurityKey(rsa);
-        var rsaJwk = JsonWebKeyConverter.ConvertFromRSASecurityKey(rsaKey);
-        var handler = new JsonWebTokenHandler();
-
-        var proofDescriptor = new SecurityTokenDescriptor
-        {
-            Claims = new Dictionary<string, object>
-            {
-                ["jti"] = Guid.NewGuid().ToString("N"),
-                ["htm"] = "GET",
-                ["htu"] = $"{client.BaseAddress}v1/Profile",
-                ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-            },
-            SigningCredentials = new SigningCredentials(rsaKey, SecurityAlgorithms.RsaSha256),
-            TokenType = "dpop+jwt",
-            AdditionalHeaderClaims = new Dictionary<string, object>
-            {
-                ["jwk"] = new Dictionary<string, string>
-                {
-                    ["kty"] = rsaJwk.Kty!,
-                    ["n"] = rsaJwk.N!,
-                    ["e"] = rsaJwk.E!
-                }
-            }
-        };
-
-        var maliciousProof = handler.CreateToken(proofDescriptor);
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/Profile");
-        request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken);
-        request.Headers.Add("DPoP", maliciousProof);
-
-        var response = await client.SendAsync(request);
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.Contains("invalid_dpop_proof", response.Headers.WwwAuthenticate.ToString());
-    }
-
-    [Fact(Skip = "Requires Docker-backed Keycloak/Redis integration environment.")]
+    [Fact]
     public async Task S14_AttackerReplaysTokenWithDifferentKey_Returns401()
     {
         using var originalKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var originalJwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(originalKey));
-        var originalThumbprint = ComputeEcThumbprint(originalJwk);
+        var originalJwkObject = new Dictionary<string, string>
+        {
+            ["crv"] = originalJwk.Crv!,
+            ["kty"] = originalJwk.Kty!,
+            ["x"] = originalJwk.X!,
+            ["y"] = originalJwk.Y!
+        };
+        var originalThumbprint = ComputeEcThumbprint(originalJwkObject);
 
-        var stolenAccessToken = CreateUnsignedAccessToken(originalThumbprint);
+        var stolenAccessToken = TestTokenIssuer.MintAccessToken(originalThumbprint);
 
         using var attackerKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var attackerSecurityKey = new ECDsaSecurityKey(attackerKey) { KeyId = Guid.NewGuid().ToString("N") };
@@ -107,27 +70,67 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         Assert.Contains("invalid_dpop_proof", response.Headers.WwwAuthenticate.ToString());
     }
 
-    private static string CreateUnsignedAccessToken(string jkt)
+    [Fact]
+    public async Task S03_ReplayedJti_IsCaughtByReplayCache_Returns401()
     {
-        var descriptor = new SecurityTokenDescriptor
-        {
-            Claims = new Dictionary<string, object>
-            {
-                ["cnf"] = new Dictionary<string, string> { ["jkt"] = jkt }
-            }
-        };
+        var requestUri = new Uri(client.BaseAddress!, "/v1/profile");
+        var requestUrl = requestUri.ToString();
 
-        return new JsonWebTokenHandler().CreateToken(descriptor);
-    }
-
-    private static string ComputeEcThumbprint(JsonWebKey jwk)
-    {
-        var canonical = JsonSerializer.Serialize(new Dictionary<string, string>
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var securityKey = new ECDsaSecurityKey(ecdsa) { KeyId = Guid.NewGuid().ToString("N") };
+        var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(securityKey);
+        var jwkObject = new Dictionary<string, string>
         {
             ["crv"] = jwk.Crv!,
             ["kty"] = jwk.Kty!,
             ["x"] = jwk.X!,
             ["y"] = jwk.Y!
+        };
+        var jkt = ComputeEcThumbprint(jwkObject);
+
+        var accessToken1 = TestTokenIssuer.MintAccessToken(jkt);
+        var accessToken2 = TestTokenIssuer.MintAccessToken(jkt);
+
+        var proofJti = Guid.NewGuid().ToString("N");
+        var descriptor = new SecurityTokenDescriptor
+        {
+            Claims = new Dictionary<string, object>
+            {
+                ["jti"] = proofJti,
+                ["htm"] = "GET",
+                ["htu"] = requestUrl,
+                ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            },
+            SigningCredentials = new SigningCredentials(securityKey, SecurityAlgorithms.EcdsaSha256),
+            TokenType = "dpop+jwt",
+            AdditionalHeaderClaims = new Dictionary<string, object>
+            {
+                ["jwk"] = jwkObject
+            }
+        };
+        var proof = new JsonWebTokenHandler().CreateToken(descriptor);
+
+        using var req1 = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        req1.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken1);
+        req1.Headers.Add("DPoP", proof);
+        var res1 = await client.SendAsync(req1);
+        Assert.Equal(HttpStatusCode.OK, res1.StatusCode);
+
+        using var req2 = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        req2.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken2);
+        req2.Headers.Add("DPoP", proof);
+        var res2 = await client.SendAsync(req2);
+        Assert.Equal(HttpStatusCode.Unauthorized, res2.StatusCode);
+    }
+
+    private static string ComputeEcThumbprint(Dictionary<string, string> jwk)
+    {
+        var canonical = JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["crv"] = jwk["crv"],
+            ["kty"] = jwk["kty"],
+            ["x"] = jwk["x"],
+            ["y"] = jwk["y"]
         });
 
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));

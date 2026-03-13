@@ -85,6 +85,7 @@ builder.Services
     {
         options.Authority = builder.Configuration["Keycloak:Authority"];
         options.Audience = builder.Configuration["Keycloak:Audience"];
+        options.MapInboundClaims = false;
         options.RequireHttpsMetadata = builder.Configuration.GetValue<bool>("Keycloak:RequireHttpsMetadata", true);
         options.RefreshOnIssuerKeyNotFound = true;
 
@@ -103,6 +104,17 @@ builder.Services
 
         options.Events = new JwtBearerEvents
         {
+            OnMessageReceived = context =>
+            {
+                var authHeader = context.Request.Headers.Authorization.ToString();
+                if (!string.IsNullOrWhiteSpace(authHeader)
+                    && authHeader.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Token = authHeader["DPoP ".Length..].Trim();
+                }
+
+                return Task.CompletedTask;
+            },
             OnTokenValidated = async context =>
             {
                 try

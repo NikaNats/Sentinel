@@ -1,7 +1,9 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
-using Testcontainers.Keycloak;
+using Microsoft.Extensions.DependencyInjection;
 using Testcontainers.Redis;
 using Xunit;
 
@@ -9,23 +11,12 @@ namespace Sentinel.Tests.Integration.Fixtures;
 
 public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    private readonly KeycloakContainer keycloakContainer;
     private readonly RedisContainer redisContainer;
 
     public SentinelApiFactory()
     {
-        var realmPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../../infra/keycloak/realms/sentinel.json"));
-
-        keycloakContainer = new KeycloakBuilder("quay.io/keycloak/keycloak:26.1")
-            .WithEnvironment("KC_FEATURES", "dpop,par,fips:preview")
-            .WithResourceMapping(realmPath, "/opt/keycloak/data/import/sentinel.json")
-            .WithCommand("start-dev", "--import-realm")
-            .Build();
-
         redisContainer = new RedisBuilder("redis:7.4-alpine").Build();
     }
-
-    public string KeycloakRealmAuthority => $"{keycloakContainer.GetBaseAddress()}realms/sentinel";
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -33,9 +24,24 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Keycloak:Authority"] = KeycloakRealmAuthority,
+                ["Keycloak:Authority"] = "https://localhost:8443/realms/sentinel",
+                ["Keycloak:Audience"] = "sentinel-api",
+                ["Keycloak:RequireHttpsMetadata"] = "false",
                 ["ConnectionStrings:Redis"] = redisContainer.GetConnectionString(),
                 ["FeatureFlags:Auth:DpopFlow"] = "true"
+            });
+        });
+
+        builder.ConfigureTestServices(services =>
+        {
+            services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+            {
+                options.TokenValidationParameters.IssuerSigningKey = TestTokenIssuer.AuthoritySecurityKey;
+                options.TokenValidationParameters.ValidateIssuerSigningKey = true;
+                options.TokenValidationParameters.ValidIssuer = "https://localhost:8443/realms/sentinel";
+                options.TokenValidationParameters.ValidAudience = "sentinel-api";
+                options.RequireHttpsMetadata = false;
+                options.ConfigurationManager = null;
             });
         });
     }
@@ -43,12 +49,10 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
     public async Task InitializeAsync()
     {
         await redisContainer.StartAsync();
-        await keycloakContainer.StartAsync();
     }
 
     async Task IAsyncLifetime.DisposeAsync()
     {
-        await keycloakContainer.DisposeAsync();
         await redisContainer.DisposeAsync();
         await base.DisposeAsync();
     }

@@ -8,7 +8,7 @@ public sealed class AuthFlowIntegrationTests(SentinelApiFactory factory)
 {
     private readonly HttpClient client = factory.CreateClient();
 
-    [Fact(Skip = "Requires Docker-backed Keycloak/Redis integration environment.")]
+    [Fact]
     public async Task ProtectedEndpoint_WithoutToken_Returns401()
     {
         var response = await client.GetAsync("/v1/Profile");
