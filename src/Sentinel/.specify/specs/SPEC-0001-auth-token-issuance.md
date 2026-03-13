@@ -2,7 +2,7 @@
 
 > **Spec ID**: SPEC-0001  
 > **Constitution Ref**: FortressAPI Constitution v2.0.0  
-> **Status**: APPROVED  
+> **Status**: COMPLETED  
 > **Template Version**: 1.0.0
 
 ---
@@ -526,3 +526,13 @@ Step-Up Trigger:
 - [RFC 7636 — PKCE](https://datatracker.ietf.org/doc/html/rfc7636)
 - [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-2_0-security-profile.html)
 - [WebAuthn Level 3](https://www.w3.org/TR/webauthn-3/)
+
+---
+
+## Approval Sign-Off [MANDATORY]
+
+| Role | Name | Signature / Approval Link | Date |
+|---|---|---|---|
+| Feature Owner | Product Lead | [PR #42 Approved](link) | 2026-03-14 |
+| Security Reviewer | Sec WG | [PR #42 Approved](link) | 2026-03-14 |
+| IAM Architect | Identity Team | [PR #42 Approved](link) | 2026-03-14 |

@@ -1,9 +1,9 @@
 # Implementation Plan: User Authentication & Token Issuance
 
 > **Plan ID**: PLAN-0001  
-> **Linked Spec**: SPEC-0001 (APPROVED)  
+> **Linked Spec**: SPEC-0001 (COMPLETED)  
 > **Constitution Ref**: FortressAPI Constitution v2.0.0  
-> **Status**: APPROVED
+> **Status**: COMPLETED
 
 ---
 

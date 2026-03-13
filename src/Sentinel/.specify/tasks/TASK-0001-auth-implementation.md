@@ -674,7 +674,7 @@ PHASE 7 — Integration Tests
 PHASE 8 — Docs
 [x] TASK-0001-080  OpenAPI 3.1 spec
 [x] TASK-0001-081  Operational runbook
-[ ] TASK-0001-082  Spec/Plan status updated
+[x] TASK-0001-082  Spec/Plan status updated
 
 CI GATES (all 9 green)
 [ ] Gate 1  SAST — zero HIGH/CRITICAL

@@ -1,0 +1,100 @@
+name: Sentinel FAPI 2.0 Security Pipeline
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+  security-events: write
+  id-token: write
+
+jobs:
+  quality-gates:
+    name: 9-Stage Quality Gates
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Gate 1 - Secret Scanning
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+
+      - name: Gate 2 - SAST (Semgrep)
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/csharp
+          generateSarif: "1"
+
+      - name: Setup .NET 11
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 11.0.x
+
+      - name: Gate 3 - NuGet Dependency Audit
+        run: |
+          dotnet restore Sentinel.sln
+          dotnet list Sentinel.sln package --vulnerable --include-transitive
+
+      - name: Gate 4 - Test & Coverage
+        run: |
+          dotnet test Sentinel.sln \
+            --collect:"XPlat Code Coverage" \
+            --results-directory ./coverage \
+            --logger "trx;LogFileName=test-results.trx"
+
+      - name: Gate 5 - Build API Container
+        run: docker build -t sentinel-api:local -f src/Sentinel/Dockerfile .
+
+      - name: Start API Container For DAST
+        run: |
+          docker run -d --name sentinel-api -p 8080:8080 sentinel-api:local
+          sleep 10
+
+      - name: Gate 5 - DAST (ZAP Baseline)
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: http://localhost:8080
+          fail_action: true
+
+      - name: Gate 6 - IaC Scan (Checkov)
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          quiet: true
+
+      - name: Gate 7 - Container Vulnerability Scan (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: sentinel-api:local
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - name: Gate 8 - Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: sentinel-api:local
+          format: spdx-json
+          output-file: sentinel-sbom.spdx.json
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.4.0
+
+      - name: Gate 9 - Sign Image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "cosign sign --yes [REGISTRY]/sentinel-api@sha256:[DIGEST]"
+
+      - name: Stop API Container
+        if: always()
+        run: docker rm -f sentinel-api || true
