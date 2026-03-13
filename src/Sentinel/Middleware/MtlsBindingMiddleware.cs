@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace Sentinel.Middleware;
 
-public sealed class MtlsValidationMiddleware(RequestDelegate next, ILogger<MtlsValidationMiddleware> logger)
+public sealed class MtlsBindingMiddleware(RequestDelegate next, ILogger<MtlsBindingMiddleware> logger)
 {
     public async Task InvokeAsync(HttpContext context)
     {

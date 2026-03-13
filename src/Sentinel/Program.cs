@@ -13,6 +13,15 @@ using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Middleware;
 using System.Threading.RateLimiting;
 
+AppContext.SetSwitch("Switch.System.Security.Cryptography.UseLegacyFipsThrow", false);
+
+if (OperatingSystem.IsLinux()
+    && File.Exists("/proc/sys/crypto/fips_enabled")
+    && File.ReadAllText("/proc/sys/crypto/fips_enabled").Trim() == "1")
+{
+    Console.WriteLine("Sentinel API is running in FIPS-enabled mode.");
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.WebHost.ConfigureKestrel(options =>
@@ -193,6 +202,15 @@ builder.Services.AddAuthorization(options =>
         .RequireClaim("acr")
         .Build();
 
+    options.AddPolicy("ElevatedAccess", policy =>
+        policy.RequireAuthenticatedUser()
+            .RequireClaim("acr", "acr3")
+            .RequireAssertion(context =>
+            {
+                var clearance = context.User.FindFirst("security_clearance")?.Value;
+                return clearance is "top-secret" or "classified";
+            }));
+
     options.AddPolicy("ReadProfile", policy =>
         policy.RequireAuthenticatedUser()
             .AddRequirements(
@@ -219,7 +237,7 @@ app.UseHttpsRedirection();
 app.UseRouting();
 
 app.UseAuthentication();
-app.UseMiddleware<MtlsValidationMiddleware>();
+app.UseMiddleware<MtlsBindingMiddleware>();
 app.UseMiddleware<AcrValidationMiddleware>();
 app.UseAuthorization();
 

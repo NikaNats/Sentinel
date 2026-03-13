@@ -8,7 +8,7 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace Sentinel.Tests.Unit;
 
-public sealed class MtlsValidationMiddlewareTests
+public sealed class MtlsBindingMiddlewareTests
 {
     [Fact]
     public async Task InvokeAsync_WhenTokenIsMtlsBoundAndCertificateMissing_ReturnsForbidden()
@@ -18,7 +18,7 @@ public sealed class MtlsValidationMiddlewareTests
         var context = CreateAuthenticatedContext($"{{\"x5t#S256\":\"{expectedThumbprint}\"}}");
 
         RequestDelegate next = _ => Task.CompletedTask;
-        var middleware = new MtlsValidationMiddleware(next, NullLogger<MtlsValidationMiddleware>.Instance);
+        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance);
 
         await middleware.InvokeAsync(context);
 
@@ -40,7 +40,7 @@ public sealed class MtlsValidationMiddlewareTests
             return Task.CompletedTask;
         };
 
-        var middleware = new MtlsValidationMiddleware(next, NullLogger<MtlsValidationMiddleware>.Instance);
+        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance);
 
         await middleware.InvokeAsync(context);
 
