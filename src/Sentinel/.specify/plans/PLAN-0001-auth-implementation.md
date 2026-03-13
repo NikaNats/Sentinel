@@ -641,16 +641,16 @@ public sealed class KeycloakFixture : IAsyncLifetime
 
 ## 10. Definition of Done
 
-- [ ] All SPEC-0001 functional requirements (FR-01 to FR-34) implemented and tested
-- [ ] All 14 threat model mitigations verified by integration tests
-- [ ] SAST: zero HIGH/CRITICAL findings
-- [ ] Dependency scan: zero CRITICAL CVEs
-- [ ] DPoP fail-closed Redis behavior verified
-- [ ] Algorithm rejection (RS256) verified
-- [ ] `ClockSkew = Zero` verified (expired tokens rejected immediately)
-- [ ] All security headers present on every response
-- [ ] OTel traces visible end-to-end in staging
-- [ ] SIEM alert rules deployed and tested with synthetic events
-- [ ] Keycloak config committed as IaC and applied via CI pipeline
-- [ ] OpenAPI 3.1 spec updated
-- [ ] Security reviewer PR approval on all security-tagged tasks
+- [x] All SPEC-0001 functional requirements (FR-01 to FR-34) implemented and tested
+- [x] All 14 threat model mitigations verified by integration tests
+- [x] SAST: zero HIGH/CRITICAL findings
+- [x] Dependency scan: zero CRITICAL CVEs
+- [x] DPoP fail-closed Redis behavior verified
+- [x] Algorithm rejection (RS256) verified
+- [x] `ClockSkew = Zero` verified (expired tokens rejected immediately)
+- [x] All security headers present on every response
+- [x] OTel traces visible end-to-end in staging
+- [x] SIEM alert rules deployed and tested with synthetic events
+- [x] Keycloak config committed as IaC and applied via CI pipeline
+- [x] OpenAPI 3.1 spec updated
+- [x] Security reviewer PR approval on all security-tagged tasks
