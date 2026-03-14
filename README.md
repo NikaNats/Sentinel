@@ -28,12 +28,14 @@ The current implementation provides:
 | [SRE_SOC_RUNBOOKS.md](./docs/SRE_SOC_RUNBOOKS.md) | SRE, SOC, On-Call | Monitoring, alerting, incident response procedures, troubleshooting guides, and maintenance checklists with bash/PowerShell commands |
 | [COMPLIANCE_AUDIT_MATRIX.md](./docs/COMPLIANCE_AUDIT_MATRIX.md) | Compliance, Auditors | Compliance framework mapping (OAuth 2.0, JWT, DPoP RFC 9449, FAPI 2.0 Baseline) with 40+ audit checklist items |
 | [OPENAPI_3_1.yaml](./docs/OPENAPI_3_1.yaml) | API Consumers | Formal OpenAPI 3.1 specification; machine-readable API contract for SDK generation and API gateway integration |
+| [BUILD_CONFIGURATION_GUIDE.md](./docs/BUILD_CONFIGURATION_GUIDE.md) | Developers, DevOps | Directory.Build.props explanation, build workflow, code analysis policy, AOT/reproducibility, and troubleshooting |
 
 **Quick Start by Role:**
 - **Client Developer:** Start with [SDK_LESS_INTEGRATION_GUIDE.md](./docs/SDK_LESS_INTEGRATION_GUIDE.md) and [OPENAPI_3_1.yaml](./docs/OPENAPI_3_1.yaml)
 - **SRE / Operations:** Start with [SRE_SOC_RUNBOOKS.md](./docs/SRE_SOC_RUNBOOKS.md)
 - **Security / Compliance:** Start with [LIVING_THREAT_MODEL.md](./docs/LIVING_THREAT_MODEL.md) and [COMPLIANCE_AUDIT_MATRIX.md](./docs/COMPLIANCE_AUDIT_MATRIX.md)
 - **Architect / Lead Engineer:** Start with [ARCHITECTURE.md](./docs/ARCHITECTURE.md)
+- **Developer / DevOps:** Start with [BUILD_CONFIGURATION_GUIDE.md](./docs/BUILD_CONFIGURATION_GUIDE.md)
 
 ## Implementation Status
 
@@ -85,11 +87,21 @@ The API pipeline applies controls in a defense-in-depth sequence:
 ```text
 Sentinel/
 |- Sentinel.slnx
+|- Directory.Build.props               ← Centralized build config (all projects inherit)
 |- docker-compose.yml
 |- Makefile
 |- docs/
-|  |- runbooks/
-|     |- auth-token-issuance.md
+|  |- README.md                         ← Documentation index
+|  |- ARCHITECTURE.md                   ← ADRs (10 decisions)
+|  |- SDK_LESS_INTEGRATION_GUIDE.md     ← Client integration (5 languages)
+|  |- LIVING_THREAT_MODEL.md            ← Security threat analysis (21 threats)
+|  |- SRE_SOC_RUNBOOKS.md               ← Operational procedures
+|  |- COMPLIANCE_AUDIT_MATRIX.md        ← Regulatory framework mapping
+|  |- OPENAPI_3_1.yaml                  ← API specification (OpenAPI)
+|  |- BUILD_CONFIGURATION_GUIDE.md      ← Build config explanation & workflow
+|- artifacts/                           ← Centralized build output (bin/obj)
+|  |- bin/
+|  |- obj/
 |- infra/
 |  |- keycloak/
 |     |- realms/
@@ -111,6 +123,7 @@ Sentinel/
 |  |- Sentinel.Tests/
 |     |- Integration/
 |     |- Unit/
+|- artifacts/                          ← Build output (bin/obj centralized)
 ```
 
 ## Technology Stack
@@ -130,6 +143,24 @@ Sentinel/
 - .NET 11 SDK preview installed
 - Docker Desktop or Docker Engine
 - Optional: Trivy for image vulnerability scanning
+
+## Build Configuration
+
+**Directory.Build.props** provides centralized configuration for all projects:
+
+| Feature | Setting | Purpose |
+|---------|---------|---------|
+| **Artifacts Layout** | `UseArtifactsOutput: true` | Centralized bin/obj → artifacts/ folder (no tree pollution) |
+| **Framework** | `TargetFramework: net11.0` | .NET 11 preview (latest) |
+| **Code Analysis** | `AnalysisLevel: latest-all` | Aggressive code quality checks (catch issues early) |
+| **Warnings as Errors** | Release/CI only | Zero-warning policy; enforced at CI stage |
+| **AOT Compatibility** | Enabled for executables | Native AOT readiness; trim-safe code analysis |
+| **Security** | NuGetAudit, ControlFlowGuard | Block vulnerable packages; enable Control Flow Guard |
+| **Reproducible Builds** | `Deterministic: true` | Dev machine binary = CI binary (no variance) |
+| **Language** | `Nullable: enable`, `ImplicitUsings: enable` | Modern C# with strict null safety |
+| **Lock Files** | `RestorePackagesWithLockFile: true` | Frozen transitive dependencies for reproducibility |
+
+All projects inherit these settings automatically; overrides in individual .csproj only when necessary.
 
 ## Quick Start
 

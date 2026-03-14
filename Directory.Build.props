@@ -1,0 +1,195 @@
+<Project>
+  <!--
+    ============================================================================
+    SENTINEL DIRECTORY.BUILD.PROPS
+    ============================================================================
+    
+    Centralized build configuration for all projects in the Sentinel monorepo.
+    This file enforces:
+    - Strict code quality standards (zero-warning policy)
+    - Native AOT compatibility for production deployment
+    - Reproducible builds across dev/CI environments
+    - Security-hardened defaults (no unsafe serialization, CFG enabled)
+    - Centralized artifact layout (no bin/obj pollution)
+    - Consistent language & framework targeting (.NET 11 preview)
+    
+    Hierarchy: Automatically inherited by all .csproj files in subdirectories
+    
+    Updates: When modifying this file, bump the version comment and test with:
+      - dotnet build Sentinel.slnx -c Release
+      - dotnet test Sentinel.slnx
+    
+    ============================================================================
+  -->
+
+  <!-- SECTION 1: RECURSIVE HIERARCHY SUPPORT (Monorepo Pattern) -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))"
+          Condition="Exists($([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../')))"/>
+
+  <!-- SECTION 2: CENTRALIZED ARTIFACTS LAYOUT -->
+  <PropertyGroup>
+    <!-- .NET 8+ modern artifacts output: all bin/obj → artifacts/ folder -->
+    <UseArtifactsOutput>true</UseArtifactsOutput>
+    <ArtifactsPath>$(MSBuildThisFileDirectory)artifacts</ArtifactsPath>
+    
+    <!-- CI/Docker builds: disable interactive prompts -->
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true' Or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <!-- SECTION 3: SDK & LANGUAGE STANDARDS -->
+  <PropertyGroup>
+    <!-- Target .NET 11 preview (Sentinel's platform requirement) -->
+    <TargetFramework>net11.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- Configuration Binding Source Generator (.NET 8+)
+         Replaces reflection-based IConfiguration.Bind<T>() with compile-time codegen.
+         Fixes all Configure<T>, Bind<T>, BindConfiguration<T> AOT/trim warnings.
+    -->
+    <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
+  </PropertyGroup>
+
+  <!-- SECTION 4: AGGRESSIVE CODE ANALYSIS (ZERO-WARNING POLICY) -->
+  <PropertyGroup>
+    <!-- Run latest analyzers on all code -->
+    <AnalysisLevel>latest-all</AnalysisLevel>
+    <AnalysisMode>All</AnalysisMode>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+
+    <!-- Treat warnings as errors in Release & CI builds
+         Ensures code quality doesn't degrade over time.
+    -->
+    <TreatWarningsAsErrors Condition="'$(Configuration)' == 'Release' Or '$(CI)' == 'true'">true</TreatWarningsAsErrors>
+    <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
+
+    <!-- Suppress known noise and framework-level notices:
+         CS1591: Missing XML doc comments (acceptable for internal APIs)
+         CA1014: CLSCompliant is legacy (not relevant for ASP.NET Core)
+         NETSDK1210: Artifacts API informational notice
+         NU1608: Transitive package version mismatch (acceptable for preview packages)
+    -->
+    <NoWarn>$(NoWarn);CS1591;CA1014;NETSDK1210;NU1608</NoWarn>
+  </PropertyGroup>
+
+  <!-- SECTION 5: NATIVE AOT READINESS (Security + Deployment Flexibility) -->
+  <PropertyGroup Condition="'$(IsTestProject)' != 'true' And ('$(OutputType)' == 'Exe' Or '$(PublishAot)' == 'true')">
+    <!-- Enable AOT compatibility markers for executable projects -->
+    <IsAotCompatible>true</IsAotCompatible>
+
+    <!-- Single-file deployment safety analyzer -->
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
+
+    <!-- Trim analyzer for production-grade safety:
+         Catches reflection, dynamic dispatch, and serialization violations early.
+         Critical for security: eliminates hidden code paths at build time.
+    -->
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(IsTestProject)' != 'true' And '$(PublishAot)' == 'true'">
+    <IsTrimmable Condition="'$(OutputType)' != 'Library'">true</IsTrimmable>
+
+    <!-- AOT analyzer: strict enforcement for Sentinel API executable -->
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+
+    <!-- Debug builds still validate AOT compatibility (no warnings suppressed) -->
+    <SuppressTrimAnalysisWarnings Condition="'$(Configuration)' == 'Debug'">false</SuppressTrimAnalysisWarnings>
+  </PropertyGroup>
+
+  <!-- SECTION 6: REPRODUCIBLE BUILDS & CI/CD -->
+  <PropertyGroup>
+    <!-- Reproducible: dev machine binary = CI binary (no timestamp variance) -->
+    <Deterministic>true</Deterministic>
+
+    <!-- Debug symbols: embedded PDB for easier diagnosis (no separate .pdb files) -->
+    <DebugType>embedded</DebugType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+
+    <!-- NuGet lock files: freeze dependency versions
+         CI mode: strict lock file adherence (no upgrades or fallbacks)
+    -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
+  </PropertyGroup>
+
+  <!-- SECTION 7: SECURITY HARDENING -->
+  <PropertyGroup>
+    <!-- NuGet Audit: block vulnerable packages during restore
+         moderate: blocks only critical/high severity vulnerabilities
+         all mode: audit all dependencies (direct + transitive)
+    -->
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditLevel>moderate</NuGetAuditLevel>
+    <NuGetAuditMode>all</NuGetAuditMode>
+
+    <!-- Disable unsafe code patterns:
+         - LegacyFormatter: unsafe BinaryFormatter/LosFormatter (serialization gadget attacks)
+         - ControlFlowGuard: enable CFG for buffer overflow protection
+    -->
+    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+    <ControlFlowGuard>Guard</ControlFlowGuard>
+
+    <!-- Sentinel-specific security: enable security code analysis -->
+    <EnableSecurityCodeAnalysis>true</EnableSecurityCodeAnalysis>
+  </PropertyGroup>
+
+  <!-- SECTION 8: PERFORMANCE OPTIMIZATIONS -->
+  <PropertyGroup>
+    <!-- Accelerate Visual Studio builds -->
+    <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
+    
+    <!-- Transitive content files (e.g., appsettings.json from dependencies) -->
+    <MSBuildCopyContentTransitively>true</MSBuildCopyContentTransitively>
+  </PropertyGroup>
+
+  <!-- SECTION 9: PROJECT METADATA -->
+  <PropertyGroup>
+    <Authors>Nika Natsvlishvili</Authors>
+    <Company>NikaNats</Company>
+    <Copyright>Copyright © $([System.DateTime]::UtcNow.ToString('yyyy')) $(Company)</Copyright>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/NikaNats/Sentinel</RepositoryUrl>
+    <PackageTags>dpop;oauth2;fapi2;demoonstration-of-possession;security;authentication</PackageTags>
+  </PropertyGroup>
+
+  <!-- SECTION 10: GLOBAL ANALYZERS & CODE QUALITY -->
+  <ItemGroup>
+    <!-- Reproducible builds analyzer (validates deterministic output) -->
+    <PackageReference Include="DotNet.ReproducibleBuilds" PrivateAssets="all"/>
+
+    <!-- Code quality: IDisposable, thread-safety, concurrency patterns -->
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" PrivateAssets="all"/>
+    <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" PrivateAssets="all"/>
+
+    <!-- Security: Cryptography best practices, injection vulnerabilities -->
+    <PackageReference Include="SecurityCodeScan.VS2019" PrivateAssets="all"/>
+  </ItemGroup>
+
+  <!-- SECTION 11: BUILD STATUS & DIAGNOSTICS -->
+  <Target Name="PrintBuildConfig" BeforeTargets="Build">
+    <Message Importance="high" 
+             Text="════════════════════════════════════════════════════════════════════════════════════"/>
+    <Message Importance="high" 
+             Text="[SENTINEL BUILD] Project: $(MSBuildProjectName) | Config: $(Configuration) | Framework: $(TargetFramework)"/>
+    <Message Importance="high" 
+             Text="[SENTINEL BUILD] AOT-Compatible: $(IsAotCompatible) | Trimable: $(IsTrimmable) | CI: $(ContinuousIntegrationBuild)"/>
+    <Message Importance="high" 
+             Text="[SENTINEL BUILD] TreatWarningsAsErrors: $(TreatWarningsAsErrors) | CodeAnalysis: $(EnableNETAnalyzers)"/>
+    <Message Importance="high" 
+             Text="════════════════════════════════════════════════════════════════════════════════════"/>
+  </Target>
+
+  <!-- SECTION 12: TEST PROJECT CUSTOMIZATION -->
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <!-- Test projects: more lenient on missing docs, allow more warnings -->
+    <NoWarn>$(NoWarn);CS1591;IDE0180</NoWarn>
+    
+    <!-- Tests may use reflection (mocking frameworks); disable trim warnings -->
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+  </PropertyGroup>
+
+</Project>

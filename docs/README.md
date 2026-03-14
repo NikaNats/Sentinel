@@ -224,6 +224,51 @@ Complete documentation for the DPoP-protected authentication API. All documents 
 
 ---
 
+### 7. **BUILD_CONFIGURATION_GUIDE.md** - MSBuild Centralized Configuration
+**Audience:** Developers, DevOps, Build Engineers  
+**Purpose:** Understand and work with the centralized Directory.Build.props configuration  
+**Content:**
+- **Overview:**
+  - Purpose of Directory.Build.props (centralized MSBuild configuration)
+  - Inheritance model (automatic apply to all projects)
+  - Monorepo support
+
+- **Key Sections:**
+  - Centralized artifacts layout (UseArtifactsOutput: true)
+  - SDK & language standards (.NET 11, nullable, latest C#, config binding codegen)
+  - Aggressive code analysis (AnalysisLevel: latest-all, zero-warning policy)
+  - Native AOT compatibility (IsAotCompatible, EnableTrimAnalyzer, EnableAotAnalyzer)
+  - Reproducible builds (Deterministic, lock files, ContinuousIntegrationBuild)
+  - Security hardening (NuGetAudit, ControlFlowGuard, no BinaryFormatter)
+  - Code quality analyzers (ReproducibleBuilds, NetAnalyzers, Threading, SecurityCodeScan)
+  - Test project customization
+
+- **Workflow:**
+  - Local development (Debug build, warnings shown)
+  - Pre-commit validation (Release build, simulate CI)
+  - CI pipeline (strict mode, locked dependencies)
+
+- **Troubleshooting:**
+  - Build warnings in local but fails in CI
+  - NuGet audit violations
+  - Trim/AOT analysis warnings
+  - Security vulnerabilities detected
+
+- **Best Practices:**
+  - Commit lock files after restore
+  - Use `dotnet format` before push
+  - Never suppress warnings temporarily
+  - AOT-safe code patterns
+
+**Use Cases:**
+- Enforcing code quality standards across all projects
+- Preventing technical debt while developing
+- Setting up deterministic/reproducible builds for CI/CD
+- Enabling AOT deployment for production
+- Securing supply chain (NuGetAudit)
+
+---
+
 ## Documentation Quality Attributes
 
 ### Completeness
