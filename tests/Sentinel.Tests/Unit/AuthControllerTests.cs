@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Controllers;
+using Sentinel.Infrastructure.Cache;
+using System.Security.Claims;
 
 namespace Sentinel.Tests.Unit;
 
@@ -12,11 +14,13 @@ public sealed class AuthControllerTests
     public async Task Refresh_WhenReuseDetected_ReturnsTokenTheftProblemDetails()
     {
         var refreshService = new Mock<ITokenRefreshService>();
+        var revocationService = new Mock<IAuthRevocationService>();
+        var blacklistCache = new Mock<ISessionBlacklistCache>();
         refreshService
             .Setup(x => x.RefreshTokenAsync("old-refresh", "proof", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TokenRefreshResult(false, null, null, true));
 
-        var controller = new AuthController(refreshService.Object)
+        var controller = new AuthController(refreshService.Object, revocationService.Object, blacklistCache.Object)
         {
             ControllerContext = new ControllerContext
             {
@@ -38,11 +42,78 @@ public sealed class AuthControllerTests
     public async Task Refresh_WhenRefreshTokenMissing_ReturnsBadRequest()
     {
         var refreshService = new Mock<ITokenRefreshService>();
-        var controller = new AuthController(refreshService.Object);
+        var revocationService = new Mock<IAuthRevocationService>();
+        var blacklistCache = new Mock<ISessionBlacklistCache>();
+        var controller = new AuthController(refreshService.Object, revocationService.Object, blacklistCache.Object);
 
         var result = await controller.Refresh(new AuthController.RefreshRequest(string.Empty), CancellationToken.None);
 
         var badRequest = Assert.IsType<BadRequestObjectResult>(result);
         Assert.Equal(StatusCodes.Status400BadRequest, badRequest.StatusCode);
+    }
+
+    [Fact]
+    public async Task Logout_WhenAuthorized_BlacklistsSidAndRevokesCurrentSession()
+    {
+        var refreshService = new Mock<ITokenRefreshService>();
+        var revocationService = new Mock<IAuthRevocationService>();
+        var blacklistCache = new Mock<ISessionBlacklistCache>();
+
+        revocationService
+            .Setup(x => x.RevokeCurrentSessionAsync("refresh-token", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var controller = new AuthController(refreshService.Object, revocationService.Object, blacklistCache.Object)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity(
+                    [
+                        new Claim("sid", "sid-1"),
+                        new Claim("sub", "user-1")
+                    ], "test"))
+                }
+            }
+        };
+
+        var result = await controller.Logout(new AuthController.RevokeRequest("refresh-token"), CancellationToken.None);
+
+        Assert.IsType<NoContentResult>(result);
+        blacklistCache.Verify(x => x.BlacklistSessionAsync("sid-1", TimeSpan.FromMinutes(5), It.IsAny<CancellationToken>()), Times.Once);
+        revocationService.Verify(x => x.RevokeCurrentSessionAsync("refresh-token", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GlobalLogout_WhenRevocationFails_Returns500()
+    {
+        var refreshService = new Mock<ITokenRefreshService>();
+        var revocationService = new Mock<IAuthRevocationService>();
+        var blacklistCache = new Mock<ISessionBlacklistCache>();
+
+        revocationService
+            .Setup(x => x.RevokeAllSessionsAsync("user-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var controller = new AuthController(refreshService.Object, revocationService.Object, blacklistCache.Object)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity(
+                    [
+                        new Claim("sid", "sid-1"),
+                        new Claim("sub", "user-1")
+                    ], "test"))
+                }
+            }
+        };
+
+        var result = await controller.GlobalLogout(CancellationToken.None);
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status500InternalServerError, objectResult.StatusCode);
     }
 }

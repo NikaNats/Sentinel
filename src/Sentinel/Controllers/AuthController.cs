@@ -1,14 +1,19 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sentinel.Application.Auth.Interfaces;
+using Sentinel.Infrastructure.Cache;
 
 namespace Sentinel.Controllers;
 
 [ApiController]
 [Route("v1/auth")]
-public sealed class AuthController(ITokenRefreshService refreshService) : ControllerBase
+public sealed class AuthController(
+    ITokenRefreshService refreshService,
+    IAuthRevocationService revocationService,
+    ISessionBlacklistCache blacklistCache) : ControllerBase
 {
     public sealed record RefreshRequest(string RefreshToken);
+    public sealed record RevokeRequest(string RefreshToken);
 
     [HttpPost("refresh")]
     [AllowAnonymous]
@@ -54,5 +59,62 @@ public sealed class AuthController(ITokenRefreshService refreshService) : Contro
             Title = "Invalid refresh token",
             Status = StatusCodes.Status401Unauthorized
         });
+    }
+
+    [HttpPost("logout")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Logout([FromBody] RevokeRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Refresh token is required.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var sid = User.FindFirst("sid")?.Value;
+        if (!string.IsNullOrWhiteSpace(sid))
+        {
+            await blacklistCache.BlacklistSessionAsync(sid, TimeSpan.FromMinutes(5), ct);
+        }
+
+        await revocationService.RevokeCurrentSessionAsync(request.RefreshToken, ct);
+        return NoContent();
+    }
+
+    [HttpPost("logout-all")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GlobalLogout(CancellationToken ct)
+    {
+        var sub = User.FindFirst("sub")?.Value;
+        if (string.IsNullOrWhiteSpace(sub))
+        {
+            return Unauthorized();
+        }
+
+        var sid = User.FindFirst("sid")?.Value;
+        if (!string.IsNullOrWhiteSpace(sid))
+        {
+            await blacklistCache.BlacklistSessionAsync(sid, TimeSpan.FromMinutes(5), ct);
+        }
+
+        var success = await revocationService.RevokeAllSessionsAsync(sub, ct);
+        if (!success)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Title = "Failed to process global logout.",
+                Status = StatusCodes.Status500InternalServerError
+            });
+        }
+
+        return NoContent();
     }
 }

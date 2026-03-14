@@ -74,6 +74,7 @@ builder.Services.AddSingleton<ISessionBlacklistCache, SessionBlacklistCache>();
 builder.Services.AddSingleton<IDpopProofValidator, DpopProofValidator>();
 builder.Services.AddHttpClient<IUmaPermissionService, KeycloakUmaPermissionService>();
 builder.Services.AddHttpClient<ITokenRefreshService, KeycloakTokenRefreshService>();
+builder.Services.AddHttpClient<IAuthRevocationService, KeycloakAuthRevocationService>();
 builder.Services.AddSingleton<ILogoutTokenValidator, LogoutTokenValidator>();
 builder.Services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
 builder.Services.AddSingleton<IAuthorizationHandler, AcrAuthorizationHandler>();
