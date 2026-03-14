@@ -59,7 +59,7 @@ The API pipeline applies controls in a defense-in-depth sequence:
 
 ```text
 Sentinel/
-|- Sentinel.sln
+|- Sentinel.slnx
 |- docker-compose.yml
 |- Makefile
 |- docs/
@@ -111,9 +111,9 @@ Sentinel/
 ### 1. Restore, Build, Test
 
 ```powershell
-dotnet restore Sentinel.sln --locked-mode
-dotnet build Sentinel.sln -c Release
-dotnet test Sentinel.sln
+dotnet restore Sentinel.slnx --locked-mode
+dotnet build Sentinel.slnx -c Release
+dotnet test Sentinel.slnx
 ```
 
 ### 2. Start Local Infrastructure And API With Docker Compose

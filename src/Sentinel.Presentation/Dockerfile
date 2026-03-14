@@ -3,9 +3,9 @@ FROM mcr.microsoft.com/dotnet/sdk:11.0-preview AS build
 WORKDIR /src
 
 # Restore with lock-file enforcement for deterministic dependencies.
-COPY ["Sentinel.sln", "./"]
+COPY ["Sentinel.slnx", "./"]
 COPY ["src/Sentinel.Presentation/Sentinel.Presentation.csproj", "src/Sentinel.Presentation/"]
-RUN dotnet restore "Sentinel.sln" --locked-mode
+RUN dotnet restore "Sentinel.slnx" --locked-mode
 
 # Copy source and publish.
 COPY . .

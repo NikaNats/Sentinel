@@ -39,12 +39,12 @@ jobs:
 
       - name: Gate 3 - NuGet Dependency Audit
         run: |
-          dotnet restore Sentinel.sln
-          dotnet list Sentinel.sln package --vulnerable --include-transitive
+          dotnet restore Sentinel.slnx
+          dotnet list Sentinel.slnx package --vulnerable --include-transitive
 
       - name: Gate 4 - Test & Coverage
         run: |
-          dotnet test Sentinel.sln \
+          dotnet test Sentinel.slnx \
             --collect:"XPlat Code Coverage" \
             --results-directory ./coverage \
             --logger "trx;LogFileName=test-results.trx"
