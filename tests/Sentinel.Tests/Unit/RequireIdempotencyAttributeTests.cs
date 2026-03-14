@@ -32,7 +32,10 @@ public sealed class RequireIdempotencyAttributeTests
         var attribute = new RequireIdempotencyAttribute();
         var context = CreateActionExecutingContext(db =>
         {
-            db.SetReturnsDefault(Task.FromResult(false));
+            db.Setup(x => x.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan?>(), When.NotExists, It.IsAny<CommandFlags>()))
+                .ReturnsAsync(false);
+            db.Setup(x => x.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+                .ReturnsAsync("IN_PROGRESS");
         });
         context.HttpContext.Request.Headers["Idempotency-Key"] = "dup-1";
 
@@ -40,6 +43,25 @@ public sealed class RequireIdempotencyAttributeTests
 
         var result = Assert.IsType<ConflictObjectResult>(context.Result);
         Assert.Equal(StatusCodes.Status409Conflict, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task OnActionExecutionAsync_WhenDuplicateCompletedRequest_ReturnsNoContent()
+    {
+        var attribute = new RequireIdempotencyAttribute();
+        var context = CreateActionExecutingContext(db =>
+        {
+            db.Setup(x => x.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan?>(), When.NotExists, It.IsAny<CommandFlags>()))
+                .ReturnsAsync(false);
+            db.Setup(x => x.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+                .ReturnsAsync("COMPLETED");
+        });
+        context.HttpContext.Request.Headers["Idempotency-Key"] = "done-1";
+
+        await attribute.OnActionExecutionAsync(context, () => throw new InvalidOperationException("should not execute"));
+
+        var result = Assert.IsType<NoContentResult>(context.Result);
+        Assert.Equal(StatusCodes.Status204NoContent, result.StatusCode);
     }
 
     [Fact]

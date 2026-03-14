@@ -13,7 +13,7 @@ public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProof
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
 
-    public async Task<DpopValidationResult> ValidateAsync(string dpopHeader, string accessToken, string httpMethod, string httpUrl, CancellationToken ct)
+    public async Task<DpopValidationResult> ValidateAsync(string dpopHeader, string accessToken, string httpMethod, string httpUrl, string? expectedNonce, CancellationToken ct)
     {
         var startedAt = Stopwatch.GetTimestamp();
         using var activity = AuthTelemetry.Source.StartActivity("auth.dpop.validate", ActivityKind.Internal);
@@ -99,6 +99,17 @@ public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProof
                 return result;
             }
 
+            if (!string.IsNullOrWhiteSpace(expectedNonce))
+            {
+                if (!dpopToken.TryGetPayloadValue<string>("nonce", out var proofNonce)
+                    || !string.Equals(proofNonce, expectedNonce, StringComparison.Ordinal))
+                {
+                    activity?.SetTag("auth.result", "nonce_mismatch");
+                    result.Error = "use_dpop_nonce";
+                    return result;
+                }
+            }
+
             var iatTime = DateTimeOffset.FromUnixTimeSeconds(iat);
             var now = DateTimeOffset.UtcNow;
             if (iatTime < now.AddSeconds(-60) || iatTime > now.AddSeconds(5))
@@ -123,14 +134,12 @@ public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProof
                 return result;
             }
 
-            var isReplayed = await replayCache.ExistsAsync($"dpop:{jti}", ct);
-            if (isReplayed)
+            var stored = await replayCache.TryStoreIfNotExistsAsync($"dpop:{jti}", TimeSpan.FromMinutes(2), ct);
+            if (!stored)
             {
                 activity?.SetTag("auth.result", "replayed_jti");
                 return result;
             }
-
-            await replayCache.StoreAsync($"dpop:{jti}", TimeSpan.FromMinutes(2), ct);
 
             result.IsValid = true;
             result.NewNonce = GenerateNewNonce();

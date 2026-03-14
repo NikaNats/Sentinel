@@ -12,7 +12,8 @@ namespace Sentinel.Controllers;
 public sealed class AuthController(
     ITokenRefreshService refreshService,
     IAuthRevocationService revocationService,
-    ISessionBlacklistCache blacklistCache) : ControllerBase
+    ISessionBlacklistCache blacklistCache,
+    IConfiguration configuration) : ControllerBase
 {
     public sealed record RefreshRequest(string RefreshToken);
     public sealed record RevokeRequest(string RefreshToken);
@@ -122,7 +123,21 @@ public sealed class AuthController(
         var sid = User.FindFirst("sid")?.Value;
         if (!string.IsNullOrWhiteSpace(sid))
         {
-            await blacklistCache.BlacklistSessionAsync(sid, TimeSpan.FromMinutes(5), ct);
+            await blacklistCache.BlacklistSessionAsync(sid, ResolveSessionBlacklistTtl(configuration), ct);
         }
+    }
+
+    private static TimeSpan ResolveSessionBlacklistTtl(IConfiguration configuration)
+    {
+        var configuredSeconds = configuration.GetValue<int?>("Keycloak:SsoSessionMaxLifespanSeconds")
+            ?? configuration.GetValue<int?>("Keycloak:SessionMaxLifespanSeconds")
+            ?? 28_800;
+
+        if (configuredSeconds <= 0)
+        {
+            configuredSeconds = 28_800;
+        }
+
+        return TimeSpan.FromSeconds(configuredSeconds);
     }
 }

@@ -16,8 +16,8 @@ public sealed class DpopProofValidatorTests
     public DpopProofValidatorTests()
     {
         replayCache
-            .Setup(x => x.ExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(ValueTask.FromResult(false));
+            .Setup(x => x.TryStoreIfNotExistsAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
     }
 
     [Fact]
@@ -26,7 +26,7 @@ public sealed class DpopProofValidatorTests
         var sut = new DpopProofValidator(replayCache.Object);
         var (dpopProof, accessToken) = CreateValidProofAndToken("POST", "https://localhost/v1/profile");
 
-        var result = await sut.ValidateAsync(dpopProof, accessToken, "POST", "https://localhost/v1/profile", CancellationToken.None);
+        var result = await sut.ValidateAsync(dpopProof, accessToken, "POST", "https://localhost/v1/profile", expectedNonce: null, CancellationToken.None);
 
         Assert.True(result.IsValid);
         Assert.NotEmpty(result.NewNonce);
@@ -36,18 +36,30 @@ public sealed class DpopProofValidatorTests
     public async Task ValidateAsync_WithReplayedJti_ReturnsInvalid()
     {
         replayCache
-            .Setup(x => x.ExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(ValueTask.FromResult(true));
+            .Setup(x => x.TryStoreIfNotExistsAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
 
         var sut = new DpopProofValidator(replayCache.Object);
         var (dpopProof, accessToken) = CreateValidProofAndToken("POST", "https://localhost/v1/profile");
 
-        var result = await sut.ValidateAsync(dpopProof, accessToken, "POST", "https://localhost/v1/profile", CancellationToken.None);
+        var result = await sut.ValidateAsync(dpopProof, accessToken, "POST", "https://localhost/v1/profile", expectedNonce: null, CancellationToken.None);
 
         Assert.False(result.IsValid);
     }
 
-    private static (string DpopProof, string AccessToken) CreateValidProofAndToken(string method, string url)
+    [Fact]
+    public async Task ValidateAsync_WhenExpectedNonceIsMissing_ReturnsUseDpopNonceError()
+    {
+        var sut = new DpopProofValidator(replayCache.Object);
+        var (dpopProof, accessToken) = CreateValidProofAndToken("POST", "https://localhost/v1/profile", nonce: null);
+
+        var result = await sut.ValidateAsync(dpopProof, accessToken, "POST", "https://localhost/v1/profile", expectedNonce: "expected-nonce", CancellationToken.None);
+
+        Assert.False(result.IsValid);
+        Assert.Equal("use_dpop_nonce", result.Error);
+    }
+
+    private static (string DpopProof, string AccessToken) CreateValidProofAndToken(string method, string url, string? nonce = null)
     {
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var securityKey = new ECDsaSecurityKey(ecdsa) { KeyId = Guid.NewGuid().ToString("N") };
@@ -64,16 +76,23 @@ public sealed class DpopProofValidatorTests
         var jkt = ComputeThumbprint(jwkObject);
         var handler = new JsonWebTokenHandler();
 
+        var dpopClaims = new Dictionary<string, object>
+        {
+            ["jti"] = Guid.NewGuid().ToString("N"),
+            ["htm"] = method,
+            ["htu"] = url,
+            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+        };
+
+        if (!string.IsNullOrWhiteSpace(nonce))
+        {
+            dpopClaims["nonce"] = nonce;
+        }
+
         var dpopDescriptor = new SecurityTokenDescriptor
         {
             Issuer = "client",
-            Claims = new Dictionary<string, object>
-            {
-                ["jti"] = Guid.NewGuid().ToString("N"),
-                ["htm"] = method,
-                ["htu"] = url,
-                ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-            },
+            Claims = dpopClaims,
             SigningCredentials = new SigningCredentials(securityKey, SecurityAlgorithms.EcdsaSha256),
             TokenType = "dpop+jwt",
             AdditionalHeaderClaims = new Dictionary<string, object>

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
@@ -43,6 +44,7 @@ public static class InfrastructureServiceCollectionExtensions
 
         services.AddSingleton<IEncryptionService, AesGcmEncryptionService>();
         services.AddSingleton<IJtiReplayCache, JtiReplayCache>();
+        services.AddSingleton<IDpopNonceStore, DpopNonceStore>();
         services.AddSingleton<ISessionBlacklistCache, SessionBlacklistCache>();
         services.AddSingleton<IDpopProofValidator, DpopProofValidator>();
         services.AddSingleton<ILogoutTokenValidator, LogoutTokenValidator>();
@@ -111,16 +113,6 @@ public static class InfrastructureServiceCollectionExtensions
                                 return;
                             }
 
-                            var isReplayed = await cache.ExistsAsync(jti, context.HttpContext.RequestAborted);
-                            if (isReplayed)
-                            {
-                                var emitter = context.HttpContext.RequestServices.GetRequiredService<ISecurityEventEmitter>();
-                                var ipHash = SecurityContextHasher.HashIp(context.HttpContext);
-                                emitter.EmitTokenReplay(jti, context.Principal?.FindFirst("sub")?.Value, "sentinel-api-client", ipHash);
-                                context.Fail("Token replay detected.");
-                                return;
-                            }
-
                             if (!long.TryParse(exp, out var expUnix))
                             {
                                 context.Fail("Invalid exp claim.");
@@ -129,9 +121,20 @@ public static class InfrastructureServiceCollectionExtensions
 
                             var expTime = DateTimeOffset.FromUnixTimeSeconds(expUnix);
                             var remainingTtl = expTime - DateTimeOffset.UtcNow;
-                            if (remainingTtl > TimeSpan.Zero)
+                            if (remainingTtl <= TimeSpan.Zero)
                             {
-                                await cache.StoreAsync(jti, remainingTtl, context.HttpContext.RequestAborted);
+                                context.Fail("Token is already expired.");
+                                return;
+                            }
+
+                            var stored = await cache.TryStoreIfNotExistsAsync(jti, remainingTtl, context.HttpContext.RequestAborted);
+                            if (!stored)
+                            {
+                                var emitter = context.HttpContext.RequestServices.GetRequiredService<ISecurityEventEmitter>();
+                                var ipHash = SecurityContextHasher.HashIp(context.HttpContext);
+                                emitter.EmitTokenReplay(jti, context.Principal?.FindFirst("sub")?.Value, "sentinel-api-client", ipHash);
+                                context.Fail("Token replay detected.");
+                                return;
                             }
 
                             var sid = context.Principal?.FindFirst("sid")?.Value;
@@ -149,12 +152,26 @@ public static class InfrastructureServiceCollectionExtensions
                                 }
                             }
                         }
-                        catch (ReplayCacheUnavailableException)
+                        catch (ReplayCacheUnavailableException ex)
                         {
                             var emitter = context.HttpContext.RequestServices.GetRequiredService<ISecurityEventEmitter>();
                             emitter.EmitAuthFailure("replay_cache_unavailable", context.Principal?.FindFirst("sub")?.Value, SecurityContextHasher.HashIp(context.HttpContext));
-                            context.HttpContext.Items["ReplayCacheUnavailable"] = true;
-                            context.Fail("Replay cache unavailable.");
+                            context.Fail(ex);
+                        }
+                    },
+                    OnChallenge = async context =>
+                    {
+                        if (context.AuthenticateFailure is ReplayCacheUnavailableException)
+                        {
+                            context.HandleResponse();
+                            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                            await context.Response.WriteAsJsonAsync(new ProblemDetails
+                            {
+                                Type = "/errors/replay-cache-unavailable",
+                                Title = "Security subsystem unavailable",
+                                Detail = "Token replay protection is temporarily unavailable.",
+                                Status = StatusCodes.Status503ServiceUnavailable
+                            });
                         }
                     }
                 };

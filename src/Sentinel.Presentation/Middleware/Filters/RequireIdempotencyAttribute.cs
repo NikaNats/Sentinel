@@ -39,11 +39,18 @@ public sealed class RequireIdempotencyAttribute : Attribute, IAsyncActionFilter
 
         if (!lockAcquired)
         {
+            var currentState = await db.StringGetAsync(redisKey);
+            if (string.Equals(currentState.ToString(), "COMPLETED", StringComparison.Ordinal))
+            {
+                context.Result = new NoContentResult();
+                return;
+            }
+
             context.Result = new ConflictObjectResult(new ProblemDetails
             {
                 Type = "/errors/idempotency-conflict",
-                Title = "Request Already Processed or In Progress",
-                Detail = "A request with this Idempotency-Key is currently running or has already been completed.",
+                Title = "Request In Progress",
+                Detail = "A request with this Idempotency-Key is currently running.",
                 Status = StatusCodes.Status409Conflict
             });
             return;

@@ -19,11 +19,18 @@ public static class ApiServiceCollectionExtensions
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+            var identityLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
             {
-                var key = httpContext.Request.Path.HasValue ? httpContext.Request.Path.Value! : "default";
+                var sub = httpContext.User.FindFirst("sub")?.Value;
+                var clientId = httpContext.User.FindFirst("client_id")?.Value ?? httpContext.User.FindFirst("azp")?.Value;
 
-                return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+                var key = !string.IsNullOrWhiteSpace(sub)
+                    ? $"sub:{sub}|client:{clientId ?? "unknown"}"
+                    : !string.IsNullOrWhiteSpace(clientId)
+                        ? $"client:{clientId}"
+                        : "anonymous";
+
+                return RateLimitPartition.GetFixedWindowLimiter($"identity:{key}", _ => new FixedWindowRateLimiterOptions
                 {
                     PermitLimit = 100,
                     Window = TimeSpan.FromMinutes(1),
@@ -31,6 +38,20 @@ public static class ApiServiceCollectionExtensions
                     QueueLimit = 2
                 });
             });
+
+            var ipLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+            {
+                var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+                return RateLimitPartition.GetFixedWindowLimiter($"ip:{ip}", _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 100,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                    QueueLimit = 2
+                });
+            });
+
+            options.GlobalLimiter = PartitionedRateLimiter.CreateChained(identityLimiter, ipLimiter);
         });
 
         services.AddExceptionHandler<GlobalExceptionHandler>();
@@ -84,14 +105,13 @@ public static class ApiServiceCollectionExtensions
         }
 
         app.UseMiddleware<SecurityHeadersMiddleware>();
-        app.UseRateLimiter();
-        app.UseMiddleware<DpopValidationMiddleware>();
-        app.UseMiddleware<ReplayCacheFailureMiddleware>();
 
         app.UseHttpsRedirection();
         app.UseRouting();
 
         app.UseAuthentication();
+        app.UseRateLimiter();
+        app.UseMiddleware<DpopValidationMiddleware>();
         app.UseMiddleware<MtlsBindingMiddleware>();
         app.UseMiddleware<AcrValidationMiddleware>();
         app.UseAuthorization();
