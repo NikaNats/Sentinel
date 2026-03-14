@@ -5,6 +5,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Security, Analyzers & Reproducible Builds -->
+    <PackageVersion Include="DotNet.ReproducibleBuilds" Version="2.0.2" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.201" />
+    <PackageVersion Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" />
+
     <!-- ASP.NET Core & Web APIs -->
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.Certificate" Version="11.0.0-preview.1.26104.118" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="11.0.0-preview.1.26104.118" />
