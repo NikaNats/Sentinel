@@ -72,6 +72,7 @@ builder.Services.AddStackExchangeRedisCache(options =>
 builder.Services.AddSingleton<IJtiReplayCache, JtiReplayCache>();
 builder.Services.AddSingleton<IDpopProofValidator, DpopProofValidator>();
 builder.Services.AddHttpClient<IUmaPermissionService, KeycloakUmaPermissionService>();
+builder.Services.AddHttpClient<ITokenRefreshService, KeycloakTokenRefreshService>();
 builder.Services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
 builder.Services.AddSingleton<IAuthorizationHandler, AcrAuthorizationHandler>();
 builder.Services.AddSingleton<IAuthorizationHandler, ScopeAuthorizationHandler>();
