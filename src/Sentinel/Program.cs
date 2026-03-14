@@ -70,9 +70,11 @@ builder.Services.AddStackExchangeRedisCache(options =>
 });
 
 builder.Services.AddSingleton<IJtiReplayCache, JtiReplayCache>();
+builder.Services.AddSingleton<ISessionBlacklistCache, SessionBlacklistCache>();
 builder.Services.AddSingleton<IDpopProofValidator, DpopProofValidator>();
 builder.Services.AddHttpClient<IUmaPermissionService, KeycloakUmaPermissionService>();
 builder.Services.AddHttpClient<ITokenRefreshService, KeycloakTokenRefreshService>();
+builder.Services.AddSingleton<ILogoutTokenValidator, LogoutTokenValidator>();
 builder.Services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
 builder.Services.AddSingleton<IAuthorizationHandler, AcrAuthorizationHandler>();
 builder.Services.AddSingleton<IAuthorizationHandler, ScopeAuthorizationHandler>();
@@ -176,6 +178,21 @@ builder.Services
                     if (remainingTtl > TimeSpan.Zero)
                     {
                         await cache.StoreAsync(jti, remainingTtl, context.HttpContext.RequestAborted);
+                    }
+
+                    var sid = context.Principal?.FindFirst("sid")?.Value;
+                    if (!string.IsNullOrWhiteSpace(sid))
+                    {
+                        var blacklistCache = context.HttpContext.RequestServices.GetRequiredService<ISessionBlacklistCache>();
+                        var isBlacklisted = await blacklistCache.IsSessionBlacklistedAsync(sid, context.HttpContext.RequestAborted);
+                        if (isBlacklisted)
+                        {
+                            var emitter = context.HttpContext.RequestServices.GetRequiredService<ISecurityEventEmitter>();
+                            var ipHash = SecurityContextHasher.HashIp(context.HttpContext);
+                            emitter.EmitAuthFailure("revoked_session_usage_attempt", context.Principal?.FindFirst("sub")?.Value, ipHash);
+                            context.Fail("Session has been terminated.");
+                            return;
+                        }
                     }
                 }
                 catch (ReplayCacheUnavailableException)
