@@ -66,7 +66,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
 
     <!-- 
-      Suppressed Rules (Legacy, Stylistic, Framework-Specific):
+      Suppressed Rules (Legacy, Stylistic, Framework-Specific, Performance):
       
       CS1591: Missing XML docs - Suppressed because GenerateDocumentationFile forces XML on everything
       CA1014: CLSCompliant (legacy) - Not relevant for ASP.NET Core / OAuth 2.0 APIs
@@ -76,14 +76,19 @@
       IDE0008: Use var instead of explicit type - Stylistic opinion
       IDE0058: Unused expression statements - Stylistic; DI setup chains intentionally don't assign
       IDE0046: Use expression-bodied members - Stylistic alternative syntax
+      IDE0022: Block bodies vs expression-bodied - Stylistic preference
       
       CA1716: Sub parameter name conflicts with VB.NET keyword - OAuth/JWT standard requires "sub" claim (RFC 7519)
       CA2007: ConfigureAwait(false) everywhere - Legacy UI app requirement; ASP.NET Core has no SynchronizationContext
       CA1062: Manual null checks - Redundant with Nullable Reference Types (<Nullable>enable</Nullable>)
       CA1054: URI parameters - Framework-specific; acceptable for routing/OpenAPI contexts
       CA1032: Exception constructors - Framework-specific exception boilerplate
+      
+      CA1848: LoggerMessage source generator - Performance optimization; deferred to "Polish Phase"
+      CA1031: Catching generic Exception - Intentional for fail-closed security middleware (RFC 9449 compliance)
+      CA1873: Equality operator performance - Micro-optimization; defer to after security implementation stabilizes
     -->
-    <NoWarn>$(NoWarn);CS1591;CA1014;NU1608;IDE0160;IDE0008;IDE0058;IDE0046;CA1716;CA2007;CA1062;CA1054;CA1032</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;CA1014;NU1608;IDE0160;IDE0008;IDE0058;IDE0046;IDE0022;CA1716;CA2007;CA1062;CA1054;CA1032;CA1848;CA1031;CA1873</NoWarn>
   </PropertyGroup>
 
   <!-- SECTION 5: NATIVE AOT & TRIMMING READINESS -->
