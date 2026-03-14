@@ -20,6 +20,7 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
 
     private readonly RedisContainer redisContainer;
     private readonly KeycloakContainer keycloakContainer;
+    private string redisConnectionString = "localhost:6379";
 
     public RealKeycloakApiFactory()
     {
@@ -50,7 +51,7 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
                 ["Keycloak:Authority"] = Authority,
                 ["Keycloak:Audience"] = ClientId,
                 ["Keycloak:RequireHttpsMetadata"] = "false",
-                ["ConnectionStrings:Redis"] = redisContainer.GetConnectionString(),
+                ["ConnectionStrings:Redis"] = redisConnectionString,
                 ["FeatureFlags:Auth:DpopFlow"] = "true"
             });
         });
@@ -59,11 +60,13 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
     public async Task InitializeAsync()
     {
         await redisContainer.StartAsync();
+        redisConnectionString = redisContainer.GetConnectionString();
         await keycloakContainer.StartAsync();
         var masterAuthority = $"{keycloakContainer.GetBaseAddress().ToString().TrimEnd('/')}/realms/master";
         await WaitForDiscoveryDocumentAsync(masterAuthority);
         await EnsureRealmProvisionedAsync();
         await WaitForDiscoveryDocumentAsync(Authority);
+        _ = CreateClient();
     }
 
     async Task IAsyncLifetime.DisposeAsync()

@@ -12,6 +12,7 @@ using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Cache;
 using Sentinel.Infrastructure.Cryptography;
 using Sentinel.Infrastructure.Telemetry;
+using StackExchange.Redis;
 
 namespace Sentinel.Infrastructure.DependencyInjection;
 
@@ -19,9 +20,25 @@ public static class InfrastructureServiceCollectionExtensions
 {
     public static IServiceCollection AddInfrastructureLayer(this IServiceCollection services, IConfiguration configuration)
     {
+        var redisConnectionString = configuration.GetConnectionString("Redis");
+
         services.AddStackExchangeRedisCache(options =>
         {
-            options.Configuration = configuration.GetConnectionString("Redis");
+            options.Configuration = redisConnectionString;
+        });
+
+        services.AddSingleton<IConnectionMultiplexer>(_ =>
+        {
+            if (string.IsNullOrWhiteSpace(redisConnectionString))
+            {
+                throw new InvalidOperationException("Redis connection string is not configured.");
+            }
+
+            var options = ConfigurationOptions.Parse(redisConnectionString);
+            options.AbortOnConnectFail = false;
+            options.ConnectRetry = 3;
+
+            return ConnectionMultiplexer.Connect(options);
         });
 
         services.AddSingleton<IEncryptionService, AesGcmEncryptionService>();

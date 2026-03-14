@@ -17,7 +17,7 @@ public sealed class AuthControllerTests
         var revocationService = new Mock<IAuthRevocationService>();
         var blacklistCache = new Mock<ISessionBlacklistCache>();
         refreshService
-            .Setup(x => x.RefreshTokenAsync("old-refresh", "proof", It.IsAny<CancellationToken>()))
+            .Setup(x => x.RefreshTokenAsync("old-refresh", "proof", It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TokenRefreshResult(false, null, null, true));
 
         var controller = new AuthController(refreshService.Object, revocationService.Object, blacklistCache.Object)

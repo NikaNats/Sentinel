@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Application.Auth.Interfaces;
+using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Middleware.Filters;
 
 namespace Sentinel.Controllers;
@@ -33,7 +34,8 @@ public sealed class AuthController(
         }
 
         var dpopProof = Request.Headers["DPoP"].ToString();
-        var result = await refreshService.RefreshTokenAsync(request.RefreshToken, dpopProof, ct);
+        var ipHash = SecurityContextHasher.HashIp(HttpContext);
+        var result = await refreshService.RefreshTokenAsync(request.RefreshToken, dpopProof, ipHash, ct);
 
         if (result.IsSuccess)
         {

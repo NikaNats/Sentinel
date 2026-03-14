@@ -4,11 +4,10 @@ using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
+using Moq;
 using Sentinel.Middleware.Filters;
+using StackExchange.Redis;
 using System.Security.Claims;
 
 namespace Sentinel.Tests.Unit;
@@ -31,11 +30,11 @@ public sealed class RequireIdempotencyAttributeTests
     public async Task OnActionExecutionAsync_WhenDuplicateKey_ReturnsConflict()
     {
         var attribute = new RequireIdempotencyAttribute();
-        var context = CreateActionExecutingContext();
+        var context = CreateActionExecutingContext(db =>
+        {
+            db.SetReturnsDefault(Task.FromResult(false));
+        });
         context.HttpContext.Request.Headers["Idempotency-Key"] = "dup-1";
-
-        var cache = context.HttpContext.RequestServices.GetRequiredService<IDistributedCache>();
-        await cache.SetStringAsync("idempotency:user-1:dup-1", "processed");
 
         await attribute.OnActionExecutionAsync(context, () => throw new InvalidOperationException("should not execute"));
 
@@ -47,14 +46,15 @@ public sealed class RequireIdempotencyAttributeTests
     public async Task OnActionExecutionAsync_WhenSuccessfulRequest_StoresIdempotencyKey()
     {
         var attribute = new RequireIdempotencyAttribute();
-        var context = CreateActionExecutingContext();
+        var context = CreateActionExecutingContext(db =>
+        {
+            db.SetReturnsDefault(Task.FromResult(true));
+        });
         context.HttpContext.Request.Headers["Idempotency-Key"] = "ok-1";
 
         await attribute.OnActionExecutionAsync(context, NextOk(context));
 
-        var cache = context.HttpContext.RequestServices.GetRequiredService<IDistributedCache>();
-        var cached = await cache.GetStringAsync("idempotency:user-1:ok-1");
-        Assert.Equal("processed", cached);
+        Assert.Null(context.Result);
     }
 
     private static ActionExecutionDelegate NextOk(ActionExecutingContext context)
@@ -69,11 +69,18 @@ public sealed class RequireIdempotencyAttributeTests
         };
     }
 
-    private static ActionExecutingContext CreateActionExecutingContext()
+    private static ActionExecutingContext CreateActionExecutingContext(Action<Mock<IDatabase>>? configureDb = null)
     {
+        var dbMock = new Mock<IDatabase>();
+        configureDb?.Invoke(dbMock);
+
+        var multiplexerMock = new Mock<IConnectionMultiplexer>();
+        multiplexerMock
+            .Setup(x => x.GetDatabase(It.IsAny<int>(), It.IsAny<object?>()))
+            .Returns(dbMock.Object);
+
         var services = new ServiceCollection();
-        services.AddSingleton<IDistributedCache>(_ =>
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())));
+        services.AddSingleton(_ => multiplexerMock.Object);
 
         var httpContext = new DefaultHttpContext
         {

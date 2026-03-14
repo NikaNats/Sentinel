@@ -12,7 +12,7 @@ public sealed class KeycloakTokenRefreshService(
     ISecurityEventEmitter securityEventEmitter,
     ILogger<KeycloakTokenRefreshService> logger) : ITokenRefreshService
 {
-    public async Task<TokenRefreshResult> RefreshTokenAsync(string refreshToken, string dpopProof, CancellationToken ct)
+    public async Task<TokenRefreshResult> RefreshTokenAsync(string refreshToken, string dpopProof, string clientIpHash, CancellationToken ct)
     {
         var authority = configuration["Keycloak:Authority"]?.TrimEnd('/');
         var clientId = configuration["Keycloak:Audience"];
@@ -59,7 +59,7 @@ public sealed class KeycloakTokenRefreshService(
             if (IsRefreshReuseDetected(response.StatusCode, responseContent))
             {
                 logger.LogCritical("CRITICAL: Refresh token reuse or invalid grant detected. Potential token theft.");
-                securityEventEmitter.EmitAuthFailure("refresh_token_reuse_detected", null, "unknown_ip");
+                securityEventEmitter.EmitAuthFailure("refresh_token_reuse_detected", sub: null, ipHash: clientIpHash);
                 return new TokenRefreshResult(false, null, null, true);
             }
 

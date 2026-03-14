@@ -12,6 +12,7 @@ namespace Sentinel.Tests.Integration.Fixtures;
 public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private readonly RedisContainer redisContainer;
+    private string redisConnectionString = "localhost:6379";
 
     public SentinelApiFactory()
     {
@@ -27,7 +28,7 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
                 ["Keycloak:Authority"] = "https://localhost:8443/realms/sentinel",
                 ["Keycloak:Audience"] = "sentinel-api",
                 ["Keycloak:RequireHttpsMetadata"] = "false",
-                ["ConnectionStrings:Redis"] = redisContainer.GetConnectionString(),
+                ["ConnectionStrings:Redis"] = redisConnectionString,
                 ["FeatureFlags:Auth:DpopFlow"] = "true"
             });
         });
@@ -49,6 +50,8 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
     public async Task InitializeAsync()
     {
         await redisContainer.StartAsync();
+        redisConnectionString = redisContainer.GetConnectionString();
+        _ = CreateClient();
     }
 
     async Task IAsyncLifetime.DisposeAsync()

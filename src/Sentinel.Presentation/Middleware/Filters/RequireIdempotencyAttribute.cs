@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
-using Microsoft.Extensions.Caching.Distributed;
+using StackExchange.Redis;
 
 namespace Sentinel.Middleware.Filters;
 
@@ -26,33 +26,46 @@ public sealed class RequireIdempotencyAttribute : Attribute, IAsyncActionFilter
         }
 
         var idempotencyKey = keyValues.ToString();
-        var cache = context.HttpContext.RequestServices.GetRequiredService<IDistributedCache>();
+        var redis = context.HttpContext.RequestServices.GetRequiredService<IConnectionMultiplexer>();
+        var db = redis.GetDatabase();
         var sub = context.HttpContext.User.FindFirst("sub")?.Value ?? "anonymous";
         var redisKey = $"idempotency:{sub}:{idempotencyKey}";
 
-        var exists = await cache.GetStringAsync(redisKey, context.HttpContext.RequestAborted);
-        if (exists is not null)
+        bool lockAcquired = await db.StringSetAsync(
+            redisKey,
+            "IN_PROGRESS",
+            TimeSpan.FromMinutes(5),
+            When.NotExists);
+
+        if (!lockAcquired)
         {
             context.Result = new ConflictObjectResult(new ProblemDetails
             {
                 Type = "/errors/idempotency-conflict",
-                Title = "Request Already Processed",
-                Detail = "A request with this Idempotency-Key has already been successfully processed.",
+                Title = "Request Already Processed or In Progress",
+                Detail = "A request with this Idempotency-Key is currently running or has already been completed.",
                 Status = StatusCodes.Status409Conflict
             });
             return;
         }
 
-        var executedContext = await next();
-
-        if (executedContext.Exception is null && IsSuccessfulResult(executedContext.Result))
+        try
         {
-            var options = new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(24)
-            };
+            var executedContext = await next();
 
-            await cache.SetStringAsync(redisKey, "processed", options, context.HttpContext.RequestAborted);
+            if (executedContext.Exception is null && IsSuccessfulResult(executedContext.Result))
+            {
+                await db.StringSetAsync(redisKey, "COMPLETED", TimeSpan.FromHours(24), When.Always);
+            }
+            else
+            {
+                await db.KeyDeleteAsync(redisKey);
+            }
+        }
+        catch
+        {
+            await db.KeyDeleteAsync(redisKey);
+            throw;
         }
     }
 

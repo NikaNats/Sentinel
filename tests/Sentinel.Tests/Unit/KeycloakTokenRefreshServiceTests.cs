@@ -24,7 +24,7 @@ public sealed class KeycloakTokenRefreshServiceTests
         var emitter = new Mock<ISecurityEventEmitter>();
         var sut = new KeycloakTokenRefreshService(httpClient, BuildConfig(), emitter.Object, NullLogger<KeycloakTokenRefreshService>.Instance);
 
-        var result = await sut.RefreshTokenAsync("old-refresh", "proof", CancellationToken.None);
+        var result = await sut.RefreshTokenAsync("old-refresh", "proof", "HASHED_IP", CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal("new-access", result.AccessToken);
@@ -45,11 +45,11 @@ public sealed class KeycloakTokenRefreshServiceTests
         var emitter = new Mock<ISecurityEventEmitter>();
         var sut = new KeycloakTokenRefreshService(httpClient, BuildConfig(), emitter.Object, NullLogger<KeycloakTokenRefreshService>.Instance);
 
-        var result = await sut.RefreshTokenAsync("stolen-refresh", "proof", CancellationToken.None);
+        var result = await sut.RefreshTokenAsync("stolen-refresh", "proof", "HASHED_IP", CancellationToken.None);
 
         Assert.False(result.IsSuccess);
         Assert.True(result.IsReuseDetected);
-        emitter.Verify(x => x.EmitAuthFailure("refresh_token_reuse_detected", null, "unknown_ip"), Times.Once);
+        emitter.Verify(x => x.EmitAuthFailure("refresh_token_reuse_detected", null, "HASHED_IP"), Times.Once);
     }
 
     [Fact]
@@ -64,7 +64,7 @@ public sealed class KeycloakTokenRefreshServiceTests
         var emitter = new Mock<ISecurityEventEmitter>();
         var sut = new KeycloakTokenRefreshService(httpClient, BuildConfig(), emitter.Object, NullLogger<KeycloakTokenRefreshService>.Instance);
 
-        var result = await sut.RefreshTokenAsync("bad-refresh", "proof", CancellationToken.None);
+        var result = await sut.RefreshTokenAsync("bad-refresh", "proof", "HASHED_IP", CancellationToken.None);
 
         Assert.False(result.IsSuccess);
         Assert.False(result.IsReuseDetected);
