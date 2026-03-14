@@ -32,7 +32,7 @@ Blocked: 00
 ## Verification Snapshot (2026-03-14)
 
 - [x] Repository-wide diagnostics: no active compile/lint errors
-- [x] Full test suite: `dotnet test Sentinel.sln` → 20 passed, 0 failed, 0 skipped
+- [x] Full test suite: `dotnet test Sentinel.slnx` → 48 passed, 0 failed, 0 skipped
 - [x] Security hardening extension validated: mTLS binding middleware (`MtlsBindingMiddleware`)
 - [x] ABAC extension validated: policy `ElevatedAccess` (`acr3` + `security_clearance`)
 - [x] FIPS hardening validated: runtime switch + Linux FIPS mode check path

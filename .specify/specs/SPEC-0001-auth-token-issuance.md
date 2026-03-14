@@ -521,7 +521,7 @@ Step-Up Trigger:
 
 This addendum records post-completion verification performed against the current repository state.
 
-- [x] Build/test verification completed: `dotnet test Sentinel.sln` passed (20 passed, 0 failed, 0 skipped)
+- [x] Build/test verification completed: `dotnet test Sentinel.slnx` passed (48 passed, 0 failed, 0 skipped)
 - [x] API pipeline includes DPoP validation, replay fail-closed behavior, and ACR enforcement
 - [x] mTLS workload sender-constraining implemented via `MtlsBindingMiddleware` and certificate-thumbprint binding (`cnf.x5t#S256`)
 - [x] Kestrel hardened for internal mTLS negotiation with TLS 1.3 defaults
