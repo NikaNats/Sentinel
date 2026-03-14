@@ -23,7 +23,7 @@ jobs:
           fetch-depth: 0
 
       - name: Gate 1 - Secret Scanning
-        uses: trufflesecurity/trufflehog@v3
+        uses: trufflesecurity/trufflehog@main
         with:
           path: ./
           base: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }}
@@ -72,7 +72,7 @@ jobs:
           quiet: true
 
       - name: Gate 7 - Container Vulnerability Scan (Trivy)
-        uses: aquasecurity/trivy-action@v0.35
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: sentinel-api:local
           format: table
@@ -82,7 +82,7 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Gate 8 - Generate SBOM
-        uses: anchore/sbom-action@v0.23
+        uses: anchore/sbom-action@v0
         with:
           image: sentinel-api:local
           format: spdx-json
@@ -90,11 +90,6 @@ jobs:
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v4.1.0
-
-      - name: Gate 9 - Sign Image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          echo "cosign sign --yes [REGISTRY]/sentinel-api@sha256:[DIGEST]"
 
       - name: Stop API Container
         if: always()
