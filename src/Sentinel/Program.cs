@@ -10,6 +10,7 @@ using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Cache;
+using Sentinel.Infrastructure.Cryptography;
 using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Middleware;
 using System.Threading.RateLimiting;
@@ -43,7 +44,10 @@ builder.Services.AddOpenApi(options =>
             return Task.CompletedTask;
         }
 
-        var dpopScheme = new OpenApiSecurityScheme
+        document.Components ??= new OpenApiComponents();
+        document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+
+        document.Components.SecuritySchemes["DPoP"] = new OpenApiSecurityScheme
         {
             Type = SecuritySchemeType.Http,
             Scheme = "DPoP",
@@ -52,9 +56,12 @@ builder.Services.AddOpenApi(options =>
             Description = "FAPI 2.0 Demonstrating Proof-of-Possession (DPoP) bound access token."
         };
 
-        document.Components ??= new OpenApiComponents();
-        document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
-        document.Components.SecuritySchemes["DPoP"] = dpopScheme;
+        document.Components.SecuritySchemes["mTLS"] = new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.Http,
+            Scheme = "MutualTLS",
+            Description = "Mutual TLS (mTLS) client certificate authentication for Machine-to-Machine (M2M) endpoints."
+        };
 
         return Task.CompletedTask;
     });
@@ -68,6 +75,8 @@ builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = builder.Configuration.GetConnectionString("Redis");
 });
+
+builder.Services.AddSingleton<IEncryptionService, AesGcmEncryptionService>();
 
 builder.Services.AddSingleton<IJtiReplayCache, JtiReplayCache>();
 builder.Services.AddSingleton<ISessionBlacklistCache, SessionBlacklistCache>();

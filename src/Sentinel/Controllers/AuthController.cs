@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Infrastructure.Cache;
+using Sentinel.Middleware.Filters;
 
 namespace Sentinel.Controllers;
 
@@ -63,8 +64,10 @@ public sealed class AuthController(
 
     [HttpPost("logout")]
     [Authorize]
+    [RequireIdempotency]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Logout([FromBody] RevokeRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.RefreshToken))
@@ -88,9 +91,11 @@ public sealed class AuthController(
 
     [HttpPost("logout-all")]
     [Authorize]
+    [RequireIdempotency]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> GlobalLogout(CancellationToken ct)
     {
         var sub = User.FindFirst("sub")?.Value;
