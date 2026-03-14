@@ -1,0 +1,592 @@
+openapi: 3.1.0
+info:
+  title: Sentinel - DPoP-Protected Authentication API
+  version: 1.0.0
+  description: |-
+    RFC 9449 (DPoP) + FAPI 2.0 Baseline compliant authentication API.
+    
+    All protected endpoints require:
+    - Valid JWT Bearer token (`Authorization: Bearer <token>`)
+    - DPoP proof JWT (`DPoP: <proof_jwt>`)
+    - Per-JWK-thumbprint nonce (rotates per-request, from `DPoP-Nonce` response header)
+    
+    # Authentication Flow
+    1. **Initial Challenge:** Send unauthenticated request → receive 400 + `DPoP-Nonce` header
+    2. **Proof Generation:** Create DPoP proof JWT (includes nonce, method, URI)
+    3. **Authenticated Request:** Send request with `Authorization` + `DPoP` headers
+    4. **Response:** Receive data + new `DPoP-Nonce` for next request
+    
+    # DPoP Proof Structure
+    ```
+    Header: { typ: "dpop+jwt", alg: "ES256", jwk: {...public_key...} }
+    Claims: {
+      jti: "unique-id-per-proof",
+      htm: "GET|POST|...",
+      htu: "https://api.sentinel.local/v1/endpoint",
+      iat: 1234567890,
+      exp: 1234567950,
+      nonce: "server-issued-nonce"
+    }
+    ```
+    
+    # Error Codes
+    - `missing-dpop-nonce`: First request; retry with nonce from response header
+    - `invalid-dpop-proof`: Proof validation failed (signature, method, URI, TTL)
+    - `token-reuse-detected`: JTI already used; obtain new token
+    - `rate-limit-exceeded`: Quota exhausted; retry after `Retry-After` seconds
+    
+  termsOfService: https://sentinel.example.com/terms
+  contact:
+    name: Security Team
+    email: security@example.com
+    url: https://sentinel.example.com/security
+  license:
+    name: Proprietary
+    url: https://sentinel.example.com/license
+  x-apiId: sentinel-auth-api
+  x-maturity: production
+
+servers:
+  - url: https://api.sentinel.local/v1
+    description: Production
+    x-environment: prod
+  - url: https://staging-api.sentinel.local/v1
+    description: Staging
+    x-environment: staging
+
+paths:
+  /auth/refresh:
+    post:
+      operationId: RefreshAccessToken
+      summary: Refresh Access Token
+      description: |-
+        Refresh an expired or expiring access token using a valid refresh token.
+        
+        Requires DPoP proof bound to the refresh token.
+      tags:
+        - Authentication
+      security:
+        - BearerAuth: []
+        - DpopAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+                  description: Refresh token value
+                  minLength: 1
+              required:
+                - refreshToken
+            examples:
+              example1:
+                value:
+                  refreshToken: "ey..."
+      responses:
+        '200':
+          description: Token refreshed successfully
+          headers:
+            DPoP-Nonce:
+              schema:
+                type: string
+              description: New nonce for next request
+            Cache-Control:
+              schema:
+                type: string
+              description: "no-store, must-revalidate"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    description: New access token (JWT)
+                  refresh_token:
+                    type: string
+                    description: New refresh token (rotated)
+                  token_type:
+                    type: string
+                    enum: [Bearer]
+                  expires_in:
+                    type: integer
+                    format: int32
+                    description: Token lifetime in seconds
+                required:
+                  - access_token
+                  - refresh_token
+                  - token_type
+                  - expires_in
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              examples:
+                missingDpopNonce:
+                  value:
+                    type: /errors/missing-dpop-nonce
+                    title: DPoP-Nonce required
+                    status: 400
+                invalidRefreshToken:
+                  value:
+                    type: /errors/invalid-refresh-token
+                    title: Refresh token is required
+                    status: 400
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              examples:
+                tokenExpired:
+                  value:
+                    type: /errors/token-expired
+                    title: Refresh token expired
+                    status: 401
+                tokenRevoked:
+                  value:
+                    type: /errors/token-theft-detected
+                    title: Session Terminated
+                    detail: Token reuse detected; please log in again
+                    status: 401
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '503':
+          $ref: '#/components/responses/TokenReuseDetected'
+
+  /auth/logout:
+    post:
+      operationId: Logout
+      summary: Logout / Revoke Session
+      description: |-
+        Revoke a refresh token and invalidate the associated session.
+        
+        Idempotent operation: retries with same `Idempotency-Key` return 204 (already logged out).
+      tags:
+        - Authentication
+      security:
+        - BearerAuth: []
+        - DpopAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Unique request ID (UUID v4) for idempotency
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+                  description: Refresh token to revoke
+                  minLength: 1
+              required:
+                - refreshToken
+      responses:
+        '204':
+          description: Logout successful; session blacklisted
+          headers:
+            DPoP-Nonce:
+              schema:
+                type: string
+              description: New nonce
+        '400':
+          description: Bad Request (missing token or invalid Idempotency-Key)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict - Logout already in progress
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: /errors/idempotency-conflict
+                title: Request already in progress
+                detail: Retry with same Idempotency-Key after 2-3 seconds
+                status: 409
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  /profile:
+    get:
+      operationId: GetProfile
+      summary: Get User Profile
+      description: |-
+        Retrieve authenticated user's profile information.
+        
+        Requires valid access token + DPoP proof.
+      tags:
+        - Protected Resources
+      security:
+        - BearerAuth: []
+        - DpopAuth: []
+      responses:
+        '200':
+          description: User profile retrieved
+          headers:
+            DPoP-Nonce:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sub:
+                    type: string
+                    description: Subject (user ID)
+                  email:
+                    type: string
+                    format: email
+                  email_verified:
+                    type: boolean
+                  name:
+                    type: string
+                  given_name:
+                    type: string
+                  family_name:
+                    type: string
+                  preferred_username:
+                    type: string
+                required:
+                  - sub
+        '400':
+          description: Bad Request (missing DPoP-Nonce)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Unauthorized (token invalid or expired)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '503':
+          $ref: '#/components/responses/TokenReuseDetected'
+
+  /finance:
+    get:
+      operationId: GetFinance
+      summary: Get Finance Data (High-Assurance Endpoint)
+      description: |-
+        Access financial operations. Requires ACR >= `urn:mace:incommon:iap:silver`.
+      tags:
+        - Protected Resources
+      security:
+        - BearerAuth: []
+        - DpopAuth: []
+      responses:
+        '200':
+          description: Finance data retrieved
+          headers:
+            DPoP-Nonce:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accounts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        balance:
+                          type: number
+                          format: double
+                      required:
+                        - id
+                        - balance
+                required:
+                  - accounts
+        '403':
+          description: Forbidden (ACR requirement not met)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: /errors/insufficient-acr
+                title: Insufficient authentication context
+                detail: ACR >= urn:mace:incommon:iap:silver required
+                status: 403
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  /documents:
+    get:
+      operationId: GetDocuments
+      summary: Get Documents (Requires Scope)
+      description: |-
+        Access document store. Requires `documents:read` scope.
+      tags:
+        - Protected Resources
+      security:
+        - BearerAuth: []
+        - DpopAuth: []
+      responses:
+        '200':
+          description: Documents retrieved
+          headers:
+            DPoP-Nonce:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                      required:
+                        - id
+                        - name
+                required:
+                  - documents
+        '403':
+          description: Forbidden (scope not in token)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  /auth/backchannel-logout:
+    post:
+      operationId: BackchannelLogout
+      summary: Backchannel Logout (RP-Initiated)
+      description: |-
+        Receive logout token from authorized party (e.g., Keycloak).
+        Invalidates session server-side without client interaction.
+        
+        **Note:** This endpoint is excluded from API documentation (ApiExplorerSettings ignored).
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                logout_token:
+                  type: string
+                  description: Signed logout JWT from issuer
+              required:
+                - logout_token
+      responses:
+        '200':
+          description: Session invalidated
+        '400':
+          description: Invalid logout token
+
+components:
+  schemas:
+    ProblemDetails:
+      type: object
+      description: RFC 7807 Problem Details JSON
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          description: Problem type identifier
+        title:
+          type: string
+          description: Human-readable problem title
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code
+        detail:
+          type: string
+          description: Human-readable problem explanation
+        instance:
+          type: string
+          format: uri-reference
+          description: Problem instance identifier
+      required:
+        - type
+        - title
+        - status
+
+    DpopProof:
+      type: object
+      description: DPoP proof structure (informational; not validated by API)
+      properties:
+        header:
+          type: object
+          properties:
+            typ:
+              type: string
+              enum: [dpop+jwt]
+            alg:
+              type: string
+              enum: [ES256, RS256, PS256]
+            jwk:
+              type: object
+              description: Public JSON Web Key
+        claims:
+          type: object
+          properties:
+            jti:
+              type: string
+              description: Unique JWT ID
+            htm:
+              type: string
+              enum: [GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS]
+            htu:
+              type: string
+              format: uri
+              description: HTTP Request URI
+            iat:
+              type: integer
+              format: int64
+              description: Issued-At (Unix timestamp)
+            exp:
+              type: integer
+              format: int64
+              description: Expiration (Unix timestamp)
+            nonce:
+              type: string
+              description: Server-issued nonce
+
+  responses:
+    RateLimitExceeded:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            format: int32
+          description: Seconds to wait before retrying
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: /errors/rate-limit-exceeded
+            title: Too many requests
+            detail: Rate limit exceeded; please retry after delay
+            status: 429
+
+    TokenReuseDetected:
+      description: Token reuse detected (service unavailable)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: /errors/token-reuse-detected
+            title: Token already used
+            detail: This token has been used; obtain a new one
+            status: 503
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |-
+        RFC 6750 Bearer Token authentication.
+        
+        Format: `Authorization: Bearer <access_token>`
+        
+        Access token is a JWT issued by Keycloak:
+        - `iss`: https://keycloak:8080/realms/sentinel
+        - `aud`: sentinel-api
+        - `sub`: user ID
+        - `cnf.jkt`: JWK thumbprint (S256) binding token to client's public key
+        - `scope`: space-separated scopes
+        - `acr`: authentication context class (assurance level)
+
+    DpopAuth:
+      type: apiKey
+      name: DPoP
+      in: header
+      description: |-
+        RFC 9449 DPoP (Demonstration of Proof-of-Possession) proof.
+        
+        Format: `DPoP: <proof_jwt>`
+        
+        Proof is a JWK-signed JWT:
+        - Header: `typ: dpop+jwt`, `alg: ES256/RS256/PS256`, `jwk: {...}`
+        - Claims:
+          - `jti`: Unique per-proof identifier (prevents replay)
+          - `htm`: HTTP request method (GET, POST, etc.)
+          - `htu`: Full HTTP request URI (without query string)
+          - `iat`: Proof issued-at (must be recent; ± 60s tolerance)
+          - `exp`: Proof expiration (typically iat + 60s)
+          - `nonce`: Server-issued per-thumbprint nonce (rotates per-request)
+
+tags:
+  - name: Authentication
+    description: Token refresh, logout, backchannel logout
+  - name: Protected Resources
+    description: Endpoints requiring valid access token + DPoP proof
+
+x-readme:
+  code-samples:
+    enabled: true
+  explorer:
+    enabled: true
+  samples-enabled: true
+
+x-logo:
+  url: https://sentinel.example.com/logo.png
+  altText: Sentinel API
+
+security:
+  - BearerAuth: []
+    DpopAuth: []
+
+# End of OpenAPI 3.1 specification
