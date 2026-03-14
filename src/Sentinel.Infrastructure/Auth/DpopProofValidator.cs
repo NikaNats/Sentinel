@@ -172,15 +172,14 @@ public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProof
             IssuerSigningKey = signingKey,
             ValidateIssuer = false,
             ValidateAudience = false,
-            
-            // nosemgrep: csharp.lang.security.ad.jwt-tokenvalidationparameters-no-expiry-validation
-            // Justification: DPoP proofs evaluate freshness via 'iat' and 'nonce' per RFC 9449, not 'exp'.
-            // Manual iat window validation enforced at line 109-113 (-60s historical, +5s future tolerance).
-            ValidateLifetime = false,
-            
             RequireSignedTokens = true,
             ValidAlgorithms = [algorithm]
         };
+
+        // nosemgrep: csharp.lang.security.ad.jwt-tokenvalidationparameters-no-expiry-validation
+        // Justification: DPoP proofs evaluate freshness via 'iat' and 'nonce' per RFC 9449, not 'exp'.
+        // Manual iat window validation at line 109-113 (-60s historical, +5s future tolerance).
+        validationParameters.ValidateLifetime = false;
 
         var validationResult = await TokenHandler.ValidateTokenAsync(token, validationParameters);
         return validationResult.IsValid;
