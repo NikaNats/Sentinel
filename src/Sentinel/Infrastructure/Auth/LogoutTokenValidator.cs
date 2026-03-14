@@ -2,14 +2,10 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using Sentinel.Application.Common.Abstractions;
 using System.Text.Json;
 
 namespace Sentinel.Infrastructure.Auth;
-
-public interface ILogoutTokenValidator
-{
-    Task<string?> ValidateAndExtractSessionIdAsync(string logoutToken, CancellationToken ct);
-}
 
 public sealed class LogoutTokenValidator(
     IOptionsMonitor<JwtBearerOptions> jwtOptionsMonitor,

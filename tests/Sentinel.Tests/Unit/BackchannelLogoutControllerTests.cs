@@ -1,9 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using Sentinel.Application.Common.Abstractions;
 using Sentinel.Controllers;
-using Sentinel.Infrastructure.Auth;
-using Sentinel.Infrastructure.Cache;
 
 namespace Sentinel.Tests.Unit;
 

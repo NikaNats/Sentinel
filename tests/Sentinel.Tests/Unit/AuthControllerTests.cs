@@ -2,8 +2,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Sentinel.Application.Auth.Interfaces;
+using Sentinel.Application.Common.Abstractions;
 using Sentinel.Controllers;
-using Sentinel.Infrastructure.Cache;
 using System.Security.Claims;
 
 namespace Sentinel.Tests.Unit;

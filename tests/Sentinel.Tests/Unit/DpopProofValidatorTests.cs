@@ -1,8 +1,8 @@
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Moq;
+using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Auth;
-using Sentinel.Infrastructure.Cache;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;

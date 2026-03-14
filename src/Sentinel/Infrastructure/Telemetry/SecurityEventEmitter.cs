@@ -1,12 +1,7 @@
 using System.Diagnostics;
+using Sentinel.Application.Common.Abstractions;
 
 namespace Sentinel.Infrastructure.Telemetry;
-
-public interface ISecurityEventEmitter
-{
-    void EmitTokenReplay(string jti, string? sub, string? clientId, string ipHash);
-    void EmitAuthFailure(string reason, string? sub, string ipHash);
-}
 
 public sealed class SecurityEventEmitter(ILogger<SecurityEventEmitter> logger) : ISecurityEventEmitter
 {

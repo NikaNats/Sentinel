@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Auth;
-using Sentinel.Infrastructure.Telemetry;
 using System.Net;
 using System.Net.Http;
 

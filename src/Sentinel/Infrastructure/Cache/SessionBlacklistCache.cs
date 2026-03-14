@@ -1,12 +1,7 @@
 using Microsoft.Extensions.Caching.Distributed;
+using Sentinel.Application.Common.Abstractions;
 
 namespace Sentinel.Infrastructure.Cache;
-
-public interface ISessionBlacklistCache
-{
-    Task BlacklistSessionAsync(string sessionId, TimeSpan ttl, CancellationToken ct);
-    ValueTask<bool> IsSessionBlacklistedAsync(string sessionId, CancellationToken ct);
-}
 
 public sealed class SessionBlacklistCache(IDistributedCache cache, ILogger<SessionBlacklistCache> logger) : ISessionBlacklistCache
 {

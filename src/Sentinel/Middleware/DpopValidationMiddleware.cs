@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using Sentinel.Infrastructure.Auth;
-using Sentinel.Infrastructure.Cache;
+using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Telemetry;
 
 namespace Sentinel.Middleware;

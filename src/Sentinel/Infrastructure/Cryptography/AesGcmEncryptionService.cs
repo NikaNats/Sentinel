@@ -1,13 +1,8 @@
+using Sentinel.Application.Common.Abstractions;
 using System.Security.Cryptography;
 using System.Text;
 
 namespace Sentinel.Infrastructure.Cryptography;
-
-public interface IEncryptionService
-{
-    byte[] Encrypt(string plainText);
-    string Decrypt(byte[] cipherData);
-}
 
 public sealed class AesGcmEncryptionService(IConfiguration configuration) : IEncryptionService
 {

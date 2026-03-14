@@ -1,6 +1,6 @@
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
-using Sentinel.Infrastructure.Cache;
+using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Telemetry;
 using System.Diagnostics;
 using System.Security.Cryptography;
@@ -8,17 +8,6 @@ using System.Text;
 using System.Text.Json;
 
 namespace Sentinel.Infrastructure.Auth;
-
-public interface IDpopProofValidator
-{
-    Task<DpopValidationResult> ValidateAsync(string dpopHeader, string accessToken, string httpMethod, string httpUrl, CancellationToken ct);
-}
-
-public sealed class DpopValidationResult
-{
-    public bool IsValid { get; set; }
-    public string NewNonce { get; set; } = string.Empty;
-}
 
 public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProofValidator
 {

@@ -1,4 +1,5 @@
 using Sentinel.Application.Auth.Interfaces;
+using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Telemetry;
 using System.Net;
 using System.Text.Json;

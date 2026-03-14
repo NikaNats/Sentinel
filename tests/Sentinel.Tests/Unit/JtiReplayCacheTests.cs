@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Cache;
 
 namespace Sentinel.Tests.Unit;

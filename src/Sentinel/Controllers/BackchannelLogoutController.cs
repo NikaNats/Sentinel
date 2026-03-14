@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Sentinel.Infrastructure.Auth;
-using Sentinel.Infrastructure.Cache;
+using Sentinel.Application.Common.Abstractions;
 
 namespace Sentinel.Controllers;
 

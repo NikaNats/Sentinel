@@ -1,16 +1,9 @@
 using Microsoft.Extensions.Caching.Distributed;
+using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Telemetry;
 using System.Diagnostics;
 
 namespace Sentinel.Infrastructure.Cache;
-
-public interface IJtiReplayCache
-{
-    ValueTask<bool> ExistsAsync(string jti, CancellationToken ct);
-    Task StoreAsync(string jti, TimeSpan ttl, CancellationToken ct);
-}
-
-public sealed class ReplayCacheUnavailableException(string message, Exception innerException) : Exception(message, innerException);
 
 public sealed class JtiReplayCache(IDistributedCache cache, ILogger<JtiReplayCache> logger) : IJtiReplayCache
 {
