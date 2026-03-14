@@ -1,24 +1,21 @@
 <Project>
   <!--
     ============================================================================
-    SENTINEL DIRECTORY.BUILD.PROPS
+    SENTINEL DIRECTORY.BUILD.PROPS (2026 EDITION)
     ============================================================================
-    
-    Centralized build configuration for all projects in the Sentinel monorepo.
-    This file enforces:
-    - Strict code quality standards (zero-warning policy)
-    - Native AOT compatibility for production deployment
-    - Reproducible builds across dev/CI environments
-    - Security-hardened defaults (no unsafe serialization, CFG enabled)
-    - Centralized artifact layout (no bin/obj pollution)
-    - Consistent language & framework targeting (.NET 11 preview)
+    Targeting: .NET 11 Preview
+    Enforces:
+    - Zero-warning policy with C# strict mode
+    - Native AOT by default for production executables
+    - Central Package Management (CPM)
+    - Modern MS Testing Platform integration
+    - Native SDK artifact layouts (no custom pathing required)
     
     Hierarchy: Automatically inherited by all .csproj files in subdirectories
     
-    Updates: When modifying this file, bump the version comment and test with:
+    Updates: When modifying this file, test with:
       - dotnet build Sentinel.slnx -c Release
       - dotnet test Sentinel.slnx
-    
     ============================================================================
   -->
 
@@ -26,114 +23,106 @@
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))"
           Condition="Exists($([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../')))"/>
 
-  <!-- SECTION 2: CENTRALIZED ARTIFACTS LAYOUT -->
+  <!-- SECTION 2: CENTRALIZED ARTIFACTS & CI -->
   <PropertyGroup>
-    <!-- .NET 8+ modern artifacts output: all bin/obj → artifacts/ folder -->
+    <!-- 
+      .NET 8+ native artifacts output. 
+      Removed explicit ArtifactsPath; the SDK natively roots this to .artifacts/ 
+      at the repository root, preventing path resolution conflicts.
+    -->
     <UseArtifactsOutput>true</UseArtifactsOutput>
-    <ArtifactsPath>$(MSBuildThisFileDirectory)artifacts</ArtifactsPath>
-    
-    <!-- CI/Docker builds: disable interactive prompts -->
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true' Or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
-  <!-- SECTION 3: SDK & LANGUAGE STANDARDS -->
+  <!-- SECTION 3: SDK, LANGUAGE & MONOREPO STANDARDS -->
   <PropertyGroup>
-    <!-- Target .NET 11 preview (Sentinel's platform requirement) -->
     <TargetFramework>net11.0</TargetFramework>
-    <LangVersion>latest</LangVersion>
+    <LangVersion>preview</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    
+    <!-- Enforce C# strict mode (warns on implicit conversions and other legacy language quirks) -->
+    <Features>strict</Features>
 
-    <!-- Configuration Binding Source Generator (.NET 8+)
-         Replaces reflection-based IConfiguration.Bind<T>() with compile-time codegen.
-         Fixes all Configure<T>, Bind<T>, BindConfiguration<T> AOT/trim warnings.
-    -->
-    <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
+    <!-- Enforce Central Package Management (requires Directory.Packages.props) -->
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+
+    <!-- Disable the implicit fallback folder for deterministic CI restoration -->
+    <DisableImplicitNuGetFallbackFolder>true</DisableImplicitNuGetFallbackFolder>
   </PropertyGroup>
 
-  <!-- SECTION 4: AGGRESSIVE CODE ANALYSIS (ZERO-WARNING POLICY) -->
+  <!-- SECTION 4: AGGRESSIVE CODE ANALYSIS -->
   <PropertyGroup>
-    <!-- Run latest analyzers on all code -->
     <AnalysisLevel>latest-all</AnalysisLevel>
-    <AnalysisMode>All</AnalysisMode>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    <EnableNETAnalyzers>true</EnableNETAnalyzers>
-
-    <!-- Treat warnings as errors in Release & CI builds
-         Ensures code quality doesn't degrade over time.
-    -->
+    
+    <!-- CodeAnalysisTreatWarningsAsErrors is deprecated in newer SDKs; TreatWarningsAsErrors handles everything now -->
     <TreatWarningsAsErrors Condition="'$(Configuration)' == 'Release' Or '$(CI)' == 'true'">true</TreatWarningsAsErrors>
-    <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
 
-    <!-- Suppress known noise and framework-level notices:
-         CS1591: Missing XML doc comments (acceptable for internal APIs)
-         CA1014: CLSCompliant is legacy (not relevant for ASP.NET Core)
-         NETSDK1210: Artifacts API informational notice
-         NU1608: Transitive package version mismatch (acceptable for preview packages)
+    <!-- Fixes Roslyn Bug #41640 allowing CI to run IDE0005 (Unused Usings)
+         This flag is required for the unused usings analyzer to function properly in CI pipelines.
     -->
-    <NoWarn>$(NoWarn);CS1591;CA1014;NETSDK1210;NU1608</NoWarn>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- 
+      Suppressed Rules (Legacy, Stylistic, Framework-Specific):
+      
+      CS1591: Missing XML docs - Suppressed because GenerateDocumentationFile forces XML on everything
+      CA1014: CLSCompliant (legacy) - Not relevant for ASP.NET Core / OAuth 2.0 APIs
+      NU1608: Transitive preview mismatches - Acceptable for .NET 11 preview builds
+      
+      IDE0160: File-scoped vs block-scoped namespaces - Stylistic; modern convention is file-scoped
+      IDE0008: Use var instead of explicit type - Stylistic opinion
+      IDE0058: Unused expression statements - Stylistic; DI setup chains intentionally don't assign
+      IDE0046: Use expression-bodied members - Stylistic alternative syntax
+      
+      CA1716: Sub parameter name conflicts with VB.NET keyword - OAuth/JWT standard requires "sub" claim (RFC 7519)
+      CA2007: ConfigureAwait(false) everywhere - Legacy UI app requirement; ASP.NET Core has no SynchronizationContext
+      CA1062: Manual null checks - Redundant with Nullable Reference Types (<Nullable>enable</Nullable>)
+      CA1054: URI parameters - Framework-specific; acceptable for routing/OpenAPI contexts
+      CA1032: Exception constructors - Framework-specific exception boilerplate
+    -->
+    <NoWarn>$(NoWarn);CS1591;CA1014;NU1608;IDE0160;IDE0008;IDE0058;IDE0046;CA1716;CA2007;CA1062;CA1054;CA1032</NoWarn>
   </PropertyGroup>
 
-  <!-- SECTION 5: NATIVE AOT READINESS (Security + Deployment Flexibility) -->
-  <PropertyGroup Condition="'$(IsTestProject)' != 'true' And ('$(OutputType)' == 'Exe' Or '$(PublishAot)' == 'true')">
-    <!-- Enable AOT compatibility markers for executable projects -->
+  <!-- SECTION 5: NATIVE AOT & TRIMMING READINESS -->
+  <!-- Simplified: MSBuild now intrinsically chains EnableTrimAnalyzer and EnableAotAnalyzer when PublishAot=true -->
+  <PropertyGroup Condition="'$(IsTestProject)' != 'true' And '$(IsTestingPlatformApplication)' != 'true' And ('$(OutputType)' == 'Exe' Or '$(PublishAot)' == 'true')">
+    <PublishAot>true</PublishAot>
     <IsAotCompatible>true</IsAotCompatible>
-
-    <!-- Single-file deployment safety analyzer -->
-    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
-
-    <!-- Trim analyzer for production-grade safety:
-         Catches reflection, dynamic dispatch, and serialization violations early.
-         Critical for security: eliminates hidden code paths at build time.
-    -->
-    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(IsTestProject)' != 'true' And '$(PublishAot)' == 'true'">
-    <IsTrimmable Condition="'$(OutputType)' != 'Library'">true</IsTrimmable>
-
-    <!-- AOT analyzer: strict enforcement for Sentinel API executable -->
-    <EnableAotAnalyzer>true</EnableAotAnalyzer>
-
-    <!-- Debug builds still validate AOT compatibility (no warnings suppressed) -->
+    
+    <!-- Keep trim validation strict even in debug builds to prevent CI surprises -->
     <SuppressTrimAnalysisWarnings Condition="'$(Configuration)' == 'Debug'">false</SuppressTrimAnalysisWarnings>
   </PropertyGroup>
 
-  <!-- SECTION 6: REPRODUCIBLE BUILDS & CI/CD -->
+  <!-- SECTION 6: REPRODUCIBLE BUILDS -->
   <PropertyGroup>
-    <!-- Reproducible: dev machine binary = CI binary (no timestamp variance) -->
-    <Deterministic>true</Deterministic>
-
-    <!-- Debug symbols: embedded PDB for easier diagnosis (no separate .pdb files) -->
+    <!-- 
+      Modern SDK handles deterministic paths automatically when ContinuousIntegrationBuild is true.
+      Removed the legacy DotNet.ReproducibleBuilds package reference. 
+    -->
+    <Deterministic Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</Deterministic>
     <DebugType>embedded</DebugType>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
 
-    <!-- NuGet lock files: freeze dependency versions
-         CI mode: strict lock file adherence (no upgrades or fallbacks)
-    -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
+    <RestoreLockedMode Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</RestoreLockedMode>
   </PropertyGroup>
 
   <!-- SECTION 7: SECURITY HARDENING -->
   <PropertyGroup>
-    <!-- NuGet Audit: block vulnerable packages during restore
-         moderate: blocks only critical/high severity vulnerabilities
-         all mode: audit all dependencies (direct + transitive)
-    -->
+    <!-- .NET 9+ defaults NuGetAuditMode to 'all', but making it explicit ensures it's never downgraded -->
     <NuGetAudit>true</NuGetAudit>
     <NuGetAuditLevel>moderate</NuGetAuditLevel>
     <NuGetAuditMode>all</NuGetAuditMode>
 
-    <!-- Disable unsafe code patterns:
-         - LegacyFormatter: unsafe BinaryFormatter/LosFormatter (serialization gadget attacks)
-         - ControlFlowGuard: enable CFG for buffer overflow protection
+    <!-- 
+      Removed EnableUnsafeBinaryFormatterSerialization. 
+      BinaryFormatter was completely eradicated in .NET 9. Setting it now does nothing.
     -->
-    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
     <ControlFlowGuard>Guard</ControlFlowGuard>
-
-    <!-- Sentinel-specific security: enable security code analysis -->
     <EnableSecurityCodeAnalysis>true</EnableSecurityCodeAnalysis>
   </PropertyGroup>
 
@@ -156,37 +145,30 @@
     <PackageTags>dpop;oauth2;fapi2;demoonstration-of-possession;security;authentication</PackageTags>
   </PropertyGroup>
 
-  <!-- SECTION 10: GLOBAL ANALYZERS & CODE QUALITY -->
+  <!-- SECTION 10: GLOBAL ANALYZERS -->
   <ItemGroup>
-    <!-- Reproducible builds analyzer (validates deterministic output) -->
-    <PackageReference Include="DotNet.ReproducibleBuilds" PrivateAssets="all"/>
-
-    <!-- Code quality: IDisposable, thread-safety, concurrency patterns -->
-    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" PrivateAssets="all"/>
+    <!-- 
+      Removed Microsoft.CodeAnalysis.NetAnalyzers. It has been built directly into the .NET SDK 
+      since .NET 5. Referencing it via NuGet is a redundant, legacy practice.
+    -->
     <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" PrivateAssets="all"/>
   </ItemGroup>
 
   <!-- SECTION 11: BUILD STATUS & DIAGNOSTICS -->
   <Target Name="PrintBuildConfig" BeforeTargets="Build">
-    <Message Importance="high" 
-             Text="════════════════════════════════════════════════════════════════════════════════════"/>
-    <Message Importance="high" 
-             Text="[SENTINEL BUILD] Project: $(MSBuildProjectName) | Config: $(Configuration) | Framework: $(TargetFramework)"/>
-    <Message Importance="high" 
-             Text="[SENTINEL BUILD] AOT-Compatible: $(IsAotCompatible) | Trimable: $(IsTrimmable) | CI: $(ContinuousIntegrationBuild)"/>
-    <Message Importance="high" 
-             Text="[SENTINEL BUILD] TreatWarningsAsErrors: $(TreatWarningsAsErrors) | CodeAnalysis: $(EnableNETAnalyzers)"/>
-    <Message Importance="high" 
-             Text="════════════════════════════════════════════════════════════════════════════════════"/>
+    <Message Importance="high" Text="════════════════════════════════════════════════════════════════════════════════════"/>
+    <Message Importance="high" Text="[SENTINEL BUILD] Project: $(MSBuildProjectName) | Config: $(Configuration) | Framework: $(TargetFramework)"/>
+    <Message Importance="high" Text="[SENTINEL BUILD] AOT: $(PublishAot) | CI: $(ContinuousIntegrationBuild) | CPM: $(ManagePackageVersionsCentrally)"/>
+    <Message Importance="high" Text="════════════════════════════════════════════════════════════════════════════════════"/>
   </Target>
 
   <!-- SECTION 12: TEST PROJECT CUSTOMIZATION -->
-  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
-    <!-- Test projects: more lenient on missing docs, allow more warnings -->
+  <!-- Added IsTestingPlatformApplication to support the modern .NET 9+ Microsoft.Testing.Platform -->
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true' Or '$(IsTestingPlatformApplication)' == 'true'">
     <NoWarn>$(NoWarn);CS1591;IDE0180</NoWarn>
-    
-    <!-- Tests may use reflection (mocking frameworks); disable trim warnings -->
     <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <!-- Ensure test projects don't attempt to build natively unless explicitly requested -->
+    <PublishAot>false</PublishAot>
   </PropertyGroup>
 
 </Project>
