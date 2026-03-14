@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Sentinel.Application.Auth;
 using System.Security.Claims;
 using System.Text.Json;
 
@@ -7,7 +8,7 @@ namespace Sentinel.Controllers;
 
 [ApiController]
 [Route("v1/[controller]")]
-[Authorize(Policy = "ReadProfile")]
+[Authorize(Policy = Policies.ReadProfile)]
 public sealed class ProfileController : ControllerBase
 {
     [HttpGet]

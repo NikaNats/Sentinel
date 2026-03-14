@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Sentinel.Application.Auth;
 using Sentinel.Middleware.Filters;
 
 namespace Sentinel.Controllers;
@@ -9,7 +10,7 @@ namespace Sentinel.Controllers;
 public sealed class FinanceController : ControllerBase
 {
     [HttpPost("transfer")]
-    [Authorize(Policy = "RequireAcr3")]
+    [Authorize(Policy = Policies.RequireAcr3)]
     [RequireIdempotency]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

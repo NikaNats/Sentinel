@@ -79,11 +79,7 @@ public sealed class AuthController(
             });
         }
 
-        var sid = User.FindFirst("sid")?.Value;
-        if (!string.IsNullOrWhiteSpace(sid))
-        {
-            await blacklistCache.BlacklistSessionAsync(sid, TimeSpan.FromMinutes(5), ct);
-        }
+        await TryBlacklistCurrentSessionAsync(ct);
 
         await revocationService.RevokeCurrentSessionAsync(request.RefreshToken, ct);
         return NoContent();
@@ -104,11 +100,7 @@ public sealed class AuthController(
             return Unauthorized();
         }
 
-        var sid = User.FindFirst("sid")?.Value;
-        if (!string.IsNullOrWhiteSpace(sid))
-        {
-            await blacklistCache.BlacklistSessionAsync(sid, TimeSpan.FromMinutes(5), ct);
-        }
+        await TryBlacklistCurrentSessionAsync(ct);
 
         var success = await revocationService.RevokeAllSessionsAsync(sub, ct);
         if (!success)
@@ -121,5 +113,14 @@ public sealed class AuthController(
         }
 
         return NoContent();
+    }
+
+    private async Task TryBlacklistCurrentSessionAsync(CancellationToken ct)
+    {
+        var sid = User.FindFirst("sid")?.Value;
+        if (!string.IsNullOrWhiteSpace(sid))
+        {
+            await blacklistCache.BlacklistSessionAsync(sid, TimeSpan.FromMinutes(5), ct);
+        }
     }
 }

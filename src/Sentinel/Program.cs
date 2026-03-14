@@ -6,6 +6,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
+using Sentinel.Application.Auth;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Infrastructure.Auth;
@@ -235,7 +236,7 @@ builder.Services.AddAuthorization(options =>
         .RequireClaim("acr")
         .Build();
 
-    options.AddPolicy("ElevatedAccess", policy =>
+    options.AddPolicy(Policies.ElevatedAccess, policy =>
         policy.RequireAuthenticatedUser()
             .RequireClaim("acr", "acr3")
             .RequireAssertion(context =>
@@ -244,21 +245,21 @@ builder.Services.AddAuthorization(options =>
                 return clearance is "top-secret" or "classified";
             }));
 
-    options.AddPolicy("ReadProfile", policy =>
+    options.AddPolicy(Policies.ReadProfile, policy =>
         policy.RequireAuthenticatedUser()
             .AddRequirements(
                 new ScopeRequirement("profile"),
                 new AcrRequirement("acr2")));
 
-    options.AddPolicy("RequireAcr3", policy =>
+    options.AddPolicy(Policies.RequireAcr3, policy =>
         policy.RequireAuthenticatedUser()
             .AddRequirements(new AcrRequirement("acr3")));
 
-    options.AddPolicy("Document:Read", policy =>
+    options.AddPolicy(Policies.DocumentRead, policy =>
         policy.RequireAuthenticatedUser()
             .AddRequirements(new UmaResourceRequirement("document:read")));
 
-    options.AddPolicy("Document:Delete", policy =>
+    options.AddPolicy(Policies.DocumentDelete, policy =>
         policy.RequireAuthenticatedUser()
             .AddRequirements(new UmaResourceRequirement("document:delete")));
 });
