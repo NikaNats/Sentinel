@@ -6,6 +6,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
+using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Cache;
@@ -61,6 +62,7 @@ builder.Services.AddOpenApi(options =>
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 builder.Services.AddControllers();
+builder.Services.AddHttpContextAccessor();
 
 builder.Services.AddStackExchangeRedisCache(options =>
 {
@@ -69,9 +71,11 @@ builder.Services.AddStackExchangeRedisCache(options =>
 
 builder.Services.AddSingleton<IJtiReplayCache, JtiReplayCache>();
 builder.Services.AddSingleton<IDpopProofValidator, DpopProofValidator>();
+builder.Services.AddHttpClient<IUmaPermissionService, KeycloakUmaPermissionService>();
 builder.Services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
 builder.Services.AddSingleton<IAuthorizationHandler, AcrAuthorizationHandler>();
 builder.Services.AddSingleton<IAuthorizationHandler, ScopeAuthorizationHandler>();
+builder.Services.AddScoped<IAuthorizationHandler, UmaResourceAuthorizationHandler>();
 
 builder.Services.AddOpenTelemetry()
     .WithTracing(t => t
@@ -216,6 +220,14 @@ builder.Services.AddAuthorization(options =>
             .AddRequirements(
                 new ScopeRequirement("profile"),
                 new AcrRequirement("acr2")));
+
+    options.AddPolicy("Document:Read", policy =>
+        policy.RequireAuthenticatedUser()
+            .AddRequirements(new UmaResourceRequirement("document:read")));
+
+    options.AddPolicy("Document:Delete", policy =>
+        policy.RequireAuthenticatedUser()
+            .AddRequirements(new UmaResourceRequirement("document:delete")));
 });
 
 var app = builder.Build();
