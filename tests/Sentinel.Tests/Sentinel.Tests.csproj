@@ -23,7 +23,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Sentinel\Sentinel.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.Application\Sentinel.Application.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.Infrastructure\Sentinel.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.Presentation\Sentinel.Presentation.csproj" />
   </ItemGroup>
 
 </Project>

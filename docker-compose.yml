@@ -39,7 +39,7 @@ services:
   sentinel-api:
     build:
       context: .
-      dockerfile: src/Sentinel/Dockerfile
+      dockerfile: src/Sentinel.Presentation/Dockerfile
     container_name: sentinel-api
     depends_on:
       keycloak:

@@ -12,9 +12,9 @@ The current implementation provides:
 
 ## Specifications And Delivery Artifacts
 
-- Specification: [SPEC-0001 - User Authentication and Token Issuance](./src/Sentinel/.specify/specs/SPEC-0001-auth-token-issuance.md)
-- Implementation plan: [PLAN-0001 - Auth Implementation](./src/Sentinel/.specify/plans/PLAN-0001-auth-implementation.md)
-- Task breakdown: [TASK-0001 - Auth Implementation Tasks](./src/Sentinel/.specify/tasks/TASK-0001-auth-implementation.md)
+- Specification: [SPEC-0001 - User Authentication and Token Issuance](./.specify/specs/SPEC-0001-auth-token-issuance.md)
+- Implementation plan: [PLAN-0001 - Auth Implementation](./.specify/plans/PLAN-0001-auth-implementation.md)
+- Task breakdown: [TASK-0001 - Auth Implementation Tasks](./.specify/tasks/TASK-0001-auth-implementation.md)
 - Operational runbook: [Auth Token Issuance Runbook](./docs/runbooks/auth-token-issuance.md)
 
 ## Implementation Status
@@ -27,7 +27,7 @@ The current implementation provides:
 | Replay protection | Implemented | Redis-backed jti cache, fail-closed behavior on cache outage |
 | mTLS token binding | Implemented | cnf.x5t#S256 compared with presented client certificate hash |
 | OpenTelemetry and metrics endpoint | Implemented | Tracing, metrics counters/histograms, Prometheus scrape endpoint |
-| Integration and unit testing | Implemented | 20 tests passing in current main branch state |
+| Integration and unit testing | Implemented | 48 tests passing in current main branch state |
 | Full OAuth PAR and PKCE orchestration endpoint set | Planned/Externalized | Keycloak-driven flow orchestration remains infrastructure and client-driven |
 
 ## Architecture Overview
@@ -69,14 +69,19 @@ Sentinel/
 |  |- keycloak/
 |     |- realms/
 |        |- sentinel.json
+|- .github/
+|  |- workflows/
+|  |- agents/
+|  |- prompts/
+|- .specify/
+|  |- specs/
+|  |- plans/
+|  |- tasks/
 |- src/
-|  |- Sentinel/
-|     |- Program.cs
-|     |- Sentinel.csproj
-|     |- Controllers/
-|     |- Middleware/
-|     |- Infrastructure/
-|     |- Application/
+|  |- Sentinel.Domain/
+|  |- Sentinel.Application/
+|  |- Sentinel.Infrastructure/
+|  |- Sentinel.Presentation/
 |- tests/
 |  |- Sentinel.Tests/
 |     |- Integration/
@@ -125,7 +130,7 @@ Services:
 ### 3. Run API Directly (Without Compose)
 
 ```powershell
-cd src/Sentinel
+cd src/Sentinel.Presentation
 dotnet run
 ```
 

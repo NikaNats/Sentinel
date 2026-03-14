@@ -1,17 +1,17 @@
 using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
-using Sentinel.Application.Common.Abstractions;
 using Sentinel.Application.Auth.Interfaces;
+using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Cache;
 using Sentinel.Infrastructure.Cryptography;
 using Sentinel.Infrastructure.Telemetry;
-using Sentinel.Middleware;
-using System.Threading.RateLimiting;
 
 namespace Sentinel.Infrastructure.DependencyInjection;
 
@@ -35,8 +35,6 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddHttpClient<ITokenRefreshService, KeycloakTokenRefreshService>();
         services.AddHttpClient<IAuthRevocationService, KeycloakAuthRevocationService>();
 
-        services.AddSingleton<IAuthorizationMiddlewareResultHandler, StepUpAuthorizationResultHandler>();
-
         services.AddOpenTelemetry()
             .WithTracing(t => t
                 .AddAspNetCoreInstrumentation()
@@ -45,23 +43,6 @@ public static class InfrastructureServiceCollectionExtensions
                 .AddAspNetCoreInstrumentation()
                 .AddMeter(AuthTelemetry.MeterName)
                 .AddPrometheusExporter());
-
-        services.AddRateLimiter(options =>
-        {
-            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
-            {
-                var key = httpContext.Request.Path.HasValue ? httpContext.Request.Path.Value! : "default";
-
-                return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = 100,
-                    Window = TimeSpan.FromMinutes(1),
-                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                    QueueLimit = 2
-                });
-            });
-        });
 
         services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

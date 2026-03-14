@@ -12,7 +12,7 @@ lint:
 
 sec-scan:
 	@echo "Running local container scan (requires Trivy installed)..."
-	docker build -t sentinel-api:local -f src/Sentinel/Dockerfile .
+	docker build -t sentinel-api:local -f src/Sentinel.Presentation/Dockerfile .
 	trivy image --severity CRITICAL,HIGH --ignore-unfixed sentinel-api:local
 
 up:

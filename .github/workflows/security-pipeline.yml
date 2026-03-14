@@ -50,7 +50,7 @@ jobs:
             --logger "trx;LogFileName=test-results.trx"
 
       - name: Gate 5 - Build API Container
-        run: docker build -t sentinel-api:local -f src/Sentinel/Dockerfile .
+        run: docker build -t sentinel-api:local -f src/Sentinel.Presentation/Dockerfile .
 
       - name: Start API Container For DAST
         run: |

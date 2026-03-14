@@ -4,12 +4,12 @@ WORKDIR /src
 
 # Restore with lock-file enforcement for deterministic dependencies.
 COPY ["Sentinel.sln", "./"]
-COPY ["src/Sentinel/Sentinel.csproj", "src/Sentinel/"]
+COPY ["src/Sentinel.Presentation/Sentinel.Presentation.csproj", "src/Sentinel.Presentation/"]
 RUN dotnet restore "Sentinel.sln" --locked-mode
 
 # Copy source and publish.
 COPY . .
-RUN dotnet publish "src/Sentinel/Sentinel.csproj" \
+RUN dotnet publish "src/Sentinel.Presentation/Sentinel.Presentation.csproj" \
 	-c Release \
 	-o /app/publish \
 	--no-restore \
@@ -34,4 +34,4 @@ ENV DOTNET_EnableDiagnostics=0
 #   readOnlyRootFilesystem: true
 #   allowPrivilegeEscalation: false
 
-ENTRYPOINT ["dotnet", "Sentinel.dll"]
+ENTRYPOINT ["dotnet", "Sentinel.Presentation.dll"]
