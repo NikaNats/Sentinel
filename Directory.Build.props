@@ -164,9 +164,6 @@
     <!-- Code quality: IDisposable, thread-safety, concurrency patterns -->
     <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" PrivateAssets="all"/>
     <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" PrivateAssets="all"/>
-
-    <!-- Security: Cryptography best practices, injection vulnerabilities -->
-    <PackageReference Include="SecurityCodeScan.VS2019" PrivateAssets="all"/>
   </ItemGroup>
 
   <!-- SECTION 11: BUILD STATUS & DIAGNOSTICS -->

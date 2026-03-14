@@ -240,7 +240,7 @@ Complete documentation for the DPoP-protected authentication API. All documents 
   - Native AOT compatibility (IsAotCompatible, EnableTrimAnalyzer, EnableAotAnalyzer)
   - Reproducible builds (Deterministic, lock files, ContinuousIntegrationBuild)
   - Security hardening (NuGetAudit, ControlFlowGuard, no BinaryFormatter)
-  - Code quality analyzers (ReproducibleBuilds, NetAnalyzers, Threading, SecurityCodeScan)
+  - Code quality analyzers (ReproducibleBuilds, NetAnalyzers, Threading)
   - Test project customization
 
 - **Workflow:**

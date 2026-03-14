@@ -199,7 +199,6 @@ dotnet restore --locked-mode
   <PackageReference Include="DotNet.ReproducibleBuilds" PrivateAssets="all"/>
   <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" PrivateAssets="all"/>
   <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" PrivateAssets="all"/>
-  <PackageReference Include="SecurityCodeScan.VS2019" PrivateAssets="all"/>
 </ItemGroup>
 ```
 
@@ -207,7 +206,6 @@ dotnet restore --locked-mode
 - **DotNet.ReproducibleBuilds:** Validates deterministic output (no timestamp embeddings)
 - **NetAnalyzers:** IDisposable patterns, thread-safety, string formatting
 - **Threading.Analyzers:** Concurrency issues, deadlock potential
-- **SecurityCodeScan:** Cryptography best practices, LINQ injection, unsafe code
 
 **Example Violations:**
 
@@ -215,7 +213,6 @@ dotnet restore --locked-mode
 |----------|---------|-----|
 | NetAnalyzers | "Field is never assigned" (field assignment in constructor missing) | Initialize field |
 | Threading.Analyzers | "Use ConfigureAwait(false)" | Change `await Task` to `await Task.ConfigureAwait(false)` |
-| SecurityCodeScan | "Hardcoded password" | Move to IConfiguration; never commit secrets |
 
 **When to override:**
 - Add more analyzers in .csproj *only if project-specific*
