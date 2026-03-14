@@ -51,7 +51,7 @@ public sealed class DpopValidationMiddleware(
         string? expectedNonce = null;
         if (!string.IsNullOrWhiteSpace(thumbprint))
         {
-            expectedNonce = await nonceStore.ConsumeNonceAsync(thumbprint, context.RequestAborted);
+            expectedNonce = await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted);
         }
 
         DpopValidationResult result;
@@ -81,8 +81,12 @@ public sealed class DpopValidationMiddleware(
             if (string.Equals(result.Error, "use_dpop_nonce", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(thumbprint))
             {
                 var challengeNonce = GenerateNonce();
-                await nonceStore.StoreNonceAsync(thumbprint, challengeNonce, TimeSpan.FromMinutes(5), context.RequestAborted);
-                context.Response.Headers.Append("DPoP-Nonce", challengeNonce);
+                var stored = await nonceStore.TryStoreNonceAsync(thumbprint, challengeNonce, TimeSpan.FromMinutes(5), context.RequestAborted);
+                var effectiveNonce = stored
+                    ? challengeNonce
+                    : await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted) ?? challengeNonce;
+
+                context.Response.Headers.Append("DPoP-Nonce", effectiveNonce);
                 context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"use_dpop_nonce\", algs=\"PS256 ES256\"");
             }
             else
@@ -96,8 +100,30 @@ public sealed class DpopValidationMiddleware(
 
         if (!string.IsNullOrWhiteSpace(thumbprint) && !string.IsNullOrWhiteSpace(result.NewNonce))
         {
-            await nonceStore.StoreNonceAsync(thumbprint, result.NewNonce, TimeSpan.FromMinutes(5), context.RequestAborted);
-            context.Response.Headers.Append("DPoP-Nonce", result.NewNonce);
+            if (!string.IsNullOrWhiteSpace(expectedNonce))
+            {
+                var consumed = await nonceStore.ConsumeNonceIfMatchesAsync(thumbprint, expectedNonce, context.RequestAborted);
+                if (!consumed)
+                {
+                    emitter.EmitAuthFailure("invalid_dpop_proof", context.User.FindFirst("sub")?.Value, ipHash);
+                    var challengeNonce = GenerateNonce();
+                    var stored = await nonceStore.TryStoreNonceAsync(thumbprint, challengeNonce, TimeSpan.FromMinutes(5), context.RequestAborted);
+                    var effectiveNonce = stored
+                        ? challengeNonce
+                        : await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted) ?? challengeNonce;
+
+                    context.Response.Headers.Append("DPoP-Nonce", effectiveNonce);
+                    context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"use_dpop_nonce\", algs=\"PS256 ES256\"");
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    return;
+                }
+            }
+
+            var storedNonce = await nonceStore.TryStoreNonceAsync(thumbprint, result.NewNonce, TimeSpan.FromMinutes(5), context.RequestAborted);
+            var nextNonce = storedNonce
+                ? result.NewNonce
+                : await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted) ?? result.NewNonce;
+            context.Response.Headers.Append("DPoP-Nonce", nextNonce);
         }
 
         await next(context);

@@ -115,35 +115,24 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         var accessToken2 = TestTokenIssuer.MintAccessToken(jkt);
 
         var proofJti = Guid.NewGuid().ToString("N");
-        var descriptor = new SecurityTokenDescriptor
-        {
-            Claims = new Dictionary<string, object>
-            {
-                ["jti"] = proofJti,
-                ["htm"] = "GET",
-                ["htu"] = requestUrl,
-                ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-            },
-            SigningCredentials = new SigningCredentials(securityKey, SecurityAlgorithms.EcdsaSha256),
-            TokenType = "dpop+jwt",
-            AdditionalHeaderClaims = new Dictionary<string, object>
-            {
-                ["jwk"] = jwkObject
-            }
-        };
-        var proof = new JsonWebTokenHandler().CreateToken(descriptor);
+        var firstProof = CreateDpopProof(securityKey, jwkObject, proofJti, requestUrl, nonce: null);
 
         using var req1 = new HttpRequestMessage(HttpMethod.Get, requestUri);
         req1.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken1);
-        req1.Headers.Add("DPoP", proof);
+        req1.Headers.Add("DPoP", firstProof);
         var res1 = await client.SendAsync(req1);
         Assert.Equal(HttpStatusCode.OK, res1.StatusCode);
 
+        Assert.True(res1.Headers.TryGetValues("DPoP-Nonce", out var nonceValues));
+        var nonce = nonceValues!.First();
+        var replayProofWithNonce = CreateDpopProof(securityKey, jwkObject, proofJti, requestUrl, nonce);
+
         using var req2 = new HttpRequestMessage(HttpMethod.Get, requestUri);
         req2.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken2);
-        req2.Headers.Add("DPoP", proof);
+        req2.Headers.Add("DPoP", replayProofWithNonce);
         var res2 = await client.SendAsync(req2);
         Assert.Equal(HttpStatusCode.Unauthorized, res2.StatusCode);
+        Assert.Contains("invalid_dpop_proof", res2.Headers.WwwAuthenticate.ToString());
     }
 
     [Fact]
@@ -257,6 +246,35 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken);
         request.Headers.Add("DPoP", proof);
         return request;
+    }
+
+    private static string CreateDpopProof(ECDsaSecurityKey securityKey, Dictionary<string, string> jwkObject, string jti, string url, string? nonce)
+    {
+        var claims = new Dictionary<string, object>
+        {
+            ["jti"] = jti,
+            ["htm"] = "GET",
+            ["htu"] = url,
+            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+        };
+
+        if (!string.IsNullOrWhiteSpace(nonce))
+        {
+            claims["nonce"] = nonce;
+        }
+
+        var descriptor = new SecurityTokenDescriptor
+        {
+            Claims = claims,
+            SigningCredentials = new SigningCredentials(securityKey, SecurityAlgorithms.EcdsaSha256),
+            TokenType = "dpop+jwt",
+            AdditionalHeaderClaims = new Dictionary<string, object>
+            {
+                ["jwk"] = jwkObject
+            }
+        };
+
+        return new JsonWebTokenHandler().CreateToken(descriptor);
     }
 
     private static string ComputeEcThumbprint(Dictionary<string, string> jwk)

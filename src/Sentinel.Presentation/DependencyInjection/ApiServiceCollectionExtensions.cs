@@ -23,12 +23,13 @@ public static class ApiServiceCollectionExtensions
             {
                 var sub = httpContext.User.FindFirst("sub")?.Value;
                 var clientId = httpContext.User.FindFirst("client_id")?.Value ?? httpContext.User.FindFirst("azp")?.Value;
+                var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
                 var key = !string.IsNullOrWhiteSpace(sub)
                     ? $"sub:{sub}|client:{clientId ?? "unknown"}"
                     : !string.IsNullOrWhiteSpace(clientId)
                         ? $"client:{clientId}"
-                        : "anonymous";
+                        : $"ip:{ip}";
 
                 return RateLimitPartition.GetFixedWindowLimiter($"identity:{key}", _ => new FixedWindowRateLimiterOptions
                 {
