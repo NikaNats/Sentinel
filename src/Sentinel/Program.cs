@@ -76,6 +76,7 @@ builder.Services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
 builder.Services.AddSingleton<IAuthorizationHandler, AcrAuthorizationHandler>();
 builder.Services.AddSingleton<IAuthorizationHandler, ScopeAuthorizationHandler>();
 builder.Services.AddScoped<IAuthorizationHandler, UmaResourceAuthorizationHandler>();
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, StepUpAuthorizationResultHandler>();
 
 builder.Services.AddOpenTelemetry()
     .WithTracing(t => t
@@ -220,6 +221,10 @@ builder.Services.AddAuthorization(options =>
             .AddRequirements(
                 new ScopeRequirement("profile"),
                 new AcrRequirement("acr2")));
+
+    options.AddPolicy("RequireAcr3", policy =>
+        policy.RequireAuthenticatedUser()
+            .AddRequirements(new AcrRequirement("acr3")));
 
     options.AddPolicy("Document:Read", policy =>
         policy.RequireAuthenticatedUser()
