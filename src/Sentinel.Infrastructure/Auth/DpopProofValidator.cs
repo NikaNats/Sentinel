@@ -236,9 +236,7 @@ public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProof
         {
             return string.Empty;
         }
-
-        using var sha256 = SHA256.Create();
-        var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(canonical));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
         return Base64UrlEncoder.Encode(hash);
     }
 
