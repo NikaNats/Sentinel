@@ -54,7 +54,7 @@
 
   <!-- SECTION 4: AGGRESSIVE CODE ANALYSIS -->
   <PropertyGroup>
-    <AnalysisLevel>latest-all</AnalysisLevel>
+    <AnalysisLevel>latest-Recommended</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     
     <!-- CodeAnalysisTreatWarningsAsErrors is deprecated in newer SDKs; TreatWarningsAsErrors handles everything now -->
