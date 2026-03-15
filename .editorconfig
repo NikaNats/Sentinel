@@ -1,0 +1,87 @@
+# top-most EditorConfig file
+root = true
+
+# Default settings
+[*]
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+
+[*.{csproj,locproj,nativeproj,proj,resx,slnx,vbproj}]
+charset = utf-8
+
+[*.cs]
+#### SENTINEL SECURITY API OVERRIDES ####
+# IDE0130: Permit clean namespaces (Sentinel.Controllers) even if folders are nested (.Presentation)
+dotnet_diagnostic.IDE0130.severity = none
+
+# VSTHRD200: Do not require 'Async' suffix on Controller actions for cleaner Web API routing
+dotnet_diagnostic.VSTHRD200.severity = none
+
+# IDE0060: Ignore unused parameters (essential for middleware/controller stubs)
+dotnet_diagnostic.IDE0060.severity = none
+
+# CA1716: Permit 'sub' keyword to comply with JWT/OIDC Subject standards (RFC 7519)
+dotnet_diagnostic.CA1716.severity = none
+
+# CA2007: ASP.NET Core has no SynchronizationContext; ConfigureAwait(false) is redundant
+dotnet_diagnostic.CA2007.severity = none
+
+# IDE0160: Use modern file-scoped namespaces
+csharp_style_namespace_declarations = file_scoped:suggestion
+#########################################
+
+# New line preferences
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+
+# Indentation preferences
+csharp_indent_block_contents = true
+csharp_indent_braces = false
+csharp_indent_case_contents = true
+
+# Modifier preferences
+csharp_preferred_modifier_order = public,private,protected,internal,file,static,extern,new,virtual,abstract,sealed,override,readonly,unsafe,required,volatile,async:suggestion
+
+# Naming conventions
+dotnet_naming_rule.constant_fields_should_be_pascal_case.severity = suggestion
+dotnet_naming_rule.constant_fields_should_be_pascal_case.symbols  = constant_fields
+dotnet_naming_rule.constant_fields_should_be_pascal_case.style    = pascal_case_style
+dotnet_naming_symbols.constant_fields.applicable_kinds   = field
+dotnet_naming_symbols.constant_fields.required_modifiers = const
+dotnet_naming_style.pascal_case_style.capitalization = pascal_case
+
+# Static fields prefix s_
+dotnet_naming_rule.static_fields_should_have_prefix.severity = suggestion
+dotnet_naming_rule.static_fields_should_have_prefix.symbols  = static_fields
+dotnet_naming_rule.static_fields_should_have_prefix.style    = static_prefix_style
+dotnet_naming_symbols.static_fields.applicable_kinds   = field
+dotnet_naming_symbols.static_fields.required_modifiers = static
+dotnet_naming_style.static_prefix_style.required_prefix = s_
+
+# Internal/Private fields _camelCase
+dotnet_naming_rule.camel_case_for_private_internal_fields.severity = suggestion
+dotnet_naming_rule.camel_case_for_private_internal_fields.symbols  = private_internal_fields
+dotnet_naming_rule.camel_case_for_private_internal_fields.style    = camel_case_underscore_style
+dotnet_naming_symbols.private_internal_fields.applicable_kinds = field
+dotnet_naming_style.camel_case_underscore_style.required_prefix = _
+
+# Code style defaults
+csharp_using_directive_placement = outside_namespace:suggestion
+dotnet_sort_system_directives_first = true
+csharp_prefer_braces = true:silent
+dotnet_style_readonly_field = true:suggestion
+
+# Expression-bodied members
+csharp_style_expression_bodied_methods = true:silent
+csharp_style_expression_bodied_properties = true:silent
+
+# License header (Optional)
+file_header_template = Sentinel Security API - FAPI 2.0 Compliant
+
+# Xml/Json Formatting
+[*.{csproj,json,yaml,yml}]
+indent_size = 2

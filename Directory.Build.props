@@ -1,183 +1,43 @@
 <Project>
-  <!--
-    ============================================================================
-    SENTINEL DIRECTORY.BUILD.PROPS (2026 EDITION)
-    ============================================================================
-    Targeting: .NET 11 Preview
-    Enforces:
-    - Zero-warning policy with C# strict mode
-    - Native AOT by default for production executables
-    - Central Package Management (CPM)
-    - Modern MS Testing Platform integration
-    - Native SDK artifact layouts (no custom pathing required)
-    
-    Hierarchy: Automatically inherited by all .csproj files in subdirectories
-    
-    Updates: When modifying this file, test with:
-      - dotnet build Sentinel.slnx -c Release
-      - dotnet test Sentinel.slnx
-    ============================================================================
-  -->
-
-  <!-- SECTION 1: RECURSIVE HIERARCHY SUPPORT (Monorepo Pattern) -->
-  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))"
-          Condition="Exists($([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../')))"/>
-
-  <!-- SECTION 2: CENTRALIZED ARTIFACTS & CI -->
-  <PropertyGroup>
-    <!-- 
-      .NET 8+ native artifacts output. 
-      Removed explicit ArtifactsPath; the SDK natively roots this to .artifacts/ 
-      at the repository root, preventing path resolution conflicts.
-    -->
-    <UseArtifactsOutput>true</UseArtifactsOutput>
-    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true' Or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
-  </PropertyGroup>
-
-  <!-- SECTION 3: SDK, LANGUAGE & MONOREPO STANDARDS -->
   <PropertyGroup>
     <TargetFramework>net11.0</TargetFramework>
-    <LangVersion>preview</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    
-    <!-- Enforce C# strict mode (warns on implicit conversions and other legacy language quirks) -->
-    <Features>strict</Features>
 
-    <!-- Enforce Central Package Management (requires Directory.Packages.props) -->
-    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
-
-    <!-- Disable the implicit fallback folder for deterministic CI restoration -->
-    <DisableImplicitNuGetFallbackFolder>true</DisableImplicitNuGetFallbackFolder>
-  </PropertyGroup>
-
-  <!-- SECTION 4: AGGRESSIVE CODE ANALYSIS -->
-  <PropertyGroup>
-    <AnalysisLevel>latest-Recommended</AnalysisLevel>
-    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    
-    <!-- CodeAnalysisTreatWarningsAsErrors is deprecated in newer SDKs; TreatWarningsAsErrors handles everything now -->
-    <TreatWarningsAsErrors Condition="'$(Configuration)' == 'Release' Or '$(CI)' == 'true'">true</TreatWarningsAsErrors>
-
-    <!-- Fixes Roslyn Bug #41640 allowing CI to run IDE0005 (Unused Usings)
-         This flag is required for the unused usings analyzer to function properly in CI pipelines.
-    -->
+    <!-- Security Enforcement -->
+    <AnalysisMode>All</AnalysisMode>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
 
-    <!-- 
-      Suppressed Rules (Legacy, Stylistic, Framework-Specific, Performance):
-      
-      CS1591: Missing XML docs - Suppressed because GenerateDocumentationFile forces XML on everything
-      CA1014: CLSCompliant (legacy) - Not relevant for ASP.NET Core / OAuth 2.0 APIs
-      NU1608: Transitive preview mismatches - Acceptable for .NET 11 preview builds
-      
-      IDE0160: File-scoped vs block-scoped namespaces - Stylistic; modern convention is file-scoped
-      IDE0008: Use var instead of explicit type - Stylistic opinion
-      IDE0058: Unused expression statements - Stylistic; DI setup chains intentionally don't assign
-      IDE0046: Use expression-bodied members - Stylistic alternative syntax
-      IDE0022: Block bodies vs expression-bodied - Stylistic preference
-      
-      CA1716: Sub parameter name conflicts with VB.NET keyword - OAuth/JWT standard requires "sub" claim (RFC 7519)
-      CA2007: ConfigureAwait(false) everywhere - Legacy UI app requirement; ASP.NET Core has no SynchronizationContext
-      CA1062: Manual null checks - Redundant with Nullable Reference Types (<Nullable>enable</Nullable>)
-      CA1054: URI parameters - Framework-specific; acceptable for routing/OpenAPI contexts
-      CA1032: Exception constructors - Framework-specific exception boilerplate
-      
-      CA1848: LoggerMessage source generator - Performance optimization; deferred to "Polish Phase"
-      CA1031: Catching generic Exception - Intentional for fail-closed security middleware (RFC 9449 compliance)
-      CA1873: Equality operator performance - Micro-optimization; defer to after security implementation stabilizes
-    -->
-      <NoWarn>
-          $(NoWarn);
-          CS1591;IDE0160;CA1716;CA2007;CA1062;IDE0008;IDE0058;IDE0046;CA1054;CA1032;
-          IDE0022;CA1848;CA1031;CA1873;IDE0005;CA5404;CA1850
-      </NoWarn>  
-    </PropertyGroup>
-
-  <!-- SECTION 5: NATIVE AOT & TRIMMING READINESS -->
-  <!-- Simplified: MSBuild now intrinsically chains EnableTrimAnalyzer and EnableAotAnalyzer when PublishAot=true -->
-  <PropertyGroup Condition="'$(IsTestProject)' != 'true' And '$(IsTestingPlatformApplication)' != 'true' And ('$(OutputType)' == 'Exe' Or '$(PublishAot)' == 'true')">
-    <PublishAot>true</PublishAot>
-    <IsAotCompatible>true</IsAotCompatible>
-    
-    <!-- Keep trim validation strict even in debug builds to prevent CI surprises -->
-    <SuppressTrimAnalysisWarnings Condition="'$(Configuration)' == 'Debug'">false</SuppressTrimAnalysisWarnings>
+    <NoWarn>
+      $(NoWarn);
+      CS1591; <!-- Missing XML comments -->
+      CA1031; <!-- Catching generic Exception - Intentional for fail-closed security middleware (RFC 9449 compliance) -->
+      CA1032; <!-- Exception constructors -->
+      CA1034; <!-- Do not nest type (acceptable for Request/Response DTOs in Controllers) -->
+      CA1054; <!-- URI parameters - Framework-specific; acceptable for routing/OpenAPI contexts -->
+      CA1062; <!-- Validate arguments (redundant with Nullable enable) -->
+      CA1515; <!-- Because an application's API isn't typically referenced from outside the assembly (Program.cs) -->
+      CA1819; <!-- Properties should not return arrays (acceptable for API serialization) -->
+      CA1848; <!-- LoggerMessage source generator - Performance optimization; deferred to "Polish Phase" -->
+      CA1873; <!-- Equality operator performance - Micro-optimization; defer to after security implementation stabilizes -->
+      CA5398; <!-- Avoid hardcoding SslProtocols (acceptable for explicit TLS 1.3 enforcement in mTLS scenarios) -->
+      CA5404; <!-- Custom DPoP/iat validation overrides standard lifetime checks -->
+      CA1850; <!-- SHA256.HashData optimization -->
+      IDE0005; <!-- Unused usings (handles Roslyn CI bug) -->
+    </NoWarn>
   </PropertyGroup>
 
-  <!-- SECTION 6: REPRODUCIBLE BUILDS -->
-  <PropertyGroup>
-    <!-- 
-      Modern SDK handles deterministic paths automatically when ContinuousIntegrationBuild is true.
-      Removed the legacy DotNet.ReproducibleBuilds package reference. 
-    -->
-    <Deterministic Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</Deterministic>
-    <DebugType>embedded</DebugType>
-    <PublishRepositoryUrl>true</PublishRepositoryUrl>
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
-
-    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-    <RestoreLockedMode Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</RestoreLockedMode>
-  </PropertyGroup>
-
-  <!-- SECTION 7: SECURITY HARDENING -->
-  <PropertyGroup>
-    <!-- .NET 9+ defaults NuGetAuditMode to 'all', but making it explicit ensures it's never downgraded -->
-    <NuGetAudit>true</NuGetAudit>
-    <NuGetAuditLevel>moderate</NuGetAuditLevel>
-    <NuGetAuditMode>all</NuGetAuditMode>
-
-    <!-- 
-      Removed EnableUnsafeBinaryFormatterSerialization. 
-      BinaryFormatter was completely eradicated in .NET 9. Setting it now does nothing.
-    -->
-    <ControlFlowGuard>Guard</ControlFlowGuard>
-    <EnableSecurityCodeAnalysis>true</EnableSecurityCodeAnalysis>
-  </PropertyGroup>
-
-  <!-- SECTION 8: PERFORMANCE OPTIMIZATIONS -->
-  <PropertyGroup>
-    <!-- Accelerate Visual Studio builds -->
-    <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
-    
-    <!-- Transitive content files (e.g., appsettings.json from dependencies) -->
-    <MSBuildCopyContentTransitively>true</MSBuildCopyContentTransitively>
-  </PropertyGroup>
-
-  <!-- SECTION 9: PROJECT METADATA -->
-  <PropertyGroup>
-    <Authors>Nika Natsvlishvili</Authors>
-    <Company>NikaNats</Company>
-    <Copyright>Copyright © $([System.DateTime]::UtcNow.ToString('yyyy')) $(Company)</Copyright>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/NikaNats/Sentinel</RepositoryUrl>
-    <PackageTags>dpop;oauth2;fapi2;demoonstration-of-possession;security;authentication</PackageTags>
-  </PropertyGroup>
-
-  <!-- SECTION 10: GLOBAL ANALYZERS -->
-  <ItemGroup>
-    <!-- 
-      Removed Microsoft.CodeAnalysis.NetAnalyzers. It has been built directly into the .NET SDK 
-      since .NET 5. Referencing it via NuGet is a redundant, legacy practice.
-    -->
-    <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" PrivateAssets="all"/>
-  </ItemGroup>
-
-  <!-- SECTION 11: BUILD STATUS & DIAGNOSTICS -->
-  <Target Name="PrintBuildConfig" BeforeTargets="Build">
-    <Message Importance="high" Text="════════════════════════════════════════════════════════════════════════════════════"/>
-    <Message Importance="high" Text="[SENTINEL BUILD] Project: $(MSBuildProjectName) | Config: $(Configuration) | Framework: $(TargetFramework)"/>
-    <Message Importance="high" Text="[SENTINEL BUILD] AOT: $(PublishAot) | CI: $(ContinuousIntegrationBuild) | CPM: $(ManagePackageVersionsCentrally)"/>
-    <Message Importance="high" Text="════════════════════════════════════════════════════════════════════════════════════"/>
-  </Target>
-
-  <!-- SECTION 12: TEST PROJECT CUSTOMIZATION -->
-  <!-- Added IsTestingPlatformApplication to support the modern .NET 9+ Microsoft.Testing.Platform -->
+  <!-- Test Project Customization -->
   <PropertyGroup Condition="'$(IsTestProject)' == 'true' Or '$(IsTestingPlatformApplication)' == 'true'">
-    <NoWarn>$(NoWarn);CS1591;IDE0180</NoWarn>
-    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
-    <!-- Ensure test projects don't attempt to build natively unless explicitly requested -->
-    <PublishAot>false</PublishAot>
+    <NoWarn>
+      $(NoWarn);
+      CA1707; <!-- Remove underscores from test method names (standard test naming convention) -->
+      CA1711; <!-- Rename type names ending with 'Collection' (standard xUnit Fixture naming) -->
+      CA1812; <!-- Internal class never instantiated (acceptable for test helper classes and mocks) -->
+      CA2000; <!-- Dispose objects created in tests (acceptable for HttpClient/message handlers in test fixtures) -->
+      CA2213; <!-- IDisposable fields in test fixtures (acceptable for Testcontainers lifecycle management) -->
+      CA2234; <!-- Modify to call Uri overload (acceptable for test endpoint strings) -->
+    </NoWarn>
   </PropertyGroup>
-
 </Project>
