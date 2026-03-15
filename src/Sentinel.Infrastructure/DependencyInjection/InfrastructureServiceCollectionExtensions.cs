@@ -1,3 +1,4 @@
+// Sentinel Security API - FAPI 2.0 Compliant
 using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -21,40 +22,42 @@ public static class InfrastructureServiceCollectionExtensions
 {
     public static IServiceCollection AddInfrastructureLayer(this IServiceCollection services, IConfiguration configuration)
     {
-        var redisConnectionString = configuration.GetConnectionString("Redis");
+        string? redisConnectionString = configuration.GetConnectionString("Redis");
 
-        services.AddStackExchangeRedisCache(options =>
+        _ = services.AddStackExchangeRedisCache(options =>
         {
             options.Configuration = redisConnectionString;
         });
 
-        services.AddSingleton<IConnectionMultiplexer>(_ =>
+        _ = services.AddSingleton<IConnectionMultiplexer>(_ =>
         {
             if (string.IsNullOrWhiteSpace(redisConnectionString))
             {
                 throw new InvalidOperationException("Redis connection string is not configured.");
             }
 
-            var options = ConfigurationOptions.Parse(redisConnectionString);
+            ConfigurationOptions options = ConfigurationOptions.Parse(redisConnectionString);
             options.AbortOnConnectFail = false;
             options.ConnectRetry = 3;
 
             return ConnectionMultiplexer.Connect(options);
         });
 
-        services.AddSingleton<IEncryptionService, AesGcmEncryptionService>();
-        services.AddSingleton<IJtiReplayCache, JtiReplayCache>();
-        services.AddSingleton<IDpopNonceStore, DpopNonceStore>();
-        services.AddSingleton<ISessionBlacklistCache, SessionBlacklistCache>();
-        services.AddSingleton<IDpopProofValidator, DpopProofValidator>();
-        services.AddSingleton<ILogoutTokenValidator, LogoutTokenValidator>();
-        services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
+        _ = services.AddSingleton<IEncryptionService, AesGcmEncryptionService>();
+        _ = services.AddSingleton<IJtiReplayCache, JtiReplayCache>();
+        _ = services.AddSingleton<IDpopNonceStore, DpopNonceStore>();
+        _ = services.AddSingleton<ISessionBlacklistCache, SessionBlacklistCache>();
+        _ = services.AddSingleton<IDpopProofValidator, DpopProofValidator>();
+        _ = services.AddSingleton<ILogoutTokenValidator, LogoutTokenValidator>();
+        _ = services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
+        _ = services.AddSingleton<KeycloakAdminTokenProvider>();
 
-        services.AddHttpClient<IUmaPermissionService, KeycloakUmaPermissionService>();
-        services.AddHttpClient<ITokenRefreshService, KeycloakTokenRefreshService>();
-        services.AddHttpClient<IAuthRevocationService, KeycloakAuthRevocationService>();
+        _ = services.AddHttpClient<IUmaPermissionService, KeycloakUmaPermissionService>();
+        _ = services.AddHttpClient<ITokenRefreshService, KeycloakTokenRefreshService>();
+        _ = services.AddHttpClient("keycloak-admin");
+        _ = services.AddHttpClient<IAuthRevocationService, KeycloakAuthRevocationService>();
 
-        services.AddOpenTelemetry()
+        _ = services.AddOpenTelemetry()
             .WithTracing(t => t
                 .AddAspNetCoreInstrumentation()
                 .AddSource(AuthTelemetry.SourceName))
@@ -63,7 +66,7 @@ public static class InfrastructureServiceCollectionExtensions
                 .AddMeter(AuthTelemetry.MeterName)
                 .AddPrometheusExporter());
 
-        services
+        _ = services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {
@@ -90,7 +93,7 @@ public static class InfrastructureServiceCollectionExtensions
                 {
                     OnMessageReceived = context =>
                     {
-                        var authHeader = context.Request.Headers.Authorization.ToString();
+                        string authHeader = context.Request.Headers.Authorization.ToString();
                         if (!string.IsNullOrWhiteSpace(authHeader)
                             && authHeader.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase))
                         {
@@ -103,9 +106,9 @@ public static class InfrastructureServiceCollectionExtensions
                     {
                         try
                         {
-                            var jti = context.Principal?.FindFirst("jti")?.Value;
-                            var exp = context.Principal?.FindFirst("exp")?.Value;
-                            var cache = context.HttpContext.RequestServices.GetRequiredService<IJtiReplayCache>();
+                            string? jti = context.Principal?.FindFirst("jti")?.Value;
+                            string? exp = context.Principal?.FindFirst("exp")?.Value;
+                            IJtiReplayCache cache = context.HttpContext.RequestServices.GetRequiredService<IJtiReplayCache>();
 
                             if (string.IsNullOrWhiteSpace(jti) || string.IsNullOrWhiteSpace(exp))
                             {
@@ -113,39 +116,39 @@ public static class InfrastructureServiceCollectionExtensions
                                 return;
                             }
 
-                            if (!long.TryParse(exp, out var expUnix))
+                            if (!long.TryParse(exp, out long expUnix))
                             {
                                 context.Fail("Invalid exp claim.");
                                 return;
                             }
 
-                            var expTime = DateTimeOffset.FromUnixTimeSeconds(expUnix);
-                            var remainingTtl = expTime - DateTimeOffset.UtcNow;
+                            DateTimeOffset expTime = DateTimeOffset.FromUnixTimeSeconds(expUnix);
+                            TimeSpan remainingTtl = expTime - DateTimeOffset.UtcNow;
                             if (remainingTtl <= TimeSpan.Zero)
                             {
                                 context.Fail("Token is already expired.");
                                 return;
                             }
 
-                            var stored = await cache.TryStoreIfNotExistsAsync(jti, remainingTtl, context.HttpContext.RequestAborted);
+                            bool stored = await cache.TryStoreIfNotExistsAsync(jti, remainingTtl, context.HttpContext.RequestAborted);
                             if (!stored)
                             {
-                                var emitter = context.HttpContext.RequestServices.GetRequiredService<ISecurityEventEmitter>();
-                                var ipHash = SecurityContextHasher.HashIp(context.HttpContext);
+                                ISecurityEventEmitter emitter = context.HttpContext.RequestServices.GetRequiredService<ISecurityEventEmitter>();
+                                string ipHash = SecurityContextHasher.HashIp(context.HttpContext);
                                 emitter.EmitTokenReplay(jti, context.Principal?.FindFirst("sub")?.Value, "sentinel-api-client", ipHash);
                                 context.Fail("Token replay detected.");
                                 return;
                             }
 
-                            var sid = context.Principal?.FindFirst("sid")?.Value;
+                            string? sid = context.Principal?.FindFirst("sid")?.Value;
                             if (!string.IsNullOrWhiteSpace(sid))
                             {
-                                var blacklistCache = context.HttpContext.RequestServices.GetRequiredService<ISessionBlacklistCache>();
-                                var isBlacklisted = await blacklistCache.IsSessionBlacklistedAsync(sid, context.HttpContext.RequestAborted);
+                                ISessionBlacklistCache blacklistCache = context.HttpContext.RequestServices.GetRequiredService<ISessionBlacklistCache>();
+                                bool isBlacklisted = await blacklistCache.IsSessionBlacklistedAsync(sid, context.HttpContext.RequestAborted);
                                 if (isBlacklisted)
                                 {
-                                    var emitter = context.HttpContext.RequestServices.GetRequiredService<ISecurityEventEmitter>();
-                                    var ipHash = SecurityContextHasher.HashIp(context.HttpContext);
+                                    ISecurityEventEmitter emitter = context.HttpContext.RequestServices.GetRequiredService<ISecurityEventEmitter>();
+                                    string ipHash = SecurityContextHasher.HashIp(context.HttpContext);
                                     emitter.EmitAuthFailure("revoked_session_usage_attempt", context.Principal?.FindFirst("sub")?.Value, ipHash);
                                     context.Fail("Session has been terminated.");
                                     return;
@@ -154,7 +157,7 @@ public static class InfrastructureServiceCollectionExtensions
                         }
                         catch (ReplayCacheUnavailableException ex)
                         {
-                            var emitter = context.HttpContext.RequestServices.GetRequiredService<ISecurityEventEmitter>();
+                            ISecurityEventEmitter emitter = context.HttpContext.RequestServices.GetRequiredService<ISecurityEventEmitter>();
                             emitter.EmitAuthFailure("replay_cache_unavailable", context.Principal?.FindFirst("sub")?.Value, SecurityContextHasher.HashIp(context.HttpContext));
                             context.Fail(ex);
                         }

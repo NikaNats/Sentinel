@@ -1,9 +1,10 @@
+// Sentinel Security API - FAPI 2.0 Compliant
+using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Sentinel.Application.Common.Abstractions;
+using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Telemetry;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 
 namespace Sentinel.Middleware;
 
@@ -149,43 +150,8 @@ public sealed class DpopValidationMiddleware(
         }
 
         using var jwkDoc = JsonDocument.Parse(jwkJson);
-        var jwk = jwkDoc.RootElement;
-
-        if (jwk.TryGetProperty("kty", out var ktyElement)
-            && string.Equals(ktyElement.GetString(), "EC", StringComparison.Ordinal)
-            && jwk.TryGetProperty("crv", out var crv)
-            && jwk.TryGetProperty("x", out var x)
-            && jwk.TryGetProperty("y", out var y))
-        {
-            var canonical = JsonSerializer.Serialize(new Dictionary<string, string>
-            {
-                ["crv"] = crv.GetString() ?? string.Empty,
-                ["kty"] = "EC",
-                ["x"] = x.GetString() ?? string.Empty,
-                ["y"] = y.GetString() ?? string.Empty
-            });
-
-            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
-            return Microsoft.IdentityModel.Tokens.Base64UrlEncoder.Encode(hash);
-        }
-
-        if (jwk.TryGetProperty("kty", out var rsaKty)
-            && string.Equals(rsaKty.GetString(), "RSA", StringComparison.Ordinal)
-            && jwk.TryGetProperty("e", out var e)
-            && jwk.TryGetProperty("n", out var n))
-        {
-            var canonical = JsonSerializer.Serialize(new Dictionary<string, string>
-            {
-                ["e"] = e.GetString() ?? string.Empty,
-                ["kty"] = "RSA",
-                ["n"] = n.GetString() ?? string.Empty
-            });
-
-            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
-            return Microsoft.IdentityModel.Tokens.Base64UrlEncoder.Encode(hash);
-        }
-
-        return null;
+        var thumbprint = DpopThumbprintHelper.ComputeJwkThumbprint(jwkDoc.RootElement);
+        return string.IsNullOrWhiteSpace(thumbprint) ? null : thumbprint;
     }
 
     private static string GenerateNonce()

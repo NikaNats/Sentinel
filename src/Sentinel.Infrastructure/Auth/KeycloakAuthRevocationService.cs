@@ -1,3 +1,5 @@
+// Sentinel Security API - FAPI 2.0 Compliant
+using System.Net.Http.Headers;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Telemetry;
@@ -6,6 +8,8 @@ namespace Sentinel.Infrastructure.Auth;
 
 public sealed class KeycloakAuthRevocationService(
     HttpClient httpClient,
+    IHttpClientFactory httpClientFactory,
+    KeycloakAdminTokenProvider adminTokenProvider,
     IConfiguration configuration,
     ISecurityEventEmitter securityEventEmitter,
     ILogger<KeycloakAuthRevocationService> logger) : IAuthRevocationService
@@ -53,20 +57,29 @@ public sealed class KeycloakAuthRevocationService(
     public async Task<bool> RevokeAllSessionsAsync(string subjectId, CancellationToken ct)
     {
         var authority = configuration["Keycloak:Authority"]?.TrimEnd('/');
-        if (string.IsNullOrWhiteSpace(authority))
+        if (string.IsNullOrWhiteSpace(authority)
+            || !KeycloakAuthorityEndpoints.TryBuild(authority, out _, out var adminRealmEndpoint))
         {
-            logger.LogWarning("Global logout skipped because Keycloak authority configuration is missing.");
+            logger.LogWarning("Global logout skipped because Keycloak authority configuration is missing or invalid.");
             return false;
         }
 
-        var adminLogoutEndpoint = authority.Replace("/realms/", "/admin/realms/", StringComparison.OrdinalIgnoreCase)
-            + $"/users/{subjectId}/logout";
+        var adminAccessToken = await adminTokenProvider.GetAccessTokenAsync(ct);
+        if (string.IsNullOrWhiteSpace(adminAccessToken))
+        {
+            logger.LogWarning("Global logout skipped because Keycloak admin token could not be acquired.");
+            return false;
+        }
+
+        var adminLogoutEndpoint = new Uri(adminRealmEndpoint, $"users/{Uri.EscapeDataString(subjectId)}/logout");
 
         using var request = new HttpRequestMessage(HttpMethod.Post, adminLogoutEndpoint);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminAccessToken);
 
         try
         {
-            using var response = await httpClient.SendAsync(request, ct);
+            var adminHttpClient = httpClientFactory.CreateClient("keycloak-admin");
+            using var response = await adminHttpClient.SendAsync(request, ct);
             if (response.IsSuccessStatusCode)
             {
                 securityEventEmitter.EmitAuthFailure("global_logout_triggered", subjectId, "internal");
