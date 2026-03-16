@@ -1,4 +1,7 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Moq;
 using Sentinel.Middleware;
 
 namespace Sentinel.Tests.Unit;
@@ -22,7 +25,11 @@ public sealed class SecurityHeadersMiddlewareTests
             return Task.CompletedTask;
         };
 
-        var middleware = new SecurityHeadersMiddleware(next);
+        // Mock production environment (not development)
+        var envMock = new Mock<IWebHostEnvironment>();
+        envMock.SetupGet(e => e.EnvironmentName).Returns("Production");
+
+        var middleware = new SecurityHeadersMiddleware(next, envMock.Object);
 
         await middleware.InvokeAsync(context);
 

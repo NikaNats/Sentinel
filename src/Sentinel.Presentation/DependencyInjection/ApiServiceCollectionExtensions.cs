@@ -73,7 +73,7 @@ public static class ApiServiceCollectionExtensions
         app.UseExceptionHandler();
         app.UseStatusCodePages();
 
-        app.UseMiddleware<SecurityHeadersMiddleware>();
+        app.UseSecurityHeaders();
 
         app.UseHttpsRedirection();
         app.UseRouting();

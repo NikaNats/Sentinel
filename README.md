@@ -164,6 +164,9 @@ All projects inherit these settings automatically; overrides in individual .cspr
 
 ## Quick Start
 
+Interactive API Reference (Development only):
+http://localhost:5260/scalar
+
 ### 1. Restore, Build, Test
 
 ```powershell

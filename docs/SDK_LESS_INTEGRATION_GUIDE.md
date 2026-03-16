@@ -2,6 +2,11 @@
 
 This guide explains how to integrate with Sentinel without an SDK, using plain HTTP and DPoP proof generation with standard libraries.
 
+## Instant Interactive Demo
+
+While building your client, open http://localhost:5260/scalar and click "Try it" on any endpoint.
+It automatically handles DPoP nonce rotation and shows the exact headers you need.
+
 ## Table of Contents
 
 1. [Overview](#overview)
