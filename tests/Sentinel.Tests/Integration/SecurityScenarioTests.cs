@@ -32,7 +32,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         var requestUrl = new Uri(client.BaseAddress!, "/v1/profile").ToString();
         using var request = CreateSignedRequest(ecdsa, jwkObject, expiredToken, HttpMethod.Get, requestUrl);
 
-        var response = await client.SendAsync(request);
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -87,7 +87,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", stolenAccessToken);
         request.Headers.Add("DPoP", attackerProof);
 
-        var response = await client.SendAsync(request);
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Contains("invalid_dpop_proof", response.Headers.WwwAuthenticate.ToString());
@@ -120,7 +120,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         using var req1 = new HttpRequestMessage(HttpMethod.Get, requestUri);
         req1.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken1);
         req1.Headers.Add("DPoP", firstProof);
-        var res1 = await client.SendAsync(req1);
+        var res1 = await client.SendAsync(req1, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, res1.StatusCode);
 
         Assert.True(res1.Headers.TryGetValues("DPoP-Nonce", out var nonceValues));
@@ -130,7 +130,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         using var req2 = new HttpRequestMessage(HttpMethod.Get, requestUri);
         req2.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken2);
         req2.Headers.Add("DPoP", replayProofWithNonce);
-        var res2 = await client.SendAsync(req2);
+        var res2 = await client.SendAsync(req2, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, res2.StatusCode);
         Assert.Contains("invalid_dpop_proof", res2.Headers.WwwAuthenticate.ToString());
     }
@@ -153,7 +153,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         var requestUrl = new Uri(client.BaseAddress!, "/v1/profile").ToString();
         using var request = CreateSignedRequest(ecdsa, jwkObject, badAudienceToken, HttpMethod.Get, requestUrl);
 
-        var response = await client.SendAsync(request);
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -176,7 +176,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         var requestUrl = new Uri(client.BaseAddress!, "/v1/profile").ToString();
         using var request = CreateSignedRequest(ecdsa, jwkObject, noScopeToken, HttpMethod.Get, requestUrl);
 
-        var response = await client.SendAsync(request);
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
@@ -203,7 +203,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         {
             var accessToken = TestTokenIssuer.MintAccessToken(jkt);
             using var request = CreateSignedRequest(ecdsa, jwkObject, accessToken, HttpMethod.Get, requestUrl);
-            var response = await client.SendAsync(request);
+            var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
             if (response.StatusCode == HttpStatusCode.OK)
             {
@@ -242,7 +242,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
             subject: "documents-user-1");
 
         using var request = CreateSignedRequest(ecdsa, jwkObject, token, HttpMethod.Get, requestUrl);
-        var response = await client.SendAsync(request);
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -276,7 +276,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
             new { title = "budget", content = "classified" });
         request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
 
-        var response = await client.SendAsync(request);
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
@@ -309,7 +309,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
             new { title = "secrets", content = "content" });
         request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
 
-        var response = await client.SendAsync(request);
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Contains("insufficient_user_authentication", response.Headers.WwwAuthenticate.ToString());
     }
@@ -342,7 +342,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
             new { title = "invoice", content = "v1" });
         request1.Headers.Add("Idempotency-Key", idempotencyKey);
 
-        var response1 = await client.SendAsync(request1);
+        var response1 = await client.SendAsync(request1, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Created, response1.StatusCode);
         Assert.True(response1.Headers.TryGetValues("DPoP-Nonce", out var nonceValues));
         var nonce = nonceValues!.First();
@@ -358,7 +358,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
             nonce);
         request2.Headers.Add("Idempotency-Key", idempotencyKey);
 
-        var response2 = await client.SendAsync(request2);
+        var response2 = await client.SendAsync(request2, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, response2.StatusCode);
     }
 
@@ -393,10 +393,10 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
             new { title = "contract", content = "internal" });
         createRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
 
-        var createResponse = await client.SendAsync(createRequest);
+        var createResponse = await client.SendAsync(createRequest, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
 
-        var createdJson = await createResponse.Content.ReadAsStringAsync();
+        var createdJson = await createResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         using var createdDoc = JsonDocument.Parse(createdJson);
         var documentId = createdDoc.RootElement.GetProperty("id").GetGuid();
 
@@ -419,7 +419,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         var readUrl = new Uri(client.BaseAddress!, $"/v1/documents/{documentId}").ToString();
         using var readRequest = CreateSignedRequest(attackerKey, attackerJwkObject, attackerToken, HttpMethod.Get, readUrl);
 
-        var readResponse = await client.SendAsync(readRequest);
+        var readResponse = await client.SendAsync(readRequest, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, readResponse.StatusCode);
     }
 
@@ -450,11 +450,11 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
             new { title = "to-delete", content = "demo" });
         createRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
 
-        var createResponse = await client.SendAsync(createRequest);
+        var createResponse = await client.SendAsync(createRequest, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
         Assert.True(createResponse.Headers.TryGetValues("DPoP-Nonce", out var nonceValues));
         var nonce = nonceValues!.First();
-        using var createdDoc = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        using var createdDoc = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var documentId = createdDoc.RootElement.GetProperty("id").GetGuid();
 
         var deleteToken = TestTokenIssuer.MintAccessToken(jkt, acr: "acr3", scope: "documents:write", subject: ownerSub);
@@ -462,10 +462,10 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         using var deleteRequest = CreateSignedRequest(key, jwkObject, deleteToken, HttpMethod.Delete, deleteUrl, nonce);
         deleteRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
 
-        var deleteResponse = await client.SendAsync(deleteRequest);
+        var deleteResponse = await client.SendAsync(deleteRequest, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Forbidden, deleteResponse.StatusCode);
-        var problemJson = await deleteResponse.Content.ReadAsStringAsync();
+        var problemJson = await deleteResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.Contains("/errors/mtls-binding-failed", problemJson);
     }
 
