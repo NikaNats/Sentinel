@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.OpenApi;
 using Sentinel.Middleware;
 using System.Threading.RateLimiting;
 
@@ -66,38 +65,6 @@ public static class ApiServiceCollectionExtensions
         services.AddControllers();
         services.AddHttpContextAccessor();
 
-        services.AddOpenApi(options =>
-        {
-            options.AddDocumentTransformer((document, _, _) =>
-            {
-                if (document.Paths is null)
-                {
-                    return Task.CompletedTask;
-                }
-
-                document.Components ??= new OpenApiComponents();
-                document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
-
-                document.Components.SecuritySchemes["DPoP"] = new OpenApiSecurityScheme
-                {
-                    Type = SecuritySchemeType.Http,
-                    Scheme = "DPoP",
-                    BearerFormat = "JWT",
-                    In = ParameterLocation.Header,
-                    Description = "FAPI 2.0 Demonstrating Proof-of-Possession (DPoP) bound access token."
-                };
-
-                document.Components.SecuritySchemes["mTLS"] = new OpenApiSecurityScheme
-                {
-                    Type = SecuritySchemeType.Http,
-                    Scheme = "MutualTLS",
-                    Description = "Mutual TLS (mTLS) client certificate authentication for Machine-to-Machine (M2M) endpoints."
-                };
-
-                return Task.CompletedTask;
-            });
-        });
-
         return services;
     }
 
@@ -105,11 +72,6 @@ public static class ApiServiceCollectionExtensions
     {
         app.UseExceptionHandler();
         app.UseStatusCodePages();
-
-        if (app.Environment.IsDevelopment())
-        {
-            app.MapOpenApi();
-        }
 
         app.UseMiddleware<SecurityHeadersMiddleware>();
 
