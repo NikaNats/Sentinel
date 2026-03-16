@@ -28,6 +28,7 @@ Operational procedures for incident response, troubleshooting, monitoring, and m
 | `dpop_validation_failures_total` | Counter | < 2% | > 5% failure rate |
 | `rate_limit_exceeded_total` | Counter | < 1% of requests | > 5% rate-limited |
 | `jwt_replay_detected_total` | Counter | 0 (investigate any) | > 0 |
+| `security_document_deleted_total` | Counter | low baseline | sudden spike > 5x hourly baseline |
 | `dpop_nonce_cache_hits` | Counter | high (cached nonces) | None |
 | `dpop_nonce_cache_misses` | Counter | low (new nonces) | > 20% misses |
 | `redis_connection_pool_size` | Gauge | 10 | < 5 connections |
@@ -109,6 +110,17 @@ groups:
           summary: "DPoP validation failure rate > 5%"
           runbook: "k8s.example.com/runbook/dpop-validation"
 
+      # Document Delete Surge
+      - alert: HighDocumentDeleteRate
+        expr: |
+          rate(security_document_deleted_total[5m])
+          > (5 * avg_over_time(security_document_deleted_total[1h]))
+        for: 10m
+        severity: critical
+        annotations:
+          summary: "Document delete rate exceeds 5x baseline"
+          runbook: "k8s.example.com/runbook/document-delete-surge"
+
       # Nonce Cache Degradation
       - alert: DpopNonceCacheMisses
         expr: |
@@ -160,7 +172,7 @@ groups:
    ```bash
    # Count replays per subject
    kubectl logs -f deployment/sentinel | jq -s 'group_by(.user_id) | map({user: .[0].user_id, count: length})'
-   
+
    # If single user: likely client bug
    # If many users: likely attack
    ```
@@ -180,7 +192,7 @@ groups:
    ```bash
    # SSH to Keycloak pod
    kubectl exec -it pod/keycloak-0 -- /bin/sh
-   
+
    # Check event log for duplicate JTI issuance
    cat /opt/keycloak/data/events.log | grep "duplicate_jti"
    ```
@@ -189,10 +201,10 @@ groups:
    ```bash
    # Connect to Redis
    redis-cli -h redis-master -p 6379
-   
+
    # Check for corrupted keys
    KEYS "jti:token:*" | head -20
-   
+
    # Verify oldest entry (should be recent)
    SCAN 0 MATCH "jti:token:*" COUNT 100
    ```
@@ -269,10 +281,10 @@ groups:
    ```bash
    # Fetch current key from Keycloak
    curl -s http://keycloak:8080/realms/sentinel/protocol/openid-connect/certs | jq '.keys[0]'
-   
+
    # Check Sentinel config for cached key
    kubectl exec pod/sentinel-0 -- cat /etc/sentinel/keycloak-key.json
-   
+
    # If different hash → stale key issue
    ```
 
@@ -280,10 +292,10 @@ groups:
    ```bash
    # Sentinel server time
    kubectl exec pod/sentinel-0 -- date +%s
-   
+
    # Keycloak server time
    kubectl exec pod/keycloak-0 -- date +%s
-   
+
    # Diff should be < 5 seconds
    ```
 
@@ -291,7 +303,7 @@ groups:
    ```bash
    # From Sentinel pod
    kubectl exec pod/sentinel-0 -- curl -v http://keycloak:8080/health
-   
+
    # If timeout → network issue
    ```
 
@@ -470,7 +482,7 @@ groups:
    # Check total request rate
    kubectl logs -f deployment/sentinel --selector=app=sentinel \
      | jq '.timestamp' | tail -1000 | jq 'count' / 60  # req/sec
-   
+
    # Expected: 100-500 req/sec; Warning: > 1000 req/sec
    ```
 
@@ -719,7 +731,7 @@ redis-cli -h redis-master -p 6379 SCAN 0 MATCH "idempotency:*:in_progress" \
    ```bash
    # Extract user IDs from replay logs
    USERS=$(kubectl logs -f deployment/sentinel | jq -r '.user_id' | sort -u)
-   
+
    # For each user, add to session blacklist
    for user in $USERS; do
      redis-cli -h redis-master SET "blacklist:session:$user" "compromised" EX 86400
@@ -737,11 +749,11 @@ redis-cli -h redis-master -p 6379 SCAN 0 MATCH "idempotency:*:in_progress" \
    ```bash
    # Export logs for analysis
    kubectl logs deployment/sentinel --tail=10000 > /tmp/sentinel-incident.log
-   
+
    # Export Redis state
    redis-cli -h redis-master BGSAVE
    # Wait for RDB completion; copy to S3/Azure Blob
-   
+
    # Check Keycloak audit log for irregular events
    ```
 
@@ -776,7 +788,7 @@ redis-cli -h redis-master -p 6379 SCAN 0 MATCH "idempotency:*:in_progress" \
    # - Keycloak issuing duplicate JTIs?
    # - Redis persistence snapshot exfiltration?
    # - Insider threat?
-   
+
    # Recommendation: Implement mandatory code review for token handling
    ```
 
@@ -792,7 +804,7 @@ redis-cli -h redis-master -p 6379 SCAN 0 MATCH "idempotency:*:in_progress" \
 
 ### Keycloak Realm Configuration Backup
 
-**Frequency:** Daily automated, manual backup before changes  
+**Frequency:** Daily automated, manual backup before changes
 **Retention:** 30 days rolling
 
 ```bash
@@ -819,7 +831,7 @@ jq '.' $BACKUP_FILE > /dev/null && echo "✓ Backup valid"
 
 ### Redis Cluster Health Check
 
-**Frequency:** Daily; twice daily during peak traffic  
+**Frequency:** Daily; twice daily during peak traffic
 **On-call:** SRE responsible
 
 ```bash

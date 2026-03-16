@@ -39,13 +39,17 @@ public static class ApplicationServiceCollectionExtensions
                 policy.RequireAuthenticatedUser()
                     .AddRequirements(new AcrRequirement("acr3")));
 
-            options.AddPolicy(Policies.DocumentRead, policy =>
+            options.AddPolicy(Policies.DocumentsRead, policy =>
                 policy.RequireAuthenticatedUser()
-                    .AddRequirements(new UmaResourceRequirement("document:read")));
+                    .AddRequirements(
+                        new ScopeRequirement("documents:read"),
+                        new AcrRequirement("acr2")));
 
-            options.AddPolicy(Policies.DocumentDelete, policy =>
+            options.AddPolicy(Policies.DocumentsWrite, policy =>
                 policy.RequireAuthenticatedUser()
-                    .AddRequirements(new UmaResourceRequirement("document:delete")));
+                    .AddRequirements(
+                        new ScopeRequirement("documents:write"),
+                        new AcrRequirement("acr3")));
         });
 
         return services;

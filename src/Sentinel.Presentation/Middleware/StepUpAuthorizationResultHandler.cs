@@ -7,7 +7,20 @@ namespace Sentinel.Middleware;
 
 public sealed class StepUpAuthorizationResultHandler : IAuthorizationMiddlewareResultHandler
 {
+    private static readonly Dictionary<string, int> AcrRank = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["acr1"] = 1,
+        ["acr2"] = 2,
+        ["acr3"] = 3
+    };
+
     private readonly AuthorizationMiddlewareResultHandler defaultHandler = new();
+    private readonly ILogger<StepUpAuthorizationResultHandler> logger;
+
+    public StepUpAuthorizationResultHandler(ILogger<StepUpAuthorizationResultHandler> logger)
+    {
+        this.logger = logger;
+    }
 
     public async Task HandleAsync(
         RequestDelegate next,
@@ -22,6 +35,8 @@ public sealed class StepUpAuthorizationResultHandler : IAuthorizationMiddlewareR
                 .OfType<AcrRequirement>()
                 .FirstOrDefault();
 
+            acrRequirement ??= ResolveAcrRequirementFromFailure(context, policy, authorizeResult);
+
             if (acrRequirement is not null)
             {
                 var requiredAcr = acrRequirement.MinimumAcr;
@@ -32,6 +47,12 @@ public sealed class StepUpAuthorizationResultHandler : IAuthorizationMiddlewareR
 
                 var wwwAuthenticateHeader =
                     $"{authScheme} error=\"insufficient_user_authentication\", error_description=\"Step-up authentication required\", acr_values=\"{requiredAcr}\"";
+
+                logger.LogWarning(
+                    "security:acr_stepup_triggered required_acr={RequiredAcr} sub={Subject} path={Path}",
+                    requiredAcr,
+                    context.User.FindFirst("sub")?.Value ?? "unknown",
+                    context.Request.Path);
 
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 context.Response.Headers.Append("WWW-Authenticate", wwwAuthenticateHeader);
@@ -53,5 +74,58 @@ public sealed class StepUpAuthorizationResultHandler : IAuthorizationMiddlewareR
         }
 
         await defaultHandler.HandleAsync(next, context, policy, authorizeResult);
+    }
+
+    private static AcrRequirement? ResolveAcrRequirementFromFailure(
+        HttpContext context,
+        AuthorizationPolicy policy,
+        PolicyAuthorizationResult authorizeResult)
+    {
+        var failureReasons = authorizeResult.AuthorizationFailure?
+            .FailureReasons
+            .Select(r => r.Message)
+            .ToArray()
+            ?? [];
+
+        foreach (var reason in failureReasons)
+        {
+            if (reason.StartsWith("Insufficient ACR.", StringComparison.Ordinal)
+                && reason.Contains("Required:", StringComparison.Ordinal))
+            {
+                var markerIndex = reason.IndexOf("Required:", StringComparison.Ordinal);
+                if (markerIndex >= 0)
+                {
+                    var requiredAcr = reason[(markerIndex + "Required:".Length)..]
+                        .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                        .FirstOrDefault();
+
+                    if (!string.IsNullOrWhiteSpace(requiredAcr))
+                    {
+                        return new AcrRequirement(requiredAcr);
+                    }
+                }
+            }
+        }
+
+        var tokenAcr = context.User.FindFirst("acr")?.Value;
+        if (!AcrRank.TryGetValue(tokenAcr ?? string.Empty, out var tokenRank))
+        {
+            return null;
+        }
+
+        var requiredAcrPolicy = policy.Requirements
+            .OfType<AcrRequirement>()
+            .OrderByDescending(requirement => AcrRank.TryGetValue(requirement.MinimumAcr, out var rank) ? rank : 0)
+            .FirstOrDefault();
+
+        if (requiredAcrPolicy is null)
+        {
+            return null;
+        }
+
+        return AcrRank.TryGetValue(requiredAcrPolicy.MinimumAcr, out var requiredRank)
+            && tokenRank < requiredRank
+            ? requiredAcrPolicy
+            : null;
     }
 }

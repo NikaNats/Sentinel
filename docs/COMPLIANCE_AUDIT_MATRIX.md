@@ -1,7 +1,7 @@
 # Compliance & Audit Matrix for Sentinel
 
-**Scope:** DPoP-protected authentication API  
-**Frameworks:** OAuth 2.0, FAPI 2.0 Baseline, RFC 9449, RFC 7518, RFC 7519  
+**Scope:** DPoP-protected authentication API
+**Frameworks:** OAuth 2.0, FAPI 2.0 Baseline, RFC 9449, RFC 7518, RFC 7519
 **Last Updated:** 2026-03-15
 
 ---
@@ -72,6 +72,8 @@ Sentinel implementation evidence mapped to regulatory/framework requirements.
 | **5.2.2.1** | Token endpoint: mutual TLS (optional for FAPI2 Baseline) | Optional (not required) | mTLS available via client certificate binding | ✅ Pass (optional) |
 | **5.2.3** | Resource endpoint: require HTTPS | Enforced | TLS middleware active; HSTS header set | ✅ Pass |
 | **5.2.3.1** | Resource endpoint: DPoP proof required | Enforced | Middleware validates proof on all protected endpoints | ✅ Pass |
+| **5.2.3.2** | Resource authorization via scope + assurance | Enforced on `/v1/documents` (`documents:read` + `acr2`, writes require `documents:write` + `acr3`) | Application policies + step-up handler | ✅ Pass |
+| **5.2.3.3** | Replay-safe write semantics | Enforced via idempotency + replay caches on document writes | `RequireIdempotency` + JWT/DPoP JTI replay cache | ✅ Pass |
 | **5.3.1** | Client authentication: confidential clients use client credentials | Keycloak enforces | Keycloak config: confidential clients required | ✅ Pass |
 | **5.3.2** | Client credentials: not stored in browser/app | Keycloak responsibility | Backend-only client credentials | ✅ Pass |
 | **6.1** | Token response: include `token_type` | Implemented | Response: `{ "token_type": "Bearer", ... }` | ✅ Pass |
@@ -125,6 +127,7 @@ Sentinel implementation evidence mapped to regulatory/framework requirements.
 | Requirement | Requirement Detail | Implementation | Evidence | Audit Status |
 |-------------|-------------------|----------------|----------|--------------|
 | **Security Events Logged** | All auth failures, rate limits, token reuse logged | Implemented via OpenTelemetry | Activity events: `security:auth_failed`, `security:token_reuse` | ✅ Pass |
+| **Security Events Logged** | Resource mutation audit events logged | Implemented on document create/delete + step-up trigger | `security:document_created`, `security:document_deleted`, `security:acr_stepup_triggered` | ✅ Pass |
 | **Immutable Audit Log** | Logs not modifiable after write | Append-only; export to S3/Azure | Logs stored in immutable storage | ✅ Pass |
 | **Audit Log Retention** | Minimum 90 days (configurable) | 90 days default | CloudWatch/Application Insights default | ✅ Pass |
 | **Audit Log Contents** | Timestamp, user, action, result | Structured JSON format | OpenTelemetry attributes include all | ✅ Pass |
@@ -217,7 +220,7 @@ Logging & Monitoring
 
 ## Continuous Compliance
 
-**Quarterly Review:** Verify all requirements still met; document drift  
-**Annual Audit:** External security firm assessment  
+**Quarterly Review:** Verify all requirements still met; document drift
+**Annual Audit:** External security firm assessment
 **Incident-Driven:** Any security event triggers compliance review
 

@@ -221,17 +221,278 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         Assert.True(rateLimitedCount > 0, "Expected at least one 429 TooManyRequests response.");
     }
 
-    private static HttpRequestMessage CreateSignedRequest(ECDsa ecdsa, Dictionary<string, string> jwkObject, string accessToken, HttpMethod method, string url)
+    [Fact]
+    public async Task S15_DocumentsList_WithReadScopeAndAcr2_Returns200()
     {
+        var requestUrl = new Uri(client.BaseAddress!, "/v1/documents").ToString();
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ecdsa));
+        var jwkObject = new Dictionary<string, string>
+        {
+            ["crv"] = jwk.Crv!,
+            ["kty"] = jwk.Kty!,
+            ["x"] = jwk.X!,
+            ["y"] = jwk.Y!
+        };
+
+        var token = TestTokenIssuer.MintAccessToken(
+            ComputeEcThumbprint(jwkObject),
+            acr: "acr2",
+            scope: "documents:read",
+            subject: "documents-user-1");
+
+        using var request = CreateSignedRequest(ecdsa, jwkObject, token, HttpMethod.Get, requestUrl);
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task S16_DocumentsWrite_WithReadOnlyScope_Returns403()
+    {
+        var requestUrl = new Uri(client.BaseAddress!, "/v1/documents").ToString();
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ecdsa));
+        var jwkObject = new Dictionary<string, string>
+        {
+            ["crv"] = jwk.Crv!,
+            ["kty"] = jwk.Kty!,
+            ["x"] = jwk.X!,
+            ["y"] = jwk.Y!
+        };
+
+        var token = TestTokenIssuer.MintAccessToken(
+            ComputeEcThumbprint(jwkObject),
+            acr: "acr3",
+            scope: "documents:read",
+            subject: "documents-user-2");
+
+        using var request = CreateSignedJsonRequest(
+            ecdsa,
+            jwkObject,
+            token,
+            HttpMethod.Post,
+            requestUrl,
+            new { title = "budget", content = "classified" });
+        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+
+        var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task S17_DocumentsWrite_WithAcr2_TriggersStepUp401()
+    {
+        var requestUrl = new Uri(client.BaseAddress!, "/v1/documents").ToString();
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ecdsa));
+        var jwkObject = new Dictionary<string, string>
+        {
+            ["crv"] = jwk.Crv!,
+            ["kty"] = jwk.Kty!,
+            ["x"] = jwk.X!,
+            ["y"] = jwk.Y!
+        };
+
+        var token = TestTokenIssuer.MintAccessToken(
+            ComputeEcThumbprint(jwkObject),
+            acr: "acr2",
+            scope: "documents:write",
+            subject: "documents-user-3");
+
+        using var request = CreateSignedJsonRequest(
+            ecdsa,
+            jwkObject,
+            token,
+            HttpMethod.Post,
+            requestUrl,
+            new { title = "secrets", content = "content" });
+        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+
+        var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Contains("insufficient_user_authentication", response.Headers.WwwAuthenticate.ToString());
+    }
+
+    [Fact]
+    public async Task S18_DocumentsCreate_WithSameIdempotencyKey_Returns204OnRetry()
+    {
+        var requestUrl = new Uri(client.BaseAddress!, "/v1/documents").ToString();
+        const string subject = "documents-user-4";
+        var idempotencyKey = Guid.NewGuid().ToString();
+
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ecdsa));
+        var jwkObject = new Dictionary<string, string>
+        {
+            ["crv"] = jwk.Crv!,
+            ["kty"] = jwk.Kty!,
+            ["x"] = jwk.X!,
+            ["y"] = jwk.Y!
+        };
+        var jkt = ComputeEcThumbprint(jwkObject);
+
+        var token1 = TestTokenIssuer.MintAccessToken(jkt, acr: "acr3", scope: "documents:write", subject: subject);
+        using var request1 = CreateSignedJsonRequest(
+            ecdsa,
+            jwkObject,
+            token1,
+            HttpMethod.Post,
+            requestUrl,
+            new { title = "invoice", content = "v1" });
+        request1.Headers.Add("Idempotency-Key", idempotencyKey);
+
+        var response1 = await client.SendAsync(request1);
+        Assert.Equal(HttpStatusCode.Created, response1.StatusCode);
+        Assert.True(response1.Headers.TryGetValues("DPoP-Nonce", out var nonceValues));
+        var nonce = nonceValues!.First();
+
+        var token2 = TestTokenIssuer.MintAccessToken(jkt, acr: "acr3", scope: "documents:write", subject: subject);
+        using var request2 = CreateSignedJsonRequest(
+            ecdsa,
+            jwkObject,
+            token2,
+            HttpMethod.Post,
+            requestUrl,
+            new { title = "invoice", content = "v2" },
+            nonce);
+        request2.Headers.Add("Idempotency-Key", idempotencyKey);
+
+        var response2 = await client.SendAsync(request2);
+        Assert.Equal(HttpStatusCode.NoContent, response2.StatusCode);
+    }
+
+    [Fact]
+    public async Task S19_DocumentsGetById_PreventsCrossSubjectAccess_Returns404()
+    {
+        var createUrl = new Uri(client.BaseAddress!, "/v1/documents").ToString();
+        const string ownerSub = "documents-owner";
+
+        using var ownerKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var ownerJwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ownerKey));
+        var ownerJwkObject = new Dictionary<string, string>
+        {
+            ["crv"] = ownerJwk.Crv!,
+            ["kty"] = ownerJwk.Kty!,
+            ["x"] = ownerJwk.X!,
+            ["y"] = ownerJwk.Y!
+        };
+
+        var ownerToken = TestTokenIssuer.MintAccessToken(
+            ComputeEcThumbprint(ownerJwkObject),
+            acr: "acr3",
+            scope: "documents:write",
+            subject: ownerSub);
+
+        using var createRequest = CreateSignedJsonRequest(
+            ownerKey,
+            ownerJwkObject,
+            ownerToken,
+            HttpMethod.Post,
+            createUrl,
+            new { title = "contract", content = "internal" });
+        createRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+
+        var createResponse = await client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+
+        var createdJson = await createResponse.Content.ReadAsStringAsync();
+        using var createdDoc = JsonDocument.Parse(createdJson);
+        var documentId = createdDoc.RootElement.GetProperty("id").GetGuid();
+
+        using var attackerKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var attackerJwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(attackerKey));
+        var attackerJwkObject = new Dictionary<string, string>
+        {
+            ["crv"] = attackerJwk.Crv!,
+            ["kty"] = attackerJwk.Kty!,
+            ["x"] = attackerJwk.X!,
+            ["y"] = attackerJwk.Y!
+        };
+
+        var attackerToken = TestTokenIssuer.MintAccessToken(
+            ComputeEcThumbprint(attackerJwkObject),
+            acr: "acr2",
+            scope: "documents:read",
+            subject: "documents-attacker");
+
+        var readUrl = new Uri(client.BaseAddress!, $"/v1/documents/{documentId}").ToString();
+        using var readRequest = CreateSignedRequest(attackerKey, attackerJwkObject, attackerToken, HttpMethod.Get, readUrl);
+
+        var readResponse = await client.SendAsync(readRequest);
+        Assert.Equal(HttpStatusCode.NotFound, readResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task S20_DocumentsDelete_RequiresMtlsBinding_Returns403WithoutCertificate()
+    {
+        var createUrl = new Uri(client.BaseAddress!, "/v1/documents").ToString();
+        const string ownerSub = "documents-user-5";
+
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(key));
+        var jwkObject = new Dictionary<string, string>
+        {
+            ["crv"] = jwk.Crv!,
+            ["kty"] = jwk.Kty!,
+            ["x"] = jwk.X!,
+            ["y"] = jwk.Y!
+        };
+        var jkt = ComputeEcThumbprint(jwkObject);
+
+        var createToken = TestTokenIssuer.MintAccessToken(jkt, acr: "acr3", scope: "documents:write", subject: ownerSub);
+        using var createRequest = CreateSignedJsonRequest(
+            key,
+            jwkObject,
+            createToken,
+            HttpMethod.Post,
+            createUrl,
+            new { title = "to-delete", content = "demo" });
+        createRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+
+        var createResponse = await client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+        Assert.True(createResponse.Headers.TryGetValues("DPoP-Nonce", out var nonceValues));
+        var nonce = nonceValues!.First();
+        using var createdDoc = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        var documentId = createdDoc.RootElement.GetProperty("id").GetGuid();
+
+        var deleteToken = TestTokenIssuer.MintAccessToken(jkt, acr: "acr3", scope: "documents:write", subject: ownerSub);
+        var deleteUrl = new Uri(client.BaseAddress!, $"/v1/documents/{documentId}").ToString();
+        using var deleteRequest = CreateSignedRequest(key, jwkObject, deleteToken, HttpMethod.Delete, deleteUrl, nonce);
+        deleteRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+
+        var deleteResponse = await client.SendAsync(deleteRequest);
+
+        Assert.Equal(HttpStatusCode.Forbidden, deleteResponse.StatusCode);
+        var problemJson = await deleteResponse.Content.ReadAsStringAsync();
+        Assert.Contains("/errors/mtls-binding-failed", problemJson);
+    }
+
+    private static HttpRequestMessage CreateSignedRequest(
+        ECDsa ecdsa,
+        Dictionary<string, string> jwkObject,
+        string accessToken,
+        HttpMethod method,
+        string url,
+        string? nonce = null)
+    {
+        var claims = new Dictionary<string, object>
+        {
+            ["jti"] = Guid.NewGuid().ToString("N"),
+            ["htm"] = method.Method,
+            ["htu"] = url,
+            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+        };
+
+        if (!string.IsNullOrWhiteSpace(nonce))
+        {
+            claims["nonce"] = nonce;
+        }
+
         var descriptor = new SecurityTokenDescriptor
         {
-            Claims = new Dictionary<string, object>
-            {
-                ["jti"] = Guid.NewGuid().ToString("N"),
-                ["htm"] = method.Method,
-                ["htu"] = url,
-                ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-            },
+            Claims = claims,
             SigningCredentials = new SigningCredentials(new ECDsaSecurityKey(ecdsa), SecurityAlgorithms.EcdsaSha256),
             TokenType = "dpop+jwt",
             AdditionalHeaderClaims = new Dictionary<string, object>
@@ -245,6 +506,20 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         var request = new HttpRequestMessage(method, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken);
         request.Headers.Add("DPoP", proof);
+        return request;
+    }
+
+    private static HttpRequestMessage CreateSignedJsonRequest(
+        ECDsa ecdsa,
+        Dictionary<string, string> jwkObject,
+        string accessToken,
+        HttpMethod method,
+        string url,
+        object body,
+        string? nonce = null)
+    {
+        var request = CreateSignedRequest(ecdsa, jwkObject, accessToken, method, url, nonce);
+        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
         return request;
     }
 

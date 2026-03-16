@@ -47,6 +47,7 @@ public static class InfrastructureServiceCollectionExtensions
         _ = services.AddSingleton<IJtiReplayCache, JtiReplayCache>();
         _ = services.AddSingleton<IDpopNonceStore, DpopNonceStore>();
         _ = services.AddSingleton<ISessionBlacklistCache, SessionBlacklistCache>();
+        _ = services.AddSingleton<IDocumentStore, InMemoryDocumentStore>();
         _ = services.AddSingleton<IDpopProofValidator, DpopProofValidator>();
         _ = services.AddSingleton<ILogoutTokenValidator, LogoutTokenValidator>();
         _ = services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();

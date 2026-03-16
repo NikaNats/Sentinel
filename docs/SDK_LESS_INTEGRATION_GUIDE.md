@@ -198,15 +198,32 @@ ACR requirement not met (insufficient assurance level).
 
 ### 5. Documents Endpoint
 
-**GET** `/v1/documents`
+`/v1/documents` demonstrates full FAPI 2.0 resource protection.
 
-Access document store (scope: `documents:read` required).
+| Method | Path | Required Scope | Required ACR | Idempotency-Key | Notes |
+|--------|------|----------------|--------------|-----------------|-------|
+| GET | `/v1/documents` | `documents:read` | `acr2` | No | Read-heavy quota, returns owner-scoped list |
+| GET | `/v1/documents/{id}` | `documents:read` | `acr2` | No | BOLA protection (`sub` ownership check) |
+| POST | `/v1/documents` | `documents:write` | `acr3` | Yes | Step-up + idempotent create |
+| PUT | `/v1/documents/{id}` | `documents:write` | `acr3` | Yes | Requires mTLS binding (`cnf.x5t#S256`) |
+| DELETE | `/v1/documents/{id}` | `documents:write` | `acr3` | Yes | Dangerous operation quota + mTLS binding |
 
-**Request Headers:**
+**Write Request Headers (POST/PUT/DELETE):**
 ```
-Authorization: Bearer <access_token>
+Authorization: DPoP <access_token>
 DPoP: <proof_jwt>
+Idempotency-Key: <uuid_v4>
+Content-Type: application/json
 ```
+
+**Step-up Signal (when token ACR is too low):**
+- `401 Unauthorized`
+- `WWW-Authenticate: DPoP error="insufficient_user_authentication", acr_values="acr3"`
+
+**Idempotency Behavior:**
+- First request with a new key: normal processing (`201` or `200`)
+- Retry with same key after success: `204 No Content`
+- Concurrent duplicate while in-flight: `409 Conflict`
 
 ---
 
@@ -372,7 +389,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 async function generateDpopProof(privateKey, nonce, method, url) {
   const now = Math.floor(Date.now() / 1000);
-  
+
   const proof = await jose.SignJWT({
     jti: uuidv4(),
     htm: method.toUpperCase(),
@@ -387,7 +404,7 @@ async function generateDpopProof(privateKey, nonce, method, url) {
       jwk: await jose.exportSPKI(publicKey)
     })
     .sign(privateKey);
-  
+
   return proof;
 }
 ```
@@ -410,13 +427,13 @@ def generate_dpop_proof(private_key, public_key, nonce, method, url):
         'exp': int((now + timedelta(seconds=60)).timestamp()),
         'nonce': nonce
     }
-    
+
     headers = {
         'typ': 'dpop+jwt',
         'alg': 'ES256',
         'jwk': json.loads(public_key.export(format='JSON', private_key=False))
     }
-    
+
     return jwt.encode(payload, private_key, algorithm='ES256', headers=headers)
 ```
 
@@ -433,7 +450,7 @@ import java.util.UUID;
 
 String generateDpopProof(ECKey ecKey, String nonce, String method, String url) throws Exception {
     long now = Instant.now().getEpochSecond();
-    
+
     JWTClaimsSet claims = new JWTClaimsSet.Builder()
         .jwtID(UUID.randomUUID().toString())
         .claim("htm", method.toUpperCase())
@@ -442,16 +459,16 @@ String generateDpopProof(ECKey ecKey, String nonce, String method, String url) t
         .expirationTime(new Date((now + 60) * 1000))
         .claim("nonce", nonce)
         .build();
-    
+
     JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.ES256)
         .type(new JOSEObjectType("dpop+jwt"))
         .jwk(ecKey.toPublicJWK())
         .build();
-    
+
     JWSObject jwsObject = new JWSObject(header, new Payload(claims.toJSONObject()));
     JWSSigner signer = new ECDSASigner(ecKey);
     jwsObject.sign(signer);
-    
+
     return jwsObject.serialize();
 }
 ```
@@ -468,7 +485,7 @@ string GenerateDpopProof(ECDsa privateKey, string nonce, string method, string u
 {
     var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     var handler = new JwtSecurityTokenHandler();
-    
+
     var token = handler.CreateJwtSecurityToken(
         issuer: null,
         audience: null,
@@ -478,17 +495,17 @@ string GenerateDpopProof(ECDsa privateKey, string nonce, string method, string u
         issuedAt: DateTime.UtcNow,
         signingCredentials: new SigningCredentials(new ECDsaSecurityKey(privateKey), "ES256")
     );
-    
+
     // Add custom claims
     token.Payload["jti"] = Guid.NewGuid().ToString();
     token.Payload["htm"] = method.ToUpper();
     token.Payload["htu"] = url;
     token.Payload["nonce"] = nonce;
-    
+
     // Set header
     token.Header["typ"] = "dpop+jwt";
     token.Header["jwk"] = ExportPublicJwk(privateKey);
-    
+
     return handler.WriteToken(token);
 }
 ```
@@ -866,7 +883,7 @@ class SentinelClient {
   async refresh(refreshToken) {
     const proof = await this.generateProof('POST', `${API_URL}/auth/refresh`, this.nonce);
 
-    const response = await axios.post(`${API_URL}/auth/refresh`, 
+    const response = await axios.post(`${API_URL}/auth/refresh`,
       { refreshToken },
       {
         headers: {

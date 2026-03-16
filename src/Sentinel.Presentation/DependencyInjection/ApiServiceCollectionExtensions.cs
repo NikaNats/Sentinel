@@ -31,9 +31,12 @@ public static class ApiServiceCollectionExtensions
                         ? $"client:{clientId}"
                         : $"ip:{ip}";
 
-                return RateLimitPartition.GetFixedWindowLimiter($"identity:{key}", _ => new FixedWindowRateLimiterOptions
+                var bucket = ResolveRateLimitBucket(httpContext);
+                var permitLimit = ResolvePermitLimit(bucket);
+
+                return RateLimitPartition.GetFixedWindowLimiter($"identity:{bucket}:{key}", _ => new FixedWindowRateLimiterOptions
                 {
-                    PermitLimit = 100,
+                    PermitLimit = permitLimit,
                     Window = TimeSpan.FromMinutes(1),
                     QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
                     QueueLimit = 2
@@ -43,9 +46,12 @@ public static class ApiServiceCollectionExtensions
             var ipLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
             {
                 var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-                return RateLimitPartition.GetFixedWindowLimiter($"ip:{ip}", _ => new FixedWindowRateLimiterOptions
+                var bucket = ResolveRateLimitBucket(httpContext);
+                var permitLimit = ResolvePermitLimit(bucket);
+
+                return RateLimitPartition.GetFixedWindowLimiter($"ip:{bucket}:{ip}", _ => new FixedWindowRateLimiterOptions
                 {
-                    PermitLimit = 100,
+                    PermitLimit = permitLimit,
                     Window = TimeSpan.FromMinutes(1),
                     QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
                     QueueLimit = 2
@@ -135,5 +141,42 @@ public static class ApiServiceCollectionExtensions
         });
 
         return webHost;
+    }
+
+    private static string ResolveRateLimitBucket(HttpContext context)
+    {
+        var method = context.Request.Method;
+        var path = context.Request.Path;
+
+        if (path.StartsWithSegments("/v1/documents", StringComparison.OrdinalIgnoreCase))
+        {
+            if (HttpMethods.IsDelete(method))
+            {
+                return "documents-dangerous";
+            }
+
+            if (HttpMethods.IsPost(method) || HttpMethods.IsPut(method))
+            {
+                return "documents-write";
+            }
+
+            if (HttpMethods.IsGet(method))
+            {
+                return "documents-read";
+            }
+        }
+
+        return "default";
+    }
+
+    private static int ResolvePermitLimit(string bucket)
+    {
+        return bucket switch
+        {
+            "documents-read" => 100,
+            "documents-write" => 20,
+            "documents-dangerous" => 10,
+            _ => 100
+        };
     }
 }

@@ -1,7 +1,7 @@
 # Sentinel Living Threat Model
 
-**Last Updated:** 2026-03-15  
-**Classification:** INTERNAL ONLY  
+**Last Updated:** 2026-03-15
+**Classification:** INTERNAL ONLY
 **Threat Level:** HIGH (handles sensitive authentication tokens)
 
 ---
@@ -434,6 +434,8 @@ Sentinel is a DPoP-protected authentication API processing sensitive access toke
 | Distributed DoS | MEDIUM | CRITICAL | HIGH | ⚠️ CDN/WAF upstream |
 | Insufficient ACR | MEDIUM-HIGH | MEDIUM | MEDIUM-HIGH | ✅ Endpoint validation |
 | Scope overflow | MEDIUM | HIGH | MEDIUM-HIGH | ✅ Endpoint validation |
+| Document tampering/replay | MEDIUM | HIGH | MEDIUM-HIGH | ✅ ACR step-up + idempotency + DPoP replay cache |
+| Document BOLA enumeration | MEDIUM | HIGH | MEDIUM-HIGH | ✅ Owner-subject check with 404 masking |
 | Client ID mismatch | MEDIUM | HIGH | MEDIUM-HIGH | ⚠️ Keycloak authority |
 | Session fixation | LOW | MEDIUM | LOW | ✅ Keycloak generates |
 | Session hijacking | MEDIUM | CRITICAL | MEDIUM-HIGH | ✅ DPoP binding + TTL |
@@ -474,6 +476,7 @@ Sentinel is a DPoP-protected authentication API processing sensitive access toke
 5. **Encryption at Rest:**
    - Redis persistence encrypted (RDB snapshots)
    - Log storage encrypted (S3-SSE, Azure Storage encryption)
+   - Monitor `security:document_deleted` bursts for tampering campaigns
 
 ### Long Term (Roadmap)
 

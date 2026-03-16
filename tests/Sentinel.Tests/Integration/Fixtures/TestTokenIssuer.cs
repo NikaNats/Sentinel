@@ -16,7 +16,8 @@ public static class TestTokenIssuer
         string scope = "profile",
         string issuer = "https://localhost:8443/realms/sentinel",
         string audience = "sentinel-api",
-        int expiresInSeconds = 300)
+        int expiresInSeconds = 300,
+        string? subject = null)
     {
         var handler = new JsonWebTokenHandler();
         var now = DateTimeOffset.UtcNow;
@@ -24,7 +25,7 @@ public static class TestTokenIssuer
 
         var claims = new Dictionary<string, object>
         {
-            [JwtRegisteredClaimNames.Sub] = Guid.NewGuid().ToString(),
+            [JwtRegisteredClaimNames.Sub] = subject ?? Guid.NewGuid().ToString(),
             [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString("N"),
             [JwtRegisteredClaimNames.Iat] = now.ToUnixTimeSeconds(),
             [JwtRegisteredClaimNames.Exp] = exp.ToUnixTimeSeconds(),

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
+using Sentinel.Middleware.Filters;
 using System.Security.Cryptography;
 using System.Text.Json;
 
@@ -9,6 +10,8 @@ public sealed class MtlsBindingMiddleware(RequestDelegate next, ILogger<MtlsBind
 {
     public async Task InvokeAsync(HttpContext context)
     {
+        var requiresMtlsBinding = context.GetEndpoint()?.Metadata.GetMetadata<RequireMtlsBindingAttribute>() is not null;
+
         if (context.User.Identity?.IsAuthenticated != true)
         {
             await next(context);
@@ -18,6 +21,12 @@ public sealed class MtlsBindingMiddleware(RequestDelegate next, ILogger<MtlsBind
         var cnfClaimValue = context.User.FindFirst("cnf")?.Value;
         if (string.IsNullOrWhiteSpace(cnfClaimValue))
         {
+            if (requiresMtlsBinding)
+            {
+                await Reject(context, "mTLS bound access token required for this endpoint.");
+                return;
+            }
+
             await next(context);
             return;
         }
@@ -28,6 +37,12 @@ public sealed class MtlsBindingMiddleware(RequestDelegate next, ILogger<MtlsBind
             using var doc = JsonDocument.Parse(cnfClaimValue);
             if (!doc.RootElement.TryGetProperty("x5t#S256", out var thumbprintElement))
             {
+                if (requiresMtlsBinding)
+                {
+                    await Reject(context, "Missing certificate thumbprint in cnf claim.");
+                    return;
+                }
+
                 await next(context);
                 return;
             }
