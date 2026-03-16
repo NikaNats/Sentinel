@@ -71,14 +71,16 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
         });
     }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         await redisContainer.StartAsync();
         await WaitForRedisReadinessAsync("127.0.0.1", RedisHostPort, TimeSpan.FromSeconds(30));
         _ = CreateClient();
     }
 
-    async Task IAsyncLifetime.DisposeAsync()
+    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsyncCore());
+
+    private async Task DisposeAsyncCore()
     {
         await redisContainer.DisposeAsync();
         await base.DisposeAsync();
