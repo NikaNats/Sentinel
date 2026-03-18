@@ -16,7 +16,6 @@ using Sentinel.Infrastructure.Cache;
 using Sentinel.Infrastructure.Cryptography;
 using Sentinel.Infrastructure.Notifications;
 using Sentinel.Infrastructure.Telemetry;
-using StackExchange.Redis;
 
 namespace Sentinel.Infrastructure.DependencyInjection;
 
@@ -28,30 +27,9 @@ public static class InfrastructureServiceCollectionExtensions
         _ = services.Configure<RegistrationOptions>(configuration.GetSection("Registration"));
         _ = services.Configure<ResetTokenOptions>(configuration.GetSection("PasswordReset"));
 
-        string? redisConnectionString = configuration.GetConnectionString("Redis");
-
-        _ = services.AddStackExchangeRedisCache(options =>
-        {
-            options.Configuration = redisConnectionString;
-        });
-
-        _ = services.AddSingleton<IConnectionMultiplexer>(_ =>
-        {
-            if (string.IsNullOrWhiteSpace(redisConnectionString))
-            {
-                throw new InvalidOperationException("Redis connection string is not configured.");
-            }
-
-            ConfigurationOptions options = ConfigurationOptions.Parse(redisConnectionString);
-            options.AbortOnConnectFail = false;
-            options.ConnectRetry = 3;
-
-            return ConnectionMultiplexer.Connect(options);
-        });
+        _ = services.AddSentinelSecureRedis(configuration);
 
         _ = services.AddSingleton<IEncryptionService, AesGcmEncryptionService>();
-        _ = services.AddSingleton<IJtiReplayCache, JtiReplayCache>();
-        _ = services.AddSingleton<IDpopNonceStore, DpopNonceStore>();
         _ = services.AddSingleton<ISessionBlacklistCache, SessionBlacklistCache>();
         _ = services.AddSingleton<IDocumentStore, InMemoryDocumentStore>();
         _ = services.AddSingleton<IDpopProofValidator, DpopProofValidator>();
