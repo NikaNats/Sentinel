@@ -12,6 +12,8 @@ namespace Sentinel.Controllers;
 [Route("v1/users")]
 public sealed class UsersController(
     RegisterUserHandler registerUserHandler,
+    ForgotPasswordHandler forgotPasswordHandler,
+    ResetPasswordHandler resetPasswordHandler,
     IEmailVerificationTokenStore verificationTokenStore,
     IKeycloakAdminService keycloakAdminService) : ControllerBase
 {
@@ -74,5 +76,46 @@ public sealed class UsersController(
         }
 
         return Ok(new { Message = "Email verified." });
+    }
+
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    [EnableRateLimiting("forgot_password_policy")]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken ct)
+    {
+        await forgotPasswordHandler.HandleAsync(request, ct);
+        return Accepted();
+    }
+
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request, CancellationToken ct)
+    {
+        var result = await resetPasswordHandler.HandleAsync(request, ct);
+        if (result.IsSuccess)
+        {
+            return Ok(new { result.Message });
+        }
+
+        if (result.ErrorCode is "invalid_request" or "invalid_or_expired_token" or "token_already_consumed")
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = result.Message,
+                Status = StatusCodes.Status400BadRequest,
+                Type = $"/errors/{result.ErrorCode}"
+            });
+        }
+
+        return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+        {
+            Title = result.Message,
+            Status = StatusCodes.Status500InternalServerError,
+            Type = result.ErrorCode is null ? null : $"/errors/{result.ErrorCode}"
+        });
     }
 }

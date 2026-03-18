@@ -4,7 +4,10 @@ using Moq;
 using Sentinel.Application.Auth;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
+using Sentinel.Application.Common.Abstractions;
 using Sentinel.Controllers;
+using Microsoft.Extensions.Logging.Abstractions;
+using Sentinel.Domain.Auth;
 
 namespace Sentinel.Tests.Unit;
 
@@ -24,7 +27,12 @@ public sealed class UsersControllerTests
         var verificationStore = new Mock<IEmailVerificationTokenStore>();
         var keycloakAdmin = new Mock<IKeycloakAdminService>();
 
-        var controller = new UsersController(handler, verificationStore.Object, keycloakAdmin.Object)
+        var controller = new UsersController(
+            handler,
+            BuildForgotPasswordHandler(),
+            BuildResetPasswordHandler(),
+            verificationStore.Object,
+            keycloakAdmin.Object)
         {
             ControllerContext = new ControllerContext
             {
@@ -51,6 +59,8 @@ public sealed class UsersControllerTests
 
         var controller = new UsersController(
             handler,
+            BuildForgotPasswordHandler(),
+            BuildResetPasswordHandler(),
             BuildVerificationStore(null),
             Mock.Of<IKeycloakAdminService>());
 
@@ -76,6 +86,8 @@ public sealed class UsersControllerTests
 
         var controller = new UsersController(
             handler,
+            BuildForgotPasswordHandler(),
+            BuildResetPasswordHandler(),
             BuildVerificationStore("kc-user-1"),
             keycloakAdmin.Object);
 
@@ -93,5 +105,48 @@ public sealed class UsersControllerTests
             .Setup(x => x.ConsumeAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(userId);
         return store.Object;
+    }
+
+    [Fact]
+    public async Task ForgotPassword_AlwaysReturnsAccepted()
+    {
+        var controller = new UsersController(
+            BuildRegisterUserHandler(),
+            BuildForgotPasswordHandler(),
+            BuildResetPasswordHandler(),
+            BuildVerificationStore(null),
+            Mock.Of<IKeycloakAdminService>());
+
+        var response = await controller.ForgotPassword(new ForgotPasswordRequest("unknown@example.com", "captcha"), CancellationToken.None);
+
+        Assert.IsType<AcceptedResult>(response);
+    }
+
+    private static RegisterUserHandler BuildRegisterUserHandler()
+    {
+        return new RegisterUserHandler(
+            Mock.Of<ICaptchaService>(),
+            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IEmailService>(),
+            Mock.Of<IEmailVerificationTokenStore>());
+    }
+
+    private static ForgotPasswordHandler BuildForgotPasswordHandler()
+    {
+        return new ForgotPasswordHandler(
+            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IResetTokenProvider>(),
+            Mock.Of<IEmailService>(),
+            Mock.Of<ICaptchaService>(),
+            NullLogger<ForgotPasswordHandler>.Instance);
+    }
+
+    private static ResetPasswordHandler BuildResetPasswordHandler()
+    {
+        return new ResetPasswordHandler(
+            Mock.Of<IResetTokenProvider>(),
+            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IJtiReplayCache>(),
+            Mock.Of<IAuthRevocationService>());
     }
 }

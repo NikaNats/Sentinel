@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Sentinel.Application.Auth.Interfaces;
+using Sentinel.Application.Auth.Models;
 using Sentinel.Domain.Users;
 
 namespace Sentinel.Infrastructure.Auth;
@@ -91,6 +92,69 @@ public sealed class KeycloakAdminService(
         return response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NoContent;
     }
 
+    public async Task<KeycloakUserSummary?> GetUserByEmailAsync(string email, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return null;
+        }
+
+        var adminRealmEndpoint = ResolveAdminRealmEndpoint();
+        var token = await RequireAdminTokenAsync(ct);
+
+        var encodedEmail = Uri.EscapeDataString(email.Trim());
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(adminRealmEndpoint, $"users?email={encodedEmail}&exact=true"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var client = httpClientFactory.CreateClient("keycloak-admin");
+        using var response = await client.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var users = await response.Content.ReadFromJsonAsync<List<KeycloakUserResponse>>(cancellationToken: ct);
+        var user = users?.FirstOrDefault(static u => !string.IsNullOrWhiteSpace(u.Id));
+        if (user is null)
+        {
+            return null;
+        }
+
+        return new KeycloakUserSummary(user.Id!, user.Email ?? email.Trim(), user.Username ?? user.Email ?? string.Empty);
+    }
+
+    public async Task<bool> UpdatePasswordAsync(string email, string newPassword, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(newPassword))
+        {
+            return false;
+        }
+
+        var user = await GetUserByEmailAsync(email, ct);
+        if (user is null)
+        {
+            return false;
+        }
+
+        var adminRealmEndpoint = ResolveAdminRealmEndpoint();
+        var token = await RequireAdminTokenAsync(ct);
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, new Uri(adminRealmEndpoint, $"users/{Uri.EscapeDataString(user.Id)}/reset-password"))
+        {
+            Content = JsonContent.Create(new
+            {
+                type = "password",
+                value = newPassword,
+                temporary = false
+            })
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var client = httpClientFactory.CreateClient("keycloak-admin");
+        using var response = await client.SendAsync(request, ct);
+        return response.IsSuccessStatusCode;
+    }
+
     private async Task<string> RequireAdminTokenAsync(CancellationToken ct)
     {
         var token = await tokenProvider.GetAccessTokenAsync(ct);
@@ -128,5 +192,12 @@ public sealed class KeycloakAdminService(
         }
 
         return segments[^1].Trim('/');
+    }
+
+    private sealed class KeycloakUserResponse
+    {
+        public string? Id { get; set; }
+        public string? Email { get; set; }
+        public string? Username { get; set; }
     }
 }

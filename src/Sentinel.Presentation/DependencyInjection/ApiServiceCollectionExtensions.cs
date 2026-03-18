@@ -24,6 +24,12 @@ public static class ApiServiceCollectionExtensions
                 registrationOptions.PermitLimit = 3;
                 registrationOptions.QueueLimit = 0;
             });
+            options.AddFixedWindowLimiter("forgot_password_policy", forgotPasswordOptions =>
+            {
+                forgotPasswordOptions.Window = TimeSpan.FromMinutes(15);
+                forgotPasswordOptions.PermitLimit = 2;
+                forgotPasswordOptions.QueueLimit = 0;
+            });
 
             var identityLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
             {

@@ -10,6 +10,7 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Common.Abstractions;
+using Sentinel.Domain.Auth;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Cache;
 using Sentinel.Infrastructure.Cryptography;
@@ -24,6 +25,7 @@ public static class InfrastructureServiceCollectionExtensions
     {
         _ = services.Configure<CaptchaOptions>(configuration.GetSection("Captcha:Turnstile"));
         _ = services.Configure<RegistrationOptions>(configuration.GetSection("Registration"));
+        _ = services.Configure<ResetTokenOptions>(configuration.GetSection("PasswordReset"));
 
         string? redisConnectionString = configuration.GetConnectionString("Redis");
 
@@ -55,6 +57,7 @@ public static class InfrastructureServiceCollectionExtensions
         _ = services.AddSingleton<ILogoutTokenValidator, LogoutTokenValidator>();
         _ = services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
         _ = services.AddSingleton<KeycloakAdminTokenProvider>();
+        _ = services.AddSingleton<IResetTokenProvider, HmacResetTokenProvider>();
         _ = services.AddSingleton<IEmailVerificationTokenStore, EmailVerificationTokenStore>();
         _ = services.AddSingleton<IEmailService, LoggingEmailService>();
 

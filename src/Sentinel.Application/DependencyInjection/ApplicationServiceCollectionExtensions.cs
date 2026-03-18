@@ -10,6 +10,8 @@ public static class ApplicationServiceCollectionExtensions
     public static IServiceCollection AddApplicationLayer(this IServiceCollection services)
     {
         services.AddScoped<RegisterUserHandler>();
+        services.AddScoped<ForgotPasswordHandler>();
+        services.AddScoped<ResetPasswordHandler>();
 
         services.AddSingleton<IAuthorizationHandler, AcrAuthorizationHandler>();
         services.AddSingleton<IAuthorizationHandler, ScopeAuthorizationHandler>();
