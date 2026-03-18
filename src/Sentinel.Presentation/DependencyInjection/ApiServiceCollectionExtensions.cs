@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.DependencyInjection;
+using Sentinel.Infrastructure.DependencyInjection;
 using Sentinel.Middleware;
 using System.Threading.RateLimiting;
 
@@ -83,6 +84,7 @@ public static class ApiServiceCollectionExtensions
         app.UseMiddleware<DpopValidationMiddleware>();
         app.UseMiddleware<MtlsBindingMiddleware>();
         app.UseMiddleware<AcrValidationMiddleware>();
+        app.UseSentinelPersistence();
         app.UseAuthorization();
 
         app.MapPrometheusScrapingEndpoint();

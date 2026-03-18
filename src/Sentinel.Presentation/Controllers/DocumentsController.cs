@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Sentinel.Application.Auth;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Application.Models;
+using Sentinel.Domain.Documents;
 using Sentinel.Middleware.Filters;
 
 namespace Sentinel.Controllers;
@@ -16,7 +17,12 @@ public sealed class DocumentsController(IDocumentStore documentStore, ILogger<Do
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> ListDocuments(CancellationToken cancellationToken)
+    public async Task<IActionResult> ListDocuments(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? searchTerm = null,
+        [FromQuery] DocumentSortBy sortBy = DocumentSortBy.UpdatedAtDesc,
+        CancellationToken cancellationToken = default)
     {
         var subject = User.FindFirst("sub")?.Value;
         if (string.IsNullOrWhiteSpace(subject))
@@ -24,7 +30,10 @@ public sealed class DocumentsController(IDocumentStore documentStore, ILogger<Do
             return Unauthorized();
         }
 
-        var documents = await documentStore.ListAsync(subject, cancellationToken);
+        var documents = await documentStore.ListAsync(
+            subject,
+            new DocumentQuery(page, pageSize, searchTerm, sortBy),
+            cancellationToken);
         return Ok(documents);
     }
 
@@ -42,8 +51,8 @@ public sealed class DocumentsController(IDocumentStore documentStore, ILogger<Do
             return Unauthorized();
         }
 
-        var document = await documentStore.GetByIdAsync(id, cancellationToken);
-        if (document is null || !string.Equals(document.OwnerSub, subject, StringComparison.Ordinal))
+        var document = await documentStore.GetByIdAsync(id, subject, cancellationToken);
+        if (document is null)
         {
             return NotFound();
         }
@@ -93,13 +102,26 @@ public sealed class DocumentsController(IDocumentStore documentStore, ILogger<Do
             return Unauthorized();
         }
 
-        var updated = await documentStore.UpdateAsync(id, subject, request, cancellationToken);
-        if (updated is null)
+        try
         {
-            return NotFound();
-        }
+            var updated = await documentStore.UpdateAsync(id, subject, request, request.RowVersion, cancellationToken);
+            if (updated is null)
+            {
+                return NotFound();
+            }
 
-        return Ok(updated);
+            return Ok(updated);
+        }
+        catch (DocumentConcurrencyException)
+        {
+            return Conflict(new ProblemDetails
+            {
+                Type = "/errors/document-conflict",
+                Title = "Concurrent Modification",
+                Detail = "The document was modified by another request. Fetch the latest version and retry.",
+                Status = StatusCodes.Status409Conflict
+            });
+        }
     }
 
     [HttpDelete("{id}")]

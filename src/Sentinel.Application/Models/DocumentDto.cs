@@ -6,4 +6,5 @@ public sealed record DocumentDto(
     string Title,
     string Content,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    string RowVersion);

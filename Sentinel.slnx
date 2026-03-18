@@ -4,6 +4,10 @@
     <Project Path="src/Sentinel.Infrastructure/Sentinel.Infrastructure.csproj" />
     <Project Path="src/Sentinel.Application/Sentinel.Application.csproj" />
     <Project Path="src/Sentinel.Domain/Sentinel.Domain.csproj" />
+    <Project Path="src/Sentinel.Persistence.Core/Sentinel.Persistence.Core.csproj" />
+    <Project Path="src/Sentinel.Persistence.SqlServer/Sentinel.Persistence.SqlServer.csproj" />
+    <Project Path="src/Sentinel.Persistence.Postgres/Sentinel.Persistence.Postgres.csproj" />
+    <Project Path="src/Sentinel.Persistence.MongoDB/Sentinel.Persistence.MongoDB.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Sentinel.Tests/Sentinel.Tests.csproj" />

@@ -26,6 +26,9 @@
   <ItemGroup>
     <ProjectReference Include="..\Sentinel.Application\Sentinel.Application.csproj" />
     <ProjectReference Include="..\Sentinel.Domain\Sentinel.Domain.csproj" />
+    <ProjectReference Include="..\Sentinel.Persistence.MongoDB\Sentinel.Persistence.MongoDB.csproj" />
+    <ProjectReference Include="..\Sentinel.Persistence.Postgres\Sentinel.Persistence.Postgres.csproj" />
+    <ProjectReference Include="..\Sentinel.Persistence.SqlServer\Sentinel.Persistence.SqlServer.csproj" />
   </ItemGroup>
 
 </Project>

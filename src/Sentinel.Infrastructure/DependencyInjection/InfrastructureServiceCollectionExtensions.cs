@@ -14,6 +14,9 @@ using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Cache;
 using Sentinel.Infrastructure.Cryptography;
 using Sentinel.Infrastructure.Telemetry;
+using Sentinel.Persistence.MongoDB;
+using Sentinel.Persistence.Postgres;
+using Sentinel.Persistence.SqlServer;
 using StackExchange.Redis;
 
 namespace Sentinel.Infrastructure.DependencyInjection;
@@ -47,7 +50,7 @@ public static class InfrastructureServiceCollectionExtensions
         _ = services.AddSingleton<IJtiReplayCache, JtiReplayCache>();
         _ = services.AddSingleton<IDpopNonceStore, DpopNonceStore>();
         _ = services.AddSingleton<ISessionBlacklistCache, SessionBlacklistCache>();
-        _ = services.AddSingleton<IDocumentStore, InMemoryDocumentStore>();
+        AddDocumentPersistence(services, configuration);
         _ = services.AddSingleton<IDpopProofValidator, DpopProofValidator>();
         _ = services.AddSingleton<ILogoutTokenValidator, LogoutTokenValidator>();
         _ = services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
@@ -190,5 +193,43 @@ public static class InfrastructureServiceCollectionExtensions
             });
 
         return services;
+    }
+
+    private static void AddDocumentPersistence(IServiceCollection services, IConfiguration configuration)
+    {
+        string provider = configuration["Persistence:Provider"] ?? "InMemory";
+
+        switch (provider.Trim().ToLowerInvariant())
+        {
+            case "sqlserver":
+            {
+                string connectionString = configuration.GetConnectionString("SqlServer")
+                    ?? throw new InvalidOperationException("SQL Server connection string is not configured.");
+                services.AddSentinelSqlServer(connectionString);
+                break;
+            }
+            case "postgres":
+            case "postgresql":
+            {
+                string connectionString = configuration.GetConnectionString("Postgres")
+                    ?? throw new InvalidOperationException("Postgres connection string is not configured.");
+                services.AddSentinelPostgres(connectionString);
+                break;
+            }
+            case "mongodb":
+            case "mongo":
+            {
+                string connectionString = configuration.GetConnectionString("MongoDB")
+                    ?? throw new InvalidOperationException("MongoDB connection string is not configured.");
+                services.AddSentinelMongoDb(
+                    connectionString,
+                    configuration["Persistence:MongoDb:DatabaseName"] ?? "sentinel",
+                    configuration["Persistence:MongoDb:CollectionName"] ?? "documents");
+                break;
+            }
+            default:
+                _ = services.AddSingleton<IDocumentStore, InMemoryDocumentStore>();
+                break;
+        }
     }
 }
