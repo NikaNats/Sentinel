@@ -9,6 +9,7 @@ using Microsoft.IdentityModel.Tokens;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using Sentinel.Application.Auth.Interfaces;
+using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Domain.Auth;
 using Sentinel.Infrastructure.Auth;
@@ -26,6 +27,7 @@ public static class InfrastructureServiceCollectionExtensions
         _ = services.Configure<CaptchaOptions>(configuration.GetSection("Captcha:Turnstile"));
         _ = services.Configure<RegistrationOptions>(configuration.GetSection("Registration"));
         _ = services.Configure<ResetTokenOptions>(configuration.GetSection("PasswordReset"));
+        _ = services.Configure<SocialFederationOptions>(configuration.GetSection("SocialFederation"));
 
         _ = services.AddSentinelSecureRedis(configuration);
 
@@ -39,6 +41,7 @@ public static class InfrastructureServiceCollectionExtensions
         _ = services.AddSingleton<IResetTokenProvider, HmacResetTokenProvider>();
         _ = services.AddSingleton<IEmailVerificationTokenStore, EmailVerificationTokenStore>();
         _ = services.AddSingleton<IEmailService, LoggingEmailService>();
+        _ = services.AddHostedService<SocialFederationConfiguratorHostedService>();
 
         _ = services
             .AddNotifications(configuration)
@@ -47,6 +50,7 @@ public static class InfrastructureServiceCollectionExtensions
 
         _ = services.AddHttpClient<IUmaPermissionService, KeycloakUmaPermissionService>();
         _ = services.AddHttpClient<ITokenRefreshService, KeycloakTokenRefreshService>();
+        _ = services.AddHttpClient<ITokenExchangeService, KeycloakTokenExchangeService>();
         _ = services.AddHttpClient<ICaptchaService, TurnstileService>();
         _ = services.AddHttpClient<IKeycloakAdminService, KeycloakAdminService>();
         _ = services.AddHttpClient("keycloak-admin");

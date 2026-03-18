@@ -10,4 +10,6 @@ public interface IKeycloakAdminService
     Task<bool> DeleteUserAsync(string keycloakUserId, CancellationToken ct);
     Task<KeycloakUserSummary?> GetUserByEmailAsync(string email, CancellationToken ct);
     Task<bool> UpdatePasswordAsync(string email, string newPassword, CancellationToken ct);
+    Task ConfigureGoogleProviderAsync(GoogleFederationOptions options, string firstBrokerLoginFlowAlias, CancellationToken ct);
+    Task ConfigureGitHubProviderAsync(GitHubFederationOptions options, string firstBrokerLoginFlowAlias, CancellationToken ct);
 }

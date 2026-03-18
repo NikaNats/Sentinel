@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json.Serialization;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Domain.Users;
@@ -8,7 +9,7 @@ using Sentinel.Domain.Users;
 namespace Sentinel.Infrastructure.Auth;
 
 public sealed class KeycloakAdminService(
-    IHttpClientFactory httpClientFactory,
+    HttpClient httpClient,
     KeycloakAdminTokenProvider tokenProvider,
     IConfiguration configuration,
     ILogger<KeycloakAdminService> logger) : IKeycloakAdminService
@@ -42,8 +43,7 @@ public sealed class KeycloakAdminService(
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        var client = httpClientFactory.CreateClient("keycloak-admin");
-        using var response = await client.SendAsync(request, ct);
+        using var response = await httpClient.SendAsync(request, ct);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -72,8 +72,7 @@ public sealed class KeycloakAdminService(
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        var client = httpClientFactory.CreateClient("keycloak-admin");
-        using var response = await client.SendAsync(request, ct);
+        using var response = await httpClient.SendAsync(request, ct);
 
         return response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NoContent;
     }
@@ -86,8 +85,7 @@ public sealed class KeycloakAdminService(
         using var request = new HttpRequestMessage(HttpMethod.Delete, new Uri(adminRealmEndpoint, $"users/{Uri.EscapeDataString(keycloakUserId)}"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        var client = httpClientFactory.CreateClient("keycloak-admin");
-        using var response = await client.SendAsync(request, ct);
+        using var response = await httpClient.SendAsync(request, ct);
 
         return response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NoContent;
     }
@@ -106,8 +104,7 @@ public sealed class KeycloakAdminService(
         using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(adminRealmEndpoint, $"users?email={encodedEmail}&exact=true"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        var client = httpClientFactory.CreateClient("keycloak-admin");
-        using var response = await client.SendAsync(request, ct);
+        using var response = await httpClient.SendAsync(request, ct);
         if (!response.IsSuccessStatusCode)
         {
             return null;
@@ -150,9 +147,65 @@ public sealed class KeycloakAdminService(
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        var client = httpClientFactory.CreateClient("keycloak-admin");
-        using var response = await client.SendAsync(request, ct);
+        using var response = await httpClient.SendAsync(request, ct);
         return response.IsSuccessStatusCode;
+    }
+
+    public async Task ConfigureGoogleProviderAsync(GoogleFederationOptions options, string firstBrokerLoginFlowAlias, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(options.ClientId) || string.IsNullOrWhiteSpace(options.ClientSecret))
+        {
+            return;
+        }
+
+        var payload = new IdentityProviderPayload
+        {
+            Alias = "google",
+            DisplayName = "Google",
+            ProviderId = "google",
+            Enabled = true,
+            TrustEmail = options.TrustEmail,
+            StoreToken = options.StoreToken,
+            FirstBrokerLoginFlowAlias = firstBrokerLoginFlowAlias,
+            Config = new Dictionary<string, string>
+            {
+                ["clientId"] = options.ClientId,
+                ["clientSecret"] = options.ClientSecret,
+                ["defaultScope"] = "openid profile email",
+                ["useJwksUrl"] = "true",
+                ["syncMode"] = MapSyncMode(options.SyncMode)
+            }
+        };
+
+        await UpsertIdentityProviderAsync(payload, ct);
+    }
+
+    public async Task ConfigureGitHubProviderAsync(GitHubFederationOptions options, string firstBrokerLoginFlowAlias, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(options.ClientId) || string.IsNullOrWhiteSpace(options.ClientSecret))
+        {
+            return;
+        }
+
+        var payload = new IdentityProviderPayload
+        {
+            Alias = "github",
+            DisplayName = "GitHub",
+            ProviderId = "github",
+            Enabled = true,
+            TrustEmail = options.TrustEmail,
+            StoreToken = options.StoreToken,
+            FirstBrokerLoginFlowAlias = firstBrokerLoginFlowAlias,
+            Config = new Dictionary<string, string>
+            {
+                ["clientId"] = options.ClientId,
+                ["clientSecret"] = options.ClientSecret,
+                ["defaultScope"] = "read:user user:email",
+                ["syncMode"] = MapSyncMode(options.SyncMode)
+            }
+        };
+
+        await UpsertIdentityProviderAsync(payload, ct);
     }
 
     private async Task<string> RequireAdminTokenAsync(CancellationToken ct)
@@ -194,10 +247,71 @@ public sealed class KeycloakAdminService(
         return segments[^1].Trim('/');
     }
 
+    private async Task UpsertIdentityProviderAsync(IdentityProviderPayload payload, CancellationToken ct)
+    {
+        var adminRealmEndpoint = ResolveAdminRealmEndpoint();
+        var token = await RequireAdminTokenAsync(ct);
+        var instanceEndpoint = new Uri(adminRealmEndpoint, $"identity-provider/instances/{Uri.EscapeDataString(payload.Alias)}");
+        using var getRequest = new HttpRequestMessage(HttpMethod.Get, instanceEndpoint);
+        getRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var getResponse = await httpClient.SendAsync(getRequest, ct);
+        var method = getResponse.StatusCode == HttpStatusCode.NotFound ? HttpMethod.Post : HttpMethod.Put;
+        var endpoint = method == HttpMethod.Post
+            ? new Uri(adminRealmEndpoint, "identity-provider/instances")
+            : instanceEndpoint;
+
+        using var writeRequest = new HttpRequestMessage(method, endpoint)
+        {
+            Content = JsonContent.Create(payload)
+        };
+        writeRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var writeResponse = await httpClient.SendAsync(writeRequest, ct);
+        writeResponse.EnsureSuccessStatusCode();
+    }
+
+    private static string MapSyncMode(FederationSyncMode syncMode)
+    {
+        return syncMode switch
+        {
+            FederationSyncMode.Import => "IMPORT",
+            FederationSyncMode.Force => "FORCE",
+            _ => "LEGACY"
+        };
+    }
+
     private sealed class KeycloakUserResponse
     {
         public string? Id { get; set; }
         public string? Email { get; set; }
         public string? Username { get; set; }
+    }
+
+    private sealed class IdentityProviderPayload
+    {
+        [JsonPropertyName("alias")]
+        public string Alias { get; set; } = string.Empty;
+
+        [JsonPropertyName("displayName")]
+        public string DisplayName { get; set; } = string.Empty;
+
+        [JsonPropertyName("providerId")]
+        public string ProviderId { get; set; } = string.Empty;
+
+        [JsonPropertyName("enabled")]
+        public bool Enabled { get; set; }
+
+        [JsonPropertyName("trustEmail")]
+        public bool TrustEmail { get; set; }
+
+        [JsonPropertyName("storeToken")]
+        public bool StoreToken { get; set; }
+
+        [JsonPropertyName("firstBrokerLoginFlowAlias")]
+        public string FirstBrokerLoginFlowAlias { get; set; } = "first broker login";
+
+        [JsonPropertyName("config")]
+        public Dictionary<string, string> Config { get; set; } = [];
     }
 }
