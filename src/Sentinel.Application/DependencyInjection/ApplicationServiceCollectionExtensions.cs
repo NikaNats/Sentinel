@@ -9,6 +9,8 @@ public static class ApplicationServiceCollectionExtensions
 {
     public static IServiceCollection AddApplicationLayer(this IServiceCollection services)
     {
+        services.AddScoped<RegisterUserHandler>();
+
         services.AddSingleton<IAuthorizationHandler, AcrAuthorizationHandler>();
         services.AddSingleton<IAuthorizationHandler, ScopeAuthorizationHandler>();
         services.AddScoped<IAuthorizationHandler, UmaResourceAuthorizationHandler>();

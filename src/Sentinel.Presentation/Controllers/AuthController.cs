@@ -118,6 +118,37 @@ public sealed class AuthController(
         return NoContent();
     }
 
+    [HttpDelete("account")]
+    [Authorize]
+    [RequireIdempotency]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> DeleteAccount(CancellationToken ct)
+    {
+        var sub = User.FindFirst("sub")?.Value;
+        if (string.IsNullOrWhiteSpace(sub))
+        {
+            return Unauthorized();
+        }
+
+        await TryBlacklistCurrentSessionAsync(ct);
+        _ = await revocationService.RevokeAllSessionsAsync(sub, ct);
+
+        var deleted = await revocationService.DeleteAccountAsync(sub, ct);
+        if (!deleted)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Title = "Failed to delete account.",
+                Status = StatusCodes.Status500InternalServerError
+            });
+        }
+
+        return NoContent();
+    }
+
     private async Task TryBlacklistCurrentSessionAsync(CancellationToken ct)
     {
         var sid = User.FindFirst("sid")?.Value;

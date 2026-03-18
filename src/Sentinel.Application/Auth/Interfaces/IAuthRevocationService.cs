@@ -4,4 +4,5 @@ public interface IAuthRevocationService
 {
     Task<bool> RevokeCurrentSessionAsync(string refreshToken, CancellationToken ct);
     Task<bool> RevokeAllSessionsAsync(string subjectId, CancellationToken ct);
+    Task<bool> DeleteAccountAsync(string subjectId, CancellationToken ct);
 }

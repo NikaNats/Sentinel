@@ -22,6 +22,9 @@ public static class InfrastructureServiceCollectionExtensions
 {
     public static IServiceCollection AddInfrastructureLayer(this IServiceCollection services, IConfiguration configuration)
     {
+        _ = services.Configure<CaptchaOptions>(configuration.GetSection("Captcha:Turnstile"));
+        _ = services.Configure<RegistrationOptions>(configuration.GetSection("Registration"));
+
         string? redisConnectionString = configuration.GetConnectionString("Redis");
 
         _ = services.AddStackExchangeRedisCache(options =>
@@ -52,9 +55,13 @@ public static class InfrastructureServiceCollectionExtensions
         _ = services.AddSingleton<ILogoutTokenValidator, LogoutTokenValidator>();
         _ = services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
         _ = services.AddSingleton<KeycloakAdminTokenProvider>();
+        _ = services.AddSingleton<IEmailVerificationTokenStore, EmailVerificationTokenStore>();
+        _ = services.AddSingleton<IEmailService, LoggingEmailService>();
 
         _ = services.AddHttpClient<IUmaPermissionService, KeycloakUmaPermissionService>();
         _ = services.AddHttpClient<ITokenRefreshService, KeycloakTokenRefreshService>();
+        _ = services.AddHttpClient<ICaptchaService, TurnstileService>();
+        _ = services.AddHttpClient<IKeycloakAdminService, KeycloakAdminService>();
         _ = services.AddHttpClient("keycloak-admin");
         _ = services.AddHttpClient<IAuthRevocationService, KeycloakAuthRevocationService>();
 

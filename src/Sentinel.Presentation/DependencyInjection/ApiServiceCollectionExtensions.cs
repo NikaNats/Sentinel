@@ -18,6 +18,13 @@ public static class ApiServiceCollectionExtensions
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.AddFixedWindowLimiter("registration_policy", registrationOptions =>
+            {
+                registrationOptions.Window = TimeSpan.FromMinutes(15);
+                registrationOptions.PermitLimit = 3;
+                registrationOptions.QueueLimit = 0;
+            });
+
             var identityLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
             {
                 var sub = httpContext.User.FindFirst("sub")?.Value;

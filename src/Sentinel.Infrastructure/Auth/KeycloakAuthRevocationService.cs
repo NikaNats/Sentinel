@@ -96,4 +96,45 @@ public sealed class KeycloakAuthRevocationService(
             return false;
         }
     }
+
+    public async Task<bool> DeleteAccountAsync(string subjectId, CancellationToken ct)
+    {
+        var authority = configuration["Keycloak:Authority"]?.TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(authority)
+            || !KeycloakAuthorityEndpoints.TryBuild(authority, out _, out var adminRealmEndpoint))
+        {
+            logger.LogWarning("Account deletion skipped because Keycloak authority configuration is missing or invalid.");
+            return false;
+        }
+
+        var adminAccessToken = await adminTokenProvider.GetAccessTokenAsync(ct);
+        if (string.IsNullOrWhiteSpace(adminAccessToken))
+        {
+            logger.LogWarning("Account deletion skipped because Keycloak admin token could not be acquired.");
+            return false;
+        }
+
+        var deleteEndpoint = new Uri(adminRealmEndpoint, $"users/{Uri.EscapeDataString(subjectId)}");
+        using var request = new HttpRequestMessage(HttpMethod.Delete, deleteEndpoint);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminAccessToken);
+
+        try
+        {
+            var adminHttpClient = httpClientFactory.CreateClient("keycloak-admin");
+            using var response = await adminHttpClient.SendAsync(request, ct);
+            if (response.IsSuccessStatusCode)
+            {
+                logger.LogInformation("User {Sub} deleted from Keycloak.", subjectId);
+                return true;
+            }
+
+            logger.LogWarning("Keycloak returned status {StatusCode} during account deletion for sub {Sub}.", (int)response.StatusCode, subjectId);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to delete account for sub {Sub}.", subjectId);
+            return false;
+        }
+    }
 }
