@@ -14,6 +14,7 @@ using Sentinel.Domain.Auth;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Cache;
 using Sentinel.Infrastructure.Cryptography;
+using Sentinel.Infrastructure.Notifications;
 using Sentinel.Infrastructure.Telemetry;
 using StackExchange.Redis;
 
@@ -60,6 +61,11 @@ public static class InfrastructureServiceCollectionExtensions
         _ = services.AddSingleton<IResetTokenProvider, HmacResetTokenProvider>();
         _ = services.AddSingleton<IEmailVerificationTokenStore, EmailVerificationTokenStore>();
         _ = services.AddSingleton<IEmailService, LoggingEmailService>();
+
+        _ = services
+            .AddNotifications(configuration)
+            .AddSendGrid()
+            .AddTwilio();
 
         _ = services.AddHttpClient<IUmaPermissionService, KeycloakUmaPermissionService>();
         _ = services.AddHttpClient<ITokenRefreshService, KeycloakTokenRefreshService>();
