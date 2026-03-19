@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Sentinel.Auth.Authorization;
 using Sentinel.Application.Auth.Models;
 using System.Security.Claims;
 

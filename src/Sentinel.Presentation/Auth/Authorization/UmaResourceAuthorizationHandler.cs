@@ -2,8 +2,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Sentinel.Application.Auth.Interfaces;
+using Sentinel.Application.Auth.Models;
 
-namespace Sentinel.Application.Auth.Models;
+namespace Sentinel.Auth.Authorization;
 
 public sealed class UmaResourceAuthorizationHandler(
     IUmaPermissionService umaService,

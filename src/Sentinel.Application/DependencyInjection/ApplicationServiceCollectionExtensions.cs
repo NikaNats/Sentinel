@@ -16,9 +16,7 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<ResendVerificationHandler>();
         services.AddSingleton<IPasswordStrengthValidator, PasswordStrengthValidator>();
 
-        services.AddSingleton<IAuthorizationHandler, AcrAuthorizationHandler>();
         services.AddSingleton<IAuthorizationHandler, ScopeAuthorizationHandler>();
-        services.AddScoped<IAuthorizationHandler, UmaResourceAuthorizationHandler>();
 
         services.AddAuthorizationBuilder()
             .SetDefaultPolicy(new AuthorizationPolicyBuilder()

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.DependencyInjection;
+using Sentinel.Auth.Authorization;
 using Sentinel.Middleware;
 using System.Threading.RateLimiting;
 
@@ -14,6 +15,8 @@ public static class ApiServiceCollectionExtensions
     public static IServiceCollection AddApiLayer(this IServiceCollection services)
     {
         services.AddSingleton<IAuthorizationMiddlewareResultHandler, StepUpAuthorizationResultHandler>();
+        services.AddSingleton<IAuthorizationHandler, AcrAuthorizationHandler>();
+        services.AddScoped<IAuthorizationHandler, UmaResourceAuthorizationHandler>();
 
         services.AddRateLimiter(options =>
         {

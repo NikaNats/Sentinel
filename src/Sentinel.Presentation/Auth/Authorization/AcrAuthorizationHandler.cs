@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
+using Sentinel.Application.Auth.Models;
 
-namespace Sentinel.Application.Auth.Models;
+namespace Sentinel.Auth.Authorization;
 
 public sealed class AcrAuthorizationHandler : AuthorizationHandler<AcrRequirement>
 {
