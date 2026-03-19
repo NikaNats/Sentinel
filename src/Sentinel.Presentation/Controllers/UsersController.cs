@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Sentinel.Application.Auth;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
+using Sentinel.Errors;
 using Sentinel.Infrastructure.Telemetry;
 
 namespace Sentinel.Controllers;
@@ -34,7 +35,7 @@ public sealed class UsersController(
             {
                 Title = result.Message,
                 Status = StatusCodes.Status400BadRequest,
-                Type = result.ErrorCode is null ? null : $"/errors/{result.ErrorCode}"
+                Type = ResolveErrorType(result.ErrorCode)
             });
         }
 
@@ -118,7 +119,7 @@ public sealed class UsersController(
             {
                 Title = result.Message,
                 Status = StatusCodes.Status400BadRequest,
-                Type = $"/errors/{result.ErrorCode}"
+                Type = ResolveErrorType(result.ErrorCode)
             });
         }
 
@@ -126,7 +127,23 @@ public sealed class UsersController(
         {
             Title = result.Message,
             Status = StatusCodes.Status500InternalServerError,
-            Type = result.ErrorCode is null ? null : $"/errors/{result.ErrorCode}"
+            Type = ResolveErrorType(result.ErrorCode)
         });
+    }
+
+    private static string? ResolveErrorType(string? errorCode)
+    {
+        return errorCode switch
+        {
+            "terms_not_accepted" => ErrorCodes.TermsNotAccepted,
+            "invalid_request" => ErrorCodes.InvalidRequest,
+            "invalid_captcha" => ErrorCodes.InvalidCaptcha,
+            "weak_password" => ErrorCodes.WeakPassword,
+            "verification_token_store_failed" => ErrorCodes.VerificationTokenStoreFailed,
+            "invalid_or_expired_token" => ErrorCodes.InvalidOrExpiredToken,
+            "token_already_consumed" => ErrorCodes.TokenAlreadyConsumed,
+            null => null,
+            _ => $"/errors/{errorCode}"
+        };
     }
 }

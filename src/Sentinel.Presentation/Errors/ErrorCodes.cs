@@ -15,4 +15,10 @@ public static class ErrorCodes
     public const string InvalidCurrentPassword = "/errors/invalid-current-password";
     public const string WeakPassword = "/errors/weak-password";
     public const string MfaNotConfigured = "/errors/mfa-not-configured";
+    public const string InvalidRequest = "/errors/invalid-request";
+    public const string InvalidCaptcha = "/errors/invalid-captcha";
+    public const string TermsNotAccepted = "/errors/terms-not-accepted";
+    public const string InvalidOrExpiredToken = "/errors/invalid-or-expired-token";
+    public const string TokenAlreadyConsumed = "/errors/token-already-consumed";
+    public const string VerificationTokenStoreFailed = "/errors/verification-token-store-failed";
 }

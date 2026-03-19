@@ -125,6 +125,39 @@ public sealed class KeycloakAdminService(
         return new KeycloakUserSummary(user.Id!, user.Email ?? email.Trim(), user.Username ?? user.Email ?? string.Empty);
     }
 
+    public async Task<bool> UpdateProfileAsync(string subjectId, string? displayName, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(subjectId))
+        {
+            return false;
+        }
+
+        var adminRealmEndpoint = ResolveAdminRealmEndpoint();
+        var token = await RequireAdminTokenAsync(ct);
+
+        var normalizedDisplayName = string.IsNullOrWhiteSpace(displayName) ? string.Empty : displayName.Trim();
+        var parts = normalizedDisplayName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var firstName = parts.Length > 0 ? parts[0] : string.Empty;
+        var lastName = parts.Length > 1 ? string.Join(' ', parts.Skip(1)) : string.Empty;
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, new Uri(adminRealmEndpoint, $"users/{Uri.EscapeDataString(subjectId)}"))
+        {
+            Content = JsonContent.Create(new
+            {
+                firstName,
+                lastName,
+                attributes = new Dictionary<string, string[]>
+                {
+                    ["display_name"] = [normalizedDisplayName]
+                }
+            })
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var response = await httpClient.SendAsync(request, ct);
+        return response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NoContent;
+    }
+
     public async Task<bool> UpdatePasswordAsync(string email, string newPassword, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(newPassword))

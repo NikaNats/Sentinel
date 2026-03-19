@@ -159,6 +159,66 @@ public sealed class AuthController(
         return NoContent();
     }
 
+    [HttpGet("sessions")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetActiveSessions(CancellationToken ct)
+    {
+        var sub = User.FindFirst("sub")?.Value;
+        if (string.IsNullOrWhiteSpace(sub))
+        {
+            return Unauthorized(new ProblemDetails
+            {
+                Type = ErrorCodes.Unauthorized,
+                Title = "Authentication required",
+                Status = StatusCodes.Status401Unauthorized
+            });
+        }
+
+        var sessions = await revocationService.GetActiveSessionsAsync(sub, ct);
+        return Ok(sessions);
+    }
+
+    [HttpDelete("sessions/{sessionId}")]
+    [Authorize]
+    [RequireIdempotency]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RevokeSession([FromRoute] string sessionId, CancellationToken ct)
+    {
+        var sub = User.FindFirst("sub")?.Value;
+        if (string.IsNullOrWhiteSpace(sub))
+        {
+            return Unauthorized(new ProblemDetails
+            {
+                Type = ErrorCodes.Unauthorized,
+                Title = "Authentication required",
+                Status = StatusCodes.Status401Unauthorized
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Type = ErrorCodes.InvalidRequest,
+                Title = "Session id is required.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var revoked = await revocationService.RevokeSessionAsync(sub, sessionId, ct);
+        if (!revoked)
+        {
+            return NotFound();
+        }
+
+        return NoContent();
+    }
+
     [HttpPost("logout-all")]
     [Authorize]
     [RequireIdempotency]
