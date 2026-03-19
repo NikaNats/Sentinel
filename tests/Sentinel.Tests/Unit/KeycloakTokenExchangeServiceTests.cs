@@ -20,7 +20,7 @@ public sealed class KeycloakTokenExchangeServiceTests
             BuildConfiguration(),
             NullLogger<KeycloakTokenExchangeService>.Instance);
 
-        var result = await service.ExchangeExternalTokenAsync("google-token", "google", "proof", CancellationToken.None);
+        var result = await service.ExchangeExternalTokenAsync("google-token", "google", "proof", "pkce-verifier", CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.Equal("acc", result!.AccessToken);
@@ -37,7 +37,7 @@ public sealed class KeycloakTokenExchangeServiceTests
             BuildConfiguration(),
             NullLogger<KeycloakTokenExchangeService>.Instance);
 
-        var result = await service.ExchangeExternalTokenAsync("google-token", "google", "proof", CancellationToken.None);
+        var result = await service.ExchangeExternalTokenAsync("google-token", "google", "proof", "pkce-verifier", CancellationToken.None);
 
         Assert.Null(result);
     }

@@ -47,6 +47,11 @@ public sealed class KeycloakAdminService(
 
         if (!response.IsSuccessStatusCode)
         {
+            if (response.StatusCode == HttpStatusCode.Conflict)
+            {
+                throw new UserAlreadyExistsException();
+            }
+
             var error = await response.Content.ReadAsStringAsync(ct);
             logger.LogWarning("Failed to create Keycloak user. Status: {Status}. Body: {Body}", (int)response.StatusCode, error);
             throw new InvalidOperationException("Unable to create user in identity provider.");
@@ -146,6 +151,36 @@ public sealed class KeycloakAdminService(
             })
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var response = await httpClient.SendAsync(request, ct);
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<bool> VerifyUserPasswordAsync(string usernameOrEmail, string currentPassword, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(usernameOrEmail) || string.IsNullOrWhiteSpace(currentPassword))
+        {
+            return false;
+        }
+
+        var authority = configuration["Keycloak:Authority"]?.TrimEnd('/');
+        var clientId = configuration["Keycloak:Audience"];
+        if (string.IsNullOrWhiteSpace(authority) || string.IsNullOrWhiteSpace(clientId))
+        {
+            return false;
+        }
+
+        var endpoint = $"{authority}/protocol/openid-connect/token";
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+        {
+            Content = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("grant_type", "password"),
+                new KeyValuePair<string, string>("client_id", clientId),
+                new KeyValuePair<string, string>("username", usernameOrEmail),
+                new KeyValuePair<string, string>("password", currentPassword)
+            ])
+        };
 
         using var response = await httpClient.SendAsync(request, ct);
         return response.IsSuccessStatusCode;

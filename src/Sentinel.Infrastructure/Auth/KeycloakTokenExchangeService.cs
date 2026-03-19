@@ -9,7 +9,7 @@ public sealed class KeycloakTokenExchangeService(
     IConfiguration configuration,
     ILogger<KeycloakTokenExchangeService> logger) : ITokenExchangeService
 {
-    public async Task<TokenExchangeResult?> ExchangeExternalTokenAsync(string externalToken, string providerName, string dpopProof, CancellationToken ct)
+    public async Task<TokenExchangeResult?> ExchangeExternalTokenAsync(string externalToken, string providerName, string dpopProof, string codeVerifier, CancellationToken ct)
     {
         var authority = configuration["Keycloak:Authority"]?.TrimEnd('/');
         var audience = configuration["Keycloak:Audience"];
@@ -18,7 +18,8 @@ public sealed class KeycloakTokenExchangeService(
             || string.IsNullOrWhiteSpace(audience)
             || string.IsNullOrWhiteSpace(externalToken)
             || string.IsNullOrWhiteSpace(providerName)
-            || string.IsNullOrWhiteSpace(dpopProof))
+            || string.IsNullOrWhiteSpace(dpopProof)
+            || string.IsNullOrWhiteSpace(codeVerifier))
         {
             return null;
         }
@@ -31,6 +32,7 @@ public sealed class KeycloakTokenExchangeService(
             new KeyValuePair<string, string>("subject_token", externalToken),
             new KeyValuePair<string, string>("subject_token_type", "urn:ietf:params:oauth:token-type:access_token"),
             new KeyValuePair<string, string>("subject_issuer", providerName),
+            new KeyValuePair<string, string>("code_verifier", codeVerifier),
             new KeyValuePair<string, string>("requested_token_type", "urn:ietf:params:oauth:token-type:access_token")
         ]);
 

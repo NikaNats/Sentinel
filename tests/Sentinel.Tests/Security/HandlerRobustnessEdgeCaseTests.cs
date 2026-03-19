@@ -21,7 +21,8 @@ public sealed class HandlerRobustnessEdgeCaseTests
             Mock.Of<ICaptchaService>(),
             Mock.Of<IKeycloakAdminService>(),
             Mock.Of<IEmailService>(),
-            Mock.Of<IEmailVerificationTokenStore>());
+            Mock.Of<IEmailVerificationTokenStore>(),
+            Mock.Of<IPasswordStrengthValidator>());
 
         Func<Task> act = async () => await sut.HandleAsync(null!, "ip", CancellationToken.None);
 
@@ -70,7 +71,7 @@ public sealed class HandlerRobustnessEdgeCaseTests
         controller.Request.Headers["DPoP"] = "proof";
 
         var response = await controller.ExchangeExternalToken(
-            new TokenExchangeController.TokenExchangeRequest(" ", " "),
+            new TokenExchangeController.TokenExchangeRequest(" ", " ", " "),
             CancellationToken.None);
 
         response.Should().BeOfType<BadRequestObjectResult>();

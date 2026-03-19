@@ -30,6 +30,12 @@ public static class ApiServiceCollectionExtensions
                 forgotPasswordOptions.PermitLimit = 2;
                 forgotPasswordOptions.QueueLimit = 0;
             });
+            options.AddFixedWindowLimiter("resend_verification_policy", resendVerificationOptions =>
+            {
+                resendVerificationOptions.Window = TimeSpan.FromHours(1);
+                resendVerificationOptions.PermitLimit = 3;
+                resendVerificationOptions.QueueLimit = 0;
+            });
 
             var identityLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
             {
@@ -90,6 +96,7 @@ public static class ApiServiceCollectionExtensions
 
         app.UseHttpsRedirection();
         app.UseRouting();
+        app.UseMiddleware<CorrelationIdMiddleware>();
 
         app.UseAuthentication();
         app.UseMiddleware<DpopValidationMiddleware>();

@@ -19,7 +19,7 @@ public sealed class TokenExchangeWithRealKeycloakTests(RealKeycloakApiFactory fa
     {
         var response = await apiClient.PostAsJsonAsync(
             "/v1/auth/token-exchange",
-            new { externalToken = "fake-google-token", providerName = "google" },
+            new { externalToken = "fake-google-token", providerName = "google", codeVerifier = "pkce-verifier-123" },
             CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -33,7 +33,7 @@ public sealed class TokenExchangeWithRealKeycloakTests(RealKeycloakApiFactory fa
         var requestUrl = new Uri(apiClient.BaseAddress!, "/v1/auth/token-exchange").ToString();
         using var request = new HttpRequestMessage(HttpMethod.Post, requestUrl)
         {
-            Content = JsonContent.Create(new { externalToken = "fake-google-token", providerName = "google" })
+            Content = JsonContent.Create(new { externalToken = "fake-google-token", providerName = "google", codeVerifier = "pkce-verifier-123" })
         };
         request.Headers.Add("DPoP", CreateDpopProof(requestUrl));
 

@@ -82,7 +82,14 @@ public sealed class ForgotPasswordAntiEnumerationSecurityTests
             Mock.Of<ICaptchaService>(),
             Mock.Of<IKeycloakAdminService>(),
             Mock.Of<IEmailService>(),
-            Mock.Of<IEmailVerificationTokenStore>());
+            Mock.Of<IEmailVerificationTokenStore>(),
+            Mock.Of<IPasswordStrengthValidator>());
+
+        var resendHandler = new ResendVerificationHandler(
+            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IEmailVerificationTokenStore>(),
+            Mock.Of<IEmailService>(),
+            NullLogger<ResendVerificationHandler>.Instance);
 
         var resetHandler = new ResetPasswordHandler(
             Mock.Of<IResetTokenProvider>(),
@@ -94,6 +101,7 @@ public sealed class ForgotPasswordAntiEnumerationSecurityTests
             registerHandler,
             forgotHandler,
             resetHandler,
+            resendHandler,
             Mock.Of<IEmailVerificationTokenStore>(),
             Mock.Of<IKeycloakAdminService>())
         {

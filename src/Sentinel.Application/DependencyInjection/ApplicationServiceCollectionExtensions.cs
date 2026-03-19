@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Sentinel.Application.Auth;
+using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 
 namespace Sentinel.Application.DependencyInjection;
@@ -12,6 +13,8 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<RegisterUserHandler>();
         services.AddScoped<ForgotPasswordHandler>();
         services.AddScoped<ResetPasswordHandler>();
+        services.AddScoped<ResendVerificationHandler>();
+        services.AddSingleton<IPasswordStrengthValidator, PasswordStrengthValidator>();
 
         services.AddSingleton<IAuthorizationHandler, AcrAuthorizationHandler>();
         services.AddSingleton<IAuthorizationHandler, ScopeAuthorizationHandler>();

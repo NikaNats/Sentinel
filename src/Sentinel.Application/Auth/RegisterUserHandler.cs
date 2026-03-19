@@ -1,6 +1,7 @@
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Domain.Users;
+using System.Security.Cryptography;
 
 namespace Sentinel.Application.Auth;
 
@@ -8,10 +9,13 @@ public sealed class RegisterUserHandler(
     ICaptchaService captchaService,
     IKeycloakAdminService keycloakAdminService,
     IEmailService emailService,
-    IEmailVerificationTokenStore verificationTokenStore)
+    IEmailVerificationTokenStore verificationTokenStore,
+    IPasswordStrengthValidator passwordStrengthValidator)
 {
     public async Task<RegisterUserResult> HandleAsync(RegisterUserRequest request, string sourceIp, CancellationToken ct)
     {
+        await Task.Delay(RandomNumberGenerator.GetInt32(100, 301), ct);
+
         if (!request.AcceptTerms)
         {
             return new RegisterUserResult(false, "Terms must be accepted.", "terms_not_accepted");
@@ -30,6 +34,12 @@ public sealed class RegisterUserHandler(
             return new RegisterUserResult(false, "Invalid captcha.", "invalid_captcha");
         }
 
+        var passwordValidation = passwordStrengthValidator.Validate(request.Password);
+        if (!passwordValidation.IsValid)
+        {
+            return new RegisterUserResult(false, passwordValidation.Message ?? "Password does not meet complexity requirements.", passwordValidation.ErrorCode ?? "weak_password");
+        }
+
         var registration = new UserRegistration
         {
             Email = request.Email.Trim(),
@@ -41,7 +51,17 @@ public sealed class RegisterUserHandler(
                 sourceIp)
         };
 
-        var keycloakUserId = await keycloakAdminService.CreateUserAsync(registration, request.Password, ct);
+        string keycloakUserId;
+        try
+        {
+            keycloakUserId = await keycloakAdminService.CreateUserAsync(registration, request.Password, ct);
+        }
+        catch (UserAlreadyExistsException)
+        {
+            await emailService.SendWelcomeOrAlreadyRegisteredEmailAsync(registration.Email, ct);
+            return new RegisterUserResult(true, "If this email is new, you'll receive a verification email.");
+        }
+
         var verificationToken = Guid.NewGuid().ToString("N");
         var stored = await verificationTokenStore.StoreAsync(verificationToken, keycloakUserId, TimeSpan.FromHours(24), ct);
         if (!stored)
@@ -51,6 +71,6 @@ public sealed class RegisterUserHandler(
 
         await emailService.SendVerificationEmailAsync(registration.Email, verificationToken, ct);
 
-        return new RegisterUserResult(true, "User created. Please verify email.");
+        return new RegisterUserResult(true, "If this email is new, you'll receive a verification email.");
     }
 }

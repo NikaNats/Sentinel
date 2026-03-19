@@ -46,6 +46,13 @@ public sealed class LoggingEmailService(
         logger.LogInformation("Reset password email queued for recipient {Recipient} using template {TemplateName}.", email, "PasswordReset");
     }
 
+    public Task SendWelcomeOrAlreadyRegisteredEmailAsync(string email, CancellationToken ct)
+    {
+        _ = ct;
+        logger.LogInformation("Registration status email requested for recipient {Recipient}.", email);
+        return Task.CompletedTask;
+    }
+
     private sealed record VerificationTemplateData(string VerificationUrl);
     private sealed record ResetPasswordTemplateData(string ResetUrl);
 }

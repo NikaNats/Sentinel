@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Application.Auth.Interfaces;
+using Sentinel.Errors;
 using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Middleware.Filters;
 
@@ -12,11 +13,16 @@ namespace Sentinel.Controllers;
 public sealed class AuthController(
     ITokenRefreshService refreshService,
     IAuthRevocationService revocationService,
+    IKeycloakAdminService keycloakAdminService,
+    IPasswordStrengthValidator passwordStrengthValidator,
     ISessionBlacklistCache blacklistCache,
     IConfiguration configuration) : ControllerBase
 {
     public sealed record RefreshRequest(string RefreshToken);
     public sealed record RevokeRequest(string RefreshToken);
+    public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+    public sealed record TotpSetupRequest(string DeviceName);
+    public sealed record TotpVerifyRequest(string Code);
 
     [HttpPost("refresh")]
     [AllowAnonymous]
@@ -51,7 +57,7 @@ public sealed class AuthController(
         {
             return Unauthorized(new ProblemDetails
             {
-                Type = "/errors/token-theft-detected",
+                Type = ErrorCodes.TokenTheftDetected,
                 Title = "Session Terminated",
                 Detail = "Security policy violation detected. Please log in again.",
                 Status = StatusCodes.Status401Unauthorized
@@ -63,6 +69,71 @@ public sealed class AuthController(
             Title = "Invalid refresh token",
             Status = StatusCodes.Status401Unauthorized
         });
+    }
+
+    [HttpPost("change-password")]
+    [Authorize]
+    [RequireIdempotency]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.CurrentPassword) || string.IsNullOrWhiteSpace(request.NewPassword))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Current and new passwords are required.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var sub = User.FindFirst("sub")?.Value;
+        if (string.IsNullOrWhiteSpace(sub))
+        {
+            return Unauthorized();
+        }
+
+        var loginIdentifier = User.FindFirst("preferred_username")?.Value
+            ?? User.FindFirst("email")?.Value
+            ?? sub;
+
+        var currentPasswordValid = await keycloakAdminService.VerifyUserPasswordAsync(loginIdentifier, request.CurrentPassword, ct);
+        if (!currentPasswordValid)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Type = ErrorCodes.InvalidCurrentPassword,
+                Title = "Current password is invalid.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var passwordValidation = passwordStrengthValidator.Validate(request.NewPassword);
+        if (!passwordValidation.IsValid)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Type = ErrorCodes.WeakPassword,
+                Title = passwordValidation.Message ?? "Password does not meet complexity requirements.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var updated = await keycloakAdminService.UpdatePasswordAsync(loginIdentifier, request.NewPassword, ct);
+        if (!updated)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Type = ErrorCodes.InternalServerError,
+                Title = "Failed to update password.",
+                Status = StatusCodes.Status500InternalServerError
+            });
+        }
+
+        _ = await revocationService.RevokeAllSessionsAsync(sub, ct);
+        return NoContent();
     }
 
     [HttpPost("logout")]
@@ -149,6 +220,48 @@ public sealed class AuthController(
         return NoContent();
     }
 
+    [HttpPost("mfa/totp/setup")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status501NotImplemented)]
+    public IActionResult SetupTotp([FromBody] TotpSetupRequest request)
+    {
+        _ = request;
+        return StatusCode(StatusCodes.Status501NotImplemented, BuildMfaNotConfiguredProblem());
+    }
+
+    [HttpPost("mfa/totp/verify")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status501NotImplemented)]
+    public IActionResult VerifyTotp([FromBody] TotpVerifyRequest request)
+    {
+        _ = request;
+        return StatusCode(StatusCodes.Status501NotImplemented, BuildMfaNotConfiguredProblem());
+    }
+
+    [HttpDelete("mfa/totp")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status501NotImplemented)]
+    public IActionResult DeleteTotp()
+    {
+        return StatusCode(StatusCodes.Status501NotImplemented, BuildMfaNotConfiguredProblem());
+    }
+
+    [HttpGet("mfa/recovery-codes")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status501NotImplemented)]
+    public IActionResult GetRecoveryCodes()
+    {
+        return StatusCode(StatusCodes.Status501NotImplemented, BuildMfaNotConfiguredProblem());
+    }
+
+    [HttpPost("mfa/recovery-codes/regenerate")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status501NotImplemented)]
+    public IActionResult RegenerateRecoveryCodes()
+    {
+        return StatusCode(StatusCodes.Status501NotImplemented, BuildMfaNotConfiguredProblem());
+    }
+
     private async Task TryBlacklistCurrentSessionAsync(CancellationToken ct)
     {
         var sid = User.FindFirst("sid")?.Value;
@@ -170,5 +283,15 @@ public sealed class AuthController(
         }
 
         return TimeSpan.FromSeconds(configuredSeconds);
+    }
+
+    private static ProblemDetails BuildMfaNotConfiguredProblem()
+    {
+        return new ProblemDetails
+        {
+            Type = ErrorCodes.MfaNotConfigured,
+            Title = "MFA management endpoints are not configured yet.",
+            Status = StatusCodes.Status501NotImplemented
+        };
     }
 }

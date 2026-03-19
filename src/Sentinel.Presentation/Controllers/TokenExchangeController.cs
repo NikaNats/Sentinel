@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Sentinel.Errors;
 using Sentinel.Application.Auth.Interfaces;
 
 namespace Sentinel.Controllers;
@@ -8,7 +9,7 @@ namespace Sentinel.Controllers;
 [Route("v1/auth")]
 public sealed class TokenExchangeController(ITokenExchangeService tokenExchangeService) : ControllerBase
 {
-    public sealed record TokenExchangeRequest(string ExternalToken, string ProviderName);
+    public sealed record TokenExchangeRequest(string ExternalToken, string ProviderName, string CodeVerifier);
 
     [HttpPost("token-exchange")]
     [AllowAnonymous]
@@ -17,11 +18,13 @@ public sealed class TokenExchangeController(ITokenExchangeService tokenExchangeS
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> ExchangeExternalToken([FromBody] TokenExchangeRequest request, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.ExternalToken) || string.IsNullOrWhiteSpace(request.ProviderName))
+        if (string.IsNullOrWhiteSpace(request.ExternalToken)
+            || string.IsNullOrWhiteSpace(request.ProviderName)
+            || string.IsNullOrWhiteSpace(request.CodeVerifier))
         {
             return BadRequest(new ProblemDetails
             {
-                Title = "External token and provider name are required.",
+                Title = "External token, provider name, and code verifier are required.",
                 Status = StatusCodes.Status400BadRequest
             });
         }
@@ -33,11 +36,11 @@ public sealed class TokenExchangeController(ITokenExchangeService tokenExchangeS
             {
                 Title = "DPoP proof is required.",
                 Status = StatusCodes.Status400BadRequest,
-                Type = "/errors/missing-dpop-proof"
+                Type = ErrorCodes.MissingDpopProof
             });
         }
 
-        var result = await tokenExchangeService.ExchangeExternalTokenAsync(request.ExternalToken, request.ProviderName, dpopProof, ct);
+        var result = await tokenExchangeService.ExchangeExternalTokenAsync(request.ExternalToken, request.ProviderName, dpopProof, request.CodeVerifier, ct);
         if (result is null || string.IsNullOrWhiteSpace(result.AccessToken))
         {
             return Unauthorized(new ProblemDetails

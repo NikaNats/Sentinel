@@ -20,7 +20,10 @@ public sealed class RegisterUserHandlerTests
             .Setup(x => x.VerifyAsync("captcha-token", It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
-        var sut = new RegisterUserHandler(captcha.Object, keycloak.Object, email.Object, tokenStore.Object);
+        var validator = new Mock<IPasswordStrengthValidator>();
+        validator.Setup(x => x.Validate(It.IsAny<string>())).Returns(new PasswordStrengthValidationResult(true));
+
+        var sut = new RegisterUserHandler(captcha.Object, keycloak.Object, email.Object, tokenStore.Object, validator.Object);
 
         var result = await sut.HandleAsync(
             new RegisterUserRequest("user@example.com", "user", "Passw0rd!", "captcha-token", true),
@@ -39,7 +42,8 @@ public sealed class RegisterUserHandlerTests
             Mock.Of<ICaptchaService>(),
             Mock.Of<IKeycloakAdminService>(),
             Mock.Of<IEmailService>(),
-            Mock.Of<IEmailVerificationTokenStore>());
+            Mock.Of<IEmailVerificationTokenStore>(),
+            Mock.Of<IPasswordStrengthValidator>());
 
         var result = await sut.HandleAsync(
             new RegisterUserRequest("user@example.com", "user", "Passw0rd!", "captcha-token", false),
@@ -68,7 +72,10 @@ public sealed class RegisterUserHandlerTests
             .Setup(x => x.StoreAsync(It.IsAny<string>(), "kc-user-1", TimeSpan.FromHours(24), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        var sut = new RegisterUserHandler(captcha.Object, keycloak.Object, email.Object, tokenStore.Object);
+        var validator = new Mock<IPasswordStrengthValidator>();
+        validator.Setup(x => x.Validate("Passw0rd!")).Returns(new PasswordStrengthValidationResult(true));
+
+        var sut = new RegisterUserHandler(captcha.Object, keycloak.Object, email.Object, tokenStore.Object, validator.Object);
 
         var result = await sut.HandleAsync(
             new RegisterUserRequest("user@example.com", "user", "Passw0rd!", "captcha-token", true),
@@ -77,5 +84,66 @@ public sealed class RegisterUserHandlerTests
 
         Assert.True(result.IsSuccess);
         email.Verify(x => x.SendVerificationEmailAsync("user@example.com", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenPasswordIsWeak_ReturnsWeakPassword()
+    {
+        var captcha = new Mock<ICaptchaService>();
+        captcha
+            .Setup(x => x.VerifyAsync("captcha-token", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var validator = new Mock<IPasswordStrengthValidator>();
+        validator
+            .Setup(x => x.Validate("weak"))
+            .Returns(new PasswordStrengthValidationResult(false, "weak_password", "Password is too weak."));
+
+        var sut = new RegisterUserHandler(
+            captcha.Object,
+            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IEmailService>(),
+            Mock.Of<IEmailVerificationTokenStore>(),
+            validator.Object);
+
+        var result = await sut.HandleAsync(
+            new RegisterUserRequest("user@example.com", "user", "weak", "captcha-token", true),
+            "ip-hash",
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("weak_password", result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenUserAlreadyExists_ReturnsGenericSuccessMessage()
+    {
+        var captcha = new Mock<ICaptchaService>();
+        var keycloak = new Mock<IKeycloakAdminService>();
+        var email = new Mock<IEmailService>();
+        var tokenStore = new Mock<IEmailVerificationTokenStore>();
+        var validator = new Mock<IPasswordStrengthValidator>();
+
+        captcha
+            .Setup(x => x.VerifyAsync("captcha-token", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        validator
+            .Setup(x => x.Validate("StrongPassw0rd!"))
+            .Returns(new PasswordStrengthValidationResult(true));
+        keycloak
+            .Setup(x => x.CreateUserAsync(It.IsAny<UserRegistration>(), "StrongPassw0rd!", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new UserAlreadyExistsException());
+
+        var sut = new RegisterUserHandler(captcha.Object, keycloak.Object, email.Object, tokenStore.Object, validator.Object);
+
+        var result = await sut.HandleAsync(
+            new RegisterUserRequest("user@example.com", "user", "StrongPassw0rd!", "captcha-token", true),
+            "ip-hash",
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("If this email is new, you'll receive a verification email.", result.Message);
+        email.Verify(x => x.SendWelcomeOrAlreadyRegisteredEmailAsync("user@example.com", It.IsAny<CancellationToken>()), Times.Once);
+        tokenStore.Verify(x => x.StoreAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

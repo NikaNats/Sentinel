@@ -23,7 +23,8 @@ public sealed class UsersControllerTests
             captcha.Object,
             Mock.Of<IKeycloakAdminService>(),
             Mock.Of<IEmailService>(),
-            Mock.Of<IEmailVerificationTokenStore>());
+            Mock.Of<IEmailVerificationTokenStore>(),
+            BuildPasswordStrengthValidator());
         var verificationStore = new Mock<IEmailVerificationTokenStore>();
         var keycloakAdmin = new Mock<IKeycloakAdminService>();
 
@@ -31,6 +32,7 @@ public sealed class UsersControllerTests
             handler,
             BuildForgotPasswordHandler(),
             BuildResetPasswordHandler(),
+            BuildResendVerificationHandler(),
             verificationStore.Object,
             keycloakAdmin.Object)
         {
@@ -55,12 +57,14 @@ public sealed class UsersControllerTests
             Mock.Of<ICaptchaService>(),
             Mock.Of<IKeycloakAdminService>(),
             Mock.Of<IEmailService>(),
-            Mock.Of<IEmailVerificationTokenStore>());
+            Mock.Of<IEmailVerificationTokenStore>(),
+            BuildPasswordStrengthValidator());
 
         var controller = new UsersController(
             handler,
             BuildForgotPasswordHandler(),
             BuildResetPasswordHandler(),
+            BuildResendVerificationHandler(),
             BuildVerificationStore(null),
             Mock.Of<IKeycloakAdminService>());
 
@@ -82,12 +86,14 @@ public sealed class UsersControllerTests
             Mock.Of<ICaptchaService>(),
             keycloakAdmin.Object,
             Mock.Of<IEmailService>(),
-            Mock.Of<IEmailVerificationTokenStore>());
+            Mock.Of<IEmailVerificationTokenStore>(),
+            BuildPasswordStrengthValidator());
 
         var controller = new UsersController(
             handler,
             BuildForgotPasswordHandler(),
             BuildResetPasswordHandler(),
+            BuildResendVerificationHandler(),
             BuildVerificationStore("kc-user-1"),
             keycloakAdmin.Object);
 
@@ -114,6 +120,7 @@ public sealed class UsersControllerTests
             BuildRegisterUserHandler(),
             BuildForgotPasswordHandler(),
             BuildResetPasswordHandler(),
+            BuildResendVerificationHandler(),
             BuildVerificationStore(null),
             Mock.Of<IKeycloakAdminService>());
 
@@ -128,7 +135,24 @@ public sealed class UsersControllerTests
             Mock.Of<ICaptchaService>(),
             Mock.Of<IKeycloakAdminService>(),
             Mock.Of<IEmailService>(),
-            Mock.Of<IEmailVerificationTokenStore>());
+            Mock.Of<IEmailVerificationTokenStore>(),
+            BuildPasswordStrengthValidator());
+    }
+
+    private static IPasswordStrengthValidator BuildPasswordStrengthValidator()
+    {
+        var validator = new Mock<IPasswordStrengthValidator>();
+        validator.Setup(x => x.Validate(It.IsAny<string>())).Returns(new PasswordStrengthValidationResult(true));
+        return validator.Object;
+    }
+
+    private static ResendVerificationHandler BuildResendVerificationHandler()
+    {
+        return new ResendVerificationHandler(
+            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IEmailVerificationTokenStore>(),
+            Mock.Of<IEmailService>(),
+            NullLogger<ResendVerificationHandler>.Instance);
     }
 
     private static ForgotPasswordHandler BuildForgotPasswordHandler()

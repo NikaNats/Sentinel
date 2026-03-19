@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
+using Sentinel.Errors;
 using StackExchange.Redis;
 
 namespace Sentinel.Middleware.Filters;
@@ -18,7 +19,7 @@ public sealed class RequireIdempotencyAttribute : Attribute, IAsyncActionFilter
         {
             context.Result = new BadRequestObjectResult(new ProblemDetails
             {
-                Type = "/errors/missing-idempotency-key",
+                Type = ErrorCodes.MissingIdempotencyKey,
                 Title = "Idempotency Key Required",
                 Detail = $"The '{headerName}' header is required for this operation.",
                 Status = StatusCodes.Status400BadRequest
@@ -72,7 +73,7 @@ public sealed class RequireIdempotencyAttribute : Attribute, IAsyncActionFilter
 
             context.Result = new ConflictObjectResult(new ProblemDetails
             {
-                Type = "/errors/idempotency-conflict",
+                Type = ErrorCodes.IdempotencyConflict,
                 Title = "Request In Progress",
                 Detail = "A request with this Idempotency-Key is currently running.",
                 Status = StatusCodes.Status409Conflict
@@ -128,7 +129,7 @@ public sealed class RequireIdempotencyAttribute : Attribute, IAsyncActionFilter
     {
         return new ObjectResult(new ProblemDetails
         {
-            Type = "/errors/idempotency-unavailable",
+            Type = ErrorCodes.IdempotencyUnavailable,
             Title = "Idempotency service unavailable",
             Status = StatusCodes.Status503ServiceUnavailable
         })

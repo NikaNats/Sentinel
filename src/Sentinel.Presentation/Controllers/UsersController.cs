@@ -14,6 +14,7 @@ public sealed class UsersController(
     RegisterUserHandler registerUserHandler,
     ForgotPasswordHandler forgotPasswordHandler,
     ResetPasswordHandler resetPasswordHandler,
+    ResendVerificationHandler resendVerificationHandler,
     IEmailVerificationTokenStore verificationTokenStore,
     IKeycloakAdminService keycloakAdminService) : ControllerBase
 {
@@ -85,6 +86,16 @@ public sealed class UsersController(
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken ct)
     {
         await forgotPasswordHandler.HandleAsync(request, ct);
+        return Accepted();
+    }
+
+    [HttpPost("resend-verification")]
+    [AllowAnonymous]
+    [EnableRateLimiting("resend_verification_policy")]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    public async Task<IActionResult> ResendVerification([FromBody] ResendVerificationRequest request, CancellationToken ct)
+    {
+        await resendVerificationHandler.HandleAsync(request, ct);
         return Accepted();
     }
 

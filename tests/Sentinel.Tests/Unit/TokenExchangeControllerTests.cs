@@ -21,7 +21,7 @@ public sealed class TokenExchangeControllerTests
             }
         };
 
-        var response = await controller.ExchangeExternalToken(new TokenExchangeController.TokenExchangeRequest("token", "google"), CancellationToken.None);
+        var response = await controller.ExchangeExternalToken(new TokenExchangeController.TokenExchangeRequest("token", "google", "pkce-verifier"), CancellationToken.None);
 
         var badRequest = Assert.IsType<BadRequestObjectResult>(response);
         Assert.Equal(StatusCodes.Status400BadRequest, badRequest.StatusCode);
@@ -32,7 +32,7 @@ public sealed class TokenExchangeControllerTests
     {
         var service = new Mock<ITokenExchangeService>();
         service
-            .Setup(x => x.ExchangeExternalTokenAsync("token", "google", "proof", It.IsAny<CancellationToken>()))
+            .Setup(x => x.ExchangeExternalTokenAsync("token", "google", "proof", "pkce-verifier", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TokenExchangeResult
             {
                 AccessToken = "sentinel-access",
@@ -50,7 +50,7 @@ public sealed class TokenExchangeControllerTests
         };
         controller.Request.Headers["DPoP"] = "proof";
 
-        var response = await controller.ExchangeExternalToken(new TokenExchangeController.TokenExchangeRequest("token", "google"), CancellationToken.None);
+        var response = await controller.ExchangeExternalToken(new TokenExchangeController.TokenExchangeRequest("token", "google", "pkce-verifier"), CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(response);
         Assert.Equal(StatusCodes.Status200OK, ok.StatusCode);
