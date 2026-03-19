@@ -57,7 +57,9 @@ public static class SentinelModuleBuilderExtensions
         _ = builder.Services.AddHttpClient<ITokenRefreshService, KeycloakTokenRefreshService>();
         _ = builder.Services.AddHttpClient<ITokenExchangeService, KeycloakTokenExchangeService>();
         _ = builder.Services.AddHttpClient<ICaptchaService, TurnstileService>();
-        _ = builder.Services.AddHttpClient<IKeycloakAdminService, KeycloakAdminService>();
+        _ = builder.Services.AddHttpClient<IKeycloakUserService, KeycloakAdminService>();
+        _ = builder.Services.AddHttpClient<IKeycloakProfileService, KeycloakAdminService>();
+        _ = builder.Services.AddHttpClient<IKeycloakFederationService, KeycloakAdminService>();
         _ = builder.Services.AddHttpClient("keycloak-admin");
         _ = builder.Services.AddHttpClient<IAuthRevocationService, KeycloakAuthRevocationService>();
         _ = builder.Services.AddHostedService<SocialFederationConfiguratorHostedService>();

@@ -12,7 +12,7 @@ public sealed class KeycloakAdminService(
     HttpClient httpClient,
     KeycloakAdminTokenProvider tokenProvider,
     IConfiguration configuration,
-    ILogger<KeycloakAdminService> logger) : IKeycloakAdminService
+    ILogger<KeycloakAdminService> logger) : IKeycloakUserService, IKeycloakProfileService, IKeycloakFederationService
 {
     public async Task<string> CreateUserAsync(UserRegistration registration, string password, CancellationToken ct)
     {
@@ -195,6 +195,10 @@ public sealed class KeycloakAdminService(
         {
             return false;
         }
+
+        // Legacy compatibility path: this still uses password grant verification and should be
+        // replaced with OIDC step-up (ACR elevation) to avoid relying on deprecated ROPC.
+        logger.LogWarning("VerifyUserPasswordAsync is using legacy ROPC-based verification. Migrate to step-up authentication.");
 
         var authority = configuration["Keycloak:Authority"]?.TrimEnd('/');
         var clientId = configuration["Keycloak:Audience"];

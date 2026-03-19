@@ -21,12 +21,12 @@ public sealed class UsersControllerTests
 
         var handler = new RegisterUserHandler(
             captcha.Object,
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
             Mock.Of<IEmailService>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             BuildPasswordStrengthValidator());
         var verificationStore = new Mock<IEmailVerificationTokenStore>();
-        var keycloakAdmin = new Mock<IKeycloakAdminService>();
+        var keycloakUser = new Mock<IKeycloakUserService>();
 
         var controller = new UsersController(
             handler,
@@ -34,7 +34,7 @@ public sealed class UsersControllerTests
             BuildResetPasswordHandler(),
             BuildResendVerificationHandler(),
             verificationStore.Object,
-            keycloakAdmin.Object)
+            keycloakUser.Object)
         {
             ControllerContext = new ControllerContext
             {
@@ -55,7 +55,7 @@ public sealed class UsersControllerTests
     {
         var handler = new RegisterUserHandler(
             Mock.Of<ICaptchaService>(),
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
             Mock.Of<IEmailService>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             BuildPasswordStrengthValidator());
@@ -66,7 +66,7 @@ public sealed class UsersControllerTests
             BuildResetPasswordHandler(),
             BuildResendVerificationHandler(),
             BuildVerificationStore(null),
-            Mock.Of<IKeycloakAdminService>());
+            Mock.Of<IKeycloakUserService>());
 
         var response = await controller.VerifyEmail("missing-token", CancellationToken.None);
 
@@ -77,14 +77,14 @@ public sealed class UsersControllerTests
     [Fact]
     public async Task VerifyEmail_WhenTokenValid_MarksEmailVerified()
     {
-        var keycloakAdmin = new Mock<IKeycloakAdminService>();
-        keycloakAdmin
+        var keycloakUser = new Mock<IKeycloakUserService>();
+        keycloakUser
             .Setup(x => x.SetEmailVerifiedAsync("kc-user-1", true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         var handler = new RegisterUserHandler(
             Mock.Of<ICaptchaService>(),
-            keycloakAdmin.Object,
+            keycloakUser.Object,
             Mock.Of<IEmailService>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             BuildPasswordStrengthValidator());
@@ -95,13 +95,13 @@ public sealed class UsersControllerTests
             BuildResetPasswordHandler(),
             BuildResendVerificationHandler(),
             BuildVerificationStore("kc-user-1"),
-            keycloakAdmin.Object);
+            keycloakUser.Object);
 
         var response = await controller.VerifyEmail("token-1", CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(response);
         Assert.Equal(StatusCodes.Status200OK, ok.StatusCode);
-        keycloakAdmin.Verify(x => x.SetEmailVerifiedAsync("kc-user-1", true, It.IsAny<CancellationToken>()), Times.Once);
+        keycloakUser.Verify(x => x.SetEmailVerifiedAsync("kc-user-1", true, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static IEmailVerificationTokenStore BuildVerificationStore(string? userId)
@@ -122,7 +122,7 @@ public sealed class UsersControllerTests
             BuildResetPasswordHandler(),
             BuildResendVerificationHandler(),
             BuildVerificationStore(null),
-            Mock.Of<IKeycloakAdminService>());
+            Mock.Of<IKeycloakUserService>());
 
         var response = await controller.ForgotPassword(new ForgotPasswordRequest("unknown@example.com", "captcha"), CancellationToken.None);
 
@@ -133,7 +133,7 @@ public sealed class UsersControllerTests
     {
         return new RegisterUserHandler(
             Mock.Of<ICaptchaService>(),
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
             Mock.Of<IEmailService>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             BuildPasswordStrengthValidator());
@@ -149,7 +149,7 @@ public sealed class UsersControllerTests
     private static ResendVerificationHandler BuildResendVerificationHandler()
     {
         return new ResendVerificationHandler(
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             Mock.Of<IEmailService>(),
             NullLogger<ResendVerificationHandler>.Instance);
@@ -158,7 +158,7 @@ public sealed class UsersControllerTests
     private static ForgotPasswordHandler BuildForgotPasswordHandler()
     {
         return new ForgotPasswordHandler(
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
             Mock.Of<IResetTokenProvider>(),
             Mock.Of<IEmailService>(),
             Mock.Of<ICaptchaService>(),
@@ -169,7 +169,8 @@ public sealed class UsersControllerTests
     {
         return new ResetPasswordHandler(
             Mock.Of<IResetTokenProvider>(),
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
+            Mock.Of<IKeycloakProfileService>(),
             Mock.Of<IJtiReplayCache>(),
             Mock.Of<IAuthRevocationService>());
     }

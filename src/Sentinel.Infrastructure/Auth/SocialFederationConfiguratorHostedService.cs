@@ -6,7 +6,7 @@ using Sentinel.Application.Auth.Models;
 namespace Sentinel.Infrastructure.Auth;
 
 public sealed class SocialFederationConfiguratorHostedService(
-    IKeycloakAdminService keycloakAdminService,
+    IKeycloakFederationService keycloakFederationService,
     IOptions<SocialFederationOptions> options,
     ILogger<SocialFederationConfiguratorHostedService> logger) : IHostedService
 {
@@ -23,7 +23,7 @@ public sealed class SocialFederationConfiguratorHostedService(
         {
             if (federationOptions.Google.Enabled)
             {
-                await keycloakAdminService.ConfigureGoogleProviderAsync(
+                await keycloakFederationService.ConfigureGoogleProviderAsync(
                     federationOptions.Google,
                     federationOptions.FirstBrokerLoginFlowAlias,
                     cancellationToken);
@@ -31,7 +31,7 @@ public sealed class SocialFederationConfiguratorHostedService(
 
             if (federationOptions.GitHub.Enabled)
             {
-                await keycloakAdminService.ConfigureGitHubProviderAsync(
+                await keycloakFederationService.ConfigureGitHubProviderAsync(
                     federationOptions.GitHub,
                     federationOptions.FirstBrokerLoginFlowAlias,
                     cancellationToken);

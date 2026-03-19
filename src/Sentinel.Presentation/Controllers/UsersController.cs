@@ -17,7 +17,7 @@ public sealed class UsersController(
     ResetPasswordHandler resetPasswordHandler,
     ResendVerificationHandler resendVerificationHandler,
     IEmailVerificationTokenStore verificationTokenStore,
-    IKeycloakAdminService keycloakAdminService) : ControllerBase
+    IKeycloakUserService keycloakUserService) : ControllerBase
 {
     [HttpPost("register")]
     [AllowAnonymous]
@@ -67,7 +67,7 @@ public sealed class UsersController(
             });
         }
 
-        var updated = await keycloakAdminService.SetEmailVerifiedAsync(keycloakUserId, verified: true, ct);
+        var updated = await keycloakUserService.SetEmailVerifiedAsync(keycloakUserId, verified: true, ct);
         if (!updated)
         {
             return BadRequest(new ProblemDetails

@@ -13,7 +13,7 @@ namespace Sentinel.Controllers;
 public sealed class AuthController(
     ITokenRefreshService refreshService,
     IAuthRevocationService revocationService,
-    IKeycloakAdminService keycloakAdminService,
+    IKeycloakProfileService keycloakProfileService,
     IPasswordStrengthValidator passwordStrengthValidator,
     ISessionBlacklistCache blacklistCache,
     IConfiguration configuration) : ControllerBase
@@ -99,7 +99,7 @@ public sealed class AuthController(
             ?? User.FindFirst("email")?.Value
             ?? sub;
 
-        var currentPasswordValid = await keycloakAdminService.VerifyUserPasswordAsync(loginIdentifier, request.CurrentPassword, ct);
+        var currentPasswordValid = await keycloakProfileService.VerifyUserPasswordAsync(loginIdentifier, request.CurrentPassword, ct);
         if (!currentPasswordValid)
         {
             return BadRequest(new ProblemDetails
@@ -121,7 +121,7 @@ public sealed class AuthController(
             });
         }
 
-        var updated = await keycloakAdminService.UpdatePasswordAsync(loginIdentifier, request.NewPassword, ct);
+        var updated = await keycloakProfileService.UpdatePasswordAsync(loginIdentifier, request.NewPassword, ct);
         if (!updated)
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails

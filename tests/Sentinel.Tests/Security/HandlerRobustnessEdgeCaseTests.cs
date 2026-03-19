@@ -19,7 +19,7 @@ public sealed class HandlerRobustnessEdgeCaseTests
     {
         var sut = new RegisterUserHandler(
             Mock.Of<ICaptchaService>(),
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
             Mock.Of<IEmailService>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             Mock.Of<IPasswordStrengthValidator>());
@@ -33,7 +33,7 @@ public sealed class HandlerRobustnessEdgeCaseTests
     public async Task ForgotPasswordHandler_WhenRequestIsNull_ThrowsArgumentFailure()
     {
         var sut = new ForgotPasswordHandler(
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
             Mock.Of<IResetTokenProvider>(),
             Mock.Of<IEmailService>(),
             Mock.Of<ICaptchaService>(),
@@ -49,7 +49,8 @@ public sealed class HandlerRobustnessEdgeCaseTests
     {
         var sut = new ResetPasswordHandler(
             Mock.Of<IResetTokenProvider>(),
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
+            Mock.Of<IKeycloakProfileService>(),
             Mock.Of<IJtiReplayCache>(),
             Mock.Of<IAuthRevocationService>());
 

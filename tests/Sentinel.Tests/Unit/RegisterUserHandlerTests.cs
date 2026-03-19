@@ -12,7 +12,7 @@ public sealed class RegisterUserHandlerTests
     public async Task HandleAsync_WhenCaptchaInvalid_ReturnsBadRequestResult()
     {
         var captcha = new Mock<ICaptchaService>();
-        var keycloak = new Mock<IKeycloakAdminService>();
+        var keycloak = new Mock<IKeycloakUserService>();
         var email = new Mock<IEmailService>();
         var tokenStore = new Mock<IEmailVerificationTokenStore>();
 
@@ -40,7 +40,7 @@ public sealed class RegisterUserHandlerTests
     {
         var sut = new RegisterUserHandler(
             Mock.Of<ICaptchaService>(),
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
             Mock.Of<IEmailService>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             Mock.Of<IPasswordStrengthValidator>());
@@ -58,7 +58,7 @@ public sealed class RegisterUserHandlerTests
     public async Task HandleAsync_WhenValidRequest_CreatesUserStoresTokenAndSendsEmail()
     {
         var captcha = new Mock<ICaptchaService>();
-        var keycloak = new Mock<IKeycloakAdminService>();
+        var keycloak = new Mock<IKeycloakUserService>();
         var email = new Mock<IEmailService>();
         var tokenStore = new Mock<IEmailVerificationTokenStore>();
 
@@ -101,7 +101,7 @@ public sealed class RegisterUserHandlerTests
 
         var sut = new RegisterUserHandler(
             captcha.Object,
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
             Mock.Of<IEmailService>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             validator.Object);
@@ -119,7 +119,7 @@ public sealed class RegisterUserHandlerTests
     public async Task HandleAsync_WhenUserAlreadyExists_ReturnsGenericSuccessMessage()
     {
         var captcha = new Mock<ICaptchaService>();
-        var keycloak = new Mock<IKeycloakAdminService>();
+        var keycloak = new Mock<IKeycloakUserService>();
         var email = new Mock<IEmailService>();
         var tokenStore = new Mock<IEmailVerificationTokenStore>();
         var validator = new Mock<IPasswordStrengthValidator>();

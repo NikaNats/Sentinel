@@ -17,7 +17,8 @@ public sealed class ResetPasswordHandlerTests
 
         var sut = new ResetPasswordHandler(
             resetTokenProvider.Object,
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
+            Mock.Of<IKeycloakProfileService>(),
             Mock.Of<IJtiReplayCache>(),
             Mock.Of<IAuthRevocationService>());
 
@@ -38,7 +39,8 @@ public sealed class ResetPasswordHandlerTests
 
         var sut = new ResetPasswordHandler(
             resetTokenProvider.Object,
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
+            Mock.Of<IKeycloakProfileService>(),
             replay.Object,
             Mock.Of<IAuthRevocationService>());
 
@@ -54,9 +56,10 @@ public sealed class ResetPasswordHandlerTests
         var resetTokenProvider = new Mock<IResetTokenProvider>();
         resetTokenProvider.Setup(x => x.ValidateToken("token")).Returns((true, "user@example.com"));
 
-        var keycloak = new Mock<IKeycloakAdminService>();
-        keycloak.Setup(x => x.UpdatePasswordAsync("user@example.com", "NewPassw0rd!", It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        keycloak.Setup(x => x.GetUserByEmailAsync("user@example.com", It.IsAny<CancellationToken>()))
+        var keycloakUser = new Mock<IKeycloakUserService>();
+        var keycloakProfile = new Mock<IKeycloakProfileService>();
+        keycloakProfile.Setup(x => x.UpdatePasswordAsync("user@example.com", "NewPassw0rd!", It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        keycloakUser.Setup(x => x.GetUserByEmailAsync("user@example.com", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new KeycloakUserSummary("id-1", "user@example.com", "user"));
 
         var replay = new Mock<IJtiReplayCache>();
@@ -67,7 +70,8 @@ public sealed class ResetPasswordHandlerTests
 
         var sut = new ResetPasswordHandler(
             resetTokenProvider.Object,
-            keycloak.Object,
+            keycloakUser.Object,
+            keycloakProfile.Object,
             replay.Object,
             revocation.Object);
 

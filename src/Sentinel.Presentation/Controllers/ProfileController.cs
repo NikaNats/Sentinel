@@ -11,7 +11,7 @@ namespace Sentinel.Controllers;
 [ApiController]
 [Route("v1/[controller]")]
 [Authorize(Policy = Policies.ReadProfile)]
-public sealed class ProfileController(IKeycloakAdminService keycloakAdminService) : ControllerBase
+public sealed class ProfileController(IKeycloakProfileService keycloakProfileService) : ControllerBase
 {
     public sealed record UpdateProfileRequest(string DisplayName);
 
@@ -79,7 +79,7 @@ public sealed class ProfileController(IKeycloakAdminService keycloakAdminService
             });
         }
 
-        var updated = await keycloakAdminService.UpdateProfileAsync(sub, request.DisplayName, ct);
+        var updated = await keycloakProfileService.UpdateProfileAsync(sub, request.DisplayName, ct);
         if (!updated)
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails

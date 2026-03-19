@@ -17,7 +17,7 @@ public sealed class ForgotPasswordAntiEnumerationSecurityTests
     [Fact]
     public async Task ForgotPassword_WhenUserDoesNotExist_Returns202Accepted()
     {
-        var keycloak = new Mock<IKeycloakAdminService>();
+        var keycloak = new Mock<IKeycloakUserService>();
         keycloak.Setup(x => x.GetUserByEmailAsync("missing@example.com", It.IsAny<CancellationToken>()))
             .ReturnsAsync((KeycloakUserSummary?)null);
 
@@ -41,7 +41,7 @@ public sealed class ForgotPasswordAntiEnumerationSecurityTests
     public async Task ForgotPassword_WhenInputMalformed_StillReturns202Accepted()
     {
         var handler = new ForgotPasswordHandler(
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
             Mock.Of<IResetTokenProvider>(),
             Mock.Of<IEmailService>(),
             Mock.Of<ICaptchaService>(),
@@ -56,7 +56,7 @@ public sealed class ForgotPasswordAntiEnumerationSecurityTests
     [Fact]
     public async Task ForgotPassword_WhenInternalErrorOccurs_StillReturns202Accepted()
     {
-        var keycloak = new Mock<IKeycloakAdminService>();
+        var keycloak = new Mock<IKeycloakUserService>();
         keycloak.Setup(x => x.GetUserByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("upstream error"));
 
@@ -80,20 +80,21 @@ public sealed class ForgotPasswordAntiEnumerationSecurityTests
     {
         var registerHandler = new RegisterUserHandler(
             Mock.Of<ICaptchaService>(),
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
             Mock.Of<IEmailService>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             Mock.Of<IPasswordStrengthValidator>());
 
         var resendHandler = new ResendVerificationHandler(
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             Mock.Of<IEmailService>(),
             NullLogger<ResendVerificationHandler>.Instance);
 
         var resetHandler = new ResetPasswordHandler(
             Mock.Of<IResetTokenProvider>(),
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
+            Mock.Of<IKeycloakProfileService>(),
             Mock.Of<IJtiReplayCache>(),
             Mock.Of<IAuthRevocationService>());
 
@@ -103,7 +104,7 @@ public sealed class ForgotPasswordAntiEnumerationSecurityTests
             resetHandler,
             resendHandler,
             Mock.Of<IEmailVerificationTokenStore>(),
-            Mock.Of<IKeycloakAdminService>())
+            Mock.Of<IKeycloakUserService>())
         {
             ControllerContext = new ControllerContext
             {

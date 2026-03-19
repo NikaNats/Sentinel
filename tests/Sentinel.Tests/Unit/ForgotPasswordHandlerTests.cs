@@ -12,7 +12,7 @@ public sealed class ForgotPasswordHandlerTests
     [Fact]
     public async Task HandleAsync_WhenCaptchaFails_DoesNothing()
     {
-        var keycloak = new Mock<IKeycloakAdminService>();
+        var keycloak = new Mock<IKeycloakUserService>();
         var tokenProvider = new Mock<IResetTokenProvider>();
         var email = new Mock<IEmailService>();
         var captcha = new Mock<ICaptchaService>();
@@ -34,7 +34,7 @@ public sealed class ForgotPasswordHandlerTests
     [Fact]
     public async Task HandleAsync_WhenUserExists_SendsResetEmail()
     {
-        var keycloak = new Mock<IKeycloakAdminService>();
+        var keycloak = new Mock<IKeycloakUserService>();
         keycloak
             .Setup(x => x.GetUserByEmailAsync("user@example.com", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new KeycloakUserSummary("id-1", "user@example.com", "user"));

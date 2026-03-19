@@ -5,7 +5,7 @@ using Sentinel.Application.Auth.Models;
 namespace Sentinel.Application.Auth;
 
 public sealed class ResendVerificationHandler(
-    IKeycloakAdminService keycloakAdminService,
+    IKeycloakUserService keycloakUserService,
     IEmailVerificationTokenStore verificationTokenStore,
     IEmailService emailService,
     ILogger<ResendVerificationHandler> logger)
@@ -20,7 +20,7 @@ public sealed class ResendVerificationHandler(
         try
         {
             var normalizedEmail = request.Email.Trim();
-            var user = await keycloakAdminService.GetUserByEmailAsync(normalizedEmail, ct);
+            var user = await keycloakUserService.GetUserByEmailAsync(normalizedEmail, ct);
             if (user is null)
             {
                 return;

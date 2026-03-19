@@ -7,7 +7,7 @@ namespace Sentinel.Application.Auth;
 
 public sealed class RegisterUserHandler(
     ICaptchaService captchaService,
-    IKeycloakAdminService keycloakAdminService,
+    IKeycloakUserService keycloakUserService,
     IEmailService emailService,
     IEmailVerificationTokenStore verificationTokenStore,
     IPasswordStrengthValidator passwordStrengthValidator)
@@ -54,7 +54,7 @@ public sealed class RegisterUserHandler(
         string keycloakUserId;
         try
         {
-            keycloakUserId = await keycloakAdminService.CreateUserAsync(registration, request.Password, ct);
+            keycloakUserId = await keycloakUserService.CreateUserAsync(registration, request.Password, ct);
         }
         catch (UserAlreadyExistsException)
         {

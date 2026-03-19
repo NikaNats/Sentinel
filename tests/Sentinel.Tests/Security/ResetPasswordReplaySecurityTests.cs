@@ -24,11 +24,12 @@ public sealed class ResetPasswordReplaySecurityTests
             .Setup(x => x.TryStoreIfNotExistsAsync(It.IsAny<string>(), TimeSpan.FromMinutes(15), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => Interlocked.Increment(ref firstUseState) == 1);
 
-        var keycloak = new Mock<IKeycloakAdminService>();
-        keycloak
+        var keycloakUser = new Mock<IKeycloakUserService>();
+        var keycloakProfile = new Mock<IKeycloakProfileService>();
+        keycloakProfile
             .Setup(x => x.UpdatePasswordAsync("user@example.com", "N3w!Pass", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
-        keycloak
+        keycloakUser
             .Setup(x => x.GetUserByEmailAsync("user@example.com", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new KeycloakUserSummary("kc-user-1", "user@example.com", "user"));
 
@@ -37,7 +38,7 @@ public sealed class ResetPasswordReplaySecurityTests
             .Setup(x => x.RevokeAllSessionsAsync("kc-user-1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        var sut = new ResetPasswordHandler(tokenProvider.Object, keycloak.Object, replayCache.Object, revocation.Object);
+        var sut = new ResetPasswordHandler(tokenProvider.Object, keycloakUser.Object, keycloakProfile.Object, replayCache.Object, revocation.Object);
         var request = new ResetPasswordRequest("same-token", "N3w!Pass");
 
         var results = new ConcurrentBag<ResetPasswordResult>();
@@ -56,7 +57,8 @@ public sealed class ResetPasswordReplaySecurityTests
     {
         var sut = new ResetPasswordHandler(
             Mock.Of<IResetTokenProvider>(),
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
+            Mock.Of<IKeycloakProfileService>(),
             Mock.Of<IJtiReplayCache>(),
             Mock.Of<IAuthRevocationService>());
 
@@ -74,7 +76,8 @@ public sealed class ResetPasswordReplaySecurityTests
 
         var sut = new ResetPasswordHandler(
             tokenProvider.Object,
-            Mock.Of<IKeycloakAdminService>(),
+            Mock.Of<IKeycloakUserService>(),
+            Mock.Of<IKeycloakProfileService>(),
             Mock.Of<IJtiReplayCache>(),
             Mock.Of<IAuthRevocationService>());
 
