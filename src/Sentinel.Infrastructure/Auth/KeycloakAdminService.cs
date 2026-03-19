@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Domain.Users;
@@ -11,9 +12,11 @@ namespace Sentinel.Infrastructure.Auth;
 public sealed class KeycloakAdminService(
     HttpClient httpClient,
     KeycloakAdminTokenProvider tokenProvider,
-    IConfiguration configuration,
+    IOptions<KeycloakOptions> options,
     ILogger<KeycloakAdminService> logger) : IKeycloakUserService, IKeycloakProfileService, IKeycloakFederationService
 {
+    private readonly KeycloakOptions keycloakOptions = options.Value;
+
     public async Task<string> CreateUserAsync(UserRegistration registration, string password, CancellationToken ct)
     {
         var adminRealmEndpoint = ResolveAdminRealmEndpoint();
@@ -200,8 +203,8 @@ public sealed class KeycloakAdminService(
         // replaced with OIDC step-up (ACR elevation) to avoid relying on deprecated ROPC.
         logger.LogWarning("VerifyUserPasswordAsync is using legacy ROPC-based verification. Migrate to step-up authentication.");
 
-        var authority = configuration["Keycloak:Authority"]?.TrimEnd('/');
-        var clientId = configuration["Keycloak:Audience"];
+        var authority = keycloakOptions.Authority.TrimEnd('/');
+        var clientId = keycloakOptions.Audience;
         if (string.IsNullOrWhiteSpace(authority) || string.IsNullOrWhiteSpace(clientId))
         {
             return false;
@@ -293,7 +296,7 @@ public sealed class KeycloakAdminService(
 
     private Uri ResolveAdminRealmEndpoint()
     {
-        var authority = configuration["Keycloak:Authority"]?.TrimEnd('/');
+        var authority = keycloakOptions.Authority.TrimEnd('/');
         if (string.IsNullOrWhiteSpace(authority)
             || !KeycloakAuthorityEndpoints.TryBuild(authority, out _, out var adminRealmEndpoint))
         {

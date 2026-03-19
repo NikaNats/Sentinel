@@ -3,19 +3,22 @@ using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Telemetry;
 using System.Net;
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 
 namespace Sentinel.Infrastructure.Auth;
 
 public sealed class KeycloakTokenRefreshService(
     HttpClient httpClient,
-    IConfiguration configuration,
+    IOptions<KeycloakOptions> options,
     ISecurityEventEmitter securityEventEmitter,
     ILogger<KeycloakTokenRefreshService> logger) : ITokenRefreshService
 {
+    private readonly KeycloakOptions keycloakOptions = options.Value;
+
     public async Task<TokenRefreshResult> RefreshTokenAsync(string refreshToken, string dpopProof, string clientIpHash, CancellationToken ct)
     {
-        var authority = configuration["Keycloak:Authority"]?.TrimEnd('/');
-        var clientId = configuration["Keycloak:Audience"];
+        var authority = keycloakOptions.Authority.TrimEnd('/');
+        var clientId = keycloakOptions.Audience;
 
         if (string.IsNullOrWhiteSpace(authority) || string.IsNullOrWhiteSpace(clientId))
         {

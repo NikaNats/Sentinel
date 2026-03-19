@@ -1,11 +1,12 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using Moq;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Controllers;
 using Sentinel.Errors;
+using Sentinel.Infrastructure.Auth;
 using System.Security.Claims;
 
 namespace Sentinel.Tests.Unit;
@@ -20,12 +21,12 @@ public sealed class AuthControllerTests
         var keycloakProfile = new Mock<IKeycloakProfileService>();
         var passwordValidator = new Mock<IPasswordStrengthValidator>();
         var blacklistCache = new Mock<ISessionBlacklistCache>();
-        var configuration = BuildConfiguration();
+        var options = BuildOptions();
         refreshService
             .Setup(x => x.RefreshTokenAsync("old-refresh", "proof", It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TokenRefreshResult(false, null, null, true));
 
-        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object, passwordValidator.Object, blacklistCache.Object, configuration)
+        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object, passwordValidator.Object, blacklistCache.Object, options)
         {
             ControllerContext = new ControllerContext
             {
@@ -51,7 +52,7 @@ public sealed class AuthControllerTests
         var keycloakProfile = new Mock<IKeycloakProfileService>();
         var passwordValidator = new Mock<IPasswordStrengthValidator>();
         var blacklistCache = new Mock<ISessionBlacklistCache>();
-        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object, passwordValidator.Object, blacklistCache.Object, BuildConfiguration());
+        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object, passwordValidator.Object, blacklistCache.Object, BuildOptions());
 
         var result = await controller.Refresh(new AuthController.RefreshRequest(string.Empty), CancellationToken.None);
 
@@ -67,13 +68,13 @@ public sealed class AuthControllerTests
         var keycloakProfile = new Mock<IKeycloakProfileService>();
         var passwordValidator = new Mock<IPasswordStrengthValidator>();
         var blacklistCache = new Mock<ISessionBlacklistCache>();
-        var configuration = BuildConfiguration();
+        var options = BuildOptions();
 
         revocationService
             .Setup(x => x.RevokeCurrentSessionAsync("refresh-token", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object, passwordValidator.Object, blacklistCache.Object, configuration)
+        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object, passwordValidator.Object, blacklistCache.Object, options)
         {
             ControllerContext = new ControllerContext
             {
@@ -103,13 +104,13 @@ public sealed class AuthControllerTests
         var keycloakProfile = new Mock<IKeycloakProfileService>();
         var passwordValidator = new Mock<IPasswordStrengthValidator>();
         var blacklistCache = new Mock<ISessionBlacklistCache>();
-        var configuration = BuildConfiguration();
+        var options = BuildOptions();
 
         revocationService
             .Setup(x => x.RevokeAllSessionsAsync("user-1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
-        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object, passwordValidator.Object, blacklistCache.Object, configuration)
+        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object, passwordValidator.Object, blacklistCache.Object, options)
         {
             ControllerContext = new ControllerContext
             {
@@ -130,13 +131,13 @@ public sealed class AuthControllerTests
         Assert.Equal(StatusCodes.Status500InternalServerError, objectResult.StatusCode);
     }
 
-    private static IConfiguration BuildConfiguration()
+    private static IOptions<KeycloakOptions> BuildOptions()
     {
-        return new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Keycloak:SsoSessionMaxLifespanSeconds"] = "28800"
-            })
-            .Build();
+        return Options.Create(new KeycloakOptions
+        {
+            Authority = "https://keycloak.local/realms/sentinel",
+            Audience = "sentinel-api",
+            SsoSessionMaxLifespanSeconds = 28_800
+        });
     }
 }

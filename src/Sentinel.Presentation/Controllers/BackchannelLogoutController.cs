@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Sentinel.Application.Common.Abstractions;
+using Sentinel.Infrastructure.Auth;
 
 namespace Sentinel.Controllers;
 
@@ -10,9 +12,11 @@ namespace Sentinel.Controllers;
 public sealed class BackchannelLogoutController(
     ILogoutTokenValidator validator,
     ISessionBlacklistCache blacklistCache,
-    IConfiguration configuration,
+    IOptions<KeycloakOptions> options,
     ILogger<BackchannelLogoutController> logger) : ControllerBase
 {
+    private readonly KeycloakOptions keycloakOptions = options.Value;
+
     [HttpPost("backchannel-logout")]
     [AllowAnonymous]
     [Consumes("application/x-www-form-urlencoded")]
@@ -30,15 +34,15 @@ public sealed class BackchannelLogoutController(
             return BadRequest();
         }
 
-        await blacklistCache.BlacklistSessionAsync(sessionId, ResolveSessionBlacklistTtl(configuration), ct);
+        await blacklistCache.BlacklistSessionAsync(sessionId, ResolveSessionBlacklistTtl(keycloakOptions), ct);
         return Ok();
     }
 
-    private static TimeSpan ResolveSessionBlacklistTtl(IConfiguration configuration)
+    private static TimeSpan ResolveSessionBlacklistTtl(KeycloakOptions options)
     {
-        var configuredSeconds = configuration.GetValue<int?>("Keycloak:SsoSessionMaxLifespanSeconds")
-            ?? configuration.GetValue<int?>("Keycloak:SessionMaxLifespanSeconds")
-            ?? 28_800;
+        var configuredSeconds = options.SsoSessionMaxLifespanSeconds > 0
+            ? options.SsoSessionMaxLifespanSeconds
+            : options.SessionMaxLifespanSeconds ?? 28_800;
 
         if (configuredSeconds <= 0)
         {

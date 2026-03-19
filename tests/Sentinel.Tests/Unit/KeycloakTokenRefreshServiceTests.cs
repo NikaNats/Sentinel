@@ -1,5 +1,5 @@
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Common.Abstractions;
@@ -22,7 +22,7 @@ public sealed class KeycloakTokenRefreshServiceTests
         }));
 
         var emitter = new Mock<ISecurityEventEmitter>();
-        var sut = new KeycloakTokenRefreshService(httpClient, BuildConfig(), emitter.Object, NullLogger<KeycloakTokenRefreshService>.Instance);
+        var sut = new KeycloakTokenRefreshService(httpClient, BuildOptions(), emitter.Object, NullLogger<KeycloakTokenRefreshService>.Instance);
 
         var result = await sut.RefreshTokenAsync("old-refresh", "proof", "HASHED_IP", CancellationToken.None);
 
@@ -43,7 +43,7 @@ public sealed class KeycloakTokenRefreshServiceTests
         }));
 
         var emitter = new Mock<ISecurityEventEmitter>();
-        var sut = new KeycloakTokenRefreshService(httpClient, BuildConfig(), emitter.Object, NullLogger<KeycloakTokenRefreshService>.Instance);
+        var sut = new KeycloakTokenRefreshService(httpClient, BuildOptions(), emitter.Object, NullLogger<KeycloakTokenRefreshService>.Instance);
 
         var result = await sut.RefreshTokenAsync("stolen-refresh", "proof", "HASHED_IP", CancellationToken.None);
 
@@ -62,7 +62,7 @@ public sealed class KeycloakTokenRefreshServiceTests
         }));
 
         var emitter = new Mock<ISecurityEventEmitter>();
-        var sut = new KeycloakTokenRefreshService(httpClient, BuildConfig(), emitter.Object, NullLogger<KeycloakTokenRefreshService>.Instance);
+        var sut = new KeycloakTokenRefreshService(httpClient, BuildOptions(), emitter.Object, NullLogger<KeycloakTokenRefreshService>.Instance);
 
         var result = await sut.RefreshTokenAsync("bad-refresh", "proof", "HASHED_IP", CancellationToken.None);
 
@@ -71,15 +71,13 @@ public sealed class KeycloakTokenRefreshServiceTests
         emitter.Verify(x => x.EmitAuthFailure(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>()), Times.Never);
     }
 
-    private static IConfiguration BuildConfig()
+    private static IOptions<KeycloakOptions> BuildOptions()
     {
-        return new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Keycloak:Authority"] = "https://keycloak.local/realms/sentinel",
-                ["Keycloak:Audience"] = "sentinel-api"
-            })
-            .Build();
+        return Options.Create(new KeycloakOptions
+        {
+            Authority = "https://keycloak.local/realms/sentinel",
+            Audience = "sentinel-api"
+        });
     }
 
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler

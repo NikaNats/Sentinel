@@ -1,14 +1,16 @@
 // Sentinel Security API - FAPI 2.0 Compliant
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 
 namespace Sentinel.Infrastructure.Auth;
 
 public sealed class KeycloakAdminTokenProvider(
     IHttpClientFactory httpClientFactory,
-    IConfiguration configuration,
+    IOptions<KeycloakOptions> options,
     ILogger<KeycloakAdminTokenProvider> logger) : IDisposable
 {
     private readonly SemaphoreSlim tokenLock = new(1, 1);
+    private readonly KeycloakOptions keycloakOptions = options.Value;
 
     private string? cachedAccessToken;
     private DateTimeOffset cachedAccessTokenExpiresAt;
@@ -28,12 +30,14 @@ public sealed class KeycloakAdminTokenProvider(
                 return cachedAccessToken;
             }
 
-            var authority = configuration["Keycloak:Authority"]?.TrimEnd('/');
-            var adminClientId = configuration["Keycloak:Admin:ClientId"]
-                ?? configuration["Keycloak:AdminClientId"];
-            var adminClientSecret = configuration["Keycloak:Admin:ClientSecret"]
-                ?? configuration["Keycloak:AdminClientSecret"];
-            var adminScope = configuration["Keycloak:Admin:Scope"];
+            var authority = keycloakOptions.Authority.TrimEnd('/');
+            var adminClientId = string.IsNullOrWhiteSpace(keycloakOptions.Admin.ClientId)
+                ? keycloakOptions.AdminClientId
+                : keycloakOptions.Admin.ClientId;
+            var adminClientSecret = string.IsNullOrWhiteSpace(keycloakOptions.Admin.ClientSecret)
+                ? keycloakOptions.AdminClientSecret
+                : keycloakOptions.Admin.ClientSecret;
+            var adminScope = keycloakOptions.Admin.Scope;
 
             if (string.IsNullOrWhiteSpace(authority)
                 || string.IsNullOrWhiteSpace(adminClientId)

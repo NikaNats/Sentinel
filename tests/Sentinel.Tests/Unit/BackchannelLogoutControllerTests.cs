@@ -1,9 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Controllers;
+using Sentinel.Infrastructure.Auth;
 
 namespace Sentinel.Tests.Unit;
 
@@ -17,9 +18,9 @@ public sealed class BackchannelLogoutControllerTests
             .ReturnsAsync("sid-123");
 
         var blacklist = new Mock<ISessionBlacklistCache>();
-        var configuration = BuildConfiguration();
+        var options = BuildOptions();
 
-        var sut = new BackchannelLogoutController(validator.Object, blacklist.Object, configuration, NullLogger<BackchannelLogoutController>.Instance);
+        var sut = new BackchannelLogoutController(validator.Object, blacklist.Object, options, NullLogger<BackchannelLogoutController>.Instance);
 
         var result = await sut.Logout("token", CancellationToken.None);
 
@@ -35,9 +36,9 @@ public sealed class BackchannelLogoutControllerTests
             .ReturnsAsync((string?)null);
 
         var blacklist = new Mock<ISessionBlacklistCache>();
-        var configuration = BuildConfiguration();
+        var options = BuildOptions();
 
-        var sut = new BackchannelLogoutController(validator.Object, blacklist.Object, configuration, NullLogger<BackchannelLogoutController>.Instance);
+        var sut = new BackchannelLogoutController(validator.Object, blacklist.Object, options, NullLogger<BackchannelLogoutController>.Instance);
 
         var result = await sut.Logout("bad", CancellationToken.None);
 
@@ -45,13 +46,13 @@ public sealed class BackchannelLogoutControllerTests
         blacklist.Verify(x => x.BlacklistSessionAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    private static IConfiguration BuildConfiguration()
+    private static IOptions<KeycloakOptions> BuildOptions()
     {
-        return new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Keycloak:SsoSessionMaxLifespanSeconds"] = "28800"
-            })
-            .Build();
+        return Options.Create(new KeycloakOptions
+        {
+            Authority = "https://keycloak.local/realms/sentinel",
+            Audience = "sentinel-api",
+            SsoSessionMaxLifespanSeconds = 28_800
+        });
     }
 }

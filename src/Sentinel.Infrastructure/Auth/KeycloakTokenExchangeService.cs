@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 
@@ -6,13 +7,15 @@ namespace Sentinel.Infrastructure.Auth;
 
 public sealed class KeycloakTokenExchangeService(
     HttpClient httpClient,
-    IConfiguration configuration,
+    IOptions<KeycloakOptions> options,
     ILogger<KeycloakTokenExchangeService> logger) : ITokenExchangeService
 {
+    private readonly KeycloakOptions keycloakOptions = options.Value;
+
     public async Task<TokenExchangeResult?> ExchangeExternalTokenAsync(string externalToken, string providerName, string dpopProof, string codeVerifier, CancellationToken ct)
     {
-        var authority = configuration["Keycloak:Authority"]?.TrimEnd('/');
-        var audience = configuration["Keycloak:Audience"];
+        var authority = keycloakOptions.Authority.TrimEnd('/');
+        var audience = keycloakOptions.Audience;
 
         if (string.IsNullOrWhiteSpace(authority)
             || string.IsNullOrWhiteSpace(audience)

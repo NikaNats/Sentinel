@@ -5,6 +5,7 @@ using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Telemetry;
+using Microsoft.Extensions.Options;
 
 namespace Sentinel.Infrastructure.Auth;
 
@@ -12,10 +13,12 @@ public sealed class KeycloakAuthRevocationService(
     HttpClient httpClient,
     IHttpClientFactory httpClientFactory,
     KeycloakAdminTokenProvider adminTokenProvider,
-    IConfiguration configuration,
+    IOptions<KeycloakOptions> options,
     ISecurityEventEmitter securityEventEmitter,
     ILogger<KeycloakAuthRevocationService> logger) : IAuthRevocationService
 {
+    private readonly KeycloakOptions keycloakOptions = options.Value;
+
     public async Task<IReadOnlyCollection<UserSessionInfo>> GetActiveSessionsAsync(string subjectId, CancellationToken ct)
     {
         var adminHttpClient = httpClientFactory.CreateClient("keycloak-admin");
@@ -83,8 +86,8 @@ public sealed class KeycloakAuthRevocationService(
 
     public async Task<bool> RevokeCurrentSessionAsync(string refreshToken, CancellationToken ct)
     {
-        var authority = configuration["Keycloak:Authority"]?.TrimEnd('/');
-        var clientId = configuration["Keycloak:Audience"];
+        var authority = keycloakOptions.Authority.TrimEnd('/');
+        var clientId = keycloakOptions.Audience;
 
         if (string.IsNullOrWhiteSpace(authority) || string.IsNullOrWhiteSpace(clientId))
         {
@@ -123,7 +126,7 @@ public sealed class KeycloakAuthRevocationService(
 
     public async Task<bool> RevokeAllSessionsAsync(string subjectId, CancellationToken ct)
     {
-        var authority = configuration["Keycloak:Authority"]?.TrimEnd('/');
+        var authority = keycloakOptions.Authority.TrimEnd('/');
         if (string.IsNullOrWhiteSpace(authority)
             || !KeycloakAuthorityEndpoints.TryBuild(authority, out _, out var adminRealmEndpoint))
         {
@@ -166,7 +169,7 @@ public sealed class KeycloakAuthRevocationService(
 
     public async Task<bool> DeleteAccountAsync(string subjectId, CancellationToken ct)
     {
-        var authority = configuration["Keycloak:Authority"]?.TrimEnd('/');
+        var authority = keycloakOptions.Authority.TrimEnd('/');
         if (string.IsNullOrWhiteSpace(authority)
             || !KeycloakAuthorityEndpoints.TryBuild(authority, out _, out var adminRealmEndpoint))
         {
@@ -207,7 +210,7 @@ public sealed class KeycloakAuthRevocationService(
 
     private async Task<AdminContext?> TryResolveAdminContextAsync(CancellationToken ct)
     {
-        var authority = configuration["Keycloak:Authority"]?.TrimEnd('/');
+        var authority = keycloakOptions.Authority.TrimEnd('/');
         if (string.IsNullOrWhiteSpace(authority)
             || !KeycloakAuthorityEndpoints.TryBuild(authority, out _, out var adminRealmEndpoint))
         {

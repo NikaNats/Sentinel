@@ -22,6 +22,11 @@ public static class SentinelModuleBuilderExtensions
 {
     public static ISentinelSecurityBuilder AddSentinelCore(this IServiceCollection services, IConfiguration configuration)
     {
+        _ = services.AddOptions<KeycloakOptions>()
+            .BindConfiguration(KeycloakOptions.SectionName)
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
         _ = services.Configure<CaptchaOptions>(configuration.GetSection("Captcha:Turnstile"));
         _ = services.Configure<RegistrationOptions>(configuration.GetSection("Registration"));
         _ = services.Configure<ResetTokenOptions>(configuration.GetSection("PasswordReset"));
@@ -93,14 +98,16 @@ public static class SentinelModuleBuilderExtensions
 
     public static ISentinelSecurityBuilder AddJwtAndCertificateAuth(this ISentinelSecurityBuilder builder, IConfiguration configuration)
     {
+        var keycloakOptions = configuration.GetSection(KeycloakOptions.SectionName).Get<KeycloakOptions>() ?? new KeycloakOptions();
+
         _ = builder.Services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {
-                options.Authority = configuration["Keycloak:Authority"];
-                options.Audience = configuration["Keycloak:Audience"];
+                options.Authority = keycloakOptions.Authority;
+                options.Audience = keycloakOptions.Audience;
                 options.MapInboundClaims = false;
-                options.RequireHttpsMetadata = configuration.GetValue<bool>("Keycloak:RequireHttpsMetadata", true);
+                options.RequireHttpsMetadata = keycloakOptions.RequireHttpsMetadata;
                 options.RefreshOnIssuerKeyNotFound = true;
 
                 options.TokenValidationParameters = new TokenValidationParameters

@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Errors;
+using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Middleware.Filters;
 
@@ -16,8 +18,10 @@ public sealed class AuthController(
     IKeycloakProfileService keycloakProfileService,
     IPasswordStrengthValidator passwordStrengthValidator,
     ISessionBlacklistCache blacklistCache,
-    IConfiguration configuration) : ControllerBase
+    IOptions<KeycloakOptions> options) : ControllerBase
 {
+    private readonly KeycloakOptions keycloakOptions = options.Value;
+
     public sealed record RefreshRequest(string RefreshToken);
     public sealed record RevokeRequest(string RefreshToken);
     public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
@@ -327,15 +331,15 @@ public sealed class AuthController(
         var sid = User.FindFirst("sid")?.Value;
         if (!string.IsNullOrWhiteSpace(sid))
         {
-            await blacklistCache.BlacklistSessionAsync(sid, ResolveSessionBlacklistTtl(configuration), ct);
+            await blacklistCache.BlacklistSessionAsync(sid, ResolveSessionBlacklistTtl(keycloakOptions), ct);
         }
     }
 
-    private static TimeSpan ResolveSessionBlacklistTtl(IConfiguration configuration)
+    private static TimeSpan ResolveSessionBlacklistTtl(KeycloakOptions options)
     {
-        var configuredSeconds = configuration.GetValue<int?>("Keycloak:SsoSessionMaxLifespanSeconds")
-            ?? configuration.GetValue<int?>("Keycloak:SessionMaxLifespanSeconds")
-            ?? 28_800;
+        var configuredSeconds = options.SsoSessionMaxLifespanSeconds > 0
+            ? options.SsoSessionMaxLifespanSeconds
+            : options.SessionMaxLifespanSeconds ?? 28_800;
 
         if (configuredSeconds <= 0)
         {

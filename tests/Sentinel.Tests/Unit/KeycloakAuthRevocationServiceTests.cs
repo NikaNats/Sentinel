@@ -1,8 +1,8 @@
 // Sentinel Security API - FAPI 2.0 Compliant
 using System.Net;
 using System.Net.Http;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Auth;
@@ -20,12 +20,12 @@ public sealed class KeycloakAuthRevocationServiceTests
         Mock<IHttpClientFactory> httpClientFactory = BuildHttpClientFactory(adminHandler);
 
         Mock<ISecurityEventEmitter> emitter = new();
-        KeycloakAdminTokenProvider adminTokenProvider = new(httpClientFactory.Object, BuildConfig(), NullLogger<KeycloakAdminTokenProvider>.Instance);
+        KeycloakAdminTokenProvider adminTokenProvider = new(httpClientFactory.Object, BuildOptions(), NullLogger<KeycloakAdminTokenProvider>.Instance);
         KeycloakAuthRevocationService sut = new(
             httpClient,
             httpClientFactory.Object,
             adminTokenProvider,
-            BuildConfig(),
+            BuildOptions(),
             emitter.Object,
             NullLogger<KeycloakAuthRevocationService>.Instance);
 
@@ -53,12 +53,12 @@ public sealed class KeycloakAuthRevocationServiceTests
 
         Mock<IHttpClientFactory> httpClientFactory = BuildHttpClientFactory(adminHandler);
         Mock<ISecurityEventEmitter> emitter = new();
-        KeycloakAdminTokenProvider adminTokenProvider = new(httpClientFactory.Object, BuildConfig(), NullLogger<KeycloakAdminTokenProvider>.Instance);
+        KeycloakAdminTokenProvider adminTokenProvider = new(httpClientFactory.Object, BuildOptions(), NullLogger<KeycloakAdminTokenProvider>.Instance);
         KeycloakAuthRevocationService sut = new(
             httpClient,
             httpClientFactory.Object,
             adminTokenProvider,
-            BuildConfig(),
+            BuildOptions(),
             emitter.Object,
             NullLogger<KeycloakAuthRevocationService>.Instance);
 
@@ -74,16 +74,17 @@ public sealed class KeycloakAuthRevocationServiceTests
         Assert.Empty(publicHandler.Requests);
     }
 
-    private static IConfiguration BuildConfig() =>
-        new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
+    private static IOptions<KeycloakOptions> BuildOptions() =>
+        Options.Create(new KeycloakOptions
+        {
+            Authority = "https://keycloak.local/realms/sentinel",
+            Audience = "sentinel-api",
+            Admin = new KeycloakAdminOptions
             {
-                ["Keycloak:Authority"] = "https://keycloak.local/realms/sentinel",
-                ["Keycloak:Audience"] = "sentinel-api",
-                ["Keycloak:Admin:ClientId"] = "sentinel-admin-cli",
-                ["Keycloak:Admin:ClientSecret"] = "sentinel-secret"
-            })
-            .Build();
+                ClientId = "sentinel-admin-cli",
+                ClientSecret = "sentinel-secret"
+            }
+        });
 
     private static Mock<IHttpClientFactory> BuildHttpClientFactory(StubHttpMessageHandler adminHandler)
     {

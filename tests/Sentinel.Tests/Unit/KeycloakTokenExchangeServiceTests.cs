@@ -1,6 +1,6 @@
 using System.Net;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Sentinel.Infrastructure.Auth;
 
 namespace Sentinel.Tests.Unit;
@@ -17,7 +17,7 @@ public sealed class KeycloakTokenExchangeServiceTests
 
         var service = new KeycloakTokenExchangeService(
             new HttpClient(handler),
-            BuildConfiguration(),
+            BuildOptions(),
             NullLogger<KeycloakTokenExchangeService>.Instance);
 
         var result = await service.ExchangeExternalTokenAsync("google-token", "google", "proof", "pkce-verifier", CancellationToken.None);
@@ -34,7 +34,7 @@ public sealed class KeycloakTokenExchangeServiceTests
         var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest));
         var service = new KeycloakTokenExchangeService(
             new HttpClient(handler),
-            BuildConfiguration(),
+            BuildOptions(),
             NullLogger<KeycloakTokenExchangeService>.Instance);
 
         var result = await service.ExchangeExternalTokenAsync("google-token", "google", "proof", "pkce-verifier", CancellationToken.None);
@@ -42,15 +42,13 @@ public sealed class KeycloakTokenExchangeServiceTests
         Assert.Null(result);
     }
 
-    private static IConfiguration BuildConfiguration()
+    private static IOptions<KeycloakOptions> BuildOptions()
     {
-        return new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Keycloak:Authority"] = "https://keycloak.local/realms/sentinel",
-                ["Keycloak:Audience"] = "sentinel-api"
-            })
-            .Build();
+        return Options.Create(new KeycloakOptions
+        {
+            Authority = "https://keycloak.local/realms/sentinel",
+            Audience = "sentinel-api"
+        });
     }
 
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler

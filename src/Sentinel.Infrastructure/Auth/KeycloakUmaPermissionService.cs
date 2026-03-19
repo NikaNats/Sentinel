@@ -2,22 +2,25 @@ using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Infrastructure.Telemetry;
 using System.Diagnostics;
 using System.Net.Http.Headers;
+using Microsoft.Extensions.Options;
 
 namespace Sentinel.Infrastructure.Auth;
 
 public sealed class KeycloakUmaPermissionService(
     HttpClient httpClient,
-    IConfiguration configuration,
+    IOptions<KeycloakOptions> options,
     ILogger<KeycloakUmaPermissionService> logger) : IUmaPermissionService
 {
+    private readonly KeycloakOptions keycloakOptions = options.Value;
+
     public async Task<bool> HasAccessAsync(string accessToken, string resourceId, string scope, CancellationToken ct)
     {
         using var activity = AuthTelemetry.Source.StartActivity("uma.permission.check", ActivityKind.Client);
         activity?.SetTag("uma.resource", resourceId);
         activity?.SetTag("uma.scope", scope);
 
-        var authority = configuration["Keycloak:Authority"]?.TrimEnd('/');
-        var audience = configuration["Keycloak:Audience"];
+        var authority = keycloakOptions.Authority.TrimEnd('/');
+        var audience = keycloakOptions.Audience;
 
         if (string.IsNullOrWhiteSpace(authority) || string.IsNullOrWhiteSpace(audience))
         {
