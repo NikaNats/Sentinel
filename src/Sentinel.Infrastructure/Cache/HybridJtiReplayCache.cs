@@ -74,11 +74,13 @@ public sealed class HybridJtiReplayCache(
 
             return multiplexer.GetDatabase();
         }
+#pragma warning disable CA1031 // Intentional catch-all: Redis dependency failures should degrade to in-memory fallback.
         catch (Exception ex)
         {
             EmitDegradedAlert(ex, "jti");
             return null;
         }
+#pragma warning restore CA1031
     }
 
     private void EmitDegradedAlert(Exception ex, string store)

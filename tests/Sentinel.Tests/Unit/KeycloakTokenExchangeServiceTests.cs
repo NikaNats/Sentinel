@@ -10,13 +10,14 @@ public sealed class KeycloakTokenExchangeServiceTests
     [Fact]
     public async Task ExchangeExternalTokenAsync_WhenSuccessful_ReturnsTokens()
     {
-        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent("{\"access_token\":\"acc\",\"refresh_token\":\"ref\",\"token_type\":\"DPoP\",\"expires_in\":300}")
         });
+        using var httpClient = new HttpClient(handler);
 
         var service = new KeycloakTokenExchangeService(
-            new HttpClient(handler),
+            httpClient,
             BuildOptions(),
             NullLogger<KeycloakTokenExchangeService>.Instance);
 
@@ -31,9 +32,10 @@ public sealed class KeycloakTokenExchangeServiceTests
     [Fact]
     public async Task ExchangeExternalTokenAsync_WhenProviderRejects_ReturnsNull()
     {
-        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest));
+        using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest));
+        using var httpClient = new HttpClient(handler);
         var service = new KeycloakTokenExchangeService(
-            new HttpClient(handler),
+            httpClient,
             BuildOptions(),
             NullLogger<KeycloakTokenExchangeService>.Instance);
 

@@ -51,11 +51,13 @@ public sealed class KeycloakAuthRevocationService(
                     x.Clients?.Keys.ToArray() ?? []))
                 .ToArray();
         }
+#pragma warning disable CA1031 // Intentional catch-all: admin API failures should fail closed and return empty session list.
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to list active sessions for sub {Sub}.", subjectId);
             return [];
         }
+#pragma warning restore CA1031
     }
 
     public async Task<bool> RevokeSessionAsync(string subjectId, string sessionId, CancellationToken ct)
@@ -77,11 +79,13 @@ public sealed class KeycloakAuthRevocationService(
             using var response = await adminHttpClient.SendAsync(request, ct);
             return response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NoContent;
         }
+#pragma warning disable CA1031 // Intentional catch-all: session revocation failures should be surfaced as unsuccessful result, not throw.
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to revoke session {SessionId}.", sessionId);
             return false;
         }
+#pragma warning restore CA1031
     }
 
     public async Task<bool> RevokeCurrentSessionAsync(string refreshToken, CancellationToken ct)
@@ -117,11 +121,13 @@ public sealed class KeycloakAuthRevocationService(
             logger.LogWarning("Keycloak returned status {StatusCode} during current session revocation.", (int)response.StatusCode);
             return false;
         }
+#pragma warning disable CA1031 // Intentional catch-all: revoke endpoint failures should fail closed and preserve controller flow.
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to reach Keycloak for current session revocation.");
             return false;
         }
+#pragma warning restore CA1031
     }
 
     public async Task<bool> RevokeAllSessionsAsync(string subjectId, CancellationToken ct)
@@ -160,11 +166,13 @@ public sealed class KeycloakAuthRevocationService(
             logger.LogWarning("Keycloak returned status {StatusCode} during global logout for sub {Sub}.", (int)response.StatusCode, subjectId);
             return false;
         }
+#pragma warning disable CA1031 // Intentional catch-all: global logout failures should return false without crashing request pipeline.
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to execute global logout for sub {Sub}.", subjectId);
             return false;
         }
+#pragma warning restore CA1031
     }
 
     public async Task<bool> DeleteAccountAsync(string subjectId, CancellationToken ct)
@@ -201,11 +209,13 @@ public sealed class KeycloakAuthRevocationService(
             logger.LogWarning("Keycloak returned status {StatusCode} during account deletion for sub {Sub}.", (int)response.StatusCode, subjectId);
             return false;
         }
+#pragma warning disable CA1031 // Intentional catch-all: account deletion failures should be reported as unsuccessful result.
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to delete account for sub {Sub}.", subjectId);
             return false;
         }
+#pragma warning restore CA1031
     }
 
     private async Task<AdminContext?> TryResolveAdminContextAsync(CancellationToken ct)

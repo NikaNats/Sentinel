@@ -14,13 +14,14 @@ public sealed class KeycloakAuthRevocationServiceTests
     [Fact]
     public async Task RevokeCurrentSessionAsync_WhenKeycloakReturnsSuccess_ReturnsTrue()
     {
-        StubHttpMessageHandler publicHandler = new(_ => new HttpResponseMessage(HttpStatusCode.OK));
-        HttpClient httpClient = new(publicHandler);
-        StubHttpMessageHandler adminHandler = new(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
-        Mock<IHttpClientFactory> httpClientFactory = BuildHttpClientFactory(adminHandler);
+        using StubHttpMessageHandler publicHandler = new(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        using HttpClient httpClient = new(publicHandler);
+        using StubHttpMessageHandler adminHandler = new(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
+        using HttpClient adminHttpClient = new(adminHandler, disposeHandler: false);
+        Mock<IHttpClientFactory> httpClientFactory = BuildHttpClientFactory(adminHttpClient);
 
         Mock<ISecurityEventEmitter> emitter = new();
-        KeycloakAdminTokenProvider adminTokenProvider = new(httpClientFactory.Object, BuildOptions(), NullLogger<KeycloakAdminTokenProvider>.Instance);
+        using KeycloakAdminTokenProvider adminTokenProvider = new(httpClientFactory.Object, BuildOptions(), NullLogger<KeycloakAdminTokenProvider>.Instance);
         KeycloakAuthRevocationService sut = new(
             httpClient,
             httpClientFactory.Object,
@@ -39,9 +40,9 @@ public sealed class KeycloakAuthRevocationServiceTests
     [Fact]
     public async Task RevokeAllSessionsAsync_WhenKeycloakReturnsSuccess_EmitsSecuritySignal()
     {
-        StubHttpMessageHandler publicHandler = new(_ => new HttpResponseMessage(HttpStatusCode.OK));
-        HttpClient httpClient = new(publicHandler);
-        StubHttpMessageHandler adminHandler = new(request =>
+        using StubHttpMessageHandler publicHandler = new(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        using HttpClient httpClient = new(publicHandler);
+        using StubHttpMessageHandler adminHandler = new(request =>
         {
             return request.RequestUri is not null && request.RequestUri.AbsolutePath.EndsWith("/protocol/openid-connect/token", StringComparison.Ordinal)
                 ? new HttpResponseMessage(HttpStatusCode.OK)
@@ -50,10 +51,11 @@ public sealed class KeycloakAuthRevocationServiceTests
                 }
                 : new HttpResponseMessage(HttpStatusCode.NoContent);
         });
+        using HttpClient adminHttpClient = new(adminHandler, disposeHandler: false);
 
-        Mock<IHttpClientFactory> httpClientFactory = BuildHttpClientFactory(adminHandler);
+        Mock<IHttpClientFactory> httpClientFactory = BuildHttpClientFactory(adminHttpClient);
         Mock<ISecurityEventEmitter> emitter = new();
-        KeycloakAdminTokenProvider adminTokenProvider = new(httpClientFactory.Object, BuildOptions(), NullLogger<KeycloakAdminTokenProvider>.Instance);
+        using KeycloakAdminTokenProvider adminTokenProvider = new(httpClientFactory.Object, BuildOptions(), NullLogger<KeycloakAdminTokenProvider>.Instance);
         KeycloakAuthRevocationService sut = new(
             httpClient,
             httpClientFactory.Object,
@@ -86,12 +88,12 @@ public sealed class KeycloakAuthRevocationServiceTests
             }
         });
 
-    private static Mock<IHttpClientFactory> BuildHttpClientFactory(StubHttpMessageHandler adminHandler)
+    private static Mock<IHttpClientFactory> BuildHttpClientFactory(HttpClient adminHttpClient)
     {
         Mock<IHttpClientFactory> factory = new();
         _ = factory
             .Setup(x => x.CreateClient("keycloak-admin"))
-            .Returns(new HttpClient(adminHandler));
+            .Returns(adminHttpClient);
 
         return factory;
     }

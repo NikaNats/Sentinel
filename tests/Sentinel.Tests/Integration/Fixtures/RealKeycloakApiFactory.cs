@@ -122,10 +122,12 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
                     return;
                 }
             }
+#pragma warning disable CA1031 // Intentional catch-all: startup polling should ignore transient bootstrap failures.
             catch
             {
                 // Ignore transient startup failures while Keycloak boots.
             }
+#pragma warning restore CA1031
 
             await Task.Delay(TimeSpan.FromSeconds(1));
         }

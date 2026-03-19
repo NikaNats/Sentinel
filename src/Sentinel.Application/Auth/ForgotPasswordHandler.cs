@@ -35,9 +35,11 @@ public sealed class ForgotPasswordHandler(
             var token = resetTokenProvider.GenerateToken(request.Email.Trim());
             await emailService.SendResetPasswordEmailAsync(request.Email.Trim(), token, ct);
         }
+#pragma warning disable CA1031 // Intentional catch-all: forgot-password endpoint must fail closed and keep anti-enumeration behavior.
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Forgot password processing failed for {Email}.", request.Email);
         }
+#pragma warning restore CA1031
     }
 }

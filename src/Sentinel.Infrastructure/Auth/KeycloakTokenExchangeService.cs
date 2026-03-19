@@ -53,10 +53,12 @@ public sealed class KeycloakTokenExchangeService(
 
             return await response.Content.ReadFromJsonAsync<TokenExchangeResult>(cancellationToken: ct);
         }
+#pragma warning disable CA1031 // Intentional catch-all: token exchange failures return null to keep auth endpoint fail-closed.
         catch (Exception ex)
         {
             logger.LogError(ex, "Token exchange failed for provider {Provider}.", providerName);
             return null;
         }
+#pragma warning restore CA1031
     }
 }

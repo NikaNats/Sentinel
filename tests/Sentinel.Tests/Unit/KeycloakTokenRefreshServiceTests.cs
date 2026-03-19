@@ -16,10 +16,11 @@ public sealed class KeycloakTokenRefreshServiceTests
     public async Task RefreshTokenAsync_WhenSuccess_ReturnsRotatedTokens()
     {
         var body = "{\"access_token\":\"new-access\",\"refresh_token\":\"new-refresh\"}";
-        var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json")
-        }));
+        });
+        using var httpClient = new HttpClient(handler);
 
         var emitter = new Mock<ISecurityEventEmitter>();
         var sut = new KeycloakTokenRefreshService(httpClient, BuildOptions(), emitter.Object, NullLogger<KeycloakTokenRefreshService>.Instance);
@@ -37,10 +38,11 @@ public sealed class KeycloakTokenRefreshServiceTests
     public async Task RefreshTokenAsync_WhenInvalidGrant_EmitsCriticalSecuritySignal()
     {
         var body = "{\"error\":\"invalid_grant\",\"error_description\":\"Token already used\"}";
-        var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json")
-        }));
+        });
+        using var httpClient = new HttpClient(handler);
 
         var emitter = new Mock<ISecurityEventEmitter>();
         var sut = new KeycloakTokenRefreshService(httpClient, BuildOptions(), emitter.Object, NullLogger<KeycloakTokenRefreshService>.Instance);
@@ -56,10 +58,11 @@ public sealed class KeycloakTokenRefreshServiceTests
     public async Task RefreshTokenAsync_WhenNonReuseFailure_ReturnsUnauthorizedStateWithoutReuseFlag()
     {
         var body = "{\"error\":\"invalid_request\"}";
-        var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json")
-        }));
+        });
+        using var httpClient = new HttpClient(handler);
 
         var emitter = new Mock<ISecurityEventEmitter>();
         var sut = new KeycloakTokenRefreshService(httpClient, BuildOptions(), emitter.Object, NullLogger<KeycloakTokenRefreshService>.Instance);

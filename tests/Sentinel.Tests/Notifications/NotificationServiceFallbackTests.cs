@@ -34,7 +34,7 @@ public sealed class NotificationServiceFallbackTests
             new { Action = "Logout" }),
             CancellationToken.None);
 
-        var sut = new NotificationBackgroundService(queue, dispatcher.Object, options, logger.Object);
+        using var sut = new NotificationBackgroundService(queue, dispatcher.Object, options, logger.Object);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await sut.StartAsync(cts.Token);

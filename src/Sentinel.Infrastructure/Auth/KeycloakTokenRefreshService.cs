@@ -69,11 +69,13 @@ public sealed class KeycloakTokenRefreshService(
             logger.LogWarning("Refresh token request failed with status code {StatusCode}.", (int)response.StatusCode);
             return new TokenRefreshResult(false, null, null, false);
         }
+#pragma warning disable CA1031 // Intentional catch-all: refresh failures should fail closed and return unauthorized state.
         catch (Exception ex)
         {
             logger.LogError(ex, "HTTP exception during refresh token exchange.");
             return new TokenRefreshResult(false, null, null, false);
         }
+#pragma warning restore CA1031
     }
 
     private static bool IsRefreshReuseDetected(HttpStatusCode statusCode, string responseContent)

@@ -11,7 +11,8 @@ public sealed class KeycloakUmaPermissionServiceTests
     [Fact]
     public async Task HasAccessAsync_WhenUmaDecisionPermit_ReturnsTrue()
     {
-        var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)));
+        using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        using var httpClient = new HttpClient(handler);
         var options = BuildOptions();
         var sut = new KeycloakUmaPermissionService(httpClient, options, NullLogger<KeycloakUmaPermissionService>.Instance);
 
@@ -23,7 +24,8 @@ public sealed class KeycloakUmaPermissionServiceTests
     [Fact]
     public async Task HasAccessAsync_WhenUmaDecisionDeny_ReturnsFalse()
     {
-        var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden)));
+        using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden));
+        using var httpClient = new HttpClient(handler);
         var options = BuildOptions();
         var sut = new KeycloakUmaPermissionService(httpClient, options, NullLogger<KeycloakUmaPermissionService>.Instance);
 
@@ -35,7 +37,8 @@ public sealed class KeycloakUmaPermissionServiceTests
     [Fact]
     public async Task HasAccessAsync_WhenKeycloakUnavailable_FailsClosed()
     {
-        var httpClient = new HttpClient(new StubHttpMessageHandler(_ => throw new HttpRequestException("offline")));
+        using var handler = new StubHttpMessageHandler(_ => throw new HttpRequestException("offline"));
+        using var httpClient = new HttpClient(handler);
         var options = BuildOptions();
         var sut = new KeycloakUmaPermissionService(httpClient, options, NullLogger<KeycloakUmaPermissionService>.Instance);
 

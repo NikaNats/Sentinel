@@ -36,9 +36,11 @@ public sealed class ResendVerificationHandler(
 
             await emailService.SendVerificationEmailAsync(normalizedEmail, verificationToken, ct);
         }
+#pragma warning disable CA1031 // Intentional catch-all: resend verification must not leak account existence via error behavior.
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Resend verification failed for {Email}.", request.Email);
         }
+#pragma warning restore CA1031
     }
 }

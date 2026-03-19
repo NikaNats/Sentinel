@@ -13,7 +13,7 @@ public sealed class MtlsBindingMiddlewareTests
     [Fact]
     public async Task InvokeAsync_WhenTokenIsMtlsBoundAndCertificateMissing_ReturnsForbidden()
     {
-        var cert = CreateCertificate();
+        using var cert = CreateCertificate();
         var expectedThumbprint = ComputeThumbprint(cert);
         var context = CreateAuthenticatedContext($"{{\"x5t#S256\":\"{expectedThumbprint}\"}}");
 
@@ -28,7 +28,7 @@ public sealed class MtlsBindingMiddlewareTests
     [Fact]
     public async Task InvokeAsync_WhenTokenIsMtlsBoundAndCertificateMatches_ContinuesPipeline()
     {
-        var cert = CreateCertificate();
+        using var cert = CreateCertificate();
         var expectedThumbprint = ComputeThumbprint(cert);
         var context = CreateAuthenticatedContext($"{{\"x5t#S256\":\"{expectedThumbprint}\"}}");
         context.Features.Set<ITlsConnectionFeature>(new TestTlsConnectionFeature(cert));

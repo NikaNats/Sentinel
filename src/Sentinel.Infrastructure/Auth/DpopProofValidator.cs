@@ -161,10 +161,12 @@ public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProof
         {
             signingKey = JsonWebKey.Create(jwkJson);
         }
+#pragma warning disable CA1031 // Intentional catch-all: malformed/untrusted JWK input must fail validation without throwing.
         catch
         {
             return false;
         }
+#pragma warning restore CA1031
 
         // BEST PRACTICE: Constant Indirection
         // Breaks legacy SAST AST literal matching while explicitly documenting

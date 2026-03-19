@@ -30,6 +30,7 @@ internal sealed class NotificationBackgroundService(
                 await dispatcher.DispatchAsync(message, ct);
                 return;
             }
+#pragma warning disable CA1031 // Intentional catch-all: dispatcher failures are retried and must not terminate background processing.
             catch (Exception ex) when (attempt < maxAttempts)
             {
                 logger.LogWarning(
@@ -50,6 +51,7 @@ internal sealed class NotificationBackgroundService(
                     maxAttempts,
                     message.TemplateName);
             }
+#pragma warning restore CA1031
         }
     }
 }

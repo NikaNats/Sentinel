@@ -55,6 +55,7 @@ public sealed class KeycloakUmaPermissionService(
             logger.LogWarning("UMA access denied for resource {Resource} and scope {Scope}. status={StatusCode}", resourceId, scope, (int)response.StatusCode);
             return false;
         }
+#pragma warning disable CA1031 // Intentional catch-all: UMA lookup failures must deny access instead of throwing.
         catch (Exception ex)
         {
             activity?.SetTag("error", true);
@@ -62,5 +63,6 @@ public sealed class KeycloakUmaPermissionService(
             logger.LogError(ex, "Failed to query Keycloak UMA endpoint.");
             return false;
         }
+#pragma warning restore CA1031
     }
 }
