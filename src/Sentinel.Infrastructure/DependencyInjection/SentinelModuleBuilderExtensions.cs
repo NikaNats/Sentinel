@@ -37,6 +37,7 @@ public static class SentinelModuleBuilderExtensions
         _ = services.AddSingleton<ILogoutTokenValidator, LogoutTokenValidator>();
         _ = services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
         _ = services.AddSingleton<IResetTokenProvider, HmacResetTokenProvider>();
+        _ = services.AddSingleton<TokenValidationService>();
 
         return new SentinelSecurityBuilder(services);
     }
@@ -138,63 +139,26 @@ public static class SentinelModuleBuilderExtensions
                     },
                     OnTokenValidated = async context =>
                     {
-                        try
+                        if (context.Principal is null)
                         {
-                            string? jti = context.Principal?.FindFirst("jti")?.Value;
-                            string? exp = context.Principal?.FindFirst("exp")?.Value;
-                            IJtiReplayCache cache = context.HttpContext.RequestServices.GetRequiredService<IJtiReplayCache>();
-
-                            if (string.IsNullOrWhiteSpace(jti) || string.IsNullOrWhiteSpace(exp))
-                            {
-                                context.Fail("Missing required token claims (jti or exp).");
-                                return;
-                            }
-
-                            if (!long.TryParse(exp, out long expUnix))
-                            {
-                                context.Fail("Invalid exp claim.");
-                                return;
-                            }
-
-                            DateTimeOffset expTime = DateTimeOffset.FromUnixTimeSeconds(expUnix);
-                            TimeSpan remainingTtl = expTime - DateTimeOffset.UtcNow;
-                            if (remainingTtl <= TimeSpan.Zero)
-                            {
-                                context.Fail("Token is already expired.");
-                                return;
-                            }
-
-                            bool stored = await cache.TryStoreIfNotExistsAsync(jti, remainingTtl, context.HttpContext.RequestAborted);
-                            if (!stored)
-                            {
-                                ISecurityEventEmitter emitter = context.HttpContext.RequestServices.GetRequiredService<ISecurityEventEmitter>();
-                                string ipHash = SecurityContextHasher.HashIp(context.HttpContext);
-                                emitter.EmitTokenReplay(jti, context.Principal?.FindFirst("sub")?.Value, "sentinel-api-client", ipHash);
-                                context.Fail("Token replay detected.");
-                                return;
-                            }
-
-                            string? sid = context.Principal?.FindFirst("sid")?.Value;
-                            if (!string.IsNullOrWhiteSpace(sid))
-                            {
-                                ISessionBlacklistCache blacklistCache = context.HttpContext.RequestServices.GetRequiredService<ISessionBlacklistCache>();
-                                bool isBlacklisted = await blacklistCache.IsSessionBlacklistedAsync(sid, context.HttpContext.RequestAborted);
-                                if (isBlacklisted)
-                                {
-                                    ISecurityEventEmitter emitter = context.HttpContext.RequestServices.GetRequiredService<ISecurityEventEmitter>();
-                                    string ipHash = SecurityContextHasher.HashIp(context.HttpContext);
-                                    emitter.EmitAuthFailure("revoked_session_usage_attempt", context.Principal?.FindFirst("sub")?.Value, ipHash);
-                                    context.Fail("Session has been terminated.");
-                                    return;
-                                }
-                            }
+                            context.Fail("Missing principal.");
+                            return;
                         }
-                        catch (ReplayCacheUnavailableException ex)
+
+                        var validationService = context.HttpContext.RequestServices.GetRequiredService<TokenValidationService>();
+                        var outcome = await validationService.ValidateAsync(context.Principal, context.HttpContext, context.HttpContext.RequestAborted);
+                        if (outcome.IsSuccess)
                         {
-                            ISecurityEventEmitter emitter = context.HttpContext.RequestServices.GetRequiredService<ISecurityEventEmitter>();
-                            emitter.EmitAuthFailure("replay_cache_unavailable", context.Principal?.FindFirst("sub")?.Value, SecurityContextHasher.HashIp(context.HttpContext));
-                            context.Fail(ex);
+                            return;
                         }
+
+                        if (outcome.FailureException is not null)
+                        {
+                            context.Fail(outcome.FailureException);
+                            return;
+                        }
+
+                        context.Fail(outcome.FailureReason ?? "Token validation failed.");
                     },
                     OnChallenge = async context =>
                     {
