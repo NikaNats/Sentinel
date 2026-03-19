@@ -11,6 +11,8 @@ namespace Sentinel.Controllers;
 [Route("v1/documents")]
 public sealed class DocumentsController(IDocumentStore documentStore, ILogger<DocumentsController> logger) : ControllerBase
 {
+    private string? CurrentSub => User.FindFirst("sub")?.Value;
+
     [HttpGet]
     [Authorize(Policy = Policies.DocumentsRead)]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -18,7 +20,7 @@ public sealed class DocumentsController(IDocumentStore documentStore, ILogger<Do
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> ListDocuments(CancellationToken cancellationToken)
     {
-        var subject = User.FindFirst("sub")?.Value;
+        var subject = CurrentSub;
         if (string.IsNullOrWhiteSpace(subject))
         {
             return Unauthorized();
@@ -36,14 +38,14 @@ public sealed class DocumentsController(IDocumentStore documentStore, ILogger<Do
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetDocument(Guid id, CancellationToken cancellationToken)
     {
-        var subject = User.FindFirst("sub")?.Value;
+        var subject = CurrentSub;
         if (string.IsNullOrWhiteSpace(subject))
         {
             return Unauthorized();
         }
 
-        var document = await documentStore.GetByIdAsync(id, cancellationToken);
-        if (document is null || !string.Equals(document.OwnerSub, subject, StringComparison.Ordinal))
+        var document = await documentStore.GetByIdAsync(id, subject, cancellationToken);
+        if (document is null)
         {
             return NotFound();
         }
@@ -61,7 +63,7 @@ public sealed class DocumentsController(IDocumentStore documentStore, ILogger<Do
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CreateDocument([FromBody] CreateDocumentRequest request, CancellationToken cancellationToken)
     {
-        var subject = User.FindFirst("sub")?.Value;
+        var subject = CurrentSub;
         if (string.IsNullOrWhiteSpace(subject))
         {
             return Unauthorized();
@@ -87,7 +89,7 @@ public sealed class DocumentsController(IDocumentStore documentStore, ILogger<Do
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> UpdateDocument(Guid id, [FromBody] UpdateDocumentRequest request, CancellationToken cancellationToken)
     {
-        var subject = User.FindFirst("sub")?.Value;
+        var subject = CurrentSub;
         if (string.IsNullOrWhiteSpace(subject))
         {
             return Unauthorized();
@@ -104,7 +106,6 @@ public sealed class DocumentsController(IDocumentStore documentStore, ILogger<Do
 
     [HttpDelete("{id}")]
     [Authorize(Policy = Policies.DocumentsWrite)]
-    [RequireIdempotency]
     [RequireMtlsBinding]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -113,7 +114,7 @@ public sealed class DocumentsController(IDocumentStore documentStore, ILogger<Do
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> DeleteDocument(Guid id, CancellationToken cancellationToken)
     {
-        var subject = User.FindFirst("sub")?.Value;
+        var subject = CurrentSub;
         if (string.IsNullOrWhiteSpace(subject))
         {
             return Unauthorized();

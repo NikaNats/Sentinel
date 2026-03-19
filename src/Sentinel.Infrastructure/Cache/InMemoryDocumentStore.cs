@@ -21,10 +21,17 @@ public sealed class InMemoryDocumentStore : IDocumentStore
         return Task.FromResult<IReadOnlyCollection<DocumentDto>>(results);
     }
 
-    public Task<DocumentDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
+    public Task<DocumentDto?> GetByIdAsync(Guid id, string ownerSub, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(documents.TryGetValue(id, out var state) ? Map(state) : null);
+
+        if (!documents.TryGetValue(id, out var state)
+            || !string.Equals(state.OwnerSub, ownerSub, StringComparison.Ordinal))
+        {
+            return Task.FromResult<DocumentDto?>(null);
+        }
+
+        return Task.FromResult<DocumentDto?>(Map(state));
     }
 
     public Task<DocumentDto> CreateAsync(string ownerSub, CreateDocumentRequest request, CancellationToken cancellationToken)
@@ -47,6 +54,7 @@ public sealed class InMemoryDocumentStore : IDocumentStore
     public Task<DocumentDto?> UpdateAsync(Guid id, string ownerSub, UpdateDocumentRequest request, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var spinWait = new SpinWait();
 
         while (documents.TryGetValue(id, out var current))
         {
@@ -66,6 +74,8 @@ public sealed class InMemoryDocumentStore : IDocumentStore
             {
                 return Task.FromResult<DocumentDto?>(Map(updated));
             }
+
+            spinWait.SpinOnce();
         }
 
         return Task.FromResult<DocumentDto?>(null);

@@ -184,23 +184,23 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
     [Fact]
     public async Task S07_RateLimitExceeded_Returns429()
     {
-        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ecdsa));
-        var jwkObject = new Dictionary<string, string>
-        {
-            ["crv"] = jwk.Crv!,
-            ["kty"] = jwk.Kty!,
-            ["x"] = jwk.X!,
-            ["y"] = jwk.Y!
-        };
-        var jkt = ComputeEcThumbprint(jwkObject);
-
         var successCount = 0;
         var rateLimitedCount = 0;
         var requestUrl = new Uri(client.BaseAddress!, "/v1/profile").ToString();
 
-        var tasks = Enumerable.Range(0, 105).Select(async _ =>
+        var tasks = Enumerable.Range(0, 160).Select(async _ =>
         {
+            using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ecdsa));
+            var jwkObject = new Dictionary<string, string>
+            {
+                ["crv"] = jwk.Crv!,
+                ["kty"] = jwk.Kty!,
+                ["x"] = jwk.X!,
+                ["y"] = jwk.Y!
+            };
+
+            var jkt = ComputeEcThumbprint(jwkObject);
             var accessToken = TestTokenIssuer.MintAccessToken(jkt);
             using var request = CreateSignedRequest(ecdsa, jwkObject, accessToken, HttpMethod.Get, requestUrl);
             var response = await client.SendAsync(request, TestContext.Current.CancellationToken);

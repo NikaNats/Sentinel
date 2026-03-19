@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
+using Microsoft.Extensions.Logging.Abstractions;
 using StackExchange.Redis;
 
 namespace Sentinel.Middleware.Filters;
@@ -26,20 +27,43 @@ public sealed class RequireIdempotencyAttribute : Attribute, IAsyncActionFilter
         }
 
         var idempotencyKey = keyValues.ToString();
+        var logger = context.HttpContext.RequestServices.GetService<ILogger<RequireIdempotencyAttribute>>()
+            ?? NullLogger<RequireIdempotencyAttribute>.Instance;
         var redis = context.HttpContext.RequestServices.GetRequiredService<IConnectionMultiplexer>();
         var db = redis.GetDatabase();
         var sub = context.HttpContext.User.FindFirst("sub")?.Value ?? "anonymous";
         var redisKey = $"idempotency:{sub}:{idempotencyKey}";
 
-        bool lockAcquired = await db.StringSetAsync(
-            redisKey,
-            "IN_PROGRESS",
-            TimeSpan.FromMinutes(5),
-            When.NotExists);
+        bool lockAcquired;
+        try
+        {
+            lockAcquired = await db.StringSetAsync(
+                redisKey,
+                "IN_PROGRESS",
+                TimeSpan.FromMinutes(5),
+                When.NotExists);
+        }
+        catch (RedisException ex)
+        {
+            logger.LogCritical(ex, "Redis unavailable during idempotency check.");
+            context.Result = BuildUnavailableResult();
+            return;
+        }
 
         if (!lockAcquired)
         {
-            var currentState = await db.StringGetAsync(redisKey);
+            RedisValue currentState;
+            try
+            {
+                currentState = await db.StringGetAsync(redisKey);
+            }
+            catch (RedisException ex)
+            {
+                logger.LogCritical(ex, "Redis unavailable during idempotency state read.");
+                context.Result = BuildUnavailableResult();
+                return;
+            }
+
             if (string.Equals(currentState.ToString(), "COMPLETED", StringComparison.Ordinal))
             {
                 context.Result = new NoContentResult();
@@ -62,18 +86,55 @@ public sealed class RequireIdempotencyAttribute : Attribute, IAsyncActionFilter
 
             if (executedContext.Exception is null && IsSuccessfulResult(executedContext.Result))
             {
-                await db.StringSetAsync(redisKey, "COMPLETED", TimeSpan.FromHours(24), When.Always);
+                try
+                {
+                    await db.StringSetAsync(redisKey, "COMPLETED", TimeSpan.FromHours(24), When.Always);
+                }
+                catch (RedisException ex)
+                {
+                    logger.LogCritical(ex, "Redis unavailable while marking idempotency request as completed.");
+                    executedContext.Result = BuildUnavailableResult();
+                }
             }
             else
             {
-                await db.KeyDeleteAsync(redisKey);
+                try
+                {
+                    await db.KeyDeleteAsync(redisKey);
+                }
+                catch (RedisException ex)
+                {
+                    logger.LogCritical(ex, "Redis unavailable while releasing idempotency lock after unsuccessful request.");
+                    executedContext.Result = BuildUnavailableResult();
+                }
             }
         }
         catch
         {
-            await db.KeyDeleteAsync(redisKey);
+            try
+            {
+                await db.KeyDeleteAsync(redisKey);
+            }
+            catch (RedisException ex)
+            {
+                logger.LogCritical(ex, "Redis unavailable while releasing idempotency lock after exception.");
+            }
+
             throw;
         }
+    }
+
+    private static ObjectResult BuildUnavailableResult()
+    {
+        return new ObjectResult(new ProblemDetails
+        {
+            Type = "/errors/idempotency-unavailable",
+            Title = "Idempotency service unavailable",
+            Status = StatusCodes.Status503ServiceUnavailable
+        })
+        {
+            StatusCode = StatusCodes.Status503ServiceUnavailable
+        };
     }
 
     private static bool IsSuccessfulResult(IActionResult? result)

@@ -1,8 +1,8 @@
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Cache;
+using StackExchange.Redis;
 
 namespace Sentinel.Tests.Unit;
 
@@ -11,27 +11,35 @@ public sealed class SessionBlacklistCacheTests
     [Fact]
     public async Task BlacklistSessionAsync_WhenStored_IsReportedAsBlacklisted()
     {
-        var cache = new Mock<IDistributedCache>();
-        cache.Setup(x => x.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([1]);
+        var db = new Mock<IDatabase>();
+        db.Setup(x => x.StringSetAsync("blacklist:sid:sid-1", RedisValue.EmptyString, It.IsAny<TimeSpan?>(), When.Always, CommandFlags.None))
+            .ReturnsAsync(true);
+        db.Setup(x => x.KeyExistsAsync("blacklist:sid:sid-1", CommandFlags.None))
+            .ReturnsAsync(true);
 
-        var sut = new SessionBlacklistCache(cache.Object, NullLogger<SessionBlacklistCache>.Instance);
+        var redis = new Mock<IConnectionMultiplexer>();
+        redis.Setup(x => x.GetDatabase(It.IsAny<int>(), It.IsAny<object?>())).Returns(db.Object);
+
+        var sut = new SessionBlacklistCache(redis.Object, NullLogger<SessionBlacklistCache>.Instance);
 
         await sut.BlacklistSessionAsync("sid-1", TimeSpan.FromMinutes(5), CancellationToken.None);
         var result = await sut.IsSessionBlacklistedAsync("sid-1", CancellationToken.None);
 
         Assert.True(result);
-        cache.Verify(x => x.SetAsync("blacklist:sid:sid-1", It.IsAny<byte[]>(), It.IsAny<DistributedCacheEntryOptions>(), It.IsAny<CancellationToken>()), Times.Once);
+        db.Verify(x => x.StringSetAsync("blacklist:sid:sid-1", RedisValue.EmptyString, It.IsAny<TimeSpan?>(), When.Always, CommandFlags.None), Times.Once);
     }
 
     [Fact]
     public async Task IsSessionBlacklistedAsync_WhenCacheThrows_ThrowsReplayCacheUnavailableException()
     {
-        var cache = new Mock<IDistributedCache>();
-        cache.Setup(x => x.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("redis down"));
+        var db = new Mock<IDatabase>();
+        db.Setup(x => x.KeyExistsAsync(It.IsAny<RedisKey>(), CommandFlags.None))
+            .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect, "redis down"));
 
-        var sut = new SessionBlacklistCache(cache.Object, NullLogger<SessionBlacklistCache>.Instance);
+        var redis = new Mock<IConnectionMultiplexer>();
+        redis.Setup(x => x.GetDatabase(It.IsAny<int>(), It.IsAny<object?>())).Returns(db.Object);
+
+        var sut = new SessionBlacklistCache(redis.Object, NullLogger<SessionBlacklistCache>.Instance);
 
         await Assert.ThrowsAsync<ReplayCacheUnavailableException>(async () =>
             await sut.IsSessionBlacklistedAsync("sid-1", CancellationToken.None));

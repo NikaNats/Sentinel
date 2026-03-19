@@ -46,6 +46,7 @@ public sealed class DpopValidationMiddleware(
         }
 
         var token = authHeader["DPoP ".Length..].Trim();
+        // RFC 9449 section 4.2: htu excludes query string and fragment.
         var requestUrl = $"{context.Request.Scheme}://{context.Request.Host}{context.Request.Path}";
 
         var thumbprint = TryExtractProofThumbprint(dpopProof);

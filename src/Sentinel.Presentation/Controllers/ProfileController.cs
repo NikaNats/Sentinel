@@ -21,9 +21,18 @@ public sealed class ProfileController : ControllerBase
         var displayName = User.FindFirstValue("name") ?? string.Empty;
 
         var rolesClaim = User.FindFirst("realm_access.roles")?.Value;
-        var roles = string.IsNullOrWhiteSpace(rolesClaim)
-            ? []
-            : JsonSerializer.Deserialize<string[]>(rolesClaim) ?? [];
+        var roles = Array.Empty<string>();
+        if (!string.IsNullOrWhiteSpace(rolesClaim))
+        {
+            try
+            {
+                roles = JsonSerializer.Deserialize<string[]>(rolesClaim) ?? [];
+            }
+            catch (JsonException)
+            {
+                roles = [];
+            }
+        }
 
         if (string.IsNullOrWhiteSpace(sub))
         {

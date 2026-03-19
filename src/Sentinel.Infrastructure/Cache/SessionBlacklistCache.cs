@@ -1,22 +1,20 @@
-using Microsoft.Extensions.Caching.Distributed;
 using Sentinel.Application.Common.Abstractions;
+using StackExchange.Redis;
 
 namespace Sentinel.Infrastructure.Cache;
 
-public sealed class SessionBlacklistCache(IDistributedCache cache, ILogger<SessionBlacklistCache> logger) : ISessionBlacklistCache
+public sealed class SessionBlacklistCache(IConnectionMultiplexer redis, ILogger<SessionBlacklistCache> logger) : ISessionBlacklistCache
 {
+    private readonly IDatabase db = redis.GetDatabase();
     private static string GetKey(string sessionId) => $"blacklist:sid:{sessionId}";
 
     public async Task BlacklistSessionAsync(string sessionId, TimeSpan ttl, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
+
         try
         {
-            var options = new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = ttl
-            };
-
-            await cache.SetAsync(GetKey(sessionId), [], options, ct);
+            await db.StringSetAsync(GetKey(sessionId), RedisValue.EmptyString, ttl, When.Always, CommandFlags.None);
             logger.LogInformation("Session {SessionId} blacklisted for {TtlSeconds} seconds.", sessionId, ttl.TotalSeconds);
         }
         catch (Exception ex)
@@ -28,10 +26,11 @@ public sealed class SessionBlacklistCache(IDistributedCache cache, ILogger<Sessi
 
     public async ValueTask<bool> IsSessionBlacklistedAsync(string sessionId, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
+
         try
         {
-            var value = await cache.GetAsync(GetKey(sessionId), ct);
-            return value is not null;
+            return await db.KeyExistsAsync(GetKey(sessionId), CommandFlags.None);
         }
         catch (Exception ex)
         {

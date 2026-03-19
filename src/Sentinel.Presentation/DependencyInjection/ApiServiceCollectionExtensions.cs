@@ -92,10 +92,10 @@ public static class ApiServiceCollectionExtensions
         app.UseRouting();
 
         app.UseAuthentication();
-        app.UseRateLimiter();
         app.UseMiddleware<DpopValidationMiddleware>();
         app.UseMiddleware<MtlsBindingMiddleware>();
         app.UseMiddleware<AcrValidationMiddleware>();
+        app.UseRateLimiter();
         app.UseAuthorization();
 
         app.MapPrometheusScrapingEndpoint();
