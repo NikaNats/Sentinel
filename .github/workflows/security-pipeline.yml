@@ -17,10 +17,11 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
-      - name: Setup .NET 11
+
+      - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 11.0.x
+          global-json-file: global.json
 
       - name: Gate 1 - Secret Scanning
         uses: trufflesecurity/trufflehog@main
@@ -57,10 +58,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
 
-      - name: Setup .NET 11
+      - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 11.0.x
+          global-json-file: global.json
 
       - name: Restore
         run: dotnet restore ${{ matrix.test-project }}
