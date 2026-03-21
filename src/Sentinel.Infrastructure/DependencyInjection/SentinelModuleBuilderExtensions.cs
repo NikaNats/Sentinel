@@ -15,8 +15,10 @@ using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Domain.Auth;
 using Sentinel.Infrastructure.Auth;
+using Sentinel.Infrastructure.Auth.Handlers;
 using Sentinel.Infrastructure.Auth.SdJwt;
 using Sentinel.Infrastructure.Auth.Ssf;
+using Sentinel.Infrastructure.Auth.Services;
 using Sentinel.Infrastructure.Cache;
 using Sentinel.Infrastructure.Cryptography;
 using Sentinel.Infrastructure.Notifications;
@@ -95,13 +97,47 @@ public static class SentinelModuleBuilderExtensions
     public static ISentinelSecurityBuilder AddKeycloak(this ISentinelSecurityBuilder builder)
     {
         _ = builder.Services.AddSingleton<KeycloakAdminTokenProvider>();
+        _ = builder.Services.AddTransient<KeycloakAdminAuthHandler>();
         _ = builder.Services.AddHttpClient<IUmaPermissionService, KeycloakUmaPermissionService>();
         _ = builder.Services.AddHttpClient<ITokenRefreshService, KeycloakTokenRefreshService>();
         _ = builder.Services.AddHttpClient<ITokenExchangeService, KeycloakTokenExchangeService>();
         _ = builder.Services.AddHttpClient<ICaptchaService, TurnstileService>();
-        _ = builder.Services.AddHttpClient<IKeycloakUserService, KeycloakAdminService>();
-        _ = builder.Services.AddHttpClient<IKeycloakProfileService, KeycloakAdminService>();
-        _ = builder.Services.AddHttpClient<IKeycloakFederationService, KeycloakAdminService>();
+        _ = builder.Services.AddHttpClient<IKeycloakUserService, KeycloakUserService>((sp, client) =>
+            {
+                var keycloakOptions = sp.GetRequiredService<IOptions<KeycloakOptions>>().Value;
+                if (!KeycloakAuthorityEndpoints.TryBuild(keycloakOptions.Authority.TrimEnd('/'), out _,
+                        out var adminRealmEndpoint))
+                {
+                    throw new InvalidOperationException("Keycloak authority is missing or invalid.");
+                }
+
+                client.BaseAddress = adminRealmEndpoint;
+            })
+            .AddHttpMessageHandler<KeycloakAdminAuthHandler>();
+        _ = builder.Services.AddHttpClient<IKeycloakProfileService, KeycloakProfileService>((sp, client) =>
+            {
+                var keycloakOptions = sp.GetRequiredService<IOptions<KeycloakOptions>>().Value;
+                if (!KeycloakAuthorityEndpoints.TryBuild(keycloakOptions.Authority.TrimEnd('/'), out _,
+                        out var adminRealmEndpoint))
+                {
+                    throw new InvalidOperationException("Keycloak authority is missing or invalid.");
+                }
+
+                client.BaseAddress = adminRealmEndpoint;
+            })
+            .AddHttpMessageHandler<KeycloakAdminAuthHandler>();
+        _ = builder.Services.AddHttpClient<IKeycloakFederationService, KeycloakFederationService>((sp, client) =>
+            {
+                var keycloakOptions = sp.GetRequiredService<IOptions<KeycloakOptions>>().Value;
+                if (!KeycloakAuthorityEndpoints.TryBuild(keycloakOptions.Authority.TrimEnd('/'), out _,
+                        out var adminRealmEndpoint))
+                {
+                    throw new InvalidOperationException("Keycloak authority is missing or invalid.");
+                }
+
+                client.BaseAddress = adminRealmEndpoint;
+            })
+            .AddHttpMessageHandler<KeycloakAdminAuthHandler>();
         _ = builder.Services.AddHttpClient("keycloak-admin");
         _ = builder.Services.AddHttpClient<IAuthRevocationService, KeycloakAuthRevocationService>();
         _ = builder.Services.AddHostedService<SocialFederationConfiguratorHostedService>();
