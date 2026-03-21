@@ -41,7 +41,7 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
 
     public async ValueTask InitializeAsync()
     {
-        // Parallel startup for CI efficiency
+        // 1. Start containers in parallel
         await Task.WhenAll(redisContainer.StartAsync(), postgresContainer.StartAsync());
 
         var redisHostPort = redisContainer.GetMappedPublicPort(6379);
@@ -49,19 +49,31 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
             $"localhost:{redisHostPort},abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000";
         postgresConnectionString = postgresContainer.GetConnectionString();
 
-        // Critical: Wait for BOTH containers to be ready before ConfigureWebHost/migrations run
+        // 2. Critical: Wait for BOTH containers to be ready
         await Task.WhenAll(
             WaitForRedisReadinessAsync("127.0.0.1", redisHostPort, TimeSpan.FromSeconds(30)),
             WaitForPostgresReadinessAsync(postgresConnectionString, TimeSpan.FromSeconds(30)));
 
-        // CreateClient triggers ConfigureWebHost and migrations - only safe after both containers are ready
+        // 3. NOW create the client which triggers ConfigureWebHost
         _ = CreateClient();
+
+        // 4. ARCHITECT'S FIX: Run migrations AFTER CreateClient (Services container exists)
+        // This happens after the WebHost is built but before tests actually run
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<SentinelDbContext>();
+        await dbContext.Database.MigrateAsync();
     }
 
     ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsyncCore());
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // ARCHITECT'S NOTE (2026 Best Practice): Use UseSetting() to override config keys
+        // BEFORE Program.cs Build() is called. This is more robust than AddInMemoryCollection
+        // because it ensures values are present even if Program.cs calls AddJsonFile later.
+        builder.UseSetting("ConnectionStrings:Redis", redisConnectionString);
+        builder.UseSetting("ConnectionStrings:Postgres", postgresConnectionString);
+
         builder.ConfigureAppConfiguration((_, config) =>
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
@@ -69,8 +81,6 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
                 ["Keycloak:Authority"] = "https://localhost:8443/realms/sentinel",
                 ["Keycloak:Audience"] = "sentinel-api",
                 ["Keycloak:RequireHttpsMetadata"] = "false",
-                ["ConnectionStrings:Redis"] = redisConnectionString,
-                ["ConnectionStrings:Postgres"] = postgresConnectionString,
                 ["FeatureFlags:Auth:DpopFlow"] = "true"
             });
         });
@@ -100,12 +110,6 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
                 options.RequireHttpsMetadata = false;
                 options.ConfigurationManager = null;
             });
-
-            // Apply EF Core migrations to Testcontainer schema
-            var sp = services.BuildServiceProvider();
-            using var scope = sp.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<SentinelDbContext>();
-            dbContext.Database.Migrate();
         });
     }
 
