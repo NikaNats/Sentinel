@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using Sentinel.Infrastructure.Persistence;
 using StackExchange.Redis;
 using Testcontainers.PostgreSql;
@@ -40,6 +41,7 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
 
     public async ValueTask InitializeAsync()
     {
+        // Parallel startup for CI efficiency
         await Task.WhenAll(redisContainer.StartAsync(), postgresContainer.StartAsync());
 
         var redisHostPort = redisContainer.GetMappedPublicPort(6379);
@@ -47,8 +49,12 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
             $"localhost:{redisHostPort},abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000";
         postgresConnectionString = postgresContainer.GetConnectionString();
 
-        await WaitForRedisReadinessAsync("127.0.0.1", redisHostPort, TimeSpan.FromSeconds(30));
+        // Critical: Wait for BOTH containers to be ready before ConfigureWebHost/migrations run
+        await Task.WhenAll(
+            WaitForRedisReadinessAsync("127.0.0.1", redisHostPort, TimeSpan.FromSeconds(30)),
+            WaitForPostgresReadinessAsync(postgresConnectionString, TimeSpan.FromSeconds(30)));
 
+        // CreateClient triggers ConfigureWebHost and migrations - only safe after both containers are ready
         _ = CreateClient();
     }
 
@@ -136,5 +142,35 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
         }
 
         throw new TimeoutException($"Redis readiness check timed out for {host}:{port}", lastError);
+    }
+
+    private static async Task WaitForPostgresReadinessAsync(string connectionString, TimeSpan timeout)
+    {
+        var startedAt = DateTime.UtcNow;
+        Exception? lastError = null;
+
+        while (DateTime.UtcNow - startedAt < timeout)
+        {
+            try
+            {
+                // Attempt to open a connection to verify the database is accepting connections
+                using var connection = new NpgsqlConnection(connectionString);
+                await connection.OpenAsync();
+                await connection.CloseAsync();
+                return;
+            }
+            catch (NpgsqlException ex)
+            {
+                lastError = ex;
+            }
+            catch (InvalidOperationException ex)
+            {
+                lastError = ex;
+            }
+
+            await Task.Delay(250);
+        }
+
+        throw new TimeoutException("PostgreSQL readiness check timed out", lastError);
     }
 }
