@@ -26,7 +26,7 @@ Sentinel must prevent unauthorized bearer token usage (token theft, interception
 - **RFC 9449 alignment:** FAPI 2.0 Baseline requires sender-constraint; DPoP is standard pattern
 - **Zero infrastructure changes:** Works with any HTTP client supporting JWK signing; no certificate distribution
 - **Nonce challenge-response:** Rotating perimeter nonces prevent proof reuse across endpoints
-- **Fail-closed:** Missing DPoP proof → 400 with HTTP 503 and `use_dpop_nonce` challenge issued
+- **Fail-closed:** Missing/invalid DPoP proof or nonce challenge path returns `401 Unauthorized` with `WWW-Authenticate: DPoP ...` (including `error="use_dpop_nonce"` when nonce is required).
 
 ### Implications
 
@@ -95,7 +95,7 @@ Attackers can replay valid proofs if nonce requirement is missing. Nonce lifecyc
 **Issue rotating per-JWK-thumbprint nonces; client includes nonce in next request's proof.**
 
 Flow:
-1. Anonymous request → 400 with `use_dpop_nonce` challenge + nonce in `DPoP-Nonce` header
+1. Anonymous/nonce-missing request → `401 Unauthorized` with `WWW-Authenticate: DPoP error="use_dpop_nonce"` + nonce in `DPoP-Nonce` header
 2. Client includes nonce in next proof's `nonce` claim
 3. Server validates nonce matches expected value, marks as consumed (never reused)
 4. Response includes new `DPoP-Nonce` for next request
@@ -113,7 +113,7 @@ Nonce state:
 
 ### Implications
 
-- All unauthenticated requests initially fail with 400 + challenge (expected behavior)
+- Unauthenticated or nonce-missing requests receive `401` nonce challenge (expected behavior)
 - Nonce expiration (60s) requires client retry with new challenge
 - Stale nonce (consumed but client retries) triggers new challenge issuance
 - Metrics: nonce operations < 1ms; challenge issuance < 5ms
@@ -452,7 +452,7 @@ if (activity != null)
             ["error.type"] = "invalid_signature",
             ["request.method"] = "POST",
             ["security.outcome"] = "failure",
-            ["http.response.status_code"] = 400,
+            ["http.response.status_code"] = 401,
             ["enduser.id"] = principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value
         })
     ));
