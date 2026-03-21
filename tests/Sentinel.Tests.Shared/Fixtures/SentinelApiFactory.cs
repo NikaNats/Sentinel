@@ -68,14 +68,13 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        // ARCHITECT'S NOTE (2026 Best Practice): Use UseSetting() to override config keys
-        // BEFORE Program.cs Build() is called. This is more robust than AddInMemoryCollection
-        // because it ensures values are present even if Program.cs calls AddJsonFile later.
-        builder.UseSetting("ConnectionStrings:Redis", redisConnectionString);
-        builder.UseSetting("ConnectionStrings:Postgres", postgresConnectionString);
+        // ARCHITECT'S 2026 FIX: Direct DI Injection pattern
+        // We SKIP builder.UseSetting() for connection strings because it doesn't reach
+        // ConfigureTestServices in time. Instead, we inject directly into the DI container.
 
         builder.ConfigureAppConfiguration((_, config) =>
         {
+            // Keep non-connection string configurations here
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Keycloak:Authority"] = "https://localhost:8443/realms/sentinel",
@@ -87,6 +86,16 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
 
         builder.ConfigureTestServices(services =>
         {
+            // DIRECTLY inject the dynamic connection strings where the container variables are available!
+
+            // Configure DbContext with explicit container connection string
+            services.RemoveAll<DbContextOptions<SentinelDbContext>>();
+            services.AddDbContext<SentinelDbContext>(options =>
+            {
+                options.UseNpgsql(postgresConnectionString);
+            });
+
+            // Configure Redis with explicit container connection string
             services.RemoveAll<IDistributedCache>();
             services.RemoveAll<IConnectionMultiplexer>();
 
@@ -101,6 +110,7 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
                 return ConnectionMultiplexer.Connect(options);
             });
 
+            // Configure JWT authentication override
             services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
             {
                 options.TokenValidationParameters.IssuerSigningKey = TestTokenIssuer.AuthoritySecurityKey;
