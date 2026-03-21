@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,6 +12,7 @@ using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Domain.Auth;
 using Sentinel.Infrastructure.Auth;
+using Sentinel.Infrastructure.Auth.SdJwt;
 using Sentinel.Infrastructure.Auth.Ssf;
 using Sentinel.Infrastructure.Cache;
 using Sentinel.Infrastructure.Cryptography;
@@ -33,6 +35,7 @@ public static class SentinelModuleBuilderExtensions
         _ = services.Configure<ResetTokenOptions>(configuration.GetSection("PasswordReset"));
         _ = services.Configure<SocialFederationOptions>(configuration.GetSection("SocialFederation"));
         _ = services.Configure<SsfOptions>(configuration.GetSection(SsfOptions.SectionName));
+        _ = services.Configure<SdJwtOptions>(configuration.GetSection(SdJwtOptions.SectionName));
 
         _ = services.AddSingleton<IEncryptionService, AesGcmEncryptionService>();
         _ = services.AddSingleton<IDocumentStore, InMemoryDocumentStore>();
@@ -42,6 +45,7 @@ public static class SentinelModuleBuilderExtensions
         _ = services.AddSingleton<TokenValidationService>();
         _ = services.AddSingleton<ISsfTokenValidator, JwtSsfTokenValidator>();
         _ = services.AddSingleton<ISsfEventProcessor, SsfEventProcessor>();
+        _ = services.AddSingleton<ISdJwtVerifier, SdJwtVerifier>();
 
         return new SentinelSecurityBuilder(services);
     }
@@ -105,8 +109,38 @@ public static class SentinelModuleBuilderExtensions
     {
         var keycloakOptions = configuration.GetSection(KeycloakOptions.SectionName).Get<KeycloakOptions>() ?? new KeycloakOptions();
 
+        var sdJwtOptions = configuration.GetSection(SdJwtOptions.SectionName).Get<SdJwtOptions>() ?? new SdJwtOptions();
+        var sdJwtScheme = string.IsNullOrWhiteSpace(sdJwtOptions.AuthenticationScheme) ? "SdJwt" : sdJwtOptions.AuthenticationScheme;
+        const string compositeScheme = "SentinelAuth";
+
         _ = builder.Services
-            .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = compositeScheme;
+                options.DefaultChallengeScheme = compositeScheme;
+            })
+            .AddPolicyScheme(compositeScheme, compositeScheme, options =>
+            {
+                options.ForwardDefaultSelector = context =>
+                {
+                    var authorization = context.Request.Headers.Authorization.ToString();
+                    if (string.IsNullOrWhiteSpace(authorization))
+                    {
+                        return JwtBearerDefaults.AuthenticationScheme;
+                    }
+
+                    var token = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                        ? authorization["Bearer ".Length..].Trim()
+                        : authorization.StartsWith("SD-JWT ", StringComparison.OrdinalIgnoreCase)
+                            ? authorization["SD-JWT ".Length..].Trim()
+                            : string.Empty;
+
+                    return token.Contains('~', StringComparison.Ordinal)
+                        ? sdJwtScheme
+                        : JwtBearerDefaults.AuthenticationScheme;
+                };
+            })
+            .AddScheme<AuthenticationSchemeOptions, SdJwtAuthenticationHandler>(sdJwtScheme, _ => { })
             .AddJwtBearer(options =>
             {
                 options.Authority = keycloakOptions.Authority;

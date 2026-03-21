@@ -24,6 +24,13 @@ public sealed class DpopValidationMiddleware(
         {
             if (!string.IsNullOrWhiteSpace(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             {
+                var bearerToken = authHeader["Bearer ".Length..].Trim();
+                if (bearerToken.Contains('~', StringComparison.Ordinal))
+                {
+                    await next(context);
+                    return;
+                }
+
                 emitter.EmitAuthFailure("bearer_downgrade_attempt", context.User.FindFirst("sub")?.Value, ipHash);
                 AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", "bearer_downgrade_attempt"));
                 context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
