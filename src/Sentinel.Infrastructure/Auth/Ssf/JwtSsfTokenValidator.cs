@@ -10,6 +10,7 @@ namespace Sentinel.Infrastructure.Auth.Ssf;
 
 public sealed class JwtSsfTokenValidator(
     IOptions<KeycloakOptions> keycloakOptions,
+    IConfigurationManager<OpenIdConnectConfiguration> openIdConfigurationManager,
     ILogger<JwtSsfTokenValidator> logger) : ISsfTokenValidator
 {
     private readonly KeycloakOptions options = keycloakOptions.Value;
@@ -30,12 +31,7 @@ public sealed class JwtSsfTokenValidator(
                 return SsfValidationResult.Fail("Keycloak authority is missing.");
             }
 
-            var metadataEndpoint = $"{authority}/.well-known/openid-configuration";
-            var configurationManager = new ConfigurationManager<OpenIdConnectConfiguration>(
-                metadataEndpoint,
-                new OpenIdConnectConfigurationRetriever(),
-                new HttpDocumentRetriever { RequireHttps = options.RequireHttpsMetadata });
-            var openIdConfig = await configurationManager.GetConfigurationAsync(ct);
+            var openIdConfig = await openIdConfigurationManager.GetConfigurationAsync(ct);
 
             var parameters = new TokenValidationParameters
             {

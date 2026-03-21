@@ -4,6 +4,9 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
@@ -36,6 +39,16 @@ public static class SentinelModuleBuilderExtensions
         _ = services.Configure<SocialFederationOptions>(configuration.GetSection("SocialFederation"));
         _ = services.Configure<SsfOptions>(configuration.GetSection(SsfOptions.SectionName));
         _ = services.Configure<SdJwtOptions>(configuration.GetSection(SdJwtOptions.SectionName));
+        _ = services.AddSingleton<IConfigurationManager<OpenIdConnectConfiguration>>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<KeycloakOptions>>().Value;
+            var authority = options.Authority.TrimEnd('/');
+            var metadataEndpoint = $"{authority}/.well-known/openid-configuration";
+            return new ConfigurationManager<OpenIdConnectConfiguration>(
+                metadataEndpoint,
+                new OpenIdConnectConfigurationRetriever(),
+                new HttpDocumentRetriever { RequireHttps = options.RequireHttpsMetadata });
+        });
 
         _ = services.AddSingleton<IEncryptionService, AesGcmEncryptionService>();
         _ = services.AddSingleton<IDocumentStore, InMemoryDocumentStore>();

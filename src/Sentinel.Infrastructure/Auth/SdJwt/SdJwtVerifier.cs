@@ -16,6 +16,7 @@ namespace Sentinel.Infrastructure.Auth.SdJwt;
 public sealed class SdJwtVerifier(
     IOptions<KeycloakOptions> keycloakOptions,
     IOptions<SdJwtOptions> sdJwtOptions,
+    IConfigurationManager<OpenIdConnectConfiguration> openIdConfigurationManager,
     ILogger<SdJwtVerifier> logger) : ISdJwtVerifier
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
@@ -65,12 +66,7 @@ public sealed class SdJwtVerifier(
     private async Task<TokenValidationResult> ValidateIssuerTokenAsync(string issuerJwt, string expectedAudience, CancellationToken ct)
     {
         var authority = keycloak.Authority.TrimEnd('/');
-        var metadataEndpoint = $"{authority}/.well-known/openid-configuration";
-        var configManager = new ConfigurationManager<OpenIdConnectConfiguration>(
-            metadataEndpoint,
-            new OpenIdConnectConfigurationRetriever(),
-            new HttpDocumentRetriever { RequireHttps = keycloak.RequireHttpsMetadata });
-        var config = await configManager.GetConfigurationAsync(ct);
+        var config = await openIdConfigurationManager.GetConfigurationAsync(ct);
 
         var parameters = new TokenValidationParameters
         {
