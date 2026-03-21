@@ -3,13 +3,16 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Sentinel.Infrastructure.Persistence;
 using StackExchange.Redis;
+using Testcontainers.PostgreSql;
 using Testcontainers.Redis;
 
 namespace Sentinel.Tests.Shared.Fixtures;
@@ -17,22 +20,35 @@ namespace Sentinel.Tests.Shared.Fixtures;
 public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private readonly RedisContainer redisContainer;
+    private readonly PostgreSqlContainer postgresContainer;
     private string redisConnectionString = string.Empty;
+    private string postgresConnectionString = string.Empty;
 
     public SentinelApiFactory()
     {
         redisContainer = new RedisBuilder("redis:7.4-alpine")
             .WithPortBinding(6379, true)
             .Build();
+
+        postgresContainer = new PostgreSqlBuilder("postgres:16-alpine")
+            .WithDatabase("sentinel_test")
+            .WithUsername("sentinel")
+            .WithPassword("sentinel_password")
+            .WithPortBinding(5432, true)
+            .Build();
     }
 
     public async ValueTask InitializeAsync()
     {
-        await redisContainer.StartAsync();
+        await Task.WhenAll(redisContainer.StartAsync(), postgresContainer.StartAsync());
+
         var redisHostPort = redisContainer.GetMappedPublicPort(6379);
         redisConnectionString =
             $"localhost:{redisHostPort},abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000";
+        postgresConnectionString = postgresContainer.GetConnectionString();
+
         await WaitForRedisReadinessAsync("127.0.0.1", redisHostPort, TimeSpan.FromSeconds(30));
+
         _ = CreateClient();
     }
 
@@ -48,6 +64,7 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
                 ["Keycloak:Audience"] = "sentinel-api",
                 ["Keycloak:RequireHttpsMetadata"] = "false",
                 ["ConnectionStrings:Redis"] = redisConnectionString,
+                ["ConnectionStrings:Postgres"] = postgresConnectionString,
                 ["FeatureFlags:Auth:DpopFlow"] = "true"
             });
         });
@@ -77,12 +94,20 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
                 options.RequireHttpsMetadata = false;
                 options.ConfigurationManager = null;
             });
+
+            // Apply EF Core migrations to Testcontainer schema
+            var sp = services.BuildServiceProvider();
+            using var scope = sp.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<SentinelDbContext>();
+            dbContext.Database.Migrate();
         });
     }
 
     private async Task DisposeAsyncCore()
     {
-        await redisContainer.DisposeAsync();
+        await Task.WhenAll(
+            redisContainer.DisposeAsync().AsTask(),
+            postgresContainer.DisposeAsync().AsTask());
         await base.DisposeAsync();
     }
 

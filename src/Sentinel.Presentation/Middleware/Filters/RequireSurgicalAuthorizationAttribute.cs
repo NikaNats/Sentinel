@@ -44,7 +44,8 @@ public sealed class RequireSurgicalAuthorizationAttribute : Attribute, IAsyncAct
             return;
         }
 
-        if (transferDetail.Amount != request.Amount
+        // 2026 best practice: Use precision-safe decimal comparison (0.0001m tolerance for financial data)
+        if (transferDetail.Amount == null || Math.Abs(transferDetail.Amount.Value - request.Amount) > 0.0001m
             || !string.Equals(transferDetail.Currency, request.Currency, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(transferDetail.TransactionId, request.TransactionId, StringComparison.Ordinal))
         {
