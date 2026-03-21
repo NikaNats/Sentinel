@@ -12,6 +12,14 @@ namespace Sentinel.Infrastructure.Auth;
 public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProofValidator
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
+    private static readonly HashSet<string> SupportedAlgorithms =
+    [
+        SecurityAlgorithms.RsaSsaPssSha256,
+        SecurityAlgorithms.EcdsaSha256,
+        "MLDSA44",
+        "MLDSA65",
+        "MLDSA87"
+    ];
 
     public async Task<DpopValidationResult> ValidateAsync(string dpopHeader, string accessToken, string httpMethod, string httpUrl, string? expectedNonce, CancellationToken ct)
     {
@@ -32,8 +40,7 @@ public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProof
 
             var dpopToken = TokenHandler.ReadJsonWebToken(dpopHeader);
 
-            if (!string.Equals(dpopToken.Alg, SecurityAlgorithms.RsaSsaPssSha256, StringComparison.Ordinal)
-                && !string.Equals(dpopToken.Alg, SecurityAlgorithms.EcdsaSha256, StringComparison.Ordinal))
+            if (!IsSupportedAlgorithm(dpopToken.Alg))
             {
                 _ = (activity?.SetTag("auth.result", "invalid_alg"));
                 return result;
@@ -209,5 +216,11 @@ public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProof
         var bytes = new byte[32];
         RandomNumberGenerator.Fill(bytes);
         return Base64UrlEncoder.Encode(bytes);
+    }
+
+    internal static bool IsSupportedAlgorithm(string? algorithm)
+    {
+        return !string.IsNullOrWhiteSpace(algorithm)
+            && SupportedAlgorithms.Contains(algorithm);
     }
 }

@@ -38,6 +38,16 @@ public static class DpopThumbprintHelper
                 ["n"] = n.GetString() ?? string.Empty
             });
         }
+        else if (jwk.TryGetProperty("kty", out var mlDsaKty)
+                 && string.Equals(mlDsaKty.GetString(), "ML-DSA", StringComparison.Ordinal)
+                 && jwk.TryGetProperty("x", out var mlDsaX))
+        {
+            canonical = JsonSerializer.Serialize(new Dictionary<string, string>
+            {
+                ["kty"] = "ML-DSA",
+                ["x"] = mlDsaX.GetString() ?? string.Empty
+            });
+        }
         else
         {
             return string.Empty;

@@ -59,6 +59,45 @@ public sealed class DpopProofValidatorTests
         Assert.Equal("use_dpop_nonce", result.Error);
     }
 
+    [Theory]
+    [InlineData("MLDSA44")]
+    [InlineData("MLDSA65")]
+    [InlineData("MLDSA87")]
+    [InlineData(SecurityAlgorithms.EcdsaSha256)]
+    [InlineData(SecurityAlgorithms.RsaSsaPssSha256)]
+    public void IsSupportedAlgorithm_WhenKnownAlgorithm_ReturnsTrue(string algorithm)
+    {
+        var supported = DpopProofValidator.IsSupportedAlgorithm(algorithm);
+
+        Assert.True(supported);
+    }
+
+    [Theory]
+    [InlineData("HS256")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void IsSupportedAlgorithm_WhenUnknownOrEmpty_ReturnsFalse(string? algorithm)
+    {
+        var supported = DpopProofValidator.IsSupportedAlgorithm(algorithm);
+
+        Assert.False(supported);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenUnsupportedAlgorithm_ReturnsInvalidWithoutReplayCacheWrite()
+    {
+        var sut = new DpopProofValidator(replayCache.Object);
+        const string dpopHeader = "eyJhbGciOiJIUzI1NiIsInR5cCI6ImRwb3Arand0In0.eyJqdGkiOiJhYmMiLCJodG0iOiJQT1NUIiwiaHR1IjoiaHR0cHM6Ly9sb2NhbGhvc3QvdjEvcHJvZmlsZSIsImlhdCI6MTcxMDAwMDAwMH0.signature";
+        const string accessToken = "eyJhbGciOiJub25lIn0.eyJjbmYiOnsiamt0IjoiYWJjIn19.";
+
+        var result = await sut.ValidateAsync(dpopHeader, accessToken, "POST", "https://localhost/v1/profile", expectedNonce: null, CancellationToken.None);
+
+        Assert.False(result.IsValid);
+        replayCache.Verify(
+            x => x.TryStoreIfNotExistsAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     private static (string DpopProof, string AccessToken) CreateValidProofAndToken(string method, string url, string? nonce = null)
     {
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);

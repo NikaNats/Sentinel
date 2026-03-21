@@ -155,7 +155,7 @@ public static class SentinelModuleBuilderExtensions
                     ValidateAudience = true,
                     ValidateLifetime = true,
                     ClockSkew = TimeSpan.Zero,
-                    ValidAlgorithms = ["PS256", "ES256"],
+                    ValidAlgorithms = ["PS256", "ES256", "MLDSA44", "MLDSA65", "MLDSA87"],
                     RequireSignedTokens = true,
                     RequireExpirationTime = true,
                     NameClaimType = "sub",
