@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  build-test-scan:
-    name: Build, Test & Core Security
+  build-scan:
+    name: Build & Core Security
     runs-on: ubuntu-latest
 
     steps:
@@ -38,5 +38,32 @@ jobs:
           dotnet restore Sentinel.slnx
           dotnet list Sentinel.slnx package --vulnerable --include-transitive
 
-      - name: Gate 4 - Build & Test
-        run: dotnet test Sentinel.slnx --configuration Release --logger "console;verbosity=detailed"
+      - name: Gate 4 - Build
+        run: dotnet build Sentinel.slnx --configuration Release --no-restore
+
+  test-suites:
+    name: Test (${{ matrix.test-project }})
+    runs-on: ubuntu-latest
+    needs: build-scan
+    strategy:
+      fail-fast: false
+      matrix:
+        test-project:
+          - tests/Sentinel.Tests.Unit/Sentinel.Tests.Unit.csproj
+          - tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj
+          - tests/Sentinel.Tests.Security/Sentinel.Tests.Security.csproj
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Setup .NET 11
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 11.0.x
+
+      - name: Restore
+        run: dotnet restore ${{ matrix.test-project }}
+
+      - name: Test
+        run: dotnet test ${{ matrix.test-project }} --configuration Release --no-restore --logger "console;verbosity=detailed"

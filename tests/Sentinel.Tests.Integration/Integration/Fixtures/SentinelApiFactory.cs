@@ -17,15 +17,13 @@ namespace Sentinel.Tests.Integration.Fixtures;
 
 public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    private const int RedisHostPort = 6380;
     private readonly RedisContainer redisContainer;
-    private readonly string redisConnectionString;
+    private string redisConnectionString = string.Empty;
 
     public SentinelApiFactory()
     {
-        redisConnectionString = $"localhost:{RedisHostPort},abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000";
         redisContainer = new RedisBuilder("redis:7.4-alpine")
-            .WithPortBinding(RedisHostPort, 6379)
+            .WithPortBinding(6379, true)
             .Build();
     }
 
@@ -74,7 +72,9 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
     public async ValueTask InitializeAsync()
     {
         await redisContainer.StartAsync();
-        await WaitForRedisReadinessAsync("127.0.0.1", RedisHostPort, TimeSpan.FromSeconds(30));
+        var redisHostPort = redisContainer.GetMappedPublicPort(6379);
+        redisConnectionString = $"localhost:{redisHostPort},abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000";
+        await WaitForRedisReadinessAsync("127.0.0.1", redisHostPort, TimeSpan.FromSeconds(30));
         _ = CreateClient();
     }
 

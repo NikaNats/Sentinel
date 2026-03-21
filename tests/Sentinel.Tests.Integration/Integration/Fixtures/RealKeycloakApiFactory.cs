@@ -25,17 +25,15 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
 
     private const string AdminUsername = "admin";
     private const string AdminPassword = "admin";
-    private const int RedisHostPort = 6381;
 
     private readonly RedisContainer redisContainer;
     private readonly KeycloakContainer keycloakContainer;
-    private readonly string redisConnectionString;
+    private string redisConnectionString = string.Empty;
 
     public RealKeycloakApiFactory()
     {
-        redisConnectionString = $"localhost:{RedisHostPort},abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000";
         redisContainer = new RedisBuilder("redis:7.4-alpine")
-            .WithPortBinding(RedisHostPort, 6379)
+            .WithPortBinding(6379, true)
             .Build();
         keycloakContainer = new KeycloakBuilder("quay.io/keycloak/keycloak:26.1")
             .WithUsername(AdminUsername)
@@ -89,7 +87,9 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
     public async ValueTask InitializeAsync()
     {
         await redisContainer.StartAsync();
-        await WaitForRedisReadinessAsync("127.0.0.1", RedisHostPort, TimeSpan.FromSeconds(30));
+        var redisHostPort = redisContainer.GetMappedPublicPort(6379);
+        redisConnectionString = $"localhost:{redisHostPort},abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000";
+        await WaitForRedisReadinessAsync("127.0.0.1", redisHostPort, TimeSpan.FromSeconds(30));
         await keycloakContainer.StartAsync();
         var masterAuthority = $"{keycloakContainer.GetBaseAddress().ToString().TrimEnd('/')}/realms/master";
         await WaitForDiscoveryDocumentAsync(masterAuthority);
