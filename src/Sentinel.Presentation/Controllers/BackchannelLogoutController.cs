@@ -34,21 +34,7 @@ public sealed class BackchannelLogoutController(
             return BadRequest();
         }
 
-        await blacklistCache.BlacklistSessionAsync(sessionId, ResolveSessionBlacklistTtl(keycloakOptions), ct);
+        await blacklistCache.BlacklistSessionAsync(sessionId, keycloakOptions.ResolveSessionBlacklistTtl(), ct);
         return Ok();
-    }
-
-    private static TimeSpan ResolveSessionBlacklistTtl(KeycloakOptions options)
-    {
-        var configuredSeconds = options.SsoSessionMaxLifespanSeconds > 0
-            ? options.SsoSessionMaxLifespanSeconds
-            : options.SessionMaxLifespanSeconds ?? 28_800;
-
-        if (configuredSeconds <= 0)
-        {
-            configuredSeconds = 28_800;
-        }
-
-        return TimeSpan.FromSeconds(configuredSeconds);
     }
 }

@@ -331,22 +331,8 @@ public sealed class AuthController(
         var sid = User.FindFirst("sid")?.Value;
         if (!string.IsNullOrWhiteSpace(sid))
         {
-            await blacklistCache.BlacklistSessionAsync(sid, ResolveSessionBlacklistTtl(keycloakOptions), ct);
+            await blacklistCache.BlacklistSessionAsync(sid, keycloakOptions.ResolveSessionBlacklistTtl(), ct);
         }
-    }
-
-    private static TimeSpan ResolveSessionBlacklistTtl(KeycloakOptions options)
-    {
-        var configuredSeconds = options.SsoSessionMaxLifespanSeconds > 0
-            ? options.SsoSessionMaxLifespanSeconds
-            : options.SessionMaxLifespanSeconds ?? 28_800;
-
-        if (configuredSeconds <= 0)
-        {
-            configuredSeconds = 28_800;
-        }
-
-        return TimeSpan.FromSeconds(configuredSeconds);
     }
 
     private static ProblemDetails BuildMfaNotConfiguredProblem()
