@@ -1,35 +1,52 @@
-# Operational Runbook: Auth & Token Issuance
+# Auth And Token Issuance Runbook
 
-## 1. Diagnosing a TOKEN_REPLAY Alert (P1 Incident)
-If SIEM emits Event ID `1001` (`TOKEN_REPLAY_ALERT`), an identical `jti` was presented more than once inside token validity.
+**Last Updated:** 2026-03-21
 
-- Action: Correlate `clientId`, `ipHash`, and `correlationId` across API logs, gateway logs, and WAF telemetry.
-- Mitigation: Block abusive source patterns at API gateway or WAF layer.
-- Expected API behavior: The API remains fail-closed and returns authentication failure for replay attempts.
+## Purpose
 
-## 2. Redis Outage and Fail-Closed Behavior
-If Redis is unavailable, replay validation cannot be guaranteed.
+Operational checks for token issuance, replay protection, and post-issuance enforcement paths.
 
-- Action: Restore Redis availability immediately.
-- Expected API behavior: API returns HTTP 503 from replay protection paths.
-- Important: Do not bypass replay checks in production to recover traffic.
+## DPoP Challenge Flow
 
-## 3. Break-Glass DPoP Disable Procedure
-Use only for severe production incidents where DPoP validation is confirmed faulty.
+Expected behavior for a client without a valid nonce:
 
-1. Update `FeatureFlags:Auth:DpopFlow` in managed configuration to `false`.
-2. Roll restart API workloads.
-3. Record incident timeline and compensating controls.
+- response status: `401 Unauthorized`
+- response header: `WWW-Authenticate: DPoP error="use_dpop_nonce"`
+- response header: `DPoP-Nonce: <value>`
 
-Security note: This reduces sender-constrained token assurance and exits strict FAPI 2.0 posture.
+If that shape changes, investigate proxy/header handling and DPoP middleware behavior immediately.
 
-## 4. Keycloak Client and Realm Rotation
-- Rotate client credentials or signing material via Keycloak admin procedures.
-- Verify JWKS propagation and issuer metadata health.
-- Confirm API can refresh discovery metadata and accept newly signed tokens.
+## Replay Alert Handling
 
-## 5. Post-Incident Validation Checklist
-- Replay alerts return to baseline.
-- 401/403/503 rates normalize.
-- OpenTelemetry traces include authentication spans end-to-end.
-- Prometheus metrics (`auth.dpop.failures`, `auth.jti.replays_total`) are stable.
+If a token or proof replay alert fires:
+
+1. correlate `jti`, subject, client, and source IP
+2. verify Redis replay keys are healthy
+3. confirm the request was rejected before endpoint execution
+
+## Redis Dependency Failure
+
+Sentinel is intentionally fail-closed for replay-sensitive flows.
+
+Expected behavior:
+
+- protected paths may return `503`
+- operators should restore Redis, not bypass replay checks
+
+## Keycloak Metadata And JWKS
+
+Sentinel uses a shared `ConfigurationManager<OpenIdConnectConfiguration>` for discovery and JWKS caching.
+
+Operational checks:
+
+1. confirm metadata endpoint health
+2. confirm JWKS can refresh after key rotation
+3. confirm SD-JWT and SSF validators recover without per-request discovery storms
+
+## SSF Session Revocation
+
+After a valid `session-revoked` event:
+
+1. confirm the session is blacklisted
+2. confirm subsequent access attempts for that session are rejected
+3. confirm the event was logged as a security action
