@@ -44,6 +44,12 @@ nuget.config
 .dotnet/
 .tool-versions
 
+# Sentinel API 2026 Supply Chain Security
+# DO NOT ignore NuGet lock files. They are required for deterministic CI builds
+# and SLSA Level 4 compliance (CentralPackageTransitivePinningEnabled).
+!packages.lock.json
+!**/packages.lock.json
+
 # Test Results
 TestResults/
 coverage/

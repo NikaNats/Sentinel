@@ -1,5 +1,5 @@
-# Build stage
-FROM mcr.microsoft.com/dotnet/sdk:11.0-preview AS build
+# Build stage - strictly using the .NET 10 SDK
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Restore with lock-file enforcement for deterministic dependencies.
@@ -15,8 +15,8 @@ RUN dotnet publish "src/Sentinel.Presentation/Sentinel.Presentation.csproj" \
 	--no-restore \
 	-p:UseAppHost=false
 
-# Runtime stage (rootless).
-FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS final
+# Runtime stage (rootless, chiseled/hardened for 2026 Zero Trust).
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-chiseled AS final
 WORKDIR /app
 
 EXPOSE 8080
