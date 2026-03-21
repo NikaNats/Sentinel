@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -73,7 +75,14 @@ public sealed class SsfController(
         }
 
         var suppliedToken = Request.Headers["SSF-Auth-Token"].ToString();
-        return string.Equals(configuredToken, suppliedToken, StringComparison.Ordinal);
+        if (string.IsNullOrWhiteSpace(suppliedToken))
+        {
+            return false;
+        }
+
+        var configuredBytes = Encoding.UTF8.GetBytes(configuredToken);
+        var suppliedBytes = Encoding.UTF8.GetBytes(suppliedToken);
+        return CryptographicOperations.FixedTimeEquals(suppliedBytes, configuredBytes);
     }
 
     private static async Task<string?> ReadSetTokenAsync(HttpRequest request, CancellationToken ct)
