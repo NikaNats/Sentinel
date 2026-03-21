@@ -1,6 +1,23 @@
 name: sentinel-fapi2-stack
 
 services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: sentinel-postgres
+    environment:
+      POSTGRES_DB: sentinel_dev
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - sentinel-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sentinel_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.1
     container_name: sentinel-keycloak
@@ -44,6 +61,8 @@ services:
     depends_on:
       keycloak:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     ports:
@@ -51,6 +70,10 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Redis: redis:6379
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=sentinel_dev;Username=postgres;Password=postgres
       Keycloak__Authority: http://keycloak:8080/realms/sentinel
       Keycloak__Audience: sentinel-api
       Keycloak__RequireHttpsMetadata: "false"
+
+volumes:
+  sentinel-postgres-data:

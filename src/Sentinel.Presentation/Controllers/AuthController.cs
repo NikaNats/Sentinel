@@ -78,11 +78,11 @@ public sealed class AuthController(
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.CurrentPassword) || string.IsNullOrWhiteSpace(request.NewPassword))
+        if (string.IsNullOrWhiteSpace(request.NewPassword))
         {
             return BadRequest(new ProblemDetails
             {
-                Title = "Current and new passwords are required.",
+                Title = "New password is required.",
                 Status = StatusCodes.Status400BadRequest
             });
         }
@@ -93,21 +93,59 @@ public sealed class AuthController(
             return Unauthorized();
         }
 
+        var acr = User.FindFirst("acr")?.Value;
+        if (!string.Equals(acr, "acr3", StringComparison.OrdinalIgnoreCase))
+        {
+            Response.Headers.Append("WWW-Authenticate",
+                "Bearer error=\"insufficient_user_authentication\", error_description=\"Step-up authentication required\", acr_values=\"acr3\", max_age=\"300\"");
+
+            return Unauthorized(new ProblemDetails
+            {
+                Type = ErrorCodes.InsufficientAcr,
+                Title = "Recent strong authentication required",
+                Detail = "This operation requires a recent acr3 authentication.",
+                Status = StatusCodes.Status401Unauthorized,
+                Extensions =
+                {
+                    ["required_acr"] = "acr3",
+                    ["max_age"] = 300
+                }
+            });
+        }
+
+        var authTimeClaim = User.FindFirst("auth_time")?.Value;
+        if (!long.TryParse(authTimeClaim, out var authTimeUnix))
+        {
+            return Unauthorized(new ProblemDetails
+            {
+                Title = "Invalid session context.",
+                Status = StatusCodes.Status401Unauthorized
+            });
+        }
+
+        var authTime = DateTimeOffset.FromUnixTimeSeconds(authTimeUnix);
+        if (DateTimeOffset.UtcNow - authTime > TimeSpan.FromMinutes(5))
+        {
+            Response.Headers.Append("WWW-Authenticate",
+                "Bearer error=\"insufficient_user_authentication\", error_description=\"Recent authentication required\", acr_values=\"acr3\", max_age=\"300\"");
+
+            return Unauthorized(new ProblemDetails
+            {
+                Type = "/errors/session-too-old",
+                Title = "Recent authentication required",
+                Detail = "This operation requires authentication within the last 5 minutes.",
+                Status = StatusCodes.Status401Unauthorized,
+                Extensions =
+                {
+                    ["required_acr"] = "acr3",
+                    ["max_age"] = 300
+                }
+            });
+        }
+
         var loginIdentifier = User.FindFirst("preferred_username")?.Value
                               ?? User.FindFirst("email")?.Value
                               ?? sub;
-
-        var currentPasswordValid =
-            await keycloakProfileService.VerifyUserPasswordAsync(loginIdentifier, request.CurrentPassword, ct);
-        if (!currentPasswordValid)
-        {
-            return BadRequest(new ProblemDetails
-            {
-                Type = ErrorCodes.InvalidCurrentPassword,
-                Title = "Current password is invalid.",
-                Status = StatusCodes.Status400BadRequest
-            });
-        }
 
         var passwordValidation = passwordStrengthValidator.Validate(request.NewPassword);
         if (!passwordValidation.IsValid)
@@ -344,7 +382,7 @@ public sealed class AuthController(
 
     public sealed record RevokeRequest(string RefreshToken);
 
-    public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+    public sealed record ChangePasswordRequest(string NewPassword);
 
     public sealed record TotpSetupRequest(string DeviceName);
 

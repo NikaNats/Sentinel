@@ -17,7 +17,9 @@ public sealed class OpenIdConfigurationManagerRegistrationTests
                 ["Keycloak:Authority"] = "https://keycloak.example",
                 ["Keycloak:Audience"] = "sentinel-api",
                 ["Keycloak:Admin:ClientId"] = "admin-cli",
-                ["Keycloak:Admin:ClientSecret"] = "secret"
+                ["Keycloak:Admin:ClientSecret"] = "secret",
+                ["ConnectionStrings:Postgres"] =
+                    "Host=localhost;Port=5432;Database=sentinel_dev;Username=postgres;Password=postgres"
             })
             .Build();
 

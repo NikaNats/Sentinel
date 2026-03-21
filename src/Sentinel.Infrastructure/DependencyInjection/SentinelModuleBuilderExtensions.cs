@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
@@ -19,6 +20,7 @@ using Sentinel.Infrastructure.Auth.Ssf;
 using Sentinel.Infrastructure.Cache;
 using Sentinel.Infrastructure.Cryptography;
 using Sentinel.Infrastructure.Notifications;
+using Sentinel.Infrastructure.Persistence;
 using Sentinel.Infrastructure.Telemetry;
 
 namespace Sentinel.Infrastructure.DependencyInjection;
@@ -51,7 +53,19 @@ public static class SentinelModuleBuilderExtensions
         });
 
         _ = services.AddSingleton<IEncryptionService, AesGcmEncryptionService>();
-        _ = services.AddSingleton<IDocumentStore, InMemoryDocumentStore>();
+        var postgresConnectionString = configuration.GetConnectionString("Postgres");
+        if (string.IsNullOrWhiteSpace(postgresConnectionString))
+        {
+            throw new InvalidOperationException("Connection string 'Postgres' is required for document persistence.");
+        }
+
+        _ = services.AddDbContext<SentinelDbContext>(options =>
+        {
+            options.UseNpgsql(postgresConnectionString);
+            options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
+        });
+
+        _ = services.AddScoped<IDocumentStore, EfCoreDocumentStore>();
         _ = services.AddSingleton<ILogoutTokenValidator, LogoutTokenValidator>();
         _ = services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
         _ = services.AddSingleton<IResetTokenProvider, HmacResetTokenProvider>();

@@ -142,42 +142,6 @@ public sealed class KeycloakAdminService(
         return response.IsSuccessStatusCode;
     }
 
-    public async Task<bool> VerifyUserPasswordAsync(string usernameOrEmail, string currentPassword,
-        CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(usernameOrEmail) || string.IsNullOrWhiteSpace(currentPassword))
-        {
-            return false;
-        }
-
-        // Legacy compatibility path: this still uses password grant verification and should be
-        // replaced with OIDC step-up (ACR elevation) to avoid relying on deprecated ROPC.
-        logger.LogWarning(
-            "VerifyUserPasswordAsync is using legacy ROPC-based verification. Migrate to step-up authentication.");
-
-        var authority = keycloakOptions.Authority.TrimEnd('/');
-        var clientId = keycloakOptions.Audience;
-        if (string.IsNullOrWhiteSpace(authority) || string.IsNullOrWhiteSpace(clientId))
-        {
-            return false;
-        }
-
-        var endpoint = $"{authority}/protocol/openid-connect/token";
-        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
-        {
-            Content = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("grant_type", "password"),
-                new KeyValuePair<string, string>("client_id", clientId),
-                new KeyValuePair<string, string>("username", usernameOrEmail),
-                new KeyValuePair<string, string>("password", currentPassword)
-            ])
-        };
-
-        using var response = await httpClient.SendAsync(request, ct);
-        return response.IsSuccessStatusCode;
-    }
-
     public async Task<string> CreateUserAsync(UserRegistration registration, string password, CancellationToken ct)
     {
         var adminRealmEndpoint = ResolveAdminRealmEndpoint();
