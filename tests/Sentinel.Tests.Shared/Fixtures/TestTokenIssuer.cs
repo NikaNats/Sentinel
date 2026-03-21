@@ -3,7 +3,7 @@ using System.Text.Json;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
-namespace Sentinel.Tests.Integration.Fixtures;
+namespace Sentinel.Tests.Shared.Fixtures;
 
 public static class TestTokenIssuer
 {

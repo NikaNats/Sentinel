@@ -13,12 +13,9 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Moq" />
-    <PackageReference Include="Testcontainers.Keycloak" />
-    <PackageReference Include="Testcontainers.Redis" />
     <PackageReference Include="xunit.runner.visualstudio">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -28,9 +25,11 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="Sentinel.Tests.Shared.Fixtures" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Sentinel.Tests.Shared\Sentinel.Tests.Shared.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Application\Sentinel.Application.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Infrastructure\Sentinel.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Presentation\Sentinel.Presentation.csproj" />

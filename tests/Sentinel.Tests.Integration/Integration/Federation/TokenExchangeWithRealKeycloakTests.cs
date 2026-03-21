@@ -5,7 +5,7 @@ using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
-using Sentinel.Tests.Integration.Fixtures;
+using Sentinel.Tests.Shared.Fixtures;
 
 namespace Sentinel.Tests.Integration.Federation;
 

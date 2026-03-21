@@ -15,7 +15,7 @@ using StackExchange.Redis;
 using Testcontainers.Keycloak;
 using Testcontainers.Redis;
 
-namespace Sentinel.Tests.Integration.Fixtures;
+namespace Sentinel.Tests.Shared.Fixtures;
 
 public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
@@ -123,7 +123,7 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
                     return;
                 }
             }
-#pragma warning disable CA1031 // Intentional catch-all: startup polling should ignore transient bootstrap failures.
+#pragma warning disable CA1031
             catch
             {
                 // Ignore transient startup failures while Keycloak boots.

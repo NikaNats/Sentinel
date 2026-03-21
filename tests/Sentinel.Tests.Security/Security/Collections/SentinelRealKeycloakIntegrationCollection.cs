@@ -1,0 +1,8 @@
+using Sentinel.Tests.Shared.Fixtures;
+
+namespace Sentinel.Tests.Security.Collections;
+
+[CollectionDefinition("Sentinel Real Keycloak Integration")]
+public sealed class SentinelRealKeycloakIntegrationCollection : ICollectionFixture<RealKeycloakApiFactory>
+{
+}

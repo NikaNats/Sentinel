@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Testcontainers.Redis;
 
-namespace Sentinel.Tests.Integration.Fixtures;
+namespace Sentinel.Tests.Shared.Fixtures;
 
 public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {

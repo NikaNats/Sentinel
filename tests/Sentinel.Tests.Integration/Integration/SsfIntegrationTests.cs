@@ -20,7 +20,7 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Auth.Ssf;
-using Sentinel.Tests.Integration.Fixtures;
+using Sentinel.Tests.Shared.Fixtures;
 using StackExchange.Redis;
 using Testcontainers.Redis;
 

@@ -6,6 +6,7 @@
     <Project Path="src/Sentinel.Domain/Sentinel.Domain.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Sentinel.Tests.Shared/Sentinel.Tests.Shared.csproj" />
     <Project Path="tests/Sentinel.Tests.Unit/Sentinel.Tests.Unit.csproj" />
     <Project Path="tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj" />
     <Project Path="tests/Sentinel.Tests.Security/Sentinel.Tests.Security.csproj" />
