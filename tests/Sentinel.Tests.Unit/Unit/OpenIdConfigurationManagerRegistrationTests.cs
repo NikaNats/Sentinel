@@ -22,6 +22,7 @@ public sealed class OpenIdConfigurationManagerRegistrationTests
             .Build();
 
         var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(configuration);
         _ = services.AddSentinelCore(configuration);
         using var provider = services.BuildServiceProvider();
 
