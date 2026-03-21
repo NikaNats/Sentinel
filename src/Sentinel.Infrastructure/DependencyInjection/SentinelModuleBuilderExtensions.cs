@@ -11,6 +11,7 @@ using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Domain.Auth;
 using Sentinel.Infrastructure.Auth;
+using Sentinel.Infrastructure.Auth.Ssf;
 using Sentinel.Infrastructure.Cache;
 using Sentinel.Infrastructure.Cryptography;
 using Sentinel.Infrastructure.Notifications;
@@ -31,6 +32,7 @@ public static class SentinelModuleBuilderExtensions
         _ = services.Configure<RegistrationOptions>(configuration.GetSection("Registration"));
         _ = services.Configure<ResetTokenOptions>(configuration.GetSection("PasswordReset"));
         _ = services.Configure<SocialFederationOptions>(configuration.GetSection("SocialFederation"));
+        _ = services.Configure<SsfOptions>(configuration.GetSection(SsfOptions.SectionName));
 
         _ = services.AddSingleton<IEncryptionService, AesGcmEncryptionService>();
         _ = services.AddSingleton<IDocumentStore, InMemoryDocumentStore>();
@@ -38,6 +40,8 @@ public static class SentinelModuleBuilderExtensions
         _ = services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
         _ = services.AddSingleton<IResetTokenProvider, HmacResetTokenProvider>();
         _ = services.AddSingleton<TokenValidationService>();
+        _ = services.AddSingleton<ISsfTokenValidator, JwtSsfTokenValidator>();
+        _ = services.AddSingleton<ISsfEventProcessor, SsfEventProcessor>();
 
         return new SentinelSecurityBuilder(services);
     }
