@@ -21,4 +21,6 @@ public static class ErrorCodes
     public const string InvalidOrExpiredToken = "/errors/invalid-or-expired-token";
     public const string TokenAlreadyConsumed = "/errors/token-already-consumed";
     public const string VerificationTokenStoreFailed = "/errors/verification-token-store-failed";
+    public const string MissingAuthorizationDetail = "/errors/missing-authorization-detail";
+    public const string AuthorizationBoundsExceeded = "/errors/authorization-bounds-exceeded";
 }

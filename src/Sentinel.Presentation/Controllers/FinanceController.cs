@@ -9,14 +9,19 @@ namespace Sentinel.Controllers;
 [Route("v1/finance")]
 public sealed class FinanceController : ControllerBase
 {
+    public sealed record TransferRequest(string TransactionId, decimal Amount, string Currency, string DestinationAccount);
+
     [HttpPost("transfer")]
     [Authorize(Policy = Policies.RequireAcr3)]
     [RequireIdempotency]
+    [RequireSurgicalAuthorization]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public IActionResult MakeTransfer()
+    public IActionResult MakeTransfer([FromBody] TransferRequest request)
     {
-        return Ok(new { Status = "Success" });
+        return Ok(new { Status = "Success", request.TransactionId });
     }
 }
