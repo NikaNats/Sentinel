@@ -29,6 +29,7 @@ This matrix maps the current Sentinel codebase to the major standards and contro
 | SSF validator and processor exist | `src/Sentinel.Infrastructure/Auth/Ssf/*` |
 | Shared OIDC configuration manager is singleton | `src/Sentinel.Infrastructure/DependencyInjection/SentinelModuleBuilderExtensions.cs` |
 | Timing-safe SSF auth token compare | `src/Sentinel.Presentation/Controllers/SsfController.cs` |
+| SET freshness without `exp` | `src/Sentinel.Infrastructure/Auth/Ssf/JwtSsfTokenValidator.cs` uses bounded `iat` validation with documented suppression |
 | Finance payload-bound authorization exists | `src/Sentinel.Presentation/Middleware/Filters/RequireSurgicalAuthorizationAttribute.cs` |
 | Modular tests exist | `tests/Sentinel.Tests.Unit`, `tests/Sentinel.Tests.Integration`, `tests/Sentinel.Tests.Security` |
 

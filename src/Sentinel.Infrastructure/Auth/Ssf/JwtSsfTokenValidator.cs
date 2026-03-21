@@ -42,7 +42,12 @@ public sealed class JwtSsfTokenValidator(
                 ValidateAudience = false,
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKeys = openIdConfig.SigningKeys,
+                // SSF SETs are event tokens, not ordinary access tokens. RFC 9493-style
+                // security events may legitimately omit exp because the signal itself
+                // conveys state change. Freshness is enforced below using the iat window.
+                // nosemgrep: csharp.lang.security.ad.jwt-tokenvalidationparameters-no-expiry-validation
                 ValidateLifetime = false,
+                // nosemgrep: csharp.lang.security.ad.jwt-tokenvalidationparameters-no-expiry-validation
                 RequireExpirationTime = false,
                 ClockSkew = TimeSpan.Zero
             };

@@ -78,8 +78,12 @@ Controls:
 - signed SET validation
 - issuer validation
 - required `jti`, `iat`, and `events`
+- `exp` is intentionally not required for SET validation because SSF event tokens can
+  represent durable state change rather than short-lived access
 - stale/future event rejection
 - timing-safe static auth token comparison in the controller path
+- freshness enforced through bounded `iat` validation (`AllowedClockSkewSeconds` and
+  `MaxEventAgeSeconds`) as the compensating control against stale delivery and replay
 
 ### Payload Tampering On Sensitive Transactions
 
