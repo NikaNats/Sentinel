@@ -28,7 +28,9 @@ public sealed class ForgotPasswordHandlerTests
         await sut.HandleAsync(new ForgotPasswordRequest("user@example.com", "captcha"), CancellationToken.None);
 
         keycloak.Verify(x => x.GetUserByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-        email.Verify(x => x.SendResetPasswordEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        email.Verify(
+            x => x.SendResetPasswordEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -55,6 +57,8 @@ public sealed class ForgotPasswordHandlerTests
 
         await sut.HandleAsync(new ForgotPasswordRequest("user@example.com", "captcha"), CancellationToken.None);
 
-        email.Verify(x => x.SendResetPasswordEmailAsync("user@example.com", "reset-token", It.IsAny<CancellationToken>()), Times.Once);
+        email.Verify(
+            x => x.SendResetPasswordEmailAsync("user@example.com", "reset-token", It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 }

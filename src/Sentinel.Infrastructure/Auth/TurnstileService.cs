@@ -23,7 +23,7 @@ public sealed class TurnstileService(HttpClient httpClient, IOptions<CaptchaOpti
             return false;
         }
 
-        var result = await response.Content.ReadFromJsonAsync<TurnstileVerifyResponse>(cancellationToken: ct);
+        var result = await response.Content.ReadFromJsonAsync<TurnstileVerifyResponse>(ct);
         return result?.Success ?? false;
     }
 

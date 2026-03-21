@@ -38,7 +38,8 @@ public sealed class ResetPasswordHandler(
         var updated = await keycloakProfileService.UpdatePasswordAsync(email, request.NewPassword, ct);
         if (!updated)
         {
-            return new ResetPasswordResult(false, "Failed to update password in Identity Store.", "password_update_failed");
+            return new ResetPasswordResult(false, "Failed to update password in Identity Store.",
+                "password_update_failed");
         }
 
         var user = await keycloakUserService.GetUserByEmailAsync(email, ct);

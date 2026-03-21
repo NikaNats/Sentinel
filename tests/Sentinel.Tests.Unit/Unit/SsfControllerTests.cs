@@ -8,6 +8,7 @@ using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Controllers;
 using Sentinel.Infrastructure.Auth.Ssf;
+using Sentinel.Presentation.Controllers;
 
 namespace Sentinel.Tests.Unit;
 

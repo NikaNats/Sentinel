@@ -4,5 +4,6 @@ namespace Sentinel.Application.Auth.Interfaces;
 
 public interface ITokenExchangeService
 {
-    Task<TokenExchangeResult?> ExchangeExternalTokenAsync(string externalToken, string providerName, string dpopProof, string codeVerifier, CancellationToken ct);
+    Task<TokenExchangeResult?> ExchangeExternalTokenAsync(string externalToken, string providerName, string dpopProof,
+        string codeVerifier, CancellationToken ct);
 }

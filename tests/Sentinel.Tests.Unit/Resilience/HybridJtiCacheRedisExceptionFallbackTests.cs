@@ -29,8 +29,10 @@ public sealed class HybridJtiCacheRedisExceptionFallbackTests
             Options.Create(new RedisOptions { EnableInMemFallback = true }),
             NullLogger<HybridJtiReplayCache>.Instance);
 
-        var first = await sut.TryStoreIfNotExistsAsync("jti-fallback", TimeSpan.FromSeconds(30), CancellationToken.None);
-        var second = await sut.TryStoreIfNotExistsAsync("jti-fallback", TimeSpan.FromSeconds(30), CancellationToken.None);
+        var first = await sut.TryStoreIfNotExistsAsync("jti-fallback", TimeSpan.FromSeconds(30),
+            CancellationToken.None);
+        var second =
+            await sut.TryStoreIfNotExistsAsync("jti-fallback", TimeSpan.FromSeconds(30), CancellationToken.None);
 
         first.Should().BeTrue();
         second.Should().BeFalse();

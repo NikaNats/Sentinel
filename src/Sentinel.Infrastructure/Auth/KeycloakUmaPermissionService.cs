@@ -1,8 +1,8 @@
-using Sentinel.Application.Auth.Interfaces;
-using Sentinel.Infrastructure.Telemetry;
 using System.Diagnostics;
 using System.Net.Http.Headers;
 using Microsoft.Extensions.Options;
+using Sentinel.Application.Auth.Interfaces;
+using Sentinel.Infrastructure.Telemetry;
 
 namespace Sentinel.Infrastructure.Auth;
 
@@ -52,7 +52,8 @@ public sealed class KeycloakUmaPermissionService(
             }
 
             activity?.SetTag("uma.decision", "deny");
-            logger.LogWarning("UMA access denied for resource {Resource} and scope {Scope}. status={StatusCode}", resourceId, scope, (int)response.StatusCode);
+            logger.LogWarning("UMA access denied for resource {Resource} and scope {Scope}. status={StatusCode}",
+                resourceId, scope, (int)response.StatusCode);
             return false;
         }
 #pragma warning disable CA1031 // Intentional catch-all: UMA lookup failures must deny access instead of throwing.

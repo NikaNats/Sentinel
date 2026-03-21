@@ -34,7 +34,8 @@ public sealed class HmacResetTokenProviderTests
     {
         var options = Options.Create(new ResetTokenOptions
         {
-            TokenSigningKey = Convert.ToBase64String(Guid.NewGuid().ToByteArray().Concat(Guid.NewGuid().ToByteArray()).ToArray()),
+            TokenSigningKey =
+                Convert.ToBase64String(Guid.NewGuid().ToByteArray().Concat(Guid.NewGuid().ToByteArray()).ToArray()),
             LifetimeMinutes = 15
         });
 

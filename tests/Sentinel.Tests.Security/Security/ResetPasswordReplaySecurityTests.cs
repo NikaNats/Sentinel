@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Threading;
 using FluentAssertions;
 using Moq;
 using Sentinel.Application.Auth;
@@ -21,7 +20,8 @@ public sealed class ResetPasswordReplaySecurityTests
         var firstUseState = 0;
         var replayCache = new Mock<IJtiReplayCache>();
         replayCache
-            .Setup(x => x.TryStoreIfNotExistsAsync(It.IsAny<string>(), TimeSpan.FromMinutes(15), It.IsAny<CancellationToken>()))
+            .Setup(x => x.TryStoreIfNotExistsAsync(It.IsAny<string>(), TimeSpan.FromMinutes(15),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => Interlocked.Increment(ref firstUseState) == 1);
 
         var keycloakUser = new Mock<IKeycloakUserService>();
@@ -38,7 +38,8 @@ public sealed class ResetPasswordReplaySecurityTests
             .Setup(x => x.RevokeAllSessionsAsync("kc-user-1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        var sut = new ResetPasswordHandler(tokenProvider.Object, keycloakUser.Object, keycloakProfile.Object, replayCache.Object, revocation.Object);
+        var sut = new ResetPasswordHandler(tokenProvider.Object, keycloakUser.Object, keycloakProfile.Object,
+            replayCache.Object, revocation.Object);
         var request = new ResetPasswordRequest("same-token", "N3w!Pass");
 
         var results = new ConcurrentBag<ResetPasswordResult>();
@@ -81,7 +82,8 @@ public sealed class ResetPasswordReplaySecurityTests
             Mock.Of<IJtiReplayCache>(),
             Mock.Of<IAuthRevocationService>());
 
-        var result = await sut.HandleAsync(new ResetPasswordRequest("expired-token", "N3w!Pass"), CancellationToken.None);
+        var result =
+            await sut.HandleAsync(new ResetPasswordRequest("expired-token", "N3w!Pass"), CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be("invalid_or_expired_token");

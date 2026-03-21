@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
@@ -8,7 +9,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Sentinel.Middleware.Filters;
 using StackExchange.Redis;
-using System.Security.Claims;
 
 namespace Sentinel.Tests.Unit;
 
@@ -20,7 +20,8 @@ public sealed class RequireIdempotencyAttributeTests
         var attribute = new RequireIdempotencyAttribute();
         var context = CreateActionExecutingContext();
 
-        await attribute.OnActionExecutionAsync(context, () => throw new InvalidOperationException("should not execute"));
+        await attribute.OnActionExecutionAsync(context,
+            () => throw new InvalidOperationException("should not execute"));
 
         var result = Assert.IsType<BadRequestObjectResult>(context.Result);
         Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
@@ -32,14 +33,16 @@ public sealed class RequireIdempotencyAttributeTests
         var attribute = new RequireIdempotencyAttribute();
         var context = CreateActionExecutingContext(db =>
         {
-            db.Setup(x => x.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan?>(), When.NotExists, It.IsAny<CommandFlags>()))
+            db.Setup(x => x.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan?>(),
+                    When.NotExists, It.IsAny<CommandFlags>()))
                 .ReturnsAsync(false);
             db.Setup(x => x.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
                 .ReturnsAsync("IN_PROGRESS");
         });
         context.HttpContext.Request.Headers["Idempotency-Key"] = "dup-1";
 
-        await attribute.OnActionExecutionAsync(context, () => throw new InvalidOperationException("should not execute"));
+        await attribute.OnActionExecutionAsync(context,
+            () => throw new InvalidOperationException("should not execute"));
 
         var result = Assert.IsType<ConflictObjectResult>(context.Result);
         Assert.Equal(StatusCodes.Status409Conflict, result.StatusCode);
@@ -51,14 +54,16 @@ public sealed class RequireIdempotencyAttributeTests
         var attribute = new RequireIdempotencyAttribute();
         var context = CreateActionExecutingContext(db =>
         {
-            db.Setup(x => x.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan?>(), When.NotExists, It.IsAny<CommandFlags>()))
+            db.Setup(x => x.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan?>(),
+                    When.NotExists, It.IsAny<CommandFlags>()))
                 .ReturnsAsync(false);
             db.Setup(x => x.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
                 .ReturnsAsync("COMPLETED");
         });
         context.HttpContext.Request.Headers["Idempotency-Key"] = "done-1";
 
-        await attribute.OnActionExecutionAsync(context, () => throw new InvalidOperationException("should not execute"));
+        await attribute.OnActionExecutionAsync(context,
+            () => throw new InvalidOperationException("should not execute"));
 
         var result = Assert.IsType<NoContentResult>(context.Result);
         Assert.Equal(StatusCodes.Status204NoContent, result.StatusCode);
@@ -68,10 +73,7 @@ public sealed class RequireIdempotencyAttributeTests
     public async Task OnActionExecutionAsync_WhenSuccessfulRequest_StoresIdempotencyKey()
     {
         var attribute = new RequireIdempotencyAttribute();
-        var context = CreateActionExecutingContext(db =>
-        {
-            db.SetReturnsDefault(Task.FromResult(true));
-        });
+        var context = CreateActionExecutingContext(db => { db.SetReturnsDefault(Task.FromResult(true)); });
         context.HttpContext.Request.Headers["Idempotency-Key"] = "ok-1";
 
         await attribute.OnActionExecutionAsync(context, NextOk(context));
@@ -110,7 +112,8 @@ public sealed class RequireIdempotencyAttributeTests
             User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test"))
         };
 
-        var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor(), new ModelStateDictionary());
-        return new ActionExecutingContext(actionContext, [], new Dictionary<string, object?>(), controller: new object());
+        var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor(),
+            new ModelStateDictionary());
+        return new ActionExecutingContext(actionContext, [], new Dictionary<string, object?>(), new object());
     }
 }

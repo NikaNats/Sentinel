@@ -14,9 +14,9 @@ public sealed class JwtSsfTokenValidator(
     IConfigurationManager<OpenIdConnectConfiguration> openIdConfigurationManager,
     ILogger<JwtSsfTokenValidator> logger) : ISsfTokenValidator
 {
+    private readonly JsonWebTokenHandler jwtHandler = new();
     private readonly KeycloakOptions options = keycloakOptions.Value;
     private readonly SsfOptions ssf = ssfOptions.Value;
-    private readonly JsonWebTokenHandler jwtHandler = new();
 
     public async Task<SsfValidationResult> ValidateAsync(string setToken, CancellationToken ct)
     {

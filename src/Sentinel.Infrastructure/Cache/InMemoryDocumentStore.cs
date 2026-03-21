@@ -34,24 +34,26 @@ public sealed class InMemoryDocumentStore : IDocumentStore
         return Task.FromResult<DocumentDto?>(Map(state));
     }
 
-    public Task<DocumentDto> CreateAsync(string ownerSub, CreateDocumentRequest request, CancellationToken cancellationToken)
+    public Task<DocumentDto> CreateAsync(string ownerSub, CreateDocumentRequest request,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         var now = DateTimeOffset.UtcNow;
         var state = new DocumentState(
-            Id: Guid.NewGuid(),
-            OwnerSub: ownerSub,
-            Title: request.Title,
-            Content: request.Content,
-            CreatedAtUtc: now,
-            UpdatedAtUtc: now);
+            Guid.NewGuid(),
+            ownerSub,
+            request.Title,
+            request.Content,
+            now,
+            now);
 
         documents[state.Id] = state;
         return Task.FromResult(Map(state));
     }
 
-    public Task<DocumentDto?> UpdateAsync(Guid id, string ownerSub, UpdateDocumentRequest request, CancellationToken cancellationToken)
+    public Task<DocumentDto?> UpdateAsync(Guid id, string ownerSub, UpdateDocumentRequest request,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var spinWait = new SpinWait();

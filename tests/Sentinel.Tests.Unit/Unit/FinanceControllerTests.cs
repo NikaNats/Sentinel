@@ -1,7 +1,7 @@
+using System.Reflection;
 using Microsoft.AspNetCore.Mvc;
 using Sentinel.Controllers;
 using Sentinel.Middleware.Filters;
-using System.Reflection;
 
 namespace Sentinel.Tests.Unit;
 
@@ -18,8 +18,10 @@ public sealed class FinanceControllerTests
         var ok = Assert.IsType<OkObjectResult>(result);
         var valueType = ok.Value?.GetType();
         Assert.NotNull(valueType);
-        var statusValue = valueType!.GetProperty("Status", BindingFlags.Public | BindingFlags.Instance)?.GetValue(ok.Value);
-        var transactionIdValue = valueType.GetProperty("TransactionId", BindingFlags.Public | BindingFlags.Instance)?.GetValue(ok.Value);
+        var statusValue = valueType!.GetProperty("Status", BindingFlags.Public | BindingFlags.Instance)
+            ?.GetValue(ok.Value);
+        var transactionIdValue = valueType.GetProperty("TransactionId", BindingFlags.Public | BindingFlags.Instance)
+            ?.GetValue(ok.Value);
         Assert.Equal("Success", statusValue?.ToString());
         Assert.Equal("txn-55", transactionIdValue?.ToString());
     }
@@ -30,7 +32,7 @@ public sealed class FinanceControllerTests
         var method = typeof(FinanceController).GetMethod(nameof(FinanceController.MakeTransfer));
 
         Assert.NotNull(method);
-        var attribute = method!.GetCustomAttributes(typeof(RequireSurgicalAuthorizationAttribute), inherit: true);
+        var attribute = method!.GetCustomAttributes(typeof(RequireSurgicalAuthorizationAttribute), true);
         Assert.Single(attribute);
     }
 }

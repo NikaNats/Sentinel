@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
@@ -8,7 +9,6 @@ using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Auth.SdJwt;
-using System.Security.Claims;
 
 namespace Sentinel.Tests.Unit;
 
@@ -21,7 +21,8 @@ public sealed class SdJwtAuthenticationHandlerTests
         var handler = CreateHandler(verifier.Object, new SdJwtOptions { Enabled = false });
         var context = new DefaultHttpContext();
 
-        await handler.InitializeAsync(new AuthenticationScheme("SdJwt", null, typeof(SdJwtAuthenticationHandler)), context);
+        await handler.InitializeAsync(new AuthenticationScheme("SdJwt", null, typeof(SdJwtAuthenticationHandler)),
+            context);
         var result = await handler.AuthenticateAsync();
 
         Assert.False(result.Succeeded);
@@ -32,13 +33,15 @@ public sealed class SdJwtAuthenticationHandlerTests
     public async Task AuthenticateAsync_WhenVerifierFails_ReturnsFail()
     {
         var verifier = new Mock<ISdJwtVerifier>();
-        verifier.Setup(x => x.VerifyPresentationAsync("issuer~disclosure~kb", "sentinel-api", "", It.IsAny<CancellationToken>()))
+        verifier.Setup(x =>
+                x.VerifyPresentationAsync("issuer~disclosure~kb", "sentinel-api", "", It.IsAny<CancellationToken>()))
             .ReturnsAsync(SdJwtVerificationResult.Fail("boom"));
         var handler = CreateHandler(verifier.Object);
         var context = new DefaultHttpContext();
         context.Request.Headers.Authorization = "Bearer issuer~disclosure~kb";
 
-        await handler.InitializeAsync(new AuthenticationScheme("SdJwt", null, typeof(SdJwtAuthenticationHandler)), context);
+        await handler.InitializeAsync(new AuthenticationScheme("SdJwt", null, typeof(SdJwtAuthenticationHandler)),
+            context);
         var result = await handler.AuthenticateAsync();
 
         Assert.False(result.Succeeded);
@@ -50,14 +53,17 @@ public sealed class SdJwtAuthenticationHandlerTests
     {
         var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "SD-JWT"));
         var verifier = new Mock<ISdJwtVerifier>();
-        verifier.Setup(x => x.VerifyPresentationAsync("issuer~disclosure~kb", "sentinel-api", "nonce-1", It.IsAny<CancellationToken>()))
+        verifier.Setup(x =>
+                x.VerifyPresentationAsync("issuer~disclosure~kb", "sentinel-api", "nonce-1",
+                    It.IsAny<CancellationToken>()))
             .ReturnsAsync(SdJwtVerificationResult.Success(principal));
         var handler = CreateHandler(verifier.Object);
         var context = new DefaultHttpContext();
         context.Request.Headers.Authorization = "SD-JWT issuer~disclosure~kb";
         context.Request.Headers["SD-JWT-Nonce"] = "nonce-1";
 
-        await handler.InitializeAsync(new AuthenticationScheme("SdJwt", null, typeof(SdJwtAuthenticationHandler)), context);
+        await handler.InitializeAsync(new AuthenticationScheme("SdJwt", null, typeof(SdJwtAuthenticationHandler)),
+            context);
         var result = await handler.AuthenticateAsync();
 
         Assert.True(result.Succeeded);

@@ -7,8 +7,6 @@ public sealed class DpopNonceStore(IConnectionMultiplexer redis, ILogger<DpopNon
 {
     private readonly IDatabase db = redis.GetDatabase();
 
-    private static string GetKey(string thumbprint) => $"dpop:nonce:{thumbprint}";
-
     public async Task<string?> GetNonceAsync(string thumbprint, CancellationToken ct)
     {
         try
@@ -52,4 +50,6 @@ public sealed class DpopNonceStore(IConnectionMultiplexer redis, ILogger<DpopNon
             throw new ReplayCacheUnavailableException("dpop nonce store unavailable", ex);
         }
     }
+
+    private static string GetKey(string thumbprint) => $"dpop:nonce:{thumbprint}";
 }

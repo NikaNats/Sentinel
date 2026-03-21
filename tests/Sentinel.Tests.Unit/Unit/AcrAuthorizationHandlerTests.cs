@@ -1,7 +1,7 @@
-using Microsoft.AspNetCore.Authorization;
-using Sentinel.Auth.Authorization;
-using Sentinel.Application.Auth.Models;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
+using Sentinel.Application.Auth.Models;
+using Sentinel.Auth.Authorization;
 
 namespace Sentinel.Tests.Unit;
 

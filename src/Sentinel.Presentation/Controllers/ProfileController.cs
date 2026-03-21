@@ -1,20 +1,18 @@
+using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sentinel.Application.Auth;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Errors;
-using System.Security.Claims;
-using System.Text.Json;
 
-namespace Sentinel.Controllers;
+namespace Sentinel.Presentation.Controllers;
 
 [ApiController]
 [Route("v1/[controller]")]
 [Authorize(Policy = Policies.ReadProfile)]
 public sealed class ProfileController(IKeycloakProfileService keycloakProfileService) : ControllerBase
 {
-    public sealed record UpdateProfileRequest(string DisplayName);
-
     [HttpGet]
     [ProducesResponseType(typeof(ProfileResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -106,6 +104,8 @@ public sealed class ProfileController(IKeycloakProfileService keycloakProfileSer
 
         return Ok(new ProfileResponse(sub, request.DisplayName.Trim(), roles));
     }
+
+    public sealed record UpdateProfileRequest(string DisplayName);
 }
 
 public sealed record ProfileResponse(string Sub, string DisplayName, string[] Roles);

@@ -1,8 +1,7 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
@@ -26,7 +25,8 @@ namespace Sentinel.Infrastructure.DependencyInjection;
 
 public static class SentinelModuleBuilderExtensions
 {
-    public static ISentinelSecurityBuilder AddSentinelCore(this IServiceCollection services, IConfiguration configuration)
+    public static ISentinelSecurityBuilder AddSentinelCore(this IServiceCollection services,
+        IConfiguration configuration)
     {
         _ = services.AddOptions<KeycloakOptions>()
             .BindConfiguration(KeycloakOptions.SectionName)
@@ -69,7 +69,8 @@ public static class SentinelModuleBuilderExtensions
         return builder;
     }
 
-    public static ISentinelSecurityBuilder AddRedisReplayCache(this ISentinelSecurityBuilder builder, IConfiguration configuration)
+    public static ISentinelSecurityBuilder AddRedisReplayCache(this ISentinelSecurityBuilder builder,
+        IConfiguration configuration)
     {
         _ = builder.AddSecureRedis(configuration);
         _ = builder.Services.AddSingleton<ISessionBlacklistCache, SessionBlacklistCache>();
@@ -93,7 +94,8 @@ public static class SentinelModuleBuilderExtensions
         return builder;
     }
 
-    public static ISentinelSecurityBuilder AddNotificationsModule(this ISentinelSecurityBuilder builder, IConfiguration configuration)
+    public static ISentinelSecurityBuilder AddNotificationsModule(this ISentinelSecurityBuilder builder,
+        IConfiguration configuration)
     {
         _ = builder.Services
             .AddNotifications(configuration)
@@ -118,12 +120,16 @@ public static class SentinelModuleBuilderExtensions
         return builder;
     }
 
-    public static ISentinelSecurityBuilder AddJwtAndCertificateAuth(this ISentinelSecurityBuilder builder, IConfiguration configuration)
+    public static ISentinelSecurityBuilder AddJwtAndCertificateAuth(this ISentinelSecurityBuilder builder,
+        IConfiguration configuration)
     {
-        var keycloakOptions = configuration.GetSection(KeycloakOptions.SectionName).Get<KeycloakOptions>() ?? new KeycloakOptions();
+        var keycloakOptions = configuration.GetSection(KeycloakOptions.SectionName).Get<KeycloakOptions>() ??
+                              new KeycloakOptions();
 
         var sdJwtOptions = configuration.GetSection(SdJwtOptions.SectionName).Get<SdJwtOptions>() ?? new SdJwtOptions();
-        var sdJwtScheme = string.IsNullOrWhiteSpace(sdJwtOptions.AuthenticationScheme) ? "SdJwt" : sdJwtOptions.AuthenticationScheme;
+        var sdJwtScheme = string.IsNullOrWhiteSpace(sdJwtOptions.AuthenticationScheme)
+            ? "SdJwt"
+            : sdJwtOptions.AuthenticationScheme;
         const string compositeScheme = "SentinelAuth";
 
         _ = builder.Services
@@ -179,7 +185,7 @@ public static class SentinelModuleBuilderExtensions
                 {
                     OnMessageReceived = context =>
                     {
-                        string authHeader = context.Request.Headers.Authorization.ToString();
+                        var authHeader = context.Request.Headers.Authorization.ToString();
                         if (!string.IsNullOrWhiteSpace(authHeader)
                             && authHeader.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase))
                         {
@@ -196,8 +202,10 @@ public static class SentinelModuleBuilderExtensions
                             return;
                         }
 
-                        var validationService = context.HttpContext.RequestServices.GetRequiredService<TokenValidationService>();
-                        var outcome = await validationService.ValidateAsync(context.Principal, context.HttpContext, context.HttpContext.RequestAborted);
+                        var validationService = context.HttpContext.RequestServices
+                            .GetRequiredService<TokenValidationService>();
+                        var outcome = await validationService.ValidateAsync(context.Principal, context.HttpContext,
+                            context.HttpContext.RequestAborted);
                         if (outcome.IsSuccess)
                         {
                             return;

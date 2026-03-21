@@ -1,4 +1,3 @@
-// Sentinel Security API - FAPI 2.0 Compliant
 namespace Sentinel.Infrastructure.Auth;
 
 internal static class KeycloakAuthorityEndpoints
@@ -33,8 +32,11 @@ internal static class KeycloakAuthorityEndpoints
 
         var authorityRoot = authorityUri.GetLeftPart(UriPartial.Authority);
 
-        tokenEndpoint = new Uri($"{authorityRoot}{prefix}/realms/{Uri.EscapeDataString(realmName)}/protocol/openid-connect/token", UriKind.Absolute);
-        adminRealmEndpoint = new Uri($"{authorityRoot}{prefix}/admin/realms/{Uri.EscapeDataString(realmName)}/", UriKind.Absolute);
+        tokenEndpoint =
+            new Uri($"{authorityRoot}{prefix}/realms/{Uri.EscapeDataString(realmName)}/protocol/openid-connect/token",
+                UriKind.Absolute);
+        adminRealmEndpoint = new Uri($"{authorityRoot}{prefix}/admin/realms/{Uri.EscapeDataString(realmName)}/",
+            UriKind.Absolute);
         return true;
     }
 }

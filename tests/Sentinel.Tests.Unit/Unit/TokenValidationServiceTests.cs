@@ -1,5 +1,5 @@
-using System.Security.Claims;
 using System.Globalization;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Moq;
 using Sentinel.Application.Common.Abstractions;
@@ -21,14 +21,17 @@ public sealed class TokenValidationServiceTests
         var emitter = new Mock<ISecurityEventEmitter>();
 
         var sut = new TokenValidationService(replayCache.Object, sessionBlacklist.Object, emitter.Object);
-        var principal = BuildPrincipal(("jti", "jti-1"), ("exp", DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)), ("sub", "user-1"));
+        var principal = BuildPrincipal(("jti", "jti-1"),
+            ("exp", DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)),
+            ("sub", "user-1"));
         var context = new DefaultHttpContext();
 
         var result = await sut.ValidateAsync(principal, context, CancellationToken.None);
 
         Assert.False(result.IsSuccess);
         Assert.Equal("Token replay detected.", result.FailureReason);
-        emitter.Verify(x => x.EmitTokenReplay("jti-1", "user-1", "sentinel-api-client", It.IsAny<string>()), Times.Once);
+        emitter.Verify(x => x.EmitTokenReplay("jti-1", "user-1", "sentinel-api-client", It.IsAny<string>()),
+            Times.Once);
     }
 
     [Fact]
@@ -46,20 +49,24 @@ public sealed class TokenValidationServiceTests
 
         var emitter = new Mock<ISecurityEventEmitter>();
         var sut = new TokenValidationService(replayCache.Object, sessionBlacklist.Object, emitter.Object);
-        var principal = BuildPrincipal(("jti", "jti-1"), ("exp", DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)), ("sub", "user-1"), ("sid", "sid-1"));
+        var principal = BuildPrincipal(("jti", "jti-1"),
+            ("exp", DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)),
+            ("sub", "user-1"), ("sid", "sid-1"));
         var context = new DefaultHttpContext();
 
         var result = await sut.ValidateAsync(principal, context, CancellationToken.None);
 
         Assert.False(result.IsSuccess);
         Assert.Equal("Session has been terminated.", result.FailureReason);
-        emitter.Verify(x => x.EmitAuthFailure("revoked_session_usage_attempt", "user-1", It.IsAny<string>()), Times.Once);
+        emitter.Verify(x => x.EmitAuthFailure("revoked_session_usage_attempt", "user-1", It.IsAny<string>()),
+            Times.Once);
     }
 
     [Fact]
     public async Task ValidateAsync_WhenReplayCacheUnavailable_ReturnsExceptionOutcomeAndEmitsEvent()
     {
-        var replayUnavailable = new ReplayCacheUnavailableException("cache unavailable", new InvalidOperationException("redis offline"));
+        var replayUnavailable =
+            new ReplayCacheUnavailableException("cache unavailable", new InvalidOperationException("redis offline"));
         var replayCache = new Mock<IJtiReplayCache>();
         replayCache
             .Setup(x => x.TryStoreIfNotExistsAsync("jti-1", It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
@@ -68,7 +75,9 @@ public sealed class TokenValidationServiceTests
         var sessionBlacklist = new Mock<ISessionBlacklistCache>();
         var emitter = new Mock<ISecurityEventEmitter>();
         var sut = new TokenValidationService(replayCache.Object, sessionBlacklist.Object, emitter.Object);
-        var principal = BuildPrincipal(("jti", "jti-1"), ("exp", DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)), ("sub", "user-1"));
+        var principal = BuildPrincipal(("jti", "jti-1"),
+            ("exp", DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)),
+            ("sub", "user-1"));
         var context = new DefaultHttpContext();
 
         var result = await sut.ValidateAsync(principal, context, CancellationToken.None);
@@ -93,7 +102,9 @@ public sealed class TokenValidationServiceTests
 
         var emitter = new Mock<ISecurityEventEmitter>();
         var sut = new TokenValidationService(replayCache.Object, sessionBlacklist.Object, emitter.Object);
-        var principal = BuildPrincipal(("jti", "jti-1"), ("exp", DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)), ("sub", "user-1"), ("sid", "sid-1"));
+        var principal = BuildPrincipal(("jti", "jti-1"),
+            ("exp", DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)),
+            ("sub", "user-1"), ("sid", "sid-1"));
         var context = new DefaultHttpContext();
 
         var result = await sut.ValidateAsync(principal, context, CancellationToken.None);

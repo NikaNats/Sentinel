@@ -1,9 +1,8 @@
-using Sentinel.Application.Auth.Interfaces;
-using Sentinel.Application.Common.Abstractions;
-using Sentinel.Infrastructure.Telemetry;
 using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using Sentinel.Application.Auth.Interfaces;
+using Sentinel.Application.Common.Abstractions;
 
 namespace Sentinel.Infrastructure.Auth;
 
@@ -15,7 +14,8 @@ public sealed class KeycloakTokenRefreshService(
 {
     private readonly KeycloakOptions keycloakOptions = options.Value;
 
-    public async Task<TokenRefreshResult> RefreshTokenAsync(string refreshToken, string dpopProof, string clientIpHash, CancellationToken ct)
+    public async Task<TokenRefreshResult> RefreshTokenAsync(string refreshToken, string dpopProof, string clientIpHash,
+        CancellationToken ct)
     {
         var authority = keycloakOptions.Authority.TrimEnd('/');
         var clientId = keycloakOptions.Audience;
@@ -62,7 +62,7 @@ public sealed class KeycloakTokenRefreshService(
             if (IsRefreshReuseDetected(response.StatusCode, responseContent))
             {
                 logger.LogCritical("CRITICAL: Refresh token reuse or invalid grant detected. Potential token theft.");
-                securityEventEmitter.EmitAuthFailure("refresh_token_reuse_detected", sub: null, ipHash: clientIpHash);
+                securityEventEmitter.EmitAuthFailure("refresh_token_reuse_detected", null, clientIpHash);
                 return new TokenRefreshResult(false, null, null, true);
             }
 

@@ -50,8 +50,8 @@ public sealed class RarExtensionsTests
     public void GetAuthorizationDetails_WhenClaimValid_ReturnsParsedDetails()
     {
         const string json = """
-            [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-123","amount":50.00,"currency":"GEL"}]
-            """;
+                            [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-123","amount":50.00,"currency":"GEL"}]
+                            """;
         var user = new ClaimsPrincipal(new ClaimsIdentity([new Claim("authorization_details", json)], "test"));
 
         var details = user.GetAuthorizationDetails();
@@ -67,11 +67,11 @@ public sealed class RarExtensionsTests
     public void GetAuthorizationDetails_WhenMultipleEntriesPresent_ReturnsAllEntries()
     {
         const string json = """
-            [
-              {"type":"urn:sentinel:finance:transfer","transaction_id":"txn-1","amount":50.00,"currency":"GEL"},
-              {"type":"urn:sentinel:documents:read","actions":["read"],"locations":["/v1/documents/123"]}
-            ]
-            """;
+                            [
+                              {"type":"urn:sentinel:finance:transfer","transaction_id":"txn-1","amount":50.00,"currency":"GEL"},
+                              {"type":"urn:sentinel:documents:read","actions":["read"],"locations":["/v1/documents/123"]}
+                            ]
+                            """;
         var user = new ClaimsPrincipal(new ClaimsIdentity([new Claim("authorization_details", json)], "test"));
 
         var details = user.GetAuthorizationDetails();

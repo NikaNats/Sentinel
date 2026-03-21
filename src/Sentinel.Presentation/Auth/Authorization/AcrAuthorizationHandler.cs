@@ -21,7 +21,8 @@ public sealed class AcrAuthorizationHandler : AuthorizationHandler<AcrRequiremen
             || !AcrRank.TryGetValue(requirement.MinimumAcr, out var requiredRank)
             || tokenRank < requiredRank)
         {
-            context.Fail(new AuthorizationFailureReason(this, $"Insufficient ACR. Required: {requirement.MinimumAcr}, Got: {tokenAcr}"));
+            context.Fail(new AuthorizationFailureReason(this,
+                $"Insufficient ACR. Required: {requirement.MinimumAcr}, Got: {tokenAcr}"));
             return Task.CompletedTask;
         }
 

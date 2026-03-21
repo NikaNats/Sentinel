@@ -9,7 +9,8 @@ public sealed class TokenValidationService(
     ISessionBlacklistCache sessionBlacklist,
     ISecurityEventEmitter eventEmitter)
 {
-    public async Task<TokenValidationOutcome> ValidateAsync(ClaimsPrincipal principal, HttpContext context, CancellationToken ct)
+    public async Task<TokenValidationOutcome> ValidateAsync(ClaimsPrincipal principal, HttpContext context,
+        CancellationToken ct)
     {
         try
         {
@@ -36,7 +37,8 @@ public sealed class TokenValidationService(
             var stored = await replayCache.TryStoreIfNotExistsAsync(jti, remainingTtl, ct);
             if (!stored)
             {
-                eventEmitter.EmitTokenReplay(jti, principal.FindFirst("sub")?.Value, "sentinel-api-client", SecurityContextHasher.HashIp(context));
+                eventEmitter.EmitTokenReplay(jti, principal.FindFirst("sub")?.Value, "sentinel-api-client",
+                    SecurityContextHasher.HashIp(context));
                 return TokenValidationOutcome.Fail("Token replay detected.");
             }
 
@@ -52,12 +54,14 @@ public sealed class TokenValidationService(
                 return TokenValidationOutcome.Success;
             }
 
-            eventEmitter.EmitAuthFailure("revoked_session_usage_attempt", principal.FindFirst("sub")?.Value, SecurityContextHasher.HashIp(context));
+            eventEmitter.EmitAuthFailure("revoked_session_usage_attempt", principal.FindFirst("sub")?.Value,
+                SecurityContextHasher.HashIp(context));
             return TokenValidationOutcome.Fail("Session has been terminated.");
         }
         catch (ReplayCacheUnavailableException ex)
         {
-            eventEmitter.EmitAuthFailure("replay_cache_unavailable", principal.FindFirst("sub")?.Value, SecurityContextHasher.HashIp(context));
+            eventEmitter.EmitAuthFailure("replay_cache_unavailable", principal.FindFirst("sub")?.Value,
+                SecurityContextHasher.HashIp(context));
             return TokenValidationOutcome.Fail(ex);
         }
     }

@@ -44,7 +44,8 @@ public sealed class SdJwtAuthenticationHandler(
         }
 
         var expectedNonce = Request.Headers["SD-JWT-Nonce"].ToString();
-        var result = await verifier.VerifyPresentationAsync(token, keycloak.Audience, expectedNonce, Context.RequestAborted);
+        var result =
+            await verifier.VerifyPresentationAsync(token, keycloak.Audience, expectedNonce, Context.RequestAborted);
         if (!result.IsSuccess || result.Principal is null)
         {
             return AuthenticateResult.Fail(result.Error ?? "SD-JWT verification failed.");

@@ -1,9 +1,8 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
-using Microsoft.IdentityModel.Tokens;
 using Sentinel.Application.Common.Abstractions;
-using System.Text.Json;
 
 namespace Sentinel.Infrastructure.Auth;
 

@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
@@ -8,7 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Sentinel.Controllers;
 using Sentinel.Errors;
 using Sentinel.Middleware.Filters;
-using System.Security.Claims;
 
 namespace Sentinel.Tests.Unit;
 
@@ -19,10 +20,11 @@ public sealed class RequireSurgicalAuthorizationAttributeTests
     {
         var attribute = new RequireSurgicalAuthorizationAttribute();
         var context = CreateActionExecutingContext(
-            user: new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")),
-            request: new FinanceController.TransferRequest("txn-1", 50m, "GEL", "dest-1"));
+            new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")),
+            new FinanceController.TransferRequest("txn-1", 50m, "GEL", "dest-1"));
 
-        await attribute.OnActionExecutionAsync(context, () => throw new InvalidOperationException("should not execute"));
+        await attribute.OnActionExecutionAsync(context,
+            () => throw new InvalidOperationException("should not execute"));
 
         var result = Assert.IsType<ObjectResult>(context.Result);
         Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
@@ -35,13 +37,14 @@ public sealed class RequireSurgicalAuthorizationAttributeTests
     {
         var attribute = new RequireSurgicalAuthorizationAttribute();
         var user = CreateUserWithRar("""
-            [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-1","amount":50.00,"currency":"GEL"}]
-            """);
+                                     [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-1","amount":50.00,"currency":"GEL"}]
+                                     """);
         var context = CreateActionExecutingContext(
             user,
             new FinanceController.TransferRequest("txn-1", 500m, "GEL", "dest-1"));
 
-        await attribute.OnActionExecutionAsync(context, () => throw new InvalidOperationException("should not execute"));
+        await attribute.OnActionExecutionAsync(context,
+            () => throw new InvalidOperationException("should not execute"));
 
         var result = Assert.IsType<ObjectResult>(context.Result);
         Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
@@ -54,11 +57,12 @@ public sealed class RequireSurgicalAuthorizationAttributeTests
     {
         var attribute = new RequireSurgicalAuthorizationAttribute();
         var user = CreateUserWithRar("""
-            [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-1","amount":50.00,"currency":"GEL"}]
-            """);
-        var context = CreateActionExecutingContext(user, request: null);
+                                     [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-1","amount":50.00,"currency":"GEL"}]
+                                     """);
+        var context = CreateActionExecutingContext(user, null);
 
-        await attribute.OnActionExecutionAsync(context, () => throw new InvalidOperationException("should not execute"));
+        await attribute.OnActionExecutionAsync(context,
+            () => throw new InvalidOperationException("should not execute"));
 
         var result = Assert.IsType<BadRequestObjectResult>(context.Result);
         Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
@@ -71,8 +75,8 @@ public sealed class RequireSurgicalAuthorizationAttributeTests
     {
         var attribute = new RequireSurgicalAuthorizationAttribute();
         var user = CreateUserWithRar("""
-            [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-1","amount":50.00,"currency":"GEL"}]
-            """);
+                                     [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-1","amount":50.00,"currency":"GEL"}]
+                                     """);
         var context = CreateActionExecutingContext(
             user,
             new FinanceController.TransferRequest("txn-1", 50m, "gel", "dest-1"));
@@ -87,8 +91,8 @@ public sealed class RequireSurgicalAuthorizationAttributeTests
     {
         var attribute = new RequireSurgicalAuthorizationAttribute();
         var user = CreateUserWithRar("""
-            [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-1","amount":50.00,"currency":"GEL"}]
-            """);
+                                     [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-1","amount":50.00,"currency":"GEL"}]
+                                     """);
         var context = CreateActionExecutingContext(
             user,
             new FinanceController.TransferRequest("txn-1", 50.000m, "GEL", "dest-1"));
@@ -106,13 +110,13 @@ public sealed class RequireSurgicalAuthorizationAttributeTests
 
         try
         {
-            Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("tr-TR");
-            Thread.CurrentThread.CurrentUICulture = new System.Globalization.CultureInfo("tr-TR");
+            Thread.CurrentThread.CurrentCulture = new CultureInfo("tr-TR");
+            Thread.CurrentThread.CurrentUICulture = new CultureInfo("tr-TR");
 
             var attribute = new RequireSurgicalAuthorizationAttribute();
             var user = CreateUserWithRar("""
-                [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-1","amount":50.00,"currency":"GEL"}]
-                """);
+                                         [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-1","amount":50.00,"currency":"GEL"}]
+                                         """);
             var context = CreateActionExecutingContext(
                 user,
                 new FinanceController.TransferRequest("txn-1", 50m, "gel", "dest-1"));
@@ -133,13 +137,14 @@ public sealed class RequireSurgicalAuthorizationAttributeTests
     {
         var attribute = new RequireSurgicalAuthorizationAttribute();
         var user = CreateUserWithRar("""
-            [{"type":"URN:SENTINEL:FINANCE:TRANSFER","transaction_id":"txn-1","amount":50.00,"currency":"GEL"}]
-            """);
+                                     [{"type":"URN:SENTINEL:FINANCE:TRANSFER","transaction_id":"txn-1","amount":50.00,"currency":"GEL"}]
+                                     """);
         var context = CreateActionExecutingContext(
             user,
             new FinanceController.TransferRequest("txn-1", 50m, "GEL", "dest-1"));
 
-        await attribute.OnActionExecutionAsync(context, () => throw new InvalidOperationException("should not execute"));
+        await attribute.OnActionExecutionAsync(context,
+            () => throw new InvalidOperationException("should not execute"));
 
         var result = Assert.IsType<ObjectResult>(context.Result);
         Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
@@ -150,11 +155,11 @@ public sealed class RequireSurgicalAuthorizationAttributeTests
     {
         var attribute = new RequireSurgicalAuthorizationAttribute();
         var user = CreateUserWithRar("""
-            [
-              {"type":"urn:sentinel:documents:read","actions":["read"]},
-              {"type":"urn:sentinel:finance:transfer","transaction_id":"txn-7","amount":77.00,"currency":"GEL"}
-            ]
-            """);
+                                     [
+                                       {"type":"urn:sentinel:documents:read","actions":["read"]},
+                                       {"type":"urn:sentinel:finance:transfer","transaction_id":"txn-7","amount":77.00,"currency":"GEL"}
+                                     ]
+                                     """);
         var context = CreateActionExecutingContext(
             user,
             new FinanceController.TransferRequest("txn-7", 77m, "gel", "dest-1"));
@@ -169,13 +174,14 @@ public sealed class RequireSurgicalAuthorizationAttributeTests
     {
         var attribute = new RequireSurgicalAuthorizationAttribute();
         var user = CreateUserWithRar("""
-            [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-allowed","amount":50.00,"currency":"GEL"}]
-            """);
+                                     [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-allowed","amount":50.00,"currency":"GEL"}]
+                                     """);
         var context = CreateActionExecutingContext(
             user,
             new FinanceController.TransferRequest("txn-other", 50m, "GEL", "dest-1"));
 
-        await attribute.OnActionExecutionAsync(context, () => throw new InvalidOperationException("should not execute"));
+        await attribute.OnActionExecutionAsync(context,
+            () => throw new InvalidOperationException("should not execute"));
 
         var result = Assert.IsType<ObjectResult>(context.Result);
         Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
@@ -186,13 +192,14 @@ public sealed class RequireSurgicalAuthorizationAttributeTests
     {
         var attribute = new RequireSurgicalAuthorizationAttribute();
         var user = CreateUserWithRar("""
-            [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-1","amount":50.00,"currency":"USD"}]
-            """);
+                                     [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-1","amount":50.00,"currency":"USD"}]
+                                     """);
         var context = CreateActionExecutingContext(
             user,
             new FinanceController.TransferRequest("txn-1", 50m, "GEL", "dest-1"));
 
-        await attribute.OnActionExecutionAsync(context, () => throw new InvalidOperationException("should not execute"));
+        await attribute.OnActionExecutionAsync(context,
+            () => throw new InvalidOperationException("should not execute"));
 
         var result = Assert.IsType<ObjectResult>(context.Result);
         Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
@@ -229,13 +236,14 @@ public sealed class RequireSurgicalAuthorizationAttributeTests
             User = user
         };
 
-        var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor(), new ModelStateDictionary());
+        var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor(),
+            new ModelStateDictionary());
         var actionArguments = new Dictionary<string, object?>();
         if (request is not null)
         {
             actionArguments["request"] = request;
         }
 
-        return new ActionExecutingContext(actionContext, [], actionArguments, controller: new object());
+        return new ActionExecutingContext(actionContext, [], actionArguments, new object());
     }
 }

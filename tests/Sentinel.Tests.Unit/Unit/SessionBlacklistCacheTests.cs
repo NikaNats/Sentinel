@@ -12,7 +12,8 @@ public sealed class SessionBlacklistCacheTests
     public async Task BlacklistSessionAsync_WhenStored_IsReportedAsBlacklisted()
     {
         var db = new Mock<IDatabase>();
-        db.Setup(x => x.StringSetAsync("blacklist:sid:sid-1", RedisValue.EmptyString, It.IsAny<TimeSpan?>(), When.Always, CommandFlags.None))
+        db.Setup(x => x.StringSetAsync("blacklist:sid:sid-1", RedisValue.EmptyString, It.IsAny<TimeSpan?>(),
+                When.Always, CommandFlags.None))
             .ReturnsAsync(true);
         db.Setup(x => x.KeyExistsAsync("blacklist:sid:sid-1", CommandFlags.None))
             .ReturnsAsync(true);
@@ -26,7 +27,9 @@ public sealed class SessionBlacklistCacheTests
         var result = await sut.IsSessionBlacklistedAsync("sid-1", CancellationToken.None);
 
         Assert.True(result);
-        db.Verify(x => x.StringSetAsync("blacklist:sid:sid-1", RedisValue.EmptyString, It.IsAny<TimeSpan?>(), When.Always, CommandFlags.None), Times.Once);
+        db.Verify(
+            x => x.StringSetAsync("blacklist:sid:sid-1", RedisValue.EmptyString, It.IsAny<TimeSpan?>(), When.Always,
+                CommandFlags.None), Times.Once);
     }
 
     [Fact]

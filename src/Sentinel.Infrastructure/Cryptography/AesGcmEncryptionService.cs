@@ -1,6 +1,6 @@
-using Sentinel.Application.Common.Abstractions;
 using System.Security.Cryptography;
 using System.Text;
+using Sentinel.Application.Common.Abstractions;
 
 namespace Sentinel.Infrastructure.Cryptography;
 
@@ -56,13 +56,15 @@ public sealed class AesGcmEncryptionService(IConfiguration configuration) : IEnc
         var encoded = configuration["Cryptography:MasterKey"];
         if (string.IsNullOrWhiteSpace(encoded))
         {
-            throw new InvalidOperationException("Cryptography:MasterKey is required and must be a base64-encoded 32-byte key.");
+            throw new InvalidOperationException(
+                "Cryptography:MasterKey is required and must be a base64-encoded 32-byte key.");
         }
 
         var decoded = Convert.FromBase64String(encoded);
         if (decoded.Length != 32)
         {
-            throw new InvalidOperationException("Cryptography:MasterKey must decode to exactly 32 bytes for AES-256-GCM.");
+            throw new InvalidOperationException(
+                "Cryptography:MasterKey must decode to exactly 32 bytes for AES-256-GCM.");
         }
 
         return decoded;

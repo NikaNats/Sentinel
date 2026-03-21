@@ -9,7 +9,7 @@ public sealed class SecurityHeadersMiddleware(RequestDelegate next, IWebHostEnvi
         "style-src 'self' https: 'unsafe-inline'; " +
         "font-src 'self' data: https: http:; " +
         "connect-src https://localhost http://localhost https: http: ws: wss: " +
-            "https://cdn.jsdelivr.net https://proxy.scalar.com https://api.scalar.com; " +
+        "https://cdn.jsdelivr.net https://proxy.scalar.com https://api.scalar.com; " +
         "img-src 'self' https: data: blob:; " +
         "frame-ancestors 'none'";
 
@@ -21,13 +21,13 @@ public sealed class SecurityHeadersMiddleware(RequestDelegate next, IWebHostEnvi
         var isScalarUi = env.IsDevelopment() && context.Request.Path.StartsWithSegments("/scalar");
 
         headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload";
-        headers["Content-Security-Policy"]   = isScalarUi ? ScalarCsp : DefaultCsp;
-        headers["X-Content-Type-Options"]    = "nosniff";
-        headers["X-Frame-Options"]           = "DENY";
-        headers["Referrer-Policy"]           = "no-referrer";
-        headers["Permissions-Policy"]        = "geolocation=(), microphone=(), camera=()";
-        headers["Cache-Control"]             = "no-store";
-        headers["Pragma"]                    = "no-cache";
+        headers["Content-Security-Policy"] = isScalarUi ? ScalarCsp : DefaultCsp;
+        headers["X-Content-Type-Options"] = "nosniff";
+        headers["X-Frame-Options"] = "DENY";
+        headers["Referrer-Policy"] = "no-referrer";
+        headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()";
+        headers["Cache-Control"] = "no-store";
+        headers["Pragma"] = "no-cache";
 
         headers.Remove("Server");
         headers.Remove("X-Powered-By");

@@ -25,7 +25,8 @@ public sealed class LoggingEmailService(
                 new VerificationTemplateData(verificationUrl)),
             ct);
 
-        logger.LogInformation("Verification email queued for recipient {Recipient} using template {TemplateName}.", email, "EmailVerification");
+        logger.LogInformation("Verification email queued for recipient {Recipient} using template {TemplateName}.",
+            email, "EmailVerification");
     }
 
     public async Task SendResetPasswordEmailAsync(string email, string resetToken, CancellationToken ct)
@@ -43,7 +44,8 @@ public sealed class LoggingEmailService(
                 new ResetPasswordTemplateData(resetUrl)),
             ct);
 
-        logger.LogInformation("Reset password email queued for recipient {Recipient} using template {TemplateName}.", email, "PasswordReset");
+        logger.LogInformation("Reset password email queued for recipient {Recipient} using template {TemplateName}.",
+            email, "PasswordReset");
     }
 
     public Task SendWelcomeOrAlreadyRegisteredEmailAsync(string email, CancellationToken ct)
@@ -54,5 +56,6 @@ public sealed class LoggingEmailService(
     }
 
     private sealed record VerificationTemplateData(string VerificationUrl);
+
     private sealed record ResetPasswordTemplateData(string ResetUrl);
 }

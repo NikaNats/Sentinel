@@ -1,18 +1,16 @@
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Telemetry;
 using StackExchange.Redis;
-using System.Diagnostics;
 
 namespace Sentinel.Infrastructure.Cache;
 
 public sealed class JtiReplayCache(IConnectionMultiplexer redis, ILogger<JtiReplayCache> logger) : IJtiReplayCache
 {
-    private static string GetKey(string jti) => $"replay:jti:{jti}";
     private readonly IDatabase db = redis.GetDatabase();
 
     public async Task<bool> TryStoreIfNotExistsAsync(string jti, TimeSpan ttl, CancellationToken ct)
     {
-        using var activity = AuthTelemetry.Source.StartActivity("auth.replay_cache.try_store", ActivityKind.Internal);
+        using var activity = AuthTelemetry.Source.StartActivity("auth.replay_cache.try_store");
         activity?.SetTag("auth.jti", jti);
         activity?.SetTag("auth.ttl_seconds", ttl.TotalSeconds);
 
@@ -29,4 +27,6 @@ public sealed class JtiReplayCache(IConnectionMultiplexer redis, ILogger<JtiRepl
             throw new ReplayCacheUnavailableException("jti replay cache unavailable", ex);
         }
     }
+
+    private static string GetKey(string jti) => $"replay:jti:{jti}";
 }

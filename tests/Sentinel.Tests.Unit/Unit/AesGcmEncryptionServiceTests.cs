@@ -1,6 +1,6 @@
+using System.Security.Cryptography;
 using Microsoft.Extensions.Configuration;
 using Sentinel.Infrastructure.Cryptography;
-using System.Security.Cryptography;
 
 namespace Sentinel.Tests.Unit;
 

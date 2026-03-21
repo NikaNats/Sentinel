@@ -1,16 +1,17 @@
+using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.Middleware.Filters;
-using System.Security.Cryptography;
-using System.Text.Json;
 
-namespace Sentinel.Middleware;
+namespace Sentinel.Presentation.Middleware;
 
 public sealed class MtlsBindingMiddleware(RequestDelegate next, ILogger<MtlsBindingMiddleware> logger)
 {
     public async Task InvokeAsync(HttpContext context)
     {
-        var requiresMtlsBinding = context.GetEndpoint()?.Metadata.GetMetadata<RequireMtlsBindingAttribute>() is not null;
+        var requiresMtlsBinding =
+            context.GetEndpoint()?.Metadata.GetMetadata<RequireMtlsBindingAttribute>() is not null;
 
         if (context.User.Identity?.IsAuthenticated != true)
         {

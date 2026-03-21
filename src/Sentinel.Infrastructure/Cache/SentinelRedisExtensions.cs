@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Notifications;
@@ -8,7 +7,8 @@ namespace Sentinel.Infrastructure.Cache;
 
 public static class SentinelRedisExtensions
 {
-    public static IServiceCollection AddSentinelSecureRedis(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddSentinelSecureRedis(this IServiceCollection services,
+        IConfiguration configuration)
     {
         _ = services.Configure<RedisOptions>(configuration.GetSection("Sentinel:Redis"));
         _ = services.AddMemoryCache();
@@ -17,10 +17,7 @@ public static class SentinelRedisExtensions
         var fallbackConnectionString = configuration.GetConnectionString("Redis");
         var redisConfiguration = RedisConnectionFactory.BuildOptions(configuredOptions, fallbackConnectionString);
 
-        _ = services.AddStackExchangeRedisCache(options =>
-        {
-            options.ConfigurationOptions = redisConfiguration;
-        });
+        _ = services.AddStackExchangeRedisCache(options => { options.ConfigurationOptions = redisConfiguration; });
 
         _ = services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConfiguration));
 
@@ -30,7 +27,8 @@ public static class SentinelRedisExtensions
         return services;
     }
 
-    public static ISentinelSecurityBuilder AddSecureRedis(this ISentinelSecurityBuilder builder, IConfiguration configuration)
+    public static ISentinelSecurityBuilder AddSecureRedis(this ISentinelSecurityBuilder builder,
+        IConfiguration configuration)
     {
         _ = builder.Services.AddSentinelSecureRedis(configuration);
         return builder;

@@ -25,7 +25,7 @@ public static class AuthTelemetry
 
     public static readonly Histogram<double> ValidationDuration = Meter.CreateHistogram<double>(
         "auth.token.validation.duration_ms",
-        unit: "ms");
+        "ms");
 
     public static readonly Counter<long> RedisDegradedModeActivations = Meter.CreateCounter<long>(
         "auth.redis.degraded_mode_activations",

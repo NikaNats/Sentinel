@@ -1,7 +1,7 @@
+using System.Security.Cryptography;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Domain.Users;
-using System.Security.Cryptography;
 
 namespace Sentinel.Application.Auth;
 
@@ -12,7 +12,8 @@ public sealed class RegisterUserHandler(
     IEmailVerificationTokenStore verificationTokenStore,
     IPasswordStrengthValidator passwordStrengthValidator)
 {
-    public async Task<RegisterUserResult> HandleAsync(RegisterUserRequest request, string sourceIp, CancellationToken ct)
+    public async Task<RegisterUserResult> HandleAsync(RegisterUserRequest request, string sourceIp,
+        CancellationToken ct)
     {
         await Task.Delay(RandomNumberGenerator.GetInt32(100, 301), ct);
 
@@ -26,7 +27,8 @@ public sealed class RegisterUserHandler(
             || string.IsNullOrWhiteSpace(request.Password)
             || string.IsNullOrWhiteSpace(request.CaptchaToken))
         {
-            return new RegisterUserResult(false, "Email, username, password and captcha token are required.", "invalid_request");
+            return new RegisterUserResult(false, "Email, username, password and captcha token are required.",
+                "invalid_request");
         }
 
         if (!await captchaService.VerifyAsync(request.CaptchaToken, ct))
@@ -37,7 +39,9 @@ public sealed class RegisterUserHandler(
         var passwordValidation = passwordStrengthValidator.Validate(request.Password);
         if (!passwordValidation.IsValid)
         {
-            return new RegisterUserResult(false, passwordValidation.Message ?? "Password does not meet complexity requirements.", passwordValidation.ErrorCode ?? "weak_password");
+            return new RegisterUserResult(false,
+                passwordValidation.Message ?? "Password does not meet complexity requirements.",
+                passwordValidation.ErrorCode ?? "weak_password");
         }
 
         var registration = new UserRegistration
@@ -63,10 +67,12 @@ public sealed class RegisterUserHandler(
         }
 
         var verificationToken = Guid.NewGuid().ToString("N");
-        var stored = await verificationTokenStore.StoreAsync(verificationToken, keycloakUserId, TimeSpan.FromHours(24), ct);
+        var stored =
+            await verificationTokenStore.StoreAsync(verificationToken, keycloakUserId, TimeSpan.FromHours(24), ct);
         if (!stored)
         {
-            return new RegisterUserResult(false, "Failed to create verification token.", "verification_token_store_failed");
+            return new RegisterUserResult(false, "Failed to create verification token.",
+                "verification_token_store_failed");
         }
 
         await emailService.SendVerificationEmailAsync(registration.Email, verificationToken, ct);

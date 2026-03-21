@@ -7,7 +7,7 @@ using Sentinel.Application.Auth.Models;
 using Sentinel.Errors;
 using Sentinel.Infrastructure.Telemetry;
 
-namespace Sentinel.Controllers;
+namespace Sentinel.Presentation.Controllers;
 
 [ApiController]
 [Route("v1/users")]
@@ -67,7 +67,7 @@ public sealed class UsersController(
             });
         }
 
-        var updated = await keycloakUserService.SetEmailVerifiedAsync(keycloakUserId, verified: true, ct);
+        var updated = await keycloakUserService.SetEmailVerifiedAsync(keycloakUserId, true, ct);
         if (!updated)
         {
             return BadRequest(new ProblemDetails
@@ -94,7 +94,8 @@ public sealed class UsersController(
     [AllowAnonymous]
     [EnableRateLimiting("resend_verification_policy")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
-    public async Task<IActionResult> ResendVerification([FromBody] ResendVerificationRequest request, CancellationToken ct)
+    public async Task<IActionResult> ResendVerification([FromBody] ResendVerificationRequest request,
+        CancellationToken ct)
     {
         await resendVerificationHandler.HandleAsync(request, ct);
         return Accepted();

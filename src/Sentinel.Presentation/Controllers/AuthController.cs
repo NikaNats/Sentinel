@@ -1,14 +1,14 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using Sentinel.Application.Common.Abstractions;
 using Sentinel.Application.Auth.Interfaces;
+using Sentinel.Application.Common.Abstractions;
 using Sentinel.Errors;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Middleware.Filters;
 
-namespace Sentinel.Controllers;
+namespace Sentinel.Presentation.Controllers;
 
 [ApiController]
 [Route("v1/auth")]
@@ -21,12 +21,6 @@ public sealed class AuthController(
     IOptions<KeycloakOptions> options) : ControllerBase
 {
     private readonly KeycloakOptions keycloakOptions = options.Value;
-
-    public sealed record RefreshRequest(string RefreshToken);
-    public sealed record RevokeRequest(string RefreshToken);
-    public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
-    public sealed record TotpSetupRequest(string DeviceName);
-    public sealed record TotpVerifyRequest(string Code);
 
     [HttpPost("refresh")]
     [AllowAnonymous]
@@ -100,10 +94,11 @@ public sealed class AuthController(
         }
 
         var loginIdentifier = User.FindFirst("preferred_username")?.Value
-            ?? User.FindFirst("email")?.Value
-            ?? sub;
+                              ?? User.FindFirst("email")?.Value
+                              ?? sub;
 
-        var currentPasswordValid = await keycloakProfileService.VerifyUserPasswordAsync(loginIdentifier, request.CurrentPassword, ct);
+        var currentPasswordValid =
+            await keycloakProfileService.VerifyUserPasswordAsync(loginIdentifier, request.CurrentPassword, ct);
         if (!currentPasswordValid)
         {
             return BadRequest(new ProblemDetails
@@ -344,4 +339,14 @@ public sealed class AuthController(
             Status = StatusCodes.Status501NotImplemented
         };
     }
+
+    public sealed record RefreshRequest(string RefreshToken);
+
+    public sealed record RevokeRequest(string RefreshToken);
+
+    public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+
+    public sealed record TotpSetupRequest(string DeviceName);
+
+    public sealed record TotpVerifyRequest(string Code);
 }

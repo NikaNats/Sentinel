@@ -9,7 +9,9 @@ public static class FipsConfiguration
         AppContext.SetSwitch("Switch.System.Security.Cryptography.UseLegacyFipsThrow", false);
 
         if (IsFipsEnabled())
+        {
             Console.WriteLine("Sentinel API is running in FIPS-enabled mode.");
+        }
     }
 
     private static bool IsFipsEnabled() =>

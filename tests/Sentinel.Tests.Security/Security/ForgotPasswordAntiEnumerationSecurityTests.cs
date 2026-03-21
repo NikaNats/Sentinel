@@ -9,6 +9,7 @@ using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Controllers;
 using Sentinel.Domain.Auth;
+using Sentinel.Presentation.Controllers;
 
 namespace Sentinel.Tests.Security;
 
@@ -32,7 +33,8 @@ public sealed class ForgotPasswordAntiEnumerationSecurityTests
             NullLogger<ForgotPasswordHandler>.Instance);
 
         var controller = BuildController(handler);
-        var result = await controller.ForgotPassword(new ForgotPasswordRequest("missing@example.com", "captcha"), CancellationToken.None);
+        var result = await controller.ForgotPassword(new ForgotPasswordRequest("missing@example.com", "captcha"),
+            CancellationToken.None);
 
         result.Should().BeOfType<AcceptedResult>();
     }
@@ -71,7 +73,8 @@ public sealed class ForgotPasswordAntiEnumerationSecurityTests
             NullLogger<ForgotPasswordHandler>.Instance);
 
         var controller = BuildController(handler);
-        var result = await controller.ForgotPassword(new ForgotPasswordRequest("user@example.com", "captcha"), CancellationToken.None);
+        var result = await controller.ForgotPassword(new ForgotPasswordRequest("user@example.com", "captcha"),
+            CancellationToken.None);
 
         result.Should().BeOfType<AcceptedResult>();
     }

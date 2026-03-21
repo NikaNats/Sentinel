@@ -1,4 +1,3 @@
-// Sentinel Security API - FAPI 2.0 Compliant
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;

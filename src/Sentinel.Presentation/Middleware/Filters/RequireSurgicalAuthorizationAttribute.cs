@@ -14,7 +14,8 @@ public sealed class RequireSurgicalAuthorizationAttribute : Attribute, IAsyncAct
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
         var details = context.HttpContext.User.GetAuthorizationDetails();
-        var transferDetail = details.FirstOrDefault(x => string.Equals(x.Type, TransferAuthorizationType, StringComparison.Ordinal));
+        var transferDetail =
+            details.FirstOrDefault(x => string.Equals(x.Type, TransferAuthorizationType, StringComparison.Ordinal));
 
         if (transferDetail is null)
         {

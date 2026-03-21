@@ -1,17 +1,18 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Sentinel.Errors;
-using System.Diagnostics;
 
-namespace Sentinel.Middleware;
+namespace Sentinel.Presentation.Middleware;
 
 public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger) : IExceptionHandler
 {
-    public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
+    public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception,
+        CancellationToken cancellationToken)
     {
         var traceId = Activity.Current?.Id ?? httpContext.TraceIdentifier;
         var correlationId = httpContext.Items["X-Correlation-ID"]?.ToString()
-            ?? httpContext.Request.Headers["X-Correlation-ID"].ToString();
+                            ?? httpContext.Request.Headers["X-Correlation-ID"].ToString();
 
         logger.LogError(exception, "An unhandled exception occurred. TraceId: {TraceId}", traceId);
 

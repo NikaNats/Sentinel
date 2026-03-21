@@ -3,10 +3,10 @@ using StackExchange.Redis;
 
 namespace Sentinel.Infrastructure.Cache;
 
-public sealed class SessionBlacklistCache(IConnectionMultiplexer redis, ILogger<SessionBlacklistCache> logger) : ISessionBlacklistCache
+public sealed class SessionBlacklistCache(IConnectionMultiplexer redis, ILogger<SessionBlacklistCache> logger)
+    : ISessionBlacklistCache
 {
     private readonly IDatabase db = redis.GetDatabase();
-    private static string GetKey(string sessionId) => $"blacklist:sid:{sessionId}";
 
     public async Task BlacklistSessionAsync(string sessionId, TimeSpan ttl, CancellationToken ct)
     {
@@ -15,7 +15,8 @@ public sealed class SessionBlacklistCache(IConnectionMultiplexer redis, ILogger<
         try
         {
             await db.StringSetAsync(GetKey(sessionId), RedisValue.EmptyString, ttl, When.Always, CommandFlags.None);
-            logger.LogInformation("Session {SessionId} blacklisted for {TtlSeconds} seconds.", sessionId, ttl.TotalSeconds);
+            logger.LogInformation("Session {SessionId} blacklisted for {TtlSeconds} seconds.", sessionId,
+                ttl.TotalSeconds);
         }
         catch (Exception ex)
         {
@@ -30,7 +31,7 @@ public sealed class SessionBlacklistCache(IConnectionMultiplexer redis, ILogger<
 
         try
         {
-            return await db.KeyExistsAsync(GetKey(sessionId), CommandFlags.None);
+            return await db.KeyExistsAsync(GetKey(sessionId));
         }
         catch (Exception ex)
         {
@@ -38,4 +39,6 @@ public sealed class SessionBlacklistCache(IConnectionMultiplexer redis, ILogger<
             throw new ReplayCacheUnavailableException("session blacklist cache unavailable", ex);
         }
     }
+
+    private static string GetKey(string sessionId) => $"blacklist:sid:{sessionId}";
 }

@@ -5,10 +5,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Sentinel.Application.Auth;
 using Sentinel.Application.Auth.Interfaces;
-using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Controllers;
 using Sentinel.Domain.Auth;
+using Sentinel.Presentation.Controllers;
 
 namespace Sentinel.Tests.Security;
 
@@ -39,7 +39,7 @@ public sealed class HandlerRobustnessEdgeCaseTests
             Mock.Of<ICaptchaService>(),
             NullLogger<ForgotPasswordHandler>.Instance);
 
-        Func<Task> act = async () => await sut.HandleAsync(null!, CancellationToken.None);
+        var act = async () => await sut.HandleAsync(null!, CancellationToken.None);
 
         await act.Should().ThrowAsync<NullReferenceException>();
     }

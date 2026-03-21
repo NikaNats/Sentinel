@@ -1,5 +1,7 @@
-using Sentinel.Tests.Integration.Fixtures;
 using System.Net;
+using System.Net.Http.Headers;
+using Sentinel.Tests.Integration.Fixtures;
+
 namespace Sentinel.Tests.Integration;
 
 [Collection("Sentinel Real Keycloak Integration")]
@@ -18,7 +20,8 @@ public sealed class RealKeycloakIntegrationTests(RealKeycloakApiFactory factory)
             RealKeycloakApiFactory.ClientId,
             RealKeycloakApiFactory.ClientSecret);
 
-        using var request = tokenClient.CreateApiRequest(HttpMethod.Get, new Uri(apiClient.BaseAddress!, "/v1/profile"), token.AccessToken);
+        using var request = tokenClient.CreateApiRequest(HttpMethod.Get, new Uri(apiClient.BaseAddress!, "/v1/profile"),
+            token.AccessToken);
         using var response = await apiClient.SendAsync(request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -37,7 +40,8 @@ public sealed class RealKeycloakIntegrationTests(RealKeycloakApiFactory factory)
             RealKeycloakApiFactory.ClientId,
             RealKeycloakApiFactory.ClientSecret);
 
-        using var request = attackerKeyClient.CreateApiRequest(HttpMethod.Get, new Uri(apiClient.BaseAddress!, "/v1/profile"), token.AccessToken);
+        using var request = attackerKeyClient.CreateApiRequest(HttpMethod.Get,
+            new Uri(apiClient.BaseAddress!, "/v1/profile"), token.AccessToken);
 
         using var response = await apiClient.SendAsync(request, TestContext.Current.CancellationToken);
 
@@ -57,7 +61,7 @@ public sealed class RealKeycloakIntegrationTests(RealKeycloakApiFactory factory)
             RealKeycloakApiFactory.ClientSecret);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/profile");
-        request.Headers.Authorization = new("Bearer", token.AccessToken);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
 
         using var response = await apiClient.SendAsync(request, TestContext.Current.CancellationToken);
 

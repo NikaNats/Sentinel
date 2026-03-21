@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -7,7 +8,7 @@ using Sentinel.Application.Common.Abstractions;
 using Sentinel.Controllers;
 using Sentinel.Errors;
 using Sentinel.Infrastructure.Auth;
-using System.Security.Claims;
+using Sentinel.Presentation.Controllers;
 
 namespace Sentinel.Tests.Unit;
 
@@ -26,7 +27,8 @@ public sealed class AuthControllerTests
             .Setup(x => x.RefreshTokenAsync("old-refresh", "proof", It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TokenRefreshResult(false, null, null, true));
 
-        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object, passwordValidator.Object, blacklistCache.Object, options)
+        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object,
+            passwordValidator.Object, blacklistCache.Object, options)
         {
             ControllerContext = new ControllerContext
             {
@@ -52,7 +54,8 @@ public sealed class AuthControllerTests
         var keycloakProfile = new Mock<IKeycloakProfileService>();
         var passwordValidator = new Mock<IPasswordStrengthValidator>();
         var blacklistCache = new Mock<ISessionBlacklistCache>();
-        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object, passwordValidator.Object, blacklistCache.Object, BuildOptions());
+        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object,
+            passwordValidator.Object, blacklistCache.Object, BuildOptions());
 
         var result = await controller.Refresh(new AuthController.RefreshRequest(string.Empty), CancellationToken.None);
 
@@ -74,7 +77,8 @@ public sealed class AuthControllerTests
             .Setup(x => x.RevokeCurrentSessionAsync("refresh-token", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object, passwordValidator.Object, blacklistCache.Object, options)
+        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object,
+            passwordValidator.Object, blacklistCache.Object, options)
         {
             ControllerContext = new ControllerContext
             {
@@ -92,8 +96,10 @@ public sealed class AuthControllerTests
         var result = await controller.Logout(new AuthController.RevokeRequest("refresh-token"), CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
-        blacklistCache.Verify(x => x.BlacklistSessionAsync("sid-1", TimeSpan.FromHours(8), It.IsAny<CancellationToken>()), Times.Once);
-        revocationService.Verify(x => x.RevokeCurrentSessionAsync("refresh-token", It.IsAny<CancellationToken>()), Times.Once);
+        blacklistCache.Verify(
+            x => x.BlacklistSessionAsync("sid-1", TimeSpan.FromHours(8), It.IsAny<CancellationToken>()), Times.Once);
+        revocationService.Verify(x => x.RevokeCurrentSessionAsync("refresh-token", It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -110,7 +116,8 @@ public sealed class AuthControllerTests
             .Setup(x => x.RevokeAllSessionsAsync("user-1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
-        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object, passwordValidator.Object, blacklistCache.Object, options)
+        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object,
+            passwordValidator.Object, blacklistCache.Object, options)
         {
             ControllerContext = new ControllerContext
             {

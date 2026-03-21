@@ -1,7 +1,10 @@
 // Sentinel Security API - FAPI 2.0 Compliant
+
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Telemetry;
@@ -14,15 +17,17 @@ public sealed class DpopValidationMiddleware(
     IDpopNonceStore nonceStore,
     ISecurityEventEmitter emitter)
 {
-    private static readonly Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler TokenHandler = new();
+    private static readonly JsonWebTokenHandler TokenHandler = new();
 
     public async Task InvokeAsync(HttpContext context)
     {
         var ipHash = SecurityContextHasher.HashIp(context);
         var authHeader = context.Request.Headers.Authorization.ToString();
-        if (string.IsNullOrWhiteSpace(authHeader) || !authHeader.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(authHeader) ||
+            !authHeader.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase))
         {
-            if (!string.IsNullOrWhiteSpace(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrWhiteSpace(authHeader) &&
+                authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             {
                 var bearerToken = authHeader["Bearer ".Length..].Trim();
                 if (bearerToken.Contains('~', StringComparison.Ordinal))
@@ -32,8 +37,10 @@ public sealed class DpopValidationMiddleware(
                 }
 
                 emitter.EmitAuthFailure("bearer_downgrade_attempt", context.User.FindFirst("sub")?.Value, ipHash);
-                AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", "bearer_downgrade_attempt"));
-                context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
+                AuthTelemetry.DpopFailures.Add(1,
+                    new KeyValuePair<string, object?>("reason", "bearer_downgrade_attempt"));
+                context.Response.Headers.Append("WWW-Authenticate",
+                    "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 return;
             }
@@ -66,7 +73,8 @@ public sealed class DpopValidationMiddleware(
         DpopValidationResult result;
         try
         {
-            result = await validator.ValidateAsync(dpopProof, token, context.Request.Method, requestUrl, expectedNonce, context.RequestAborted);
+            result = await validator.ValidateAsync(dpopProof, token, context.Request.Method, requestUrl, expectedNonce,
+                context.RequestAborted);
         }
         catch (ReplayCacheUnavailableException)
         {
@@ -87,20 +95,24 @@ public sealed class DpopValidationMiddleware(
             emitter.EmitAuthFailure("invalid_dpop_proof", context.User.FindFirst("sub")?.Value, ipHash);
             AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", "invalid_dpop_proof"));
 
-            if (string.Equals(result.Error, "use_dpop_nonce", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(thumbprint))
+            if (string.Equals(result.Error, "use_dpop_nonce", StringComparison.Ordinal) &&
+                !string.IsNullOrWhiteSpace(thumbprint))
             {
                 var challengeNonce = GenerateNonce();
-                var stored = await nonceStore.TryStoreNonceAsync(thumbprint, challengeNonce, TimeSpan.FromMinutes(5), context.RequestAborted);
+                var stored = await nonceStore.TryStoreNonceAsync(thumbprint, challengeNonce, TimeSpan.FromMinutes(5),
+                    context.RequestAborted);
                 var effectiveNonce = stored
                     ? challengeNonce
                     : await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted) ?? challengeNonce;
 
                 context.Response.Headers.Append("DPoP-Nonce", effectiveNonce);
-                context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"use_dpop_nonce\", algs=\"PS256 ES256\"");
+                context.Response.Headers.Append("WWW-Authenticate",
+                    "DPoP error=\"use_dpop_nonce\", algs=\"PS256 ES256\"");
             }
             else
             {
-                context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
+                context.Response.Headers.Append("WWW-Authenticate",
+                    "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
             }
 
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -111,24 +123,28 @@ public sealed class DpopValidationMiddleware(
         {
             if (!string.IsNullOrWhiteSpace(expectedNonce))
             {
-                var consumed = await nonceStore.ConsumeNonceIfMatchesAsync(thumbprint, expectedNonce, context.RequestAborted);
+                var consumed =
+                    await nonceStore.ConsumeNonceIfMatchesAsync(thumbprint, expectedNonce, context.RequestAborted);
                 if (!consumed)
                 {
                     emitter.EmitAuthFailure("invalid_dpop_proof", context.User.FindFirst("sub")?.Value, ipHash);
                     var challengeNonce = GenerateNonce();
-                    var stored = await nonceStore.TryStoreNonceAsync(thumbprint, challengeNonce, TimeSpan.FromMinutes(5), context.RequestAborted);
+                    var stored = await nonceStore.TryStoreNonceAsync(thumbprint, challengeNonce,
+                        TimeSpan.FromMinutes(5), context.RequestAborted);
                     var effectiveNonce = stored
                         ? challengeNonce
                         : await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted) ?? challengeNonce;
 
                     context.Response.Headers.Append("DPoP-Nonce", effectiveNonce);
-                    context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"use_dpop_nonce\", algs=\"PS256 ES256\"");
+                    context.Response.Headers.Append("WWW-Authenticate",
+                        "DPoP error=\"use_dpop_nonce\", algs=\"PS256 ES256\"");
                     context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                     return;
                 }
             }
 
-            var storedNonce = await nonceStore.TryStoreNonceAsync(thumbprint, result.NewNonce, TimeSpan.FromMinutes(5), context.RequestAborted);
+            var storedNonce = await nonceStore.TryStoreNonceAsync(thumbprint, result.NewNonce, TimeSpan.FromMinutes(5),
+                context.RequestAborted);
             var nextNonce = storedNonce
                 ? result.NewNonce
                 : await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted) ?? result.NewNonce;
@@ -166,6 +182,6 @@ public sealed class DpopValidationMiddleware(
     {
         var bytes = new byte[32];
         RandomNumberGenerator.Fill(bytes);
-        return Microsoft.IdentityModel.Tokens.Base64UrlEncoder.Encode(bytes);
+        return Base64UrlEncoder.Encode(bytes);
     }
 }

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Moq;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Cache;
+using StackExchange.Redis;
 
 namespace Sentinel.Tests.Unit;
 
@@ -14,7 +15,7 @@ public sealed class HybridJtiReplayCacheTests
     {
         var serviceProvider = new Mock<IServiceProvider>();
         serviceProvider
-            .Setup(x => x.GetService(typeof(StackExchange.Redis.IConnectionMultiplexer)))
+            .Setup(x => x.GetService(typeof(IConnectionMultiplexer)))
             .Throws(new InvalidOperationException("redis down"));
 
         using var memoryCache = new MemoryCache(new MemoryCacheOptions());
@@ -36,7 +37,7 @@ public sealed class HybridJtiReplayCacheTests
     {
         var serviceProvider = new Mock<IServiceProvider>();
         serviceProvider
-            .Setup(x => x.GetService(typeof(StackExchange.Redis.IConnectionMultiplexer)))
+            .Setup(x => x.GetService(typeof(IConnectionMultiplexer)))
             .Returns((object?)null);
 
         using var memoryCache = new MemoryCache(new MemoryCacheOptions());

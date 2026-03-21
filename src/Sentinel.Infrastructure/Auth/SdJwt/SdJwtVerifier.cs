@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -54,7 +53,8 @@ public sealed class SdJwtVerifier(
             return SdJwtVerificationResult.Fail("Issuer SD-JWT validation failed.");
         }
 
-        var keyBindingError = await ValidateKeyBindingAsync(kbJwt, issuerToken, issuerJwt, disclosures, expectedAudience, expectedNonce);
+        var keyBindingError = await ValidateKeyBindingAsync(kbJwt, issuerToken, issuerJwt, disclosures,
+            expectedAudience, expectedNonce);
         if (keyBindingError is not null)
         {
             return SdJwtVerificationResult.Fail(keyBindingError);
@@ -63,7 +63,8 @@ public sealed class SdJwtVerifier(
         return ReconstructClaims(issuerToken, disclosures);
     }
 
-    private async Task<TokenValidationResult> ValidateIssuerTokenAsync(string issuerJwt, string expectedAudience, CancellationToken ct)
+    private async Task<TokenValidationResult> ValidateIssuerTokenAsync(string issuerJwt, string expectedAudience,
+        CancellationToken ct)
     {
         var authority = keycloak.Authority.TrimEnd('/');
         var config = await openIdConfigurationManager.GetConfigurationAsync(ct);
@@ -165,7 +166,8 @@ public sealed class SdJwtVerifier(
         var presentationNoKb = $"{issuerJwt}~{string.Join("~", disclosures)}";
         var presentationNoKbWithTilde = $"{presentationNoKb}~";
         var sdHashNoKb = Base64UrlEncoder.Encode(SHA256.HashData(Encoding.ASCII.GetBytes(presentationNoKb)));
-        var sdHashNoKbWithTilde = Base64UrlEncoder.Encode(SHA256.HashData(Encoding.ASCII.GetBytes(presentationNoKbWithTilde)));
+        var sdHashNoKbWithTilde =
+            Base64UrlEncoder.Encode(SHA256.HashData(Encoding.ASCII.GetBytes(presentationNoKbWithTilde)));
         if (!string.Equals(sdHash, sdHashNoKb, StringComparison.Ordinal)
             && !string.Equals(sdHash, sdHashNoKbWithTilde, StringComparison.Ordinal))
         {

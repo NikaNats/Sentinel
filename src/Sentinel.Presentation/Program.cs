@@ -20,7 +20,9 @@ var app = builder.Build();
 app.UseApiLayer();
 
 if (app.Environment.IsDevelopment())
+{
     app.MapDeveloperDocs();
+}
 
 app.Run();
 

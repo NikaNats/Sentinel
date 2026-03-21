@@ -1,3 +1,7 @@
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -7,10 +11,6 @@ using Microsoft.IdentityModel.Tokens;
 using Moq;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Auth.SdJwt;
-using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 
 namespace Sentinel.Tests.Unit;
 
@@ -28,9 +28,11 @@ public sealed class SdJwtVerifierTests
         var holderJwk = CreateEcJwkObject(holderKey);
         var holderJkt = ComputeEcThumbprint(holderJwk);
         var issuerJwt = CreateIssuerJwt(authorityKey, [ComputeDisclosureDigest(allowedDisclosure)], holderJkt);
-        var kbJwt = CreateKeyBindingJwt(holderKey, holderJwk, issuerJwt, [allowedDisclosure, ignoredDisclosure], "sentinel-api", nonce: null);
+        var kbJwt = CreateKeyBindingJwt(holderKey, holderJwk, issuerJwt, [allowedDisclosure, ignoredDisclosure],
+            "sentinel-api", null);
 
-        var result = await sut.VerifyPresentationAsync($"{issuerJwt}~{allowedDisclosure}~{ignoredDisclosure}~{kbJwt}", "sentinel-api", expectedNonce: null, CancellationToken.None);
+        var result = await sut.VerifyPresentationAsync($"{issuerJwt}~{allowedDisclosure}~{ignoredDisclosure}~{kbJwt}",
+            "sentinel-api", null, CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.NotNull(result.Principal);
@@ -55,10 +57,11 @@ public sealed class SdJwtVerifierTests
             issuerJwt,
             [disclosure],
             "sentinel-api",
-            nonce: null,
-            issuedAt: DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds());
+            null,
+            DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds());
 
-        var result = await sut.VerifyPresentationAsync($"{issuerJwt}~{disclosure}~{kbJwt}", "sentinel-api", expectedNonce: null, CancellationToken.None);
+        var result = await sut.VerifyPresentationAsync($"{issuerJwt}~{disclosure}~{kbJwt}", "sentinel-api", null,
+            CancellationToken.None);
 
         Assert.False(result.IsSuccess);
         Assert.Equal("Key binding token is stale.", result.Error);
@@ -77,9 +80,10 @@ public sealed class SdJwtVerifierTests
         var holderJwk = CreateEcJwkObject(holderKey);
         var holderJkt = ComputeEcThumbprint(holderJwk);
         var issuerJwt = CreateIssuerJwt(authorityKey, [ComputeDisclosureDigest(disclosure)], holderJkt, hashAlgorithm);
-        var kbJwt = CreateKeyBindingJwt(holderKey, holderJwk, issuerJwt, [disclosure], "sentinel-api", nonce: null);
+        var kbJwt = CreateKeyBindingJwt(holderKey, holderJwk, issuerJwt, [disclosure], "sentinel-api", null);
 
-        var result = await sut.VerifyPresentationAsync($"{issuerJwt}~{disclosure}~{kbJwt}", "sentinel-api", expectedNonce: null, CancellationToken.None);
+        var result = await sut.VerifyPresentationAsync($"{issuerJwt}~{disclosure}~{kbJwt}", "sentinel-api", null,
+            CancellationToken.None);
 
         Assert.False(result.IsSuccess);
         Assert.Equal($"Unsupported disclosure hash algorithm: {hashAlgorithm}", result.Error);
@@ -94,7 +98,7 @@ public sealed class SdJwtVerifierTests
         using var authorityKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var sut = CreateVerifier(authorityKey);
 
-        var result = await sut.VerifyPresentationAsync(presentation, "sentinel-api", expectedNonce: null, CancellationToken.None);
+        var result = await sut.VerifyPresentationAsync(presentation, "sentinel-api", null, CancellationToken.None);
 
         Assert.False(result.IsSuccess);
         Assert.NotNull(result.Error);
@@ -121,7 +125,8 @@ public sealed class SdJwtVerifierTests
             NullLogger<SdJwtVerifier>.Instance);
     }
 
-    private static string CreateIssuerJwt(ECDsa authorityKey, string[] disclosureDigests, string holderJkt, string hashAlgorithm = "sha-256")
+    private static string CreateIssuerJwt(ECDsa authorityKey, string[] disclosureDigests, string holderJkt,
+        string hashAlgorithm = "sha-256")
     {
         var descriptor = new SecurityTokenDescriptor
         {
@@ -137,7 +142,8 @@ public sealed class SdJwtVerifierTests
                 ["cnf"] = new Dictionary<string, string> { ["jkt"] = holderJkt }
             },
             Expires = DateTimeOffset.UtcNow.AddMinutes(5).UtcDateTime,
-            SigningCredentials = new SigningCredentials(new ECDsaSecurityKey(authorityKey), SecurityAlgorithms.EcdsaSha256)
+            SigningCredentials =
+                new SigningCredentials(new ECDsaSecurityKey(authorityKey), SecurityAlgorithms.EcdsaSha256)
         };
 
         return new JsonWebTokenHandler().CreateToken(descriptor);
@@ -168,7 +174,8 @@ public sealed class SdJwtVerifierTests
             Audience = audience,
             Claims = claims,
             Expires = DateTimeOffset.UtcNow.AddMinutes(5).UtcDateTime,
-            SigningCredentials = new SigningCredentials(new ECDsaSecurityKey(holderKey), SecurityAlgorithms.EcdsaSha256),
+            SigningCredentials =
+                new SigningCredentials(new ECDsaSecurityKey(holderKey), SecurityAlgorithms.EcdsaSha256),
             AdditionalHeaderClaims = new Dictionary<string, object> { ["jwk"] = holderJwk }
         };
 

@@ -29,7 +29,7 @@ public sealed class RequireIdempotencyAttribute : Attribute, IAsyncActionFilter
 
         var idempotencyKey = keyValues.ToString();
         var logger = context.HttpContext.RequestServices.GetService<ILogger<RequireIdempotencyAttribute>>()
-            ?? NullLogger<RequireIdempotencyAttribute>.Instance;
+                     ?? NullLogger<RequireIdempotencyAttribute>.Instance;
         var redis = context.HttpContext.RequestServices.GetRequiredService<IConnectionMultiplexer>();
         var db = redis.GetDatabase();
         var sub = context.HttpContext.User.FindFirst("sub")?.Value ?? "anonymous";
@@ -105,7 +105,8 @@ public sealed class RequireIdempotencyAttribute : Attribute, IAsyncActionFilter
                 }
                 catch (RedisException ex)
                 {
-                    logger.LogCritical(ex, "Redis unavailable while releasing idempotency lock after unsuccessful request.");
+                    logger.LogCritical(ex,
+                        "Redis unavailable while releasing idempotency lock after unsuccessful request.");
                     executedContext.Result = BuildUnavailableResult();
                 }
             }

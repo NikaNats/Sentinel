@@ -9,8 +9,8 @@ namespace Sentinel.Infrastructure.Auth;
 
 public sealed class HmacResetTokenProvider(IOptions<ResetTokenOptions> options) : IResetTokenProvider
 {
-    private readonly byte[] signingKey = ResolveSigningKey(options.Value.TokenSigningKey);
     private readonly int lifetimeMinutes = options.Value.LifetimeMinutes <= 0 ? 15 : options.Value.LifetimeMinutes;
+    private readonly byte[] signingKey = ResolveSigningKey(options.Value.TokenSigningKey);
 
     public string GenerateToken(string email)
     {
@@ -68,7 +68,7 @@ public sealed class HmacResetTokenProvider(IOptions<ResetTokenOptions> options) 
         }
 
         var payload = Encoding.UTF8.GetString(payloadBytes);
-        var values = payload.Split('|', StringSplitOptions.None);
+        var values = payload.Split('|');
         if (values.Length != 3)
         {
             return (false, null);

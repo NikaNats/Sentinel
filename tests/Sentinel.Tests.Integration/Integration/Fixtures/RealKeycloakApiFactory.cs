@@ -1,3 +1,7 @@
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Net.Sockets;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -10,10 +14,6 @@ using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Testcontainers.Keycloak;
 using Testcontainers.Redis;
-using System.Net.Http.Json;
-using System.Text.Json;
-using Xunit;
-using System.Net.Sockets;
 
 namespace Sentinel.Tests.Integration.Fixtures;
 
@@ -25,9 +25,9 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
 
     private const string AdminUsername = "admin";
     private const string AdminPassword = "admin";
+    private readonly KeycloakContainer keycloakContainer;
 
     private readonly RedisContainer redisContainer;
-    private readonly KeycloakContainer keycloakContainer;
     private string redisConnectionString = string.Empty;
 
     public RealKeycloakApiFactory()
@@ -45,12 +45,29 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
     {
         get
         {
-            var baseAddress = keycloakContainer.GetBaseAddress().ToString().TrimEnd('/');
+            var baseAddress = keycloakContainer.GetBaseAddress().TrimEnd('/');
             return $"{baseAddress}/realms/{RealmName}";
         }
     }
 
     public string TokenEndpoint => $"{Authority}/protocol/openid-connect/token";
+
+    public async ValueTask InitializeAsync()
+    {
+        await redisContainer.StartAsync();
+        var redisHostPort = redisContainer.GetMappedPublicPort(6379);
+        redisConnectionString =
+            $"localhost:{redisHostPort},abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000";
+        await WaitForRedisReadinessAsync("127.0.0.1", redisHostPort, TimeSpan.FromSeconds(30));
+        await keycloakContainer.StartAsync();
+        var masterAuthority = $"{keycloakContainer.GetBaseAddress().TrimEnd('/')}/realms/master";
+        await WaitForDiscoveryDocumentAsync(masterAuthority);
+        await EnsureRealmProvisionedAsync();
+        await WaitForDiscoveryDocumentAsync(Authority);
+        _ = CreateClient();
+    }
+
+    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsyncCore());
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -83,22 +100,6 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
             });
         });
     }
-
-    public async ValueTask InitializeAsync()
-    {
-        await redisContainer.StartAsync();
-        var redisHostPort = redisContainer.GetMappedPublicPort(6379);
-        redisConnectionString = $"localhost:{redisHostPort},abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000";
-        await WaitForRedisReadinessAsync("127.0.0.1", redisHostPort, TimeSpan.FromSeconds(30));
-        await keycloakContainer.StartAsync();
-        var masterAuthority = $"{keycloakContainer.GetBaseAddress().ToString().TrimEnd('/')}/realms/master";
-        await WaitForDiscoveryDocumentAsync(masterAuthority);
-        await EnsureRealmProvisionedAsync();
-        await WaitForDiscoveryDocumentAsync(Authority);
-        _ = CreateClient();
-    }
-
-    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsyncCore());
 
     private async Task DisposeAsyncCore()
     {
@@ -139,7 +140,7 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
     {
         using var http = new HttpClient();
         var adminToken = await GetAdminAccessTokenAsync(http);
-        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", adminToken);
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
 
         var realmResponse = await http.GetAsync($"{keycloakContainer.GetBaseAddress()}admin/realms/{RealmName}");
         if (realmResponse.IsSuccessStatusCode)
@@ -155,54 +156,55 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
         });
         createRealm.EnsureSuccessStatusCode();
 
-        var createClient = await http.PostAsJsonAsync($"{keycloakContainer.GetBaseAddress()}admin/realms/{RealmName}/clients", new
-        {
-            clientId = ClientId,
-            protocol = "openid-connect",
-            publicClient = false,
-            secret = ClientSecret,
-            directAccessGrantsEnabled = false,
-            standardFlowEnabled = false,
-            serviceAccountsEnabled = true,
-            attributes = new Dictionary<string, string>
+        var createClient = await http.PostAsJsonAsync(
+            $"{keycloakContainer.GetBaseAddress()}admin/realms/{RealmName}/clients", new
             {
-                ["dpop.bound.access.tokens"] = "true",
-                ["access.token.signed.response.alg"] = "ES256"
-            },
-            protocolMappers = new object[]
-            {
-                new
+                clientId = ClientId,
+                protocol = "openid-connect",
+                publicClient = false,
+                secret = ClientSecret,
+                directAccessGrantsEnabled = false,
+                standardFlowEnabled = false,
+                serviceAccountsEnabled = true,
+                attributes = new Dictionary<string, string>
                 {
-                    name = "acr-hardcoded",
-                    protocol = "openid-connect",
-                    protocolMapper = "oidc-hardcoded-claim-mapper",
-                    consentRequired = false,
-                    config = new Dictionary<string, string>
-                    {
-                        ["access.token.claim"] = "true",
-                        ["id.token.claim"] = "false",
-                        ["claim.name"] = "acr",
-                        ["claim.value"] = "acr3",
-                        ["jsonType.label"] = "String"
-                    }
+                    ["dpop.bound.access.tokens"] = "true",
+                    ["access.token.signed.response.alg"] = "ES256"
                 },
-                new
+                protocolMappers = new object[]
                 {
-                    name = "profile-scope-hardcoded",
-                    protocol = "openid-connect",
-                    protocolMapper = "oidc-hardcoded-claim-mapper",
-                    consentRequired = false,
-                    config = new Dictionary<string, string>
+                    new
                     {
-                        ["access.token.claim"] = "true",
-                        ["id.token.claim"] = "false",
-                        ["claim.name"] = "scope",
-                        ["claim.value"] = "profile",
-                        ["jsonType.label"] = "String"
+                        name = "acr-hardcoded",
+                        protocol = "openid-connect",
+                        protocolMapper = "oidc-hardcoded-claim-mapper",
+                        consentRequired = false,
+                        config = new Dictionary<string, string>
+                        {
+                            ["access.token.claim"] = "true",
+                            ["id.token.claim"] = "false",
+                            ["claim.name"] = "acr",
+                            ["claim.value"] = "acr3",
+                            ["jsonType.label"] = "String"
+                        }
+                    },
+                    new
+                    {
+                        name = "profile-scope-hardcoded",
+                        protocol = "openid-connect",
+                        protocolMapper = "oidc-hardcoded-claim-mapper",
+                        consentRequired = false,
+                        config = new Dictionary<string, string>
+                        {
+                            ["access.token.claim"] = "true",
+                            ["id.token.claim"] = "false",
+                            ["claim.name"] = "scope",
+                            ["claim.value"] = "profile",
+                            ["jsonType.label"] = "String"
+                        }
                     }
                 }
-            }
-        });
+            });
         createClient.EnsureSuccessStatusCode();
     }
 

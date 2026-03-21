@@ -4,7 +4,7 @@ using Microsoft.Extensions.Options;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Auth;
 
-namespace Sentinel.Controllers;
+namespace Sentinel.Presentation.Controllers;
 
 [ApiController]
 [Route("v1/auth")]

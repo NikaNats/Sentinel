@@ -11,7 +11,8 @@ namespace Sentinel.Tests.Notifications;
 public sealed class NotificationServiceFallbackTests
 {
     [Fact]
-    public async Task BackgroundDispatcher_WhenProviderFails_LogsFailureAndKeepsServiceAliveForCircuitBreakerTransition()
+    public async Task
+        BackgroundDispatcher_WhenProviderFails_LogsFailureAndKeepsServiceAliveForCircuitBreakerTransition()
     {
         var queue = new TestNotificationQueue();
         var dispatcher = new Mock<INotificationDispatcher>();
@@ -28,10 +29,10 @@ public sealed class NotificationServiceFallbackTests
         });
 
         await queue.EnqueueAsync(new NotificationMessage(
-            new NotificationRecipient("user@example.com"),
-            "Alert",
-            "SecurityAlert",
-            new { Action = "Logout" }),
+                new NotificationRecipient("user@example.com"),
+                "Alert",
+                "SecurityAlert",
+                new { Action = "Logout" }),
             CancellationToken.None);
 
         using var sut = new NotificationBackgroundService(queue, dispatcher.Object, options, logger.Object);
@@ -41,7 +42,8 @@ public sealed class NotificationServiceFallbackTests
         await Task.Delay(TimeSpan.FromSeconds(4), CancellationToken.None);
         await sut.StopAsync(CancellationToken.None);
 
-        dispatcher.Verify(x => x.DispatchAsync(It.IsAny<NotificationMessage>(), It.IsAny<CancellationToken>()), Times.Exactly(3));
+        dispatcher.Verify(x => x.DispatchAsync(It.IsAny<NotificationMessage>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(3));
         logger.VerifyLog(LogLevel.Error, Times.AtLeastOnce());
 
         true.Should().BeTrue();

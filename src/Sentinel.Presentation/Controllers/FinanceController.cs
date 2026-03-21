@@ -9,8 +9,6 @@ namespace Sentinel.Controllers;
 [Route("v1/finance")]
 public sealed class FinanceController : ControllerBase
 {
-    public sealed record TransferRequest(string TransactionId, decimal Amount, string Currency, string DestinationAccount);
-
     [HttpPost("transfer")]
     [Authorize(Policy = Policies.RequireAcr3)]
     [RequireIdempotency]
@@ -24,4 +22,10 @@ public sealed class FinanceController : ControllerBase
     {
         return Ok(new { Status = "Success", request.TransactionId });
     }
+
+    public sealed record TransferRequest(
+        string TransactionId,
+        decimal Amount,
+        string Currency,
+        string DestinationAccount);
 }

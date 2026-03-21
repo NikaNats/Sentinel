@@ -42,7 +42,9 @@ public sealed class SsfEventProcessorTests
         var result = await sut.ProcessAsync("set-token", CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        blacklist.Verify(x => x.BlacklistSessionAsync("sid-123", TimeSpan.FromSeconds(1800), It.IsAny<CancellationToken>()), Times.Once);
+        blacklist.Verify(
+            x => x.BlacklistSessionAsync("sid-123", TimeSpan.FromSeconds(1800), It.IsAny<CancellationToken>()),
+            Times.Once);
         revocation.VerifyNoOtherCalls();
     }
 

@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -7,8 +9,6 @@ using Microsoft.IdentityModel.Tokens;
 using Moq;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Auth.Ssf;
-using System.Security.Cryptography;
-using System.Text.Json;
 
 namespace Sentinel.Tests.Unit;
 
@@ -62,7 +62,8 @@ public sealed class JwtSsfTokenValidatorTests
     public async Task ValidateAsync_WhenSetIsTooOld_ReturnsFailure()
     {
         using var authorityKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var validator = CreateValidator(authorityKey, new SsfOptions { MaxEventAgeSeconds = 60, AllowedClockSkewSeconds = 5 });
+        var validator = CreateValidator(authorityKey,
+            new SsfOptions { MaxEventAgeSeconds = 60, AllowedClockSkewSeconds = 5 });
         var set = CreateSetToken(authorityKey, claims =>
         {
             claims["iat"] = DateTimeOffset.UtcNow.AddDays(-3).ToUnixTimeSeconds();
@@ -111,7 +112,8 @@ public sealed class JwtSsfTokenValidatorTests
             Issuer = "https://issuer.example",
             Audience = "sentinel-api",
             Claims = claims,
-            SigningCredentials = new SigningCredentials(new ECDsaSecurityKey(signingKey), SecurityAlgorithms.EcdsaSha256)
+            SigningCredentials =
+                new SigningCredentials(new ECDsaSecurityKey(signingKey), SecurityAlgorithms.EcdsaSha256)
         };
 
         return new JsonWebTokenHandler().CreateToken(descriptor);

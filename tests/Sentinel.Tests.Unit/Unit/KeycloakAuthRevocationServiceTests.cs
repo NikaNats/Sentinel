@@ -1,6 +1,6 @@
 // Sentinel Security API - FAPI 2.0 Compliant
+
 using System.Net;
-using System.Net.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -17,11 +17,12 @@ public sealed class KeycloakAuthRevocationServiceTests
         using StubHttpMessageHandler publicHandler = new(_ => new HttpResponseMessage(HttpStatusCode.OK));
         using HttpClient httpClient = new(publicHandler);
         using StubHttpMessageHandler adminHandler = new(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
-        using HttpClient adminHttpClient = new(adminHandler, disposeHandler: false);
-        Mock<IHttpClientFactory> httpClientFactory = BuildHttpClientFactory(adminHttpClient);
+        using HttpClient adminHttpClient = new(adminHandler, false);
+        var httpClientFactory = BuildHttpClientFactory(adminHttpClient);
 
         Mock<ISecurityEventEmitter> emitter = new();
-        using KeycloakAdminTokenProvider adminTokenProvider = new(httpClientFactory.Object, BuildOptions(), NullLogger<KeycloakAdminTokenProvider>.Instance);
+        using KeycloakAdminTokenProvider adminTokenProvider = new(httpClientFactory.Object, BuildOptions(),
+            NullLogger<KeycloakAdminTokenProvider>.Instance);
         KeycloakAuthRevocationService sut = new(
             httpClient,
             httpClientFactory.Object,
@@ -30,7 +31,7 @@ public sealed class KeycloakAuthRevocationServiceTests
             emitter.Object,
             NullLogger<KeycloakAuthRevocationService>.Instance);
 
-        bool result = await sut.RevokeCurrentSessionAsync("refresh-token", CancellationToken.None);
+        var result = await sut.RevokeCurrentSessionAsync("refresh-token", CancellationToken.None);
 
         Assert.True(result);
         _ = Assert.Single(publicHandler.Requests);
@@ -44,18 +45,20 @@ public sealed class KeycloakAuthRevocationServiceTests
         using HttpClient httpClient = new(publicHandler);
         using StubHttpMessageHandler adminHandler = new(request =>
         {
-            return request.RequestUri is not null && request.RequestUri.AbsolutePath.EndsWith("/protocol/openid-connect/token", StringComparison.Ordinal)
+            return request.RequestUri is not null &&
+                   request.RequestUri.AbsolutePath.EndsWith("/protocol/openid-connect/token", StringComparison.Ordinal)
                 ? new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent("{\"access_token\":\"admin-token\",\"expires_in\":300}")
                 }
                 : new HttpResponseMessage(HttpStatusCode.NoContent);
         });
-        using HttpClient adminHttpClient = new(adminHandler, disposeHandler: false);
+        using HttpClient adminHttpClient = new(adminHandler, false);
 
-        Mock<IHttpClientFactory> httpClientFactory = BuildHttpClientFactory(adminHttpClient);
+        var httpClientFactory = BuildHttpClientFactory(adminHttpClient);
         Mock<ISecurityEventEmitter> emitter = new();
-        using KeycloakAdminTokenProvider adminTokenProvider = new(httpClientFactory.Object, BuildOptions(), NullLogger<KeycloakAdminTokenProvider>.Instance);
+        using KeycloakAdminTokenProvider adminTokenProvider = new(httpClientFactory.Object, BuildOptions(),
+            NullLogger<KeycloakAdminTokenProvider>.Instance);
         KeycloakAuthRevocationService sut = new(
             httpClient,
             httpClientFactory.Object,
@@ -64,7 +67,7 @@ public sealed class KeycloakAuthRevocationServiceTests
             emitter.Object,
             NullLogger<KeycloakAuthRevocationService>.Instance);
 
-        bool result = await sut.RevokeAllSessionsAsync("user-1", CancellationToken.None);
+        var result = await sut.RevokeAllSessionsAsync("user-1", CancellationToken.None);
 
         Assert.True(result);
         emitter.Verify(x => x.EmitAuthFailure("global_logout_triggered", "user-1", "internal"), Times.Once);
@@ -98,11 +101,13 @@ public sealed class KeycloakAuthRevocationServiceTests
         return factory;
     }
 
-    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
+    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
+        : HttpMessageHandler
     {
         public List<HttpRequestMessage> Requests { get; } = [];
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
         {
             Requests.Add(CloneRequest(request));
             return Task.FromResult(responseFactory(request));
@@ -112,17 +117,17 @@ public sealed class KeycloakAuthRevocationServiceTests
         {
             HttpRequestMessage clone = new(request.Method, request.RequestUri);
 
-            foreach (KeyValuePair<string, IEnumerable<string>> header in request.Headers)
+            foreach (var header in request.Headers)
             {
                 _ = clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
             }
 
             if (request.Content is not null)
             {
-                string content = request.Content.ReadAsStringAsync(CancellationToken.None).GetAwaiter().GetResult();
+                var content = request.Content.ReadAsStringAsync(CancellationToken.None).GetAwaiter().GetResult();
                 clone.Content = new StringContent(content);
 
-                foreach (KeyValuePair<string, IEnumerable<string>> header in request.Content.Headers)
+                foreach (var header in request.Content.Headers)
                 {
                     _ = clone.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
                 }

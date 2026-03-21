@@ -30,13 +30,15 @@ public sealed class SocialFederationBuilder
 
 public static class SentinelSecurityBuilderExtensions
 {
-    public static ISentinelSecurityBuilder AddSentinelSecurity(this IServiceCollection services, Action<SentinelSecurityOptions> configure)
+    public static ISentinelSecurityBuilder AddSentinelSecurity(this IServiceCollection services,
+        Action<SentinelSecurityOptions> configure)
     {
         _ = services.Configure(configure);
         return new SentinelSecurityBuilder(services);
     }
 
-    public static ISentinelSecurityBuilder AddSocialFederation(this ISentinelSecurityBuilder builder, Action<SocialFederationBuilder> configure)
+    public static ISentinelSecurityBuilder AddSocialFederation(this ISentinelSecurityBuilder builder,
+        Action<SocialFederationBuilder> configure)
     {
         var federationBuilder = new SocialFederationBuilder();
         configure(federationBuilder);

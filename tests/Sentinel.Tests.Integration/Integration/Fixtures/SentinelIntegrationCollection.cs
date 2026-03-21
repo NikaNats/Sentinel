@@ -1,5 +1,3 @@
-using Xunit;
-
 namespace Sentinel.Tests.Integration.Fixtures;
 
 [CollectionDefinition("Sentinel Integration")]

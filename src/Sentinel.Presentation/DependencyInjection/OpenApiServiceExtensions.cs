@@ -1,3 +1,5 @@
+using Microsoft.OpenApi;
+
 namespace Sentinel.DependencyInjection;
 
 internal static class OpenApiServiceExtensions
@@ -8,10 +10,11 @@ internal static class OpenApiServiceExtensions
             {
                 doc.Info.Version = "1.0.0";
                 doc.Info.Title = "Sentinel API";
-                doc.Info.Description = "FAPI 2.0 compliant security API with DPoP, ACR step-up, idempotency and replay protection";
-                doc.Info.Contact = new()
+                doc.Info.Description =
+                    "FAPI 2.0 compliant security API with DPoP, ACR step-up, idempotency and replay protection";
+                doc.Info.Contact = new OpenApiContact
                 {
-                    Name  = "Nika Nats",
+                    Name = "Nika Nats",
                     Email = "nika.nacvlishvili1@gmail.com"
                 };
                 return Task.CompletedTask;

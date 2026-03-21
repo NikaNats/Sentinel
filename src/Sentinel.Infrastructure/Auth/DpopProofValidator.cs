@@ -1,4 +1,5 @@
 // Sentinel Security API - FAPI 2.0 Compliant
+
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -12,6 +13,7 @@ namespace Sentinel.Infrastructure.Auth;
 public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProofValidator
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
+
     private static readonly HashSet<string> SupportedAlgorithms =
     [
         SecurityAlgorithms.RsaSsaPssSha256,
@@ -21,12 +23,13 @@ public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProof
         "MLDSA87"
     ];
 
-    public async Task<DpopValidationResult> ValidateAsync(string dpopHeader, string accessToken, string httpMethod, string httpUrl, string? expectedNonce, CancellationToken ct)
+    public async Task<DpopValidationResult> ValidateAsync(string dpopHeader, string accessToken, string httpMethod,
+        string httpUrl, string? expectedNonce, CancellationToken ct)
     {
         var startedAt = Stopwatch.GetTimestamp();
-        using var activity = AuthTelemetry.Source.StartActivity("auth.dpop.validate", ActivityKind.Internal);
-        _ = (activity?.SetTag("http.method", httpMethod));
-        _ = (activity?.SetTag("http.url", httpUrl));
+        using var activity = AuthTelemetry.Source.StartActivity("auth.dpop.validate");
+        _ = activity?.SetTag("http.method", httpMethod);
+        _ = activity?.SetTag("http.url", httpUrl);
 
         var result = new DpopValidationResult { IsValid = false };
 
@@ -34,7 +37,7 @@ public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProof
         {
             if (!TokenHandler.CanReadToken(dpopHeader) || !TokenHandler.CanReadToken(accessToken))
             {
-                _ = (activity?.SetTag("auth.result", "invalid"));
+                _ = activity?.SetTag("auth.result", "invalid");
                 return result;
             }
 
@@ -42,26 +45,26 @@ public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProof
 
             if (!IsSupportedAlgorithm(dpopToken.Alg))
             {
-                _ = (activity?.SetTag("auth.result", "invalid_alg"));
+                _ = activity?.SetTag("auth.result", "invalid_alg");
                 return result;
             }
 
             if (!string.Equals(dpopToken.Typ, "dpop+jwt", StringComparison.OrdinalIgnoreCase))
             {
-                _ = (activity?.SetTag("auth.result", "invalid_typ"));
+                _ = activity?.SetTag("auth.result", "invalid_typ");
                 return result;
             }
 
             if (!dpopToken.TryGetHeaderValue<object>("jwk", out var jwkObj) || jwkObj is null)
             {
-                _ = (activity?.SetTag("auth.result", "missing_jwk"));
+                _ = activity?.SetTag("auth.result", "missing_jwk");
                 return result;
             }
 
             var jwkJson = jwkObj.ToString();
             if (string.IsNullOrWhiteSpace(jwkJson))
             {
-                _ = (activity?.SetTag("auth.result", "invalid_jwk"));
+                _ = activity?.SetTag("auth.result", "invalid_jwk");
                 return result;
             }
 
@@ -70,39 +73,39 @@ public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProof
 
             if (jwkElement.TryGetProperty("d", out _))
             {
-                _ = (activity?.SetTag("auth.result", "private_jwk_rejected"));
+                _ = activity?.SetTag("auth.result", "private_jwk_rejected");
                 return result;
             }
 
             if (!await ValidateDpopSignatureAsync(dpopHeader, jwkJson, dpopToken.Alg))
             {
-                _ = (activity?.SetTag("auth.result", "invalid_signature"));
+                _ = activity?.SetTag("auth.result", "invalid_signature");
                 return result;
             }
 
             if (!dpopToken.TryGetPayloadValue<string>("jti", out var jti) || string.IsNullOrWhiteSpace(jti))
             {
-                _ = (activity?.SetTag("auth.result", "missing_jti"));
+                _ = activity?.SetTag("auth.result", "missing_jti");
                 return result;
             }
 
             if (!dpopToken.TryGetPayloadValue<string>("htm", out var htm)
                 || !string.Equals(htm, httpMethod, StringComparison.OrdinalIgnoreCase))
             {
-                _ = (activity?.SetTag("auth.result", "htm_mismatch"));
+                _ = activity?.SetTag("auth.result", "htm_mismatch");
                 return result;
             }
 
             if (!dpopToken.TryGetPayloadValue<string>("htu", out var htu)
                 || !string.Equals(NormalizeUri(htu), NormalizeUri(httpUrl), StringComparison.Ordinal))
             {
-                _ = (activity?.SetTag("auth.result", "htu_mismatch"));
+                _ = activity?.SetTag("auth.result", "htu_mismatch");
                 return result;
             }
 
             if (!dpopToken.TryGetPayloadValue<long>("iat", out var iat))
             {
-                _ = (activity?.SetTag("auth.result", "missing_iat"));
+                _ = activity?.SetTag("auth.result", "missing_iat");
                 return result;
             }
 
@@ -111,7 +114,7 @@ public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProof
                 if (!dpopToken.TryGetPayloadValue<string>("nonce", out var proofNonce)
                     || !string.Equals(proofNonce, expectedNonce, StringComparison.Ordinal))
                 {
-                    _ = (activity?.SetTag("auth.result", "nonce_mismatch"));
+                    _ = activity?.SetTag("auth.result", "nonce_mismatch");
                     result.Error = "use_dpop_nonce";
                     return result;
                 }
@@ -121,7 +124,7 @@ public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProof
             var now = DateTimeOffset.UtcNow;
             if (iatTime < now.AddSeconds(-60) || iatTime > now.AddSeconds(5))
             {
-                _ = (activity?.SetTag("auth.result", "iat_window_violation"));
+                _ = activity?.SetTag("auth.result", "iat_window_violation");
                 return result;
             }
 
@@ -130,27 +133,27 @@ public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProof
                 || !cnf.TryGetProperty("jkt", out var jktElement)
                 || string.IsNullOrWhiteSpace(jktElement.GetString()))
             {
-                _ = (activity?.SetTag("auth.result", "missing_cnf_jkt"));
+                _ = activity?.SetTag("auth.result", "missing_cnf_jkt");
                 return result;
             }
 
             var expectedJkt = DpopThumbprintHelper.ComputeJwkThumbprint(jwkElement);
             if (!string.Equals(jktElement.GetString(), expectedJkt, StringComparison.Ordinal))
             {
-                _ = (activity?.SetTag("auth.result", "jkt_mismatch"));
+                _ = activity?.SetTag("auth.result", "jkt_mismatch");
                 return result;
             }
 
             var stored = await replayCache.TryStoreIfNotExistsAsync($"dpop:{jti}", TimeSpan.FromMinutes(2), ct);
             if (!stored)
             {
-                _ = (activity?.SetTag("auth.result", "replayed_jti"));
+                _ = activity?.SetTag("auth.result", "replayed_jti");
                 return result;
             }
 
             result.IsValid = true;
             result.NewNonce = GenerateNewNonce();
-            _ = (activity?.SetTag("auth.result", "valid"));
+            _ = activity?.SetTag("auth.result", "valid");
             return result;
         }
         finally
@@ -221,6 +224,6 @@ public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProof
     internal static bool IsSupportedAlgorithm(string? algorithm)
     {
         return !string.IsNullOrWhiteSpace(algorithm)
-            && SupportedAlgorithms.Contains(algorithm);
+               && SupportedAlgorithms.Contains(algorithm);
     }
 }

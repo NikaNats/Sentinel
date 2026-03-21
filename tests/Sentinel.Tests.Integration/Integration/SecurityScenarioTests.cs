@@ -1,11 +1,11 @@
-using Microsoft.IdentityModel.JsonWebTokens;
-using Microsoft.IdentityModel.Tokens;
-using Sentinel.Tests.Integration.Fixtures;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
+using Sentinel.Tests.Integration.Fixtures;
 
 namespace Sentinel.Tests.Integration;
 
@@ -115,7 +115,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         var accessToken2 = TestTokenIssuer.MintAccessToken(jkt);
 
         var proofJti = Guid.NewGuid().ToString("N");
-        var firstProof = CreateDpopProof(securityKey, jwkObject, proofJti, requestUrl, nonce: null);
+        var firstProof = CreateDpopProof(securityKey, jwkObject, proofJti, requestUrl, null);
 
         using var req1 = new HttpRequestMessage(HttpMethod.Get, requestUri);
         req1.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken1);
@@ -217,7 +217,8 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
 
         await Task.WhenAll(tasks);
 
-        Assert.True(successCount <= 102, $"Expected at most 102 successful requests (100 permits + queue of 2), but got {successCount}");
+        Assert.True(successCount <= 102,
+            $"Expected at most 102 successful requests (100 permits + queue of 2), but got {successCount}");
         Assert.True(rateLimitedCount > 0, "Expected at least one 429 TooManyRequests response.");
     }
 
@@ -237,8 +238,8 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
 
         var token = TestTokenIssuer.MintAccessToken(
             ComputeEcThumbprint(jwkObject),
-            acr: "acr2",
-            scope: "documents:read",
+            "acr2",
+            "documents:read",
             subject: "documents-user-1");
 
         using var request = CreateSignedRequest(ecdsa, jwkObject, token, HttpMethod.Get, requestUrl);
@@ -263,8 +264,8 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
 
         var token = TestTokenIssuer.MintAccessToken(
             ComputeEcThumbprint(jwkObject),
-            acr: "acr3",
-            scope: "documents:read",
+            "acr3",
+            "documents:read",
             subject: "documents-user-2");
 
         using var request = CreateSignedJsonRequest(
@@ -296,8 +297,8 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
 
         var token = TestTokenIssuer.MintAccessToken(
             ComputeEcThumbprint(jwkObject),
-            acr: "acr2",
-            scope: "documents:write",
+            "acr2",
+            "documents:write",
             subject: "documents-user-3");
 
         using var request = CreateSignedJsonRequest(
@@ -332,7 +333,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         };
         var jkt = ComputeEcThumbprint(jwkObject);
 
-        var token1 = TestTokenIssuer.MintAccessToken(jkt, acr: "acr3", scope: "documents:write", subject: subject);
+        var token1 = TestTokenIssuer.MintAccessToken(jkt, "acr3", "documents:write", subject: subject);
         using var request1 = CreateSignedJsonRequest(
             ecdsa,
             jwkObject,
@@ -347,7 +348,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         Assert.True(response1.Headers.TryGetValues("DPoP-Nonce", out var nonceValues));
         var nonce = nonceValues!.First();
 
-        var token2 = TestTokenIssuer.MintAccessToken(jkt, acr: "acr3", scope: "documents:write", subject: subject);
+        var token2 = TestTokenIssuer.MintAccessToken(jkt, "acr3", "documents:write", subject: subject);
         using var request2 = CreateSignedJsonRequest(
             ecdsa,
             jwkObject,
@@ -380,8 +381,8 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
 
         var ownerToken = TestTokenIssuer.MintAccessToken(
             ComputeEcThumbprint(ownerJwkObject),
-            acr: "acr3",
-            scope: "documents:write",
+            "acr3",
+            "documents:write",
             subject: ownerSub);
 
         using var createRequest = CreateSignedJsonRequest(
@@ -412,12 +413,13 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
 
         var attackerToken = TestTokenIssuer.MintAccessToken(
             ComputeEcThumbprint(attackerJwkObject),
-            acr: "acr2",
-            scope: "documents:read",
+            "acr2",
+            "documents:read",
             subject: "documents-attacker");
 
         var readUrl = new Uri(client.BaseAddress!, $"/v1/documents/{documentId}").ToString();
-        using var readRequest = CreateSignedRequest(attackerKey, attackerJwkObject, attackerToken, HttpMethod.Get, readUrl);
+        using var readRequest =
+            CreateSignedRequest(attackerKey, attackerJwkObject, attackerToken, HttpMethod.Get, readUrl);
 
         var readResponse = await client.SendAsync(readRequest, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, readResponse.StatusCode);
@@ -440,7 +442,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         };
         var jkt = ComputeEcThumbprint(jwkObject);
 
-        var createToken = TestTokenIssuer.MintAccessToken(jkt, acr: "acr3", scope: "documents:write", subject: ownerSub);
+        var createToken = TestTokenIssuer.MintAccessToken(jkt, "acr3", "documents:write", subject: ownerSub);
         using var createRequest = CreateSignedJsonRequest(
             key,
             jwkObject,
@@ -454,10 +456,11 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
         Assert.True(createResponse.Headers.TryGetValues("DPoP-Nonce", out var nonceValues));
         var nonce = nonceValues!.First();
-        using var createdDoc = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        using var createdDoc =
+            JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var documentId = createdDoc.RootElement.GetProperty("id").GetGuid();
 
-        var deleteToken = TestTokenIssuer.MintAccessToken(jkt, acr: "acr3", scope: "documents:write", subject: ownerSub);
+        var deleteToken = TestTokenIssuer.MintAccessToken(jkt, "acr3", "documents:write", subject: ownerSub);
         var deleteUrl = new Uri(client.BaseAddress!, $"/v1/documents/{documentId}").ToString();
         using var deleteRequest = CreateSignedRequest(key, jwkObject, deleteToken, HttpMethod.Delete, deleteUrl, nonce);
         deleteRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
@@ -523,7 +526,8 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         return request;
     }
 
-    private static string CreateDpopProof(ECDsaSecurityKey securityKey, Dictionary<string, string> jwkObject, string jti, string url, string? nonce)
+    private static string CreateDpopProof(ECDsaSecurityKey securityKey, Dictionary<string, string> jwkObject,
+        string jti, string url, string? nonce)
     {
         var claims = new Dictionary<string, object>
         {

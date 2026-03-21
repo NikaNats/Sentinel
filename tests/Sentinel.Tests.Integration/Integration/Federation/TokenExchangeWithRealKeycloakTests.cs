@@ -33,7 +33,8 @@ public sealed class TokenExchangeWithRealKeycloakTests(RealKeycloakApiFactory fa
         var requestUrl = new Uri(apiClient.BaseAddress!, "/v1/auth/token-exchange").ToString();
         using var request = new HttpRequestMessage(HttpMethod.Post, requestUrl)
         {
-            Content = JsonContent.Create(new { externalToken = "fake-google-token", providerName = "google", codeVerifier = "pkce-verifier-123" })
+            Content = JsonContent.Create(new
+                { externalToken = "fake-google-token", providerName = "google", codeVerifier = "pkce-verifier-123" })
         };
         request.Headers.Add("DPoP", CreateDpopProof(requestUrl));
 
@@ -71,10 +72,11 @@ public sealed class TokenExchangeWithRealKeycloakTests(RealKeycloakApiFactory fa
             }
         };
 
-        using var upsert = new HttpRequestMessage(HttpMethod.Post, $"{host}/admin/realms/{realmName}/identity-provider/instances")
-        {
-            Content = JsonContent.Create(payload)
-        };
+        using var upsert =
+            new HttpRequestMessage(HttpMethod.Post, $"{host}/admin/realms/{realmName}/identity-provider/instances")
+            {
+                Content = JsonContent.Create(payload)
+            };
 
         var result = await adminClient.SendAsync(upsert, CancellationToken.None);
         if (result.StatusCode == HttpStatusCode.Conflict)
@@ -106,7 +108,7 @@ public sealed class TokenExchangeWithRealKeycloakTests(RealKeycloakApiFactory fa
         using var response = await client.SendAsync(request, CancellationToken.None);
         response.EnsureSuccessStatusCode();
 
-        var json = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>(cancellationToken: CancellationToken.None);
+        var json = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>(CancellationToken.None);
         return json?["access_token"]?.ToString() ?? throw new InvalidOperationException("Missing access_token");
     }
 

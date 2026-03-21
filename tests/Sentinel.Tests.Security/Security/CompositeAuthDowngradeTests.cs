@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Sockets;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -11,12 +14,8 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
-using Sentinel.Infrastructure.Auth.SdJwt;
 using Sentinel.Tests.Integration.Fixtures;
 using StackExchange.Redis;
-using System.Net;
-using System.Net.Http.Headers;
-using System.Net.Sockets;
 using Testcontainers.Redis;
 
 namespace Sentinel.Tests.Security;
@@ -54,6 +53,33 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    private static async Task WaitForRedisReadinessAsync(string host, int port, TimeSpan timeout)
+    {
+        var startedAt = DateTime.UtcNow;
+        Exception? lastError = null;
+
+        while (DateTime.UtcNow - startedAt < timeout)
+        {
+            try
+            {
+                using var client = new TcpClient();
+                await client.ConnectAsync(host, port);
+                if (client.Connected)
+                {
+                    return;
+                }
+            }
+            catch (Exception ex) when (ex is SocketException or InvalidOperationException)
+            {
+                lastError = ex;
+            }
+
+            await Task.Delay(250);
+        }
+
+        throw new TimeoutException($"Redis readiness check timed out for {host}:{port}", lastError);
+    }
+
     public sealed class CompositeAuthFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         private readonly RedisContainer redisContainer;
@@ -65,6 +91,18 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
                 .WithPortBinding(6379, true)
                 .Build();
         }
+
+        public async ValueTask InitializeAsync()
+        {
+            await redisContainer.StartAsync();
+            var redisHostPort = redisContainer.GetMappedPublicPort(6379);
+            redisConnectionString =
+                $"localhost:{redisHostPort},abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000";
+            await WaitForRedisReadinessAsync("127.0.0.1", redisHostPort, TimeSpan.FromSeconds(30));
+            _ = CreateClient();
+        }
+
+        ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsyncCore());
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -112,17 +150,6 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
             });
         }
 
-        public async ValueTask InitializeAsync()
-        {
-            await redisContainer.StartAsync();
-            var redisHostPort = redisContainer.GetMappedPublicPort(6379);
-            redisConnectionString = $"localhost:{redisHostPort},abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000";
-            await WaitForRedisReadinessAsync("127.0.0.1", redisHostPort, TimeSpan.FromSeconds(30));
-            _ = CreateClient();
-        }
-
-        ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsyncCore());
-
         private async Task DisposeAsyncCore()
         {
             await redisContainer.DisposeAsync();
@@ -130,34 +157,8 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
         }
     }
 
-    private static async Task WaitForRedisReadinessAsync(string host, int port, TimeSpan timeout)
-    {
-        var startedAt = DateTime.UtcNow;
-        Exception? lastError = null;
-
-        while (DateTime.UtcNow - startedAt < timeout)
-        {
-            try
-            {
-                using var client = new TcpClient();
-                await client.ConnectAsync(host, port);
-                if (client.Connected)
-                {
-                    return;
-                }
-            }
-            catch (Exception ex) when (ex is SocketException or InvalidOperationException)
-            {
-                lastError = ex;
-            }
-
-            await Task.Delay(250);
-        }
-
-        throw new TimeoutException($"Redis readiness check timed out for {host}:{port}", lastError);
-    }
-
-    private sealed class TestOpenIdConfigurationManager(SecurityKey signingKey) : IConfigurationManager<OpenIdConnectConfiguration>
+    private sealed class TestOpenIdConfigurationManager(SecurityKey signingKey)
+        : IConfigurationManager<OpenIdConnectConfiguration>
     {
         private readonly OpenIdConnectConfiguration configuration = new()
         {

@@ -1,9 +1,8 @@
-using Microsoft.IdentityModel.JsonWebTokens;
-using Microsoft.IdentityModel.Tokens;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 
 namespace Sentinel.Tests.Integration.Fixtures;
 
@@ -11,7 +10,8 @@ public sealed class KeycloakDpopTokenClient(string tokenEndpoint)
 {
     private readonly ECDsa signingKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 
-    public async Task<TokenResponse> RequestClientCredentialsGrantAsync(HttpClient httpClient, string clientId, string clientSecret)
+    public async Task<TokenResponse> RequestClientCredentialsGrantAsync(HttpClient httpClient, string clientId,
+        string clientSecret)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint)
         {
@@ -29,14 +29,16 @@ public sealed class KeycloakDpopTokenClient(string tokenEndpoint)
         if (!response.IsSuccessStatusCode)
         {
             var failureBody = await response.Content.ReadAsStringAsync();
-            throw new HttpRequestException($"Keycloak client credentials grant failed with {(int)response.StatusCode}: {failureBody}");
+            throw new HttpRequestException(
+                $"Keycloak client credentials grant failed with {(int)response.StatusCode}: {failureBody}");
         }
 
         var json = await response.Content.ReadAsStringAsync();
         return ParseTokenResponse(json);
     }
 
-    public async Task<TokenResponse> RequestRefreshGrantAsync(HttpClient httpClient, string refreshToken, string clientId)
+    public async Task<TokenResponse> RequestRefreshGrantAsync(HttpClient httpClient, string refreshToken,
+        string clientId)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint)
         {
@@ -54,7 +56,8 @@ public sealed class KeycloakDpopTokenClient(string tokenEndpoint)
         if (!response.IsSuccessStatusCode)
         {
             var failureBody = await response.Content.ReadAsStringAsync();
-            throw new HttpRequestException($"Keycloak refresh grant failed with {(int)response.StatusCode}: {failureBody}");
+            throw new HttpRequestException(
+                $"Keycloak refresh grant failed with {(int)response.StatusCode}: {failureBody}");
         }
 
         var json = await response.Content.ReadAsStringAsync();

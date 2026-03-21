@@ -1,11 +1,11 @@
-using Sentinel.Tests.Integration.Fixtures;
-using Microsoft.IdentityModel.JsonWebTokens;
-using Microsoft.IdentityModel.Tokens;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
+using Sentinel.Tests.Integration.Fixtures;
 
 namespace Sentinel.Tests.Integration;
 

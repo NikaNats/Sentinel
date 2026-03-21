@@ -1,12 +1,11 @@
-using Microsoft.AspNetCore.Authentication.Certificate;
-using Microsoft.AspNetCore.Hosting;
+using System.Security.Authentication;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
-using Microsoft.Extensions.DependencyInjection;
 using Sentinel.Auth.Authorization;
 using Sentinel.Middleware;
-using System.Threading.RateLimiting;
+using Sentinel.Presentation.Middleware;
 
 namespace Sentinel.DependencyInjection;
 
@@ -43,7 +42,8 @@ public static class ApiServiceCollectionExtensions
             var identityLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
             {
                 var sub = httpContext.User.FindFirst("sub")?.Value;
-                var clientId = httpContext.User.FindFirst("client_id")?.Value ?? httpContext.User.FindFirst("azp")?.Value;
+                var clientId = httpContext.User.FindFirst("client_id")?.Value ??
+                               httpContext.User.FindFirst("azp")?.Value;
                 var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
                 var key = !string.IsNullOrWhiteSpace(sub)
@@ -55,13 +55,14 @@ public static class ApiServiceCollectionExtensions
                 var bucket = ResolveRateLimitBucket(httpContext);
                 var permitLimit = ResolvePermitLimit(bucket);
 
-                return RateLimitPartition.GetFixedWindowLimiter($"identity:{bucket}:{key}", _ => new FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = permitLimit,
-                    Window = TimeSpan.FromMinutes(1),
-                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                    QueueLimit = 2
-                });
+                return RateLimitPartition.GetFixedWindowLimiter($"identity:{bucket}:{key}", _ =>
+                    new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = permitLimit,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 2
+                    });
             });
 
             var ipLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
@@ -70,13 +71,14 @@ public static class ApiServiceCollectionExtensions
                 var bucket = ResolveRateLimitBucket(httpContext);
                 var permitLimit = ResolvePermitLimit(bucket);
 
-                return RateLimitPartition.GetFixedWindowLimiter($"ip:{bucket}:{ip}", _ => new FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = permitLimit,
-                    Window = TimeSpan.FromMinutes(1),
-                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                    QueueLimit = 2
-                });
+                return RateLimitPartition.GetFixedWindowLimiter($"ip:{bucket}:{ip}", _ =>
+                    new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = permitLimit,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 2
+                    });
             });
 
             options.GlobalLimiter = PartitionedRateLimiter.CreateChained(identityLimiter, ipLimiter);
@@ -121,7 +123,7 @@ public static class ApiServiceCollectionExtensions
             options.ConfigureHttpsDefaults(httpsOptions =>
             {
                 httpsOptions.ClientCertificateMode = ClientCertificateMode.DelayCertificate;
-                httpsOptions.SslProtocols = System.Security.Authentication.SslProtocols.Tls13;
+                httpsOptions.SslProtocols = SslProtocols.Tls13;
             });
         });
 

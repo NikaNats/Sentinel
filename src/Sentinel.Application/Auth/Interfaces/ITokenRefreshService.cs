@@ -4,5 +4,6 @@ public record TokenRefreshResult(bool IsSuccess, string? AccessToken, string? Re
 
 public interface ITokenRefreshService
 {
-    Task<TokenRefreshResult> RefreshTokenAsync(string refreshToken, string dpopProof, string clientIpHash, CancellationToken ct);
+    Task<TokenRefreshResult> RefreshTokenAsync(string refreshToken, string dpopProof, string clientIpHash,
+        CancellationToken ct);
 }

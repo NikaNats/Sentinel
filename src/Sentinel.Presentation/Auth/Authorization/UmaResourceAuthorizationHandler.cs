@@ -1,6 +1,4 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 
@@ -10,7 +8,8 @@ public sealed class UmaResourceAuthorizationHandler(
     IUmaPermissionService umaService,
     IHttpContextAccessor httpContextAccessor) : AuthorizationHandler<UmaResourceRequirement>
 {
-    protected override async Task HandleRequirementAsync(AuthorizationHandlerContext context, UmaResourceRequirement requirement)
+    protected override async Task HandleRequirementAsync(AuthorizationHandlerContext context,
+        UmaResourceRequirement requirement)
     {
         var httpContext = httpContextAccessor.HttpContext;
         if (httpContext is null)
@@ -33,14 +32,16 @@ public sealed class UmaResourceAuthorizationHandler(
             return;
         }
 
-        var hasAccess = await umaService.HasAccessAsync(token, resourceId, requirement.RequiredScope, httpContext.RequestAborted);
+        var hasAccess =
+            await umaService.HasAccessAsync(token, resourceId, requirement.RequiredScope, httpContext.RequestAborted);
         if (hasAccess)
         {
             context.Succeed(requirement);
             return;
         }
 
-        context.Fail(new AuthorizationFailureReason(this, $"UMA policy evaluation failed for {resourceId}#{requirement.RequiredScope}."));
+        context.Fail(new AuthorizationFailureReason(this,
+            $"UMA policy evaluation failed for {resourceId}#{requirement.RequiredScope}."));
     }
 
     private static string? ExtractToken(string? authHeader)

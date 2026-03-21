@@ -5,11 +5,12 @@ using Sentinel.Application.Common.Abstractions;
 using Sentinel.Application.Models;
 using Sentinel.Middleware.Filters;
 
-namespace Sentinel.Controllers;
+namespace Sentinel.Presentation.Controllers;
 
 [ApiController]
 [Route("v1/documents")]
-public sealed class DocumentsController(IDocumentStore documentStore, ILogger<DocumentsController> logger) : ControllerBase
+public sealed class DocumentsController(IDocumentStore documentStore, ILogger<DocumentsController> logger)
+    : ControllerBase
 {
     private string? CurrentSub => User.FindFirst("sub")?.Value;
 
@@ -61,7 +62,8 @@ public sealed class DocumentsController(IDocumentStore documentStore, ILogger<Do
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> CreateDocument([FromBody] CreateDocumentRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> CreateDocument([FromBody] CreateDocumentRequest request,
+        CancellationToken cancellationToken)
     {
         var subject = CurrentSub;
         if (string.IsNullOrWhiteSpace(subject))
@@ -87,7 +89,8 @@ public sealed class DocumentsController(IDocumentStore documentStore, ILogger<Do
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> UpdateDocument(Guid id, [FromBody] UpdateDocumentRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> UpdateDocument(Guid id, [FromBody] UpdateDocumentRequest request,
+        CancellationToken cancellationToken)
     {
         var subject = CurrentSub;
         if (string.IsNullOrWhiteSpace(subject))

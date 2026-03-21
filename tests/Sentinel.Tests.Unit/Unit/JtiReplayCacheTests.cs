@@ -12,7 +12,8 @@ public sealed class JtiReplayCacheTests
     public async Task TryStoreIfNotExistsAsync_WhenRedisThrows_ThrowsReplayCacheUnavailableException()
     {
         var db = new Mock<IDatabase>();
-        db.Setup(x => x.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan?>(), It.IsAny<When>()))
+        db.Setup(x =>
+                x.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan?>(), It.IsAny<When>()))
             .ThrowsAsync(new Exception("Redis connection refused"));
 
         var redis = new Mock<IConnectionMultiplexer>();
@@ -35,7 +36,7 @@ public sealed class JtiReplayCacheTests
                 It.Is<RedisKey>(k => k.ToString() == "replay:jti:jti-abc"),
                 RedisValue.EmptyString,
                 TimeSpan.FromSeconds(30),
-            When.NotExists))
+                When.NotExists))
             .ReturnsAsync(true);
 
         var redis = new Mock<IConnectionMultiplexer>();

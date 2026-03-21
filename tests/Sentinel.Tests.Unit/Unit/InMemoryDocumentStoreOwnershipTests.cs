@@ -9,7 +9,8 @@ public sealed class InMemoryDocumentStoreOwnershipTests
     public async Task GetByIdAsync_WhenOwnerMatches_ReturnsDocument()
     {
         var store = new InMemoryDocumentStore();
-        var created = await store.CreateAsync("owner-1", new CreateDocumentRequest("title", "content"), CancellationToken.None);
+        var created = await store.CreateAsync("owner-1", new CreateDocumentRequest("title", "content"),
+            CancellationToken.None);
 
         var result = await store.GetByIdAsync(created.Id, "owner-1", CancellationToken.None);
 
@@ -23,7 +24,8 @@ public sealed class InMemoryDocumentStoreOwnershipTests
     public async Task GetByIdAsync_WhenOwnerDoesNotMatch_ReturnsNull()
     {
         var store = new InMemoryDocumentStore();
-        var created = await store.CreateAsync("owner-1", new CreateDocumentRequest("title", "content"), CancellationToken.None);
+        var created = await store.CreateAsync("owner-1", new CreateDocumentRequest("title", "content"),
+            CancellationToken.None);
 
         var result = await store.GetByIdAsync(created.Id, "owner-2", CancellationToken.None);
 

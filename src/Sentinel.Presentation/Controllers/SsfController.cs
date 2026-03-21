@@ -1,13 +1,13 @@
-using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Infrastructure.Auth.Ssf;
 
-namespace Sentinel.Controllers;
+namespace Sentinel.Presentation.Controllers;
 
 [ApiController]
 [Route("v1/ssf")]
@@ -51,7 +51,8 @@ public sealed class SsfController(
             return Accepted();
         }
 
-        logger.LogWarning("SSF event rejected. unauthorized={Unauthorized} error={Error}", result.IsUnauthorized, result.Error);
+        logger.LogWarning("SSF event rejected. unauthorized={Unauthorized} error={Error}", result.IsUnauthorized,
+            result.Error);
 
         return result.IsUnauthorized
             ? Unauthorized(new ProblemDetails

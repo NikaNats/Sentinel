@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -5,7 +6,7 @@ using Moq;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Application.Models;
 using Sentinel.Controllers;
-using System.Security.Claims;
+using Sentinel.Presentation.Controllers;
 
 namespace Sentinel.Tests.Unit;
 
@@ -20,7 +21,8 @@ public sealed class DocumentsControllerOwnershipTests
         var result = await controller.GetDocument(Guid.NewGuid(), CancellationToken.None);
 
         Assert.IsType<UnauthorizedResult>(result);
-        store.Verify(x => x.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        store.Verify(x => x.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -73,7 +75,7 @@ public sealed class DocumentsControllerOwnershipTests
         if (!string.IsNullOrWhiteSpace(sub))
         {
             controller.ControllerContext.HttpContext.User = new ClaimsPrincipal(
-                new ClaimsIdentity([new Claim("sub", sub)], authenticationType: "test"));
+                new ClaimsIdentity([new Claim("sub", sub)], "test"));
         }
 
         return controller;

@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -10,8 +11,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Testcontainers.Redis;
-using Xunit;
-using System.Net.Sockets;
 
 namespace Sentinel.Tests.Integration.Fixtures;
 
@@ -26,6 +25,18 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
             .WithPortBinding(6379, true)
             .Build();
     }
+
+    public async ValueTask InitializeAsync()
+    {
+        await redisContainer.StartAsync();
+        var redisHostPort = redisContainer.GetMappedPublicPort(6379);
+        redisConnectionString =
+            $"localhost:{redisHostPort},abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000";
+        await WaitForRedisReadinessAsync("127.0.0.1", redisHostPort, TimeSpan.FromSeconds(30));
+        _ = CreateClient();
+    }
+
+    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsyncCore());
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -68,17 +79,6 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
             });
         });
     }
-
-    public async ValueTask InitializeAsync()
-    {
-        await redisContainer.StartAsync();
-        var redisHostPort = redisContainer.GetMappedPublicPort(6379);
-        redisConnectionString = $"localhost:{redisHostPort},abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000";
-        await WaitForRedisReadinessAsync("127.0.0.1", redisHostPort, TimeSpan.FromSeconds(30));
-        _ = CreateClient();
-    }
-
-    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsyncCore());
 
     private async Task DisposeAsyncCore()
     {

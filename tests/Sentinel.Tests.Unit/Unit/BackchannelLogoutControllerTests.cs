@@ -5,6 +5,7 @@ using Moq;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Controllers;
 using Sentinel.Infrastructure.Auth;
+using Sentinel.Presentation.Controllers;
 
 namespace Sentinel.Tests.Unit;
 
@@ -20,12 +21,14 @@ public sealed class BackchannelLogoutControllerTests
         var blacklist = new Mock<ISessionBlacklistCache>();
         var options = BuildOptions();
 
-        var sut = new BackchannelLogoutController(validator.Object, blacklist.Object, options, NullLogger<BackchannelLogoutController>.Instance);
+        var sut = new BackchannelLogoutController(validator.Object, blacklist.Object, options,
+            NullLogger<BackchannelLogoutController>.Instance);
 
         var result = await sut.Logout("token", CancellationToken.None);
 
         Assert.IsType<OkResult>(result);
-        blacklist.Verify(x => x.BlacklistSessionAsync("sid-123", TimeSpan.FromHours(8), It.IsAny<CancellationToken>()), Times.Once);
+        blacklist.Verify(x => x.BlacklistSessionAsync("sid-123", TimeSpan.FromHours(8), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -38,12 +41,15 @@ public sealed class BackchannelLogoutControllerTests
         var blacklist = new Mock<ISessionBlacklistCache>();
         var options = BuildOptions();
 
-        var sut = new BackchannelLogoutController(validator.Object, blacklist.Object, options, NullLogger<BackchannelLogoutController>.Instance);
+        var sut = new BackchannelLogoutController(validator.Object, blacklist.Object, options,
+            NullLogger<BackchannelLogoutController>.Instance);
 
         var result = await sut.Logout("bad", CancellationToken.None);
 
         Assert.IsType<BadRequestResult>(result);
-        blacklist.Verify(x => x.BlacklistSessionAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Never);
+        blacklist.Verify(
+            x => x.BlacklistSessionAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     private static IOptions<KeycloakOptions> BuildOptions()

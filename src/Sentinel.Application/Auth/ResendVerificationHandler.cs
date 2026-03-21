@@ -27,7 +27,8 @@ public sealed class ResendVerificationHandler(
             }
 
             var verificationToken = Guid.NewGuid().ToString("N");
-            var stored = await verificationTokenStore.StoreAsync(verificationToken, user.Id, TimeSpan.FromHours(24), ct);
+            var stored =
+                await verificationTokenStore.StoreAsync(verificationToken, user.Id, TimeSpan.FromHours(24), ct);
             if (!stored)
             {
                 logger.LogWarning("Could not store verification token for user {UserId}.", user.Id);

@@ -3,5 +3,5 @@ using System.ComponentModel.DataAnnotations;
 namespace Sentinel.Application.Models;
 
 public sealed record CreateDocumentRequest(
-    [Required, MaxLength(128)] string Title,
-    [Required, MaxLength(4096)] string Content);
+    [Required] [MaxLength(128)] string Title,
+    [Required] [MaxLength(4096)] string Content);

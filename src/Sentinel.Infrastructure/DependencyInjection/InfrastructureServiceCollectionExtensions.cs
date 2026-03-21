@@ -1,12 +1,11 @@
-// Sentinel Security API - FAPI 2.0 Compliant
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Sentinel.Infrastructure.DependencyInjection;
 
 public static class InfrastructureServiceCollectionExtensions
 {
-    public static IServiceCollection AddInfrastructureLayer(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddInfrastructureLayer(this IServiceCollection services,
+        IConfiguration configuration)
     {
         _ = services
             .AddSentinelCore(configuration)

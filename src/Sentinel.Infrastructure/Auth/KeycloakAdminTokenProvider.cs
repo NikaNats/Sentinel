@@ -1,4 +1,5 @@
 // Sentinel Security API - FAPI 2.0 Compliant
+
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 
@@ -9,11 +10,16 @@ public sealed class KeycloakAdminTokenProvider(
     IOptions<KeycloakOptions> options,
     ILogger<KeycloakAdminTokenProvider> logger) : IDisposable
 {
-    private readonly SemaphoreSlim tokenLock = new(1, 1);
     private readonly KeycloakOptions keycloakOptions = options.Value;
+    private readonly SemaphoreSlim tokenLock = new(1, 1);
 
     private string? cachedAccessToken;
     private DateTimeOffset cachedAccessTokenExpiresAt;
+
+    public void Dispose()
+    {
+        tokenLock.Dispose();
+    }
 
     public async Task<string?> GetAccessTokenAsync(CancellationToken ct)
     {
@@ -44,7 +50,8 @@ public sealed class KeycloakAdminTokenProvider(
                 || string.IsNullOrWhiteSpace(adminClientSecret)
                 || !KeycloakAuthorityEndpoints.TryBuild(authority, out var tokenEndpoint, out _))
             {
-                logger.LogWarning("Cannot acquire Keycloak admin token because authority/admin credentials are missing or invalid.");
+                logger.LogWarning(
+                    "Cannot acquire Keycloak admin token because authority/admin credentials are missing or invalid.");
                 return null;
             }
 
@@ -57,7 +64,7 @@ public sealed class KeycloakAdminTokenProvider(
 
             if (!string.IsNullOrWhiteSpace(adminScope))
             {
-                requestPairs.Add(new("scope", adminScope));
+                requestPairs.Add(new KeyValuePair<string, string>("scope", adminScope));
             }
 
             using var request = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint)
@@ -69,7 +76,8 @@ public sealed class KeycloakAdminTokenProvider(
             using var response = await adminHttpClient.SendAsync(request, ct);
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogWarning("Failed to acquire Keycloak admin token. Status code: {StatusCode}", (int)response.StatusCode);
+                logger.LogWarning("Failed to acquire Keycloak admin token. Status code: {StatusCode}",
+                    (int)response.StatusCode);
                 return null;
             }
 
@@ -84,7 +92,8 @@ public sealed class KeycloakAdminTokenProvider(
                 return null;
             }
 
-            var expiresIn = root.TryGetProperty("expires_in", out var expiresInElement) && expiresInElement.TryGetInt32(out var seconds)
+            var expiresIn = root.TryGetProperty("expires_in", out var expiresInElement) &&
+                            expiresInElement.TryGetInt32(out var seconds)
                 ? Math.Max(seconds, 1)
                 : 60;
 
@@ -102,11 +111,6 @@ public sealed class KeycloakAdminTokenProvider(
     private bool HasUsableCachedToken()
     {
         return !string.IsNullOrWhiteSpace(cachedAccessToken)
-            && cachedAccessTokenExpiresAt > DateTimeOffset.UtcNow.AddSeconds(30);
-    }
-
-    public void Dispose()
-    {
-        tokenLock.Dispose();
+               && cachedAccessTokenExpiresAt > DateTimeOffset.UtcNow.AddSeconds(30);
     }
 }

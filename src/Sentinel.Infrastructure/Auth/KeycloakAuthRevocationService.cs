@@ -1,11 +1,10 @@
-// Sentinel Security API - FAPI 2.0 Compliant
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
-using Sentinel.Infrastructure.Telemetry;
-using Microsoft.Extensions.Options;
 
 namespace Sentinel.Infrastructure.Auth;
 
@@ -19,7 +18,8 @@ public sealed class KeycloakAuthRevocationService(
 {
     private readonly KeycloakOptions keycloakOptions = options.Value;
 
-    public async Task<IReadOnlyCollection<UserSessionInfo>> GetActiveSessionsAsync(string subjectId, CancellationToken ct)
+    public async Task<IReadOnlyCollection<UserSessionInfo>> GetActiveSessionsAsync(string subjectId,
+        CancellationToken ct)
     {
         var adminHttpClient = httpClientFactory.CreateClient("keycloak-admin");
         var adminContext = await TryResolveAdminContextAsync(ct);
@@ -28,7 +28,8 @@ public sealed class KeycloakAuthRevocationService(
             return [];
         }
 
-        var sessionsEndpoint = new Uri(adminContext.AdminRealmEndpoint, $"users/{Uri.EscapeDataString(subjectId)}/sessions");
+        var sessionsEndpoint = new Uri(adminContext.AdminRealmEndpoint,
+            $"users/{Uri.EscapeDataString(subjectId)}/sessions");
         using var request = new HttpRequestMessage(HttpMethod.Get, sessionsEndpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminContext.AdminToken);
 
@@ -40,7 +41,7 @@ public sealed class KeycloakAuthRevocationService(
                 return [];
             }
 
-            var sessions = await response.Content.ReadFromJsonAsync<List<KeycloakSessionResponse>>(cancellationToken: ct) ?? [];
+            var sessions = await response.Content.ReadFromJsonAsync<List<KeycloakSessionResponse>>(ct) ?? [];
             return sessions
                 .Where(x => !string.IsNullOrWhiteSpace(x.Id))
                 .Select(x => new UserSessionInfo(
@@ -77,7 +78,7 @@ public sealed class KeycloakAuthRevocationService(
         try
         {
             using var response = await adminHttpClient.SendAsync(request, ct);
-            return response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NoContent;
+            return response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NoContent;
         }
 #pragma warning disable CA1031 // Intentional catch-all: session revocation failures should be surfaced as unsuccessful result, not throw.
         catch (Exception ex)
@@ -118,7 +119,8 @@ public sealed class KeycloakAuthRevocationService(
                 return true;
             }
 
-            logger.LogWarning("Keycloak returned status {StatusCode} during current session revocation.", (int)response.StatusCode);
+            logger.LogWarning("Keycloak returned status {StatusCode} during current session revocation.",
+                (int)response.StatusCode);
             return false;
         }
 #pragma warning disable CA1031 // Intentional catch-all: revoke endpoint failures should fail closed and preserve controller flow.
@@ -163,7 +165,8 @@ public sealed class KeycloakAuthRevocationService(
                 return true;
             }
 
-            logger.LogWarning("Keycloak returned status {StatusCode} during global logout for sub {Sub}.", (int)response.StatusCode, subjectId);
+            logger.LogWarning("Keycloak returned status {StatusCode} during global logout for sub {Sub}.",
+                (int)response.StatusCode, subjectId);
             return false;
         }
 #pragma warning disable CA1031 // Intentional catch-all: global logout failures should return false without crashing request pipeline.
@@ -181,7 +184,8 @@ public sealed class KeycloakAuthRevocationService(
         if (string.IsNullOrWhiteSpace(authority)
             || !KeycloakAuthorityEndpoints.TryBuild(authority, out _, out var adminRealmEndpoint))
         {
-            logger.LogWarning("Account deletion skipped because Keycloak authority configuration is missing or invalid.");
+            logger.LogWarning(
+                "Account deletion skipped because Keycloak authority configuration is missing or invalid.");
             return false;
         }
 
@@ -206,7 +210,8 @@ public sealed class KeycloakAuthRevocationService(
                 return true;
             }
 
-            logger.LogWarning("Keycloak returned status {StatusCode} during account deletion for sub {Sub}.", (int)response.StatusCode, subjectId);
+            logger.LogWarning("Keycloak returned status {StatusCode} during account deletion for sub {Sub}.",
+                (int)response.StatusCode, subjectId);
             return false;
         }
 #pragma warning disable CA1031 // Intentional catch-all: account deletion failures should be reported as unsuccessful result.

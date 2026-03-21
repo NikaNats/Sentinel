@@ -23,7 +23,8 @@ public sealed class RegisterUserHandlerTests
         var validator = new Mock<IPasswordStrengthValidator>();
         validator.Setup(x => x.Validate(It.IsAny<string>())).Returns(new PasswordStrengthValidationResult(true));
 
-        var sut = new RegisterUserHandler(captcha.Object, keycloak.Object, email.Object, tokenStore.Object, validator.Object);
+        var sut = new RegisterUserHandler(captcha.Object, keycloak.Object, email.Object, tokenStore.Object,
+            validator.Object);
 
         var result = await sut.HandleAsync(
             new RegisterUserRequest("user@example.com", "user", "Passw0rd!", "captcha-token", true),
@@ -32,7 +33,9 @@ public sealed class RegisterUserHandlerTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal("invalid_captcha", result.ErrorCode);
-        keycloak.Verify(x => x.CreateUserAsync(It.IsAny<UserRegistration>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        keycloak.Verify(
+            x => x.CreateUserAsync(It.IsAny<UserRegistration>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -69,13 +72,15 @@ public sealed class RegisterUserHandlerTests
             .Setup(x => x.CreateUserAsync(It.IsAny<UserRegistration>(), "Passw0rd!", It.IsAny<CancellationToken>()))
             .ReturnsAsync("kc-user-1");
         tokenStore
-            .Setup(x => x.StoreAsync(It.IsAny<string>(), "kc-user-1", TimeSpan.FromHours(24), It.IsAny<CancellationToken>()))
+            .Setup(x => x.StoreAsync(It.IsAny<string>(), "kc-user-1", TimeSpan.FromHours(24),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         var validator = new Mock<IPasswordStrengthValidator>();
         validator.Setup(x => x.Validate("Passw0rd!")).Returns(new PasswordStrengthValidationResult(true));
 
-        var sut = new RegisterUserHandler(captcha.Object, keycloak.Object, email.Object, tokenStore.Object, validator.Object);
+        var sut = new RegisterUserHandler(captcha.Object, keycloak.Object, email.Object, tokenStore.Object,
+            validator.Object);
 
         var result = await sut.HandleAsync(
             new RegisterUserRequest("user@example.com", "user", "Passw0rd!", "captcha-token", true),
@@ -83,7 +88,9 @@ public sealed class RegisterUserHandlerTests
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        email.Verify(x => x.SendVerificationEmailAsync("user@example.com", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        email.Verify(
+            x => x.SendVerificationEmailAsync("user@example.com", It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -131,10 +138,12 @@ public sealed class RegisterUserHandlerTests
             .Setup(x => x.Validate("StrongPassw0rd!"))
             .Returns(new PasswordStrengthValidationResult(true));
         keycloak
-            .Setup(x => x.CreateUserAsync(It.IsAny<UserRegistration>(), "StrongPassw0rd!", It.IsAny<CancellationToken>()))
+            .Setup(x => x.CreateUserAsync(It.IsAny<UserRegistration>(), "StrongPassw0rd!",
+                It.IsAny<CancellationToken>()))
             .ThrowsAsync(new UserAlreadyExistsException());
 
-        var sut = new RegisterUserHandler(captcha.Object, keycloak.Object, email.Object, tokenStore.Object, validator.Object);
+        var sut = new RegisterUserHandler(captcha.Object, keycloak.Object, email.Object, tokenStore.Object,
+            validator.Object);
 
         var result = await sut.HandleAsync(
             new RegisterUserRequest("user@example.com", "user", "StrongPassw0rd!", "captcha-token", true),
@@ -143,7 +152,10 @@ public sealed class RegisterUserHandlerTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal("If this email is new, you'll receive a verification email.", result.Message);
-        email.Verify(x => x.SendWelcomeOrAlreadyRegisteredEmailAsync("user@example.com", It.IsAny<CancellationToken>()), Times.Once);
-        tokenStore.Verify(x => x.StoreAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Never);
+        email.Verify(x => x.SendWelcomeOrAlreadyRegisteredEmailAsync("user@example.com", It.IsAny<CancellationToken>()),
+            Times.Once);
+        tokenStore.Verify(
+            x => x.StoreAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TimeSpan>(),
+                It.IsAny<CancellationToken>()), Times.Never);
     }
 }

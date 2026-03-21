@@ -13,9 +13,14 @@ public sealed class SsfEventProcessor(
     IOptions<SsfOptions> ssfOptions,
     ILogger<SsfEventProcessor> logger) : ISsfEventProcessor
 {
-    private const string SessionRevokedEventType = "https://schemas.openid.net/secevent/caep/event-type/session-revoked";
-    private const string UserStatusChangedEventType = "https://schemas.openid.net/secevent/caep/event-type/user-status-changed";
-    private const string CredentialChangeEventType = "https://schemas.openid.net/secevent/caep/event-type/credential-change";
+    private const string SessionRevokedEventType =
+        "https://schemas.openid.net/secevent/caep/event-type/session-revoked";
+
+    private const string UserStatusChangedEventType =
+        "https://schemas.openid.net/secevent/caep/event-type/user-status-changed";
+
+    private const string CredentialChangeEventType =
+        "https://schemas.openid.net/secevent/caep/event-type/credential-change";
 
     public async Task<SsfProcessResult> ProcessAsync(string setToken, CancellationToken ct)
     {
@@ -39,7 +44,8 @@ public sealed class SsfEventProcessor(
                     var data = payload.Deserialize<SessionRevokedPayload>();
                     if (data is null)
                     {
-                        logger.LogWarning("SSF session-revoked event payload could not be parsed. jti={Jti}", validation.Token.Jti);
+                        logger.LogWarning("SSF session-revoked event payload could not be parsed. jti={Jti}",
+                            validation.Token.Jti);
                         continue;
                     }
 
@@ -65,7 +71,8 @@ public sealed class SsfEventProcessor(
                     var subject = data?.Subject ?? validation.Token.Subject;
                     if (string.IsNullOrWhiteSpace(subject))
                     {
-                        logger.LogWarning("SSF subject-level event missing subject. type={EventType} jti={Jti}", eventType, validation.Token.Jti);
+                        logger.LogWarning("SSF subject-level event missing subject. type={EventType} jti={Jti}",
+                            eventType, validation.Token.Jti);
                         continue;
                     }
 
@@ -74,7 +81,8 @@ public sealed class SsfEventProcessor(
                     break;
                 }
                 default:
-                    logger.LogInformation("SSF event type not handled. type={EventType} jti={Jti}", eventType, validation.Token.Jti);
+                    logger.LogInformation("SSF event type not handled. type={EventType} jti={Jti}", eventType,
+                        validation.Token.Jti);
                     break;
             }
         }

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using Sentinel.Infrastructure.Cache;
+using StackExchange.Redis;
 
 namespace Sentinel.Tests.Unit;
 
@@ -13,7 +14,7 @@ public sealed class HybridNonceStoreTests
     {
         var serviceProvider = new Mock<IServiceProvider>();
         serviceProvider
-            .Setup(x => x.GetService(typeof(StackExchange.Redis.IConnectionMultiplexer)))
+            .Setup(x => x.GetService(typeof(IConnectionMultiplexer)))
             .Throws(new InvalidOperationException("redis down"));
 
         using var memoryCache = new MemoryCache(new MemoryCacheOptions());
@@ -23,7 +24,8 @@ public sealed class HybridNonceStoreTests
             Options.Create(new RedisOptions { EnableInMemFallback = true }),
             NullLogger<HybridNonceStore>.Instance);
 
-        var stored = await sut.TryStoreNonceAsync("thumbprint-1", "nonce-1", TimeSpan.FromMinutes(5), CancellationToken.None);
+        var stored =
+            await sut.TryStoreNonceAsync("thumbprint-1", "nonce-1", TimeSpan.FromMinutes(5), CancellationToken.None);
         var nonce = await sut.GetNonceAsync("thumbprint-1", CancellationToken.None);
         var consumed = await sut.ConsumeNonceIfMatchesAsync("thumbprint-1", "nonce-1", CancellationToken.None);
         var nonceAfter = await sut.GetNonceAsync("thumbprint-1", CancellationToken.None);

@@ -1,8 +1,7 @@
+using System.Net;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Sentinel.Infrastructure.Auth;
-using System.Net;
-using System.Net.Http;
 
 namespace Sentinel.Tests.Unit;
 
@@ -14,7 +13,8 @@ public sealed class KeycloakUmaPermissionServiceTests
         using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
         using var httpClient = new HttpClient(handler);
         var options = BuildOptions();
-        var sut = new KeycloakUmaPermissionService(httpClient, options, NullLogger<KeycloakUmaPermissionService>.Instance);
+        var sut = new KeycloakUmaPermissionService(httpClient, options,
+            NullLogger<KeycloakUmaPermissionService>.Instance);
 
         var result = await sut.HasAccessAsync("token", "doc-1", "document:read", CancellationToken.None);
 
@@ -27,7 +27,8 @@ public sealed class KeycloakUmaPermissionServiceTests
         using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden));
         using var httpClient = new HttpClient(handler);
         var options = BuildOptions();
-        var sut = new KeycloakUmaPermissionService(httpClient, options, NullLogger<KeycloakUmaPermissionService>.Instance);
+        var sut = new KeycloakUmaPermissionService(httpClient, options,
+            NullLogger<KeycloakUmaPermissionService>.Instance);
 
         var result = await sut.HasAccessAsync("token", "doc-1", "document:read", CancellationToken.None);
 
@@ -40,7 +41,8 @@ public sealed class KeycloakUmaPermissionServiceTests
         using var handler = new StubHttpMessageHandler(_ => throw new HttpRequestException("offline"));
         using var httpClient = new HttpClient(handler);
         var options = BuildOptions();
-        var sut = new KeycloakUmaPermissionService(httpClient, options, NullLogger<KeycloakUmaPermissionService>.Instance);
+        var sut = new KeycloakUmaPermissionService(httpClient, options,
+            NullLogger<KeycloakUmaPermissionService>.Instance);
 
         var result = await sut.HasAccessAsync("token", "doc-1", "document:read", CancellationToken.None);
 
@@ -56,9 +58,11 @@ public sealed class KeycloakUmaPermissionServiceTests
         });
     }
 
-    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
+    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
+        : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
         {
             return Task.FromResult(responseFactory(request));
         }

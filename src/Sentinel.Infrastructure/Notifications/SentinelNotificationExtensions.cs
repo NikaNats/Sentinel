@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Sentinel.Application.Common.Abstractions;
 
@@ -16,7 +15,8 @@ internal sealed class SentinelSecurityBuilder(IServiceCollection services) : ISe
 
 public static class SentinelNotificationExtensions
 {
-    public static ISentinelSecurityBuilder AddNotifications(this IServiceCollection services, IConfiguration configuration)
+    public static ISentinelSecurityBuilder AddNotifications(this IServiceCollection services,
+        IConfiguration configuration)
     {
         _ = services.Configure<NotificationOptions>(configuration.GetSection("Notifications"));
         _ = services.Configure<SendGridOptions>(configuration.GetSection("Notifications:SendGrid"));
@@ -31,7 +31,8 @@ public static class SentinelNotificationExtensions
         return new SentinelSecurityBuilder(services);
     }
 
-    public static ISentinelSecurityBuilder AddSendGrid(this ISentinelSecurityBuilder builder, Action<SendGridOptions>? configure = null)
+    public static ISentinelSecurityBuilder AddSendGrid(this ISentinelSecurityBuilder builder,
+        Action<SendGridOptions>? configure = null)
     {
         if (configure is not null)
         {
@@ -42,7 +43,8 @@ public static class SentinelNotificationExtensions
         return builder;
     }
 
-    public static ISentinelSecurityBuilder AddTwilio(this ISentinelSecurityBuilder builder, Action<TwilioOptions>? configure = null)
+    public static ISentinelSecurityBuilder AddTwilio(this ISentinelSecurityBuilder builder,
+        Action<TwilioOptions>? configure = null)
     {
         if (configure is not null)
         {

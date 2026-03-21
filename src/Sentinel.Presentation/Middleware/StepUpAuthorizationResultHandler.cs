@@ -82,10 +82,10 @@ public sealed class StepUpAuthorizationResultHandler : IAuthorizationMiddlewareR
         PolicyAuthorizationResult authorizeResult)
     {
         var failureReasons = authorizeResult.AuthorizationFailure?
-            .FailureReasons
-            .Select(r => r.Message)
-            .ToArray()
-            ?? [];
+                                 .FailureReasons
+                                 .Select(r => r.Message)
+                                 .ToArray()
+                             ?? [];
 
         foreach (var reason in failureReasons)
         {
@@ -124,7 +124,7 @@ public sealed class StepUpAuthorizationResultHandler : IAuthorizationMiddlewareR
         }
 
         return AcrRank.TryGetValue(requiredAcrPolicy.MinimumAcr, out var requiredRank)
-            && tokenRank < requiredRank
+               && tokenRank < requiredRank
             ? requiredAcrPolicy
             : null;
     }

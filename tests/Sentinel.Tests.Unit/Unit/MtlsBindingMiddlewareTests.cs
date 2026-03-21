@@ -1,10 +1,12 @@
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Features;
-using Microsoft.Extensions.Logging.Abstractions;
-using Sentinel.Middleware;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.IdentityModel.Tokens;
+using Sentinel.Middleware;
+using Sentinel.Presentation.Middleware;
 
 namespace Sentinel.Tests.Unit;
 
@@ -52,11 +54,11 @@ public sealed class MtlsBindingMiddlewareTests
     {
         var context = new DefaultHttpContext();
         var claimsIdentity = new ClaimsIdentity(
-        [
-            new Claim("sub", "sentinel-worker"),
-            new Claim("cnf", cnfJson)
-        ],
-        authenticationType: "test");
+            [
+                new Claim("sub", "sentinel-worker"),
+                new Claim("cnf", cnfJson)
+            ],
+            "test");
 
         context.User = new ClaimsPrincipal(claimsIdentity);
         return context;
@@ -65,13 +67,14 @@ public sealed class MtlsBindingMiddlewareTests
     private static string ComputeThumbprint(X509Certificate2 certificate)
     {
         var thumbprintHash = certificate.GetCertHash(HashAlgorithmName.SHA256);
-        return Microsoft.IdentityModel.Tokens.Base64UrlEncoder.Encode(thumbprintHash);
+        return Base64UrlEncoder.Encode(thumbprintHash);
     }
 
     private static X509Certificate2 CreateCertificate()
     {
         using var rsa = RSA.Create(2048);
-        var request = new CertificateRequest("CN=sentinel-workload", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        var request = new CertificateRequest("CN=sentinel-workload", rsa, HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
         return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddDays(1));
     }
 

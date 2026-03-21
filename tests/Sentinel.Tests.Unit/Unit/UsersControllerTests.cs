@@ -1,13 +1,14 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Sentinel.Application.Auth;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Controllers;
-using Microsoft.Extensions.Logging.Abstractions;
 using Sentinel.Domain.Auth;
+using Sentinel.Presentation.Controllers;
 
 namespace Sentinel.Tests.Unit;
 
@@ -124,7 +125,8 @@ public sealed class UsersControllerTests
             BuildVerificationStore(null),
             Mock.Of<IKeycloakUserService>());
 
-        var response = await controller.ForgotPassword(new ForgotPasswordRequest("unknown@example.com", "captcha"), CancellationToken.None);
+        var response = await controller.ForgotPassword(new ForgotPasswordRequest("unknown@example.com", "captcha"),
+            CancellationToken.None);
 
         Assert.IsType<AcceptedResult>(response);
     }

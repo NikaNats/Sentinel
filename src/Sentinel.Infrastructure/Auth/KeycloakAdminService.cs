@@ -17,6 +17,167 @@ public sealed class KeycloakAdminService(
 {
     private readonly KeycloakOptions keycloakOptions = options.Value;
 
+    public async Task ConfigureGoogleProviderAsync(GoogleFederationOptions options, string firstBrokerLoginFlowAlias,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(options.ClientId) || string.IsNullOrWhiteSpace(options.ClientSecret))
+        {
+            return;
+        }
+
+        var payload = new IdentityProviderPayload
+        {
+            Alias = "google",
+            DisplayName = "Google",
+            ProviderId = "google",
+            Enabled = true,
+            TrustEmail = options.TrustEmail,
+            StoreToken = options.StoreToken,
+            FirstBrokerLoginFlowAlias = firstBrokerLoginFlowAlias,
+            Config = new Dictionary<string, string>
+            {
+                ["clientId"] = options.ClientId,
+                ["clientSecret"] = options.ClientSecret,
+                ["defaultScope"] = "openid profile email",
+                ["useJwksUrl"] = "true",
+                ["syncMode"] = MapSyncMode(options.SyncMode)
+            }
+        };
+
+        await UpsertIdentityProviderAsync(payload, ct);
+    }
+
+    public async Task ConfigureGitHubProviderAsync(GitHubFederationOptions options, string firstBrokerLoginFlowAlias,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(options.ClientId) || string.IsNullOrWhiteSpace(options.ClientSecret))
+        {
+            return;
+        }
+
+        var payload = new IdentityProviderPayload
+        {
+            Alias = "github",
+            DisplayName = "GitHub",
+            ProviderId = "github",
+            Enabled = true,
+            TrustEmail = options.TrustEmail,
+            StoreToken = options.StoreToken,
+            FirstBrokerLoginFlowAlias = firstBrokerLoginFlowAlias,
+            Config = new Dictionary<string, string>
+            {
+                ["clientId"] = options.ClientId,
+                ["clientSecret"] = options.ClientSecret,
+                ["defaultScope"] = "read:user user:email",
+                ["syncMode"] = MapSyncMode(options.SyncMode)
+            }
+        };
+
+        await UpsertIdentityProviderAsync(payload, ct);
+    }
+
+    public async Task<bool> UpdateProfileAsync(string subjectId, string? displayName, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(subjectId))
+        {
+            return false;
+        }
+
+        var adminRealmEndpoint = ResolveAdminRealmEndpoint();
+        var token = await RequireAdminTokenAsync(ct);
+
+        var normalizedDisplayName = string.IsNullOrWhiteSpace(displayName) ? string.Empty : displayName.Trim();
+        var parts = normalizedDisplayName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var firstName = parts.Length > 0 ? parts[0] : string.Empty;
+        var lastName = parts.Length > 1 ? string.Join(' ', parts.Skip(1)) : string.Empty;
+
+        using var request = new HttpRequestMessage(HttpMethod.Put,
+            new Uri(adminRealmEndpoint, $"users/{Uri.EscapeDataString(subjectId)}"))
+        {
+            Content = JsonContent.Create(new
+            {
+                firstName,
+                lastName,
+                attributes = new Dictionary<string, string[]>
+                {
+                    ["display_name"] = [normalizedDisplayName]
+                }
+            })
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var response = await httpClient.SendAsync(request, ct);
+        return response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NoContent;
+    }
+
+    public async Task<bool> UpdatePasswordAsync(string email, string newPassword, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(newPassword))
+        {
+            return false;
+        }
+
+        var user = await GetUserByEmailAsync(email, ct);
+        if (user is null)
+        {
+            return false;
+        }
+
+        var adminRealmEndpoint = ResolveAdminRealmEndpoint();
+        var token = await RequireAdminTokenAsync(ct);
+
+        using var request = new HttpRequestMessage(HttpMethod.Put,
+            new Uri(adminRealmEndpoint, $"users/{Uri.EscapeDataString(user.Id)}/reset-password"))
+        {
+            Content = JsonContent.Create(new
+            {
+                type = "password",
+                value = newPassword,
+                temporary = false
+            })
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var response = await httpClient.SendAsync(request, ct);
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<bool> VerifyUserPasswordAsync(string usernameOrEmail, string currentPassword,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(usernameOrEmail) || string.IsNullOrWhiteSpace(currentPassword))
+        {
+            return false;
+        }
+
+        // Legacy compatibility path: this still uses password grant verification and should be
+        // replaced with OIDC step-up (ACR elevation) to avoid relying on deprecated ROPC.
+        logger.LogWarning(
+            "VerifyUserPasswordAsync is using legacy ROPC-based verification. Migrate to step-up authentication.");
+
+        var authority = keycloakOptions.Authority.TrimEnd('/');
+        var clientId = keycloakOptions.Audience;
+        if (string.IsNullOrWhiteSpace(authority) || string.IsNullOrWhiteSpace(clientId))
+        {
+            return false;
+        }
+
+        var endpoint = $"{authority}/protocol/openid-connect/token";
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+        {
+            Content = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("grant_type", "password"),
+                new KeyValuePair<string, string>("client_id", clientId),
+                new KeyValuePair<string, string>("username", usernameOrEmail),
+                new KeyValuePair<string, string>("password", currentPassword)
+            ])
+        };
+
+        using var response = await httpClient.SendAsync(request, ct);
+        return response.IsSuccessStatusCode;
+    }
+
     public async Task<string> CreateUserAsync(UserRegistration registration, string password, CancellationToken ct)
     {
         var adminRealmEndpoint = ResolveAdminRealmEndpoint();
@@ -56,7 +217,8 @@ public sealed class KeycloakAdminService(
             }
 
             var error = await response.Content.ReadAsStringAsync(ct);
-            logger.LogWarning("Failed to create Keycloak user. Status: {Status}. Body: {Body}", (int)response.StatusCode, error);
+            logger.LogWarning("Failed to create Keycloak user. Status: {Status}. Body: {Body}",
+                (int)response.StatusCode, error);
             throw new InvalidOperationException("Unable to create user in identity provider.");
         }
 
@@ -74,7 +236,8 @@ public sealed class KeycloakAdminService(
         var adminRealmEndpoint = ResolveAdminRealmEndpoint();
         var token = await RequireAdminTokenAsync(ct);
 
-        using var request = new HttpRequestMessage(HttpMethod.Put, new Uri(adminRealmEndpoint, $"users/{Uri.EscapeDataString(keycloakUserId)}"))
+        using var request = new HttpRequestMessage(HttpMethod.Put,
+            new Uri(adminRealmEndpoint, $"users/{Uri.EscapeDataString(keycloakUserId)}"))
         {
             Content = JsonContent.Create(new { emailVerified = verified })
         };
@@ -90,7 +253,8 @@ public sealed class KeycloakAdminService(
         var adminRealmEndpoint = ResolveAdminRealmEndpoint();
         var token = await RequireAdminTokenAsync(ct);
 
-        using var request = new HttpRequestMessage(HttpMethod.Delete, new Uri(adminRealmEndpoint, $"users/{Uri.EscapeDataString(keycloakUserId)}"));
+        using var request = new HttpRequestMessage(HttpMethod.Delete,
+            new Uri(adminRealmEndpoint, $"users/{Uri.EscapeDataString(keycloakUserId)}"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         using var response = await httpClient.SendAsync(request, ct);
@@ -109,7 +273,8 @@ public sealed class KeycloakAdminService(
         var token = await RequireAdminTokenAsync(ct);
 
         var encodedEmail = Uri.EscapeDataString(email.Trim());
-        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(adminRealmEndpoint, $"users?email={encodedEmail}&exact=true"));
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            new Uri(adminRealmEndpoint, $"users?email={encodedEmail}&exact=true"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         using var response = await httpClient.SendAsync(request, ct);
@@ -118,169 +283,15 @@ public sealed class KeycloakAdminService(
             return null;
         }
 
-        var users = await response.Content.ReadFromJsonAsync<List<KeycloakUserResponse>>(cancellationToken: ct);
+        var users = await response.Content.ReadFromJsonAsync<List<KeycloakUserResponse>>(ct);
         var user = users?.FirstOrDefault(static u => !string.IsNullOrWhiteSpace(u.Id));
         if (user is null)
         {
             return null;
         }
 
-        return new KeycloakUserSummary(user.Id!, user.Email ?? email.Trim(), user.Username ?? user.Email ?? string.Empty);
-    }
-
-    public async Task<bool> UpdateProfileAsync(string subjectId, string? displayName, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(subjectId))
-        {
-            return false;
-        }
-
-        var adminRealmEndpoint = ResolveAdminRealmEndpoint();
-        var token = await RequireAdminTokenAsync(ct);
-
-        var normalizedDisplayName = string.IsNullOrWhiteSpace(displayName) ? string.Empty : displayName.Trim();
-        var parts = normalizedDisplayName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var firstName = parts.Length > 0 ? parts[0] : string.Empty;
-        var lastName = parts.Length > 1 ? string.Join(' ', parts.Skip(1)) : string.Empty;
-
-        using var request = new HttpRequestMessage(HttpMethod.Put, new Uri(adminRealmEndpoint, $"users/{Uri.EscapeDataString(subjectId)}"))
-        {
-            Content = JsonContent.Create(new
-            {
-                firstName,
-                lastName,
-                attributes = new Dictionary<string, string[]>
-                {
-                    ["display_name"] = [normalizedDisplayName]
-                }
-            })
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-
-        using var response = await httpClient.SendAsync(request, ct);
-        return response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NoContent;
-    }
-
-    public async Task<bool> UpdatePasswordAsync(string email, string newPassword, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(newPassword))
-        {
-            return false;
-        }
-
-        var user = await GetUserByEmailAsync(email, ct);
-        if (user is null)
-        {
-            return false;
-        }
-
-        var adminRealmEndpoint = ResolveAdminRealmEndpoint();
-        var token = await RequireAdminTokenAsync(ct);
-
-        using var request = new HttpRequestMessage(HttpMethod.Put, new Uri(adminRealmEndpoint, $"users/{Uri.EscapeDataString(user.Id)}/reset-password"))
-        {
-            Content = JsonContent.Create(new
-            {
-                type = "password",
-                value = newPassword,
-                temporary = false
-            })
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-
-        using var response = await httpClient.SendAsync(request, ct);
-        return response.IsSuccessStatusCode;
-    }
-
-    public async Task<bool> VerifyUserPasswordAsync(string usernameOrEmail, string currentPassword, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(usernameOrEmail) || string.IsNullOrWhiteSpace(currentPassword))
-        {
-            return false;
-        }
-
-        // Legacy compatibility path: this still uses password grant verification and should be
-        // replaced with OIDC step-up (ACR elevation) to avoid relying on deprecated ROPC.
-        logger.LogWarning("VerifyUserPasswordAsync is using legacy ROPC-based verification. Migrate to step-up authentication.");
-
-        var authority = keycloakOptions.Authority.TrimEnd('/');
-        var clientId = keycloakOptions.Audience;
-        if (string.IsNullOrWhiteSpace(authority) || string.IsNullOrWhiteSpace(clientId))
-        {
-            return false;
-        }
-
-        var endpoint = $"{authority}/protocol/openid-connect/token";
-        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
-        {
-            Content = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("grant_type", "password"),
-                new KeyValuePair<string, string>("client_id", clientId),
-                new KeyValuePair<string, string>("username", usernameOrEmail),
-                new KeyValuePair<string, string>("password", currentPassword)
-            ])
-        };
-
-        using var response = await httpClient.SendAsync(request, ct);
-        return response.IsSuccessStatusCode;
-    }
-
-    public async Task ConfigureGoogleProviderAsync(GoogleFederationOptions options, string firstBrokerLoginFlowAlias, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(options.ClientId) || string.IsNullOrWhiteSpace(options.ClientSecret))
-        {
-            return;
-        }
-
-        var payload = new IdentityProviderPayload
-        {
-            Alias = "google",
-            DisplayName = "Google",
-            ProviderId = "google",
-            Enabled = true,
-            TrustEmail = options.TrustEmail,
-            StoreToken = options.StoreToken,
-            FirstBrokerLoginFlowAlias = firstBrokerLoginFlowAlias,
-            Config = new Dictionary<string, string>
-            {
-                ["clientId"] = options.ClientId,
-                ["clientSecret"] = options.ClientSecret,
-                ["defaultScope"] = "openid profile email",
-                ["useJwksUrl"] = "true",
-                ["syncMode"] = MapSyncMode(options.SyncMode)
-            }
-        };
-
-        await UpsertIdentityProviderAsync(payload, ct);
-    }
-
-    public async Task ConfigureGitHubProviderAsync(GitHubFederationOptions options, string firstBrokerLoginFlowAlias, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(options.ClientId) || string.IsNullOrWhiteSpace(options.ClientSecret))
-        {
-            return;
-        }
-
-        var payload = new IdentityProviderPayload
-        {
-            Alias = "github",
-            DisplayName = "GitHub",
-            ProviderId = "github",
-            Enabled = true,
-            TrustEmail = options.TrustEmail,
-            StoreToken = options.StoreToken,
-            FirstBrokerLoginFlowAlias = firstBrokerLoginFlowAlias,
-            Config = new Dictionary<string, string>
-            {
-                ["clientId"] = options.ClientId,
-                ["clientSecret"] = options.ClientSecret,
-                ["defaultScope"] = "read:user user:email",
-                ["syncMode"] = MapSyncMode(options.SyncMode)
-            }
-        };
-
-        await UpsertIdentityProviderAsync(payload, ct);
+        return new KeycloakUserSummary(user.Id!, user.Email ?? email.Trim(),
+            user.Username ?? user.Email ?? string.Empty);
     }
 
     private async Task<string> RequireAdminTokenAsync(CancellationToken ct)
@@ -326,7 +337,8 @@ public sealed class KeycloakAdminService(
     {
         var adminRealmEndpoint = ResolveAdminRealmEndpoint();
         var token = await RequireAdminTokenAsync(ct);
-        var instanceEndpoint = new Uri(adminRealmEndpoint, $"identity-provider/instances/{Uri.EscapeDataString(payload.Alias)}");
+        var instanceEndpoint = new Uri(adminRealmEndpoint,
+            $"identity-provider/instances/{Uri.EscapeDataString(payload.Alias)}");
         using var getRequest = new HttpRequestMessage(HttpMethod.Get, instanceEndpoint);
         getRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
@@ -365,28 +377,21 @@ public sealed class KeycloakAdminService(
 
     private sealed class IdentityProviderPayload
     {
-        [JsonPropertyName("alias")]
-        public string Alias { get; set; } = string.Empty;
+        [JsonPropertyName("alias")] public string Alias { get; set; } = string.Empty;
 
-        [JsonPropertyName("displayName")]
-        public string DisplayName { get; set; } = string.Empty;
+        [JsonPropertyName("displayName")] public string DisplayName { get; set; } = string.Empty;
 
-        [JsonPropertyName("providerId")]
-        public string ProviderId { get; set; } = string.Empty;
+        [JsonPropertyName("providerId")] public string ProviderId { get; set; } = string.Empty;
 
-        [JsonPropertyName("enabled")]
-        public bool Enabled { get; set; }
+        [JsonPropertyName("enabled")] public bool Enabled { get; set; }
 
-        [JsonPropertyName("trustEmail")]
-        public bool TrustEmail { get; set; }
+        [JsonPropertyName("trustEmail")] public bool TrustEmail { get; set; }
 
-        [JsonPropertyName("storeToken")]
-        public bool StoreToken { get; set; }
+        [JsonPropertyName("storeToken")] public bool StoreToken { get; set; }
 
         [JsonPropertyName("firstBrokerLoginFlowAlias")]
         public string FirstBrokerLoginFlowAlias { get; set; } = "first broker login";
 
-        [JsonPropertyName("config")]
-        public Dictionary<string, string> Config { get; set; } = [];
+        [JsonPropertyName("config")] public Dictionary<string, string> Config { get; set; } = [];
     }
 }

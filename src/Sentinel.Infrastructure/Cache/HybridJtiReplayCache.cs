@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.Threading;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Sentinel.Application.Common.Abstractions;
@@ -18,7 +16,7 @@ public sealed class HybridJtiReplayCache(
 
     public async Task<bool> TryStoreIfNotExistsAsync(string jti, TimeSpan ttl, CancellationToken ct)
     {
-        using var activity = AuthTelemetry.Source.StartActivity("auth.replay_cache.try_store", ActivityKind.Internal);
+        using var activity = AuthTelemetry.Source.StartActivity("auth.replay_cache.try_store");
         activity?.SetTag("auth.jti", jti);
         activity?.SetTag("auth.ttl_seconds", ttl.TotalSeconds);
 
@@ -45,7 +43,8 @@ public sealed class HybridJtiReplayCache(
         }
         else if (!redisOptions.Value.EnableInMemFallback)
         {
-            throw new ReplayCacheUnavailableException("jti replay cache unavailable", new InvalidOperationException("Redis connection is unavailable."));
+            throw new ReplayCacheUnavailableException("jti replay cache unavailable",
+                new InvalidOperationException("Redis connection is unavailable."));
         }
 
         _ = ct;

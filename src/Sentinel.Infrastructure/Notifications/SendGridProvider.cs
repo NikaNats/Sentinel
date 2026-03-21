@@ -15,9 +15,9 @@ public sealed class SendGridProvider(
     public bool CanHandle(NotificationType notificationType)
     {
         return notificationType == NotificationType.Email
-            && options.Value.Enabled
-            && !string.IsNullOrWhiteSpace(options.Value.ApiKey)
-            && !string.IsNullOrWhiteSpace(options.Value.FromEmail);
+               && options.Value.Enabled
+               && !string.IsNullOrWhiteSpace(options.Value.ApiKey)
+               && !string.IsNullOrWhiteSpace(options.Value.FromEmail);
     }
 
     public async Task SendAsync(NotificationMessage message, string body, CancellationToken ct)

@@ -1,4 +1,3 @@
-using System.Threading;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Sentinel.Application.Common.Abstractions;
@@ -38,7 +37,8 @@ public sealed class HybridNonceStore(
         }
         else if (!redisOptions.Value.EnableInMemFallback)
         {
-            throw new ReplayCacheUnavailableException("dpop nonce store unavailable", new InvalidOperationException("Redis connection is unavailable."));
+            throw new ReplayCacheUnavailableException("dpop nonce store unavailable",
+                new InvalidOperationException("Redis connection is unavailable."));
         }
 
         _ = ct;
@@ -67,7 +67,8 @@ public sealed class HybridNonceStore(
         }
         else if (!redisOptions.Value.EnableInMemFallback)
         {
-            throw new ReplayCacheUnavailableException("dpop nonce store unavailable", new InvalidOperationException("Redis connection is unavailable."));
+            throw new ReplayCacheUnavailableException("dpop nonce store unavailable",
+                new InvalidOperationException("Redis connection is unavailable."));
         }
 
         _ = ct;
@@ -106,7 +107,8 @@ public sealed class HybridNonceStore(
         }
         else if (!redisOptions.Value.EnableInMemFallback)
         {
-            throw new ReplayCacheUnavailableException("dpop nonce store unavailable", new InvalidOperationException("Redis connection is unavailable."));
+            throw new ReplayCacheUnavailableException("dpop nonce store unavailable",
+                new InvalidOperationException("Redis connection is unavailable."));
         }
 
         _ = ct;

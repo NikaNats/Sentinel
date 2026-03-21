@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Sentinel.Application.Auth.Models;
 
 namespace Sentinel.Application.Auth.Interfaces;

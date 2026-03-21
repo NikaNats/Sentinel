@@ -12,7 +12,8 @@ public sealed class KeycloakTokenExchangeServiceTests
     {
         using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new StringContent("{\"access_token\":\"acc\",\"refresh_token\":\"ref\",\"token_type\":\"DPoP\",\"expires_in\":300}")
+            Content = new StringContent(
+                "{\"access_token\":\"acc\",\"refresh_token\":\"ref\",\"token_type\":\"DPoP\",\"expires_in\":300}")
         });
         using var httpClient = new HttpClient(handler);
 
@@ -21,7 +22,8 @@ public sealed class KeycloakTokenExchangeServiceTests
             BuildOptions(),
             NullLogger<KeycloakTokenExchangeService>.Instance);
 
-        var result = await service.ExchangeExternalTokenAsync("google-token", "google", "proof", "pkce-verifier", CancellationToken.None);
+        var result = await service.ExchangeExternalTokenAsync("google-token", "google", "proof", "pkce-verifier",
+            CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.Equal("acc", result!.AccessToken);
@@ -39,7 +41,8 @@ public sealed class KeycloakTokenExchangeServiceTests
             BuildOptions(),
             NullLogger<KeycloakTokenExchangeService>.Instance);
 
-        var result = await service.ExchangeExternalTokenAsync("google-token", "google", "proof", "pkce-verifier", CancellationToken.None);
+        var result = await service.ExchangeExternalTokenAsync("google-token", "google", "proof", "pkce-verifier",
+            CancellationToken.None);
 
         Assert.Null(result);
     }
@@ -53,11 +56,13 @@ public sealed class KeycloakTokenExchangeServiceTests
         });
     }
 
-    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
+    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
+        : HttpMessageHandler
     {
         public HttpRequestMessage? LastRequest { get; private set; }
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
         {
             LastRequest = request;
             return Task.FromResult(responseFactory(request));

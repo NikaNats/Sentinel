@@ -12,7 +12,8 @@ public sealed class KeycloakTokenExchangeService(
 {
     private readonly KeycloakOptions keycloakOptions = options.Value;
 
-    public async Task<TokenExchangeResult?> ExchangeExternalTokenAsync(string externalToken, string providerName, string dpopProof, string codeVerifier, CancellationToken ct)
+    public async Task<TokenExchangeResult?> ExchangeExternalTokenAsync(string externalToken, string providerName,
+        string dpopProof, string codeVerifier, CancellationToken ct)
     {
         var authority = keycloakOptions.Authority.TrimEnd('/');
         var audience = keycloakOptions.Audience;
@@ -47,11 +48,12 @@ public sealed class KeycloakTokenExchangeService(
             using var response = await httpClient.SendAsync(request, ct);
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogWarning("Token exchange failed with status {StatusCode} for provider {Provider}.", (int)response.StatusCode, providerName);
+                logger.LogWarning("Token exchange failed with status {StatusCode} for provider {Provider}.",
+                    (int)response.StatusCode, providerName);
                 return null;
             }
 
-            return await response.Content.ReadFromJsonAsync<TokenExchangeResult>(cancellationToken: ct);
+            return await response.Content.ReadFromJsonAsync<TokenExchangeResult>(ct);
         }
 #pragma warning disable CA1031 // Intentional catch-all: token exchange failures return null to keep auth endpoint fail-closed.
         catch (Exception ex)
