@@ -11,4 +11,8 @@ public sealed class SsfOptions
     public string? AuthToken { get; init; }
 
     public int SessionRevocationTtlSeconds { get; init; } = 28_800;
+
+    public int MaxEventAgeSeconds { get; init; } = 300;
+
+    public int AllowedClockSkewSeconds { get; init; } = 300;
 }

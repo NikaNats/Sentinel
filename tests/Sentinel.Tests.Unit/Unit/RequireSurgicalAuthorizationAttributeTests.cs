@@ -83,6 +83,52 @@ public sealed class RequireSurgicalAuthorizationAttributeTests
     }
 
     [Fact]
+    public async Task OnActionExecutionAsync_WhenAmountFormattingDiffersButDecimalValueMatches_ExecutesNext()
+    {
+        var attribute = new RequireSurgicalAuthorizationAttribute();
+        var user = CreateUserWithRar("""
+            [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-1","amount":50.00,"currency":"GEL"}]
+            """);
+        var context = CreateActionExecutingContext(
+            user,
+            new FinanceController.TransferRequest("txn-1", 50.000m, "GEL", "dest-1"));
+
+        await attribute.OnActionExecutionAsync(context, NextOk(context));
+
+        Assert.Null(context.Result);
+    }
+
+    [Fact]
+    public async Task OnActionExecutionAsync_WhenCurrencyUsesOrdinalIgnoreCaseComparison_ExecutesNext()
+    {
+        var previousCulture = Thread.CurrentThread.CurrentCulture;
+        var previousUiCulture = Thread.CurrentThread.CurrentUICulture;
+
+        try
+        {
+            Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("tr-TR");
+            Thread.CurrentThread.CurrentUICulture = new System.Globalization.CultureInfo("tr-TR");
+
+            var attribute = new RequireSurgicalAuthorizationAttribute();
+            var user = CreateUserWithRar("""
+                [{"type":"urn:sentinel:finance:transfer","transaction_id":"txn-1","amount":50.00,"currency":"GEL"}]
+                """);
+            var context = CreateActionExecutingContext(
+                user,
+                new FinanceController.TransferRequest("txn-1", 50m, "gel", "dest-1"));
+
+            await attribute.OnActionExecutionAsync(context, NextOk(context));
+
+            Assert.Null(context.Result);
+        }
+        finally
+        {
+            Thread.CurrentThread.CurrentCulture = previousCulture;
+            Thread.CurrentThread.CurrentUICulture = previousUiCulture;
+        }
+    }
+
+    [Fact]
     public async Task OnActionExecutionAsync_WhenTypeCaseDiffers_ReturnsForbidden()
     {
         var attribute = new RequireSurgicalAuthorizationAttribute();

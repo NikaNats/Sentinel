@@ -10,10 +10,12 @@ namespace Sentinel.Infrastructure.Auth.Ssf;
 
 public sealed class JwtSsfTokenValidator(
     IOptions<KeycloakOptions> keycloakOptions,
+    IOptions<SsfOptions> ssfOptions,
     IConfigurationManager<OpenIdConnectConfiguration> openIdConfigurationManager,
     ILogger<JwtSsfTokenValidator> logger) : ISsfTokenValidator
 {
     private readonly KeycloakOptions options = keycloakOptions.Value;
+    private readonly SsfOptions ssf = ssfOptions.Value;
     private readonly JsonWebTokenHandler jwtHandler = new();
 
     public async Task<SsfValidationResult> ValidateAsync(string setToken, CancellationToken ct)
@@ -67,6 +69,18 @@ public sealed class JwtSsfTokenValidator(
             if (!long.TryParse(iatRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var iat))
             {
                 return SsfValidationResult.Fail("SET iat is invalid.");
+            }
+
+            var issuedAt = DateTimeOffset.FromUnixTimeSeconds(iat);
+            var now = DateTimeOffset.UtcNow;
+            if (issuedAt > now.AddSeconds(Math.Max(0, ssf.AllowedClockSkewSeconds)))
+            {
+                return SsfValidationResult.Fail("SET iat is in the future.");
+            }
+
+            if (now - issuedAt > TimeSpan.FromSeconds(Math.Max(1, ssf.MaxEventAgeSeconds)))
+            {
+                return SsfValidationResult.Fail("SET is too old.");
             }
 
             if (!jwt.TryGetPayloadValue<JsonElement>("events", out var eventsElement))

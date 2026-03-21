@@ -17,7 +17,8 @@ public static class TestTokenIssuer
         string issuer = "https://localhost:8443/realms/sentinel",
         string audience = "sentinel-api",
         int expiresInSeconds = 300,
-        string? subject = null)
+        string? subject = null,
+        string? sid = null)
     {
         var handler = new JsonWebTokenHandler();
         var now = DateTimeOffset.UtcNow;
@@ -34,6 +35,11 @@ public static class TestTokenIssuer
             ["realm_access.roles"] = JsonSerializer.Serialize(new[] { "user" }),
             ["cnf"] = new Dictionary<string, string> { ["jkt"] = jkt }
         };
+
+        if (!string.IsNullOrWhiteSpace(sid))
+        {
+            claims["sid"] = sid;
+        }
 
         var descriptor = new SecurityTokenDescriptor
         {
