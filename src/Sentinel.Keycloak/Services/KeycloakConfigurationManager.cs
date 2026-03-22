@@ -75,7 +75,7 @@ public sealed class KeycloakConfigurationManager
     {
         var config = await GetConfigurationAsync(cancellationToken);
         var root = config.RootElement;
-        
+
         if (root.TryGetProperty("jwks_uri", out var jwksUri))
         {
             return jwksUri.GetString() ?? throw new InvalidOperationException("jwks_uri is null");

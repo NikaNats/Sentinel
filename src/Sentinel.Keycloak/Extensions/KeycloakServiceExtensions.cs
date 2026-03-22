@@ -61,7 +61,7 @@ public static class KeycloakServiceExtensions
         }
 
         services.AddSingleton(options);
-        
+
         services.AddHttpClient<KeycloakConfigurationManager>();
         services.AddHttpClient<KeycloakTokenService>();
         services.AddHttpClient<KeycloakSubjectService>();

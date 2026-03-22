@@ -45,7 +45,7 @@ public sealed class KeycloakTokenService
             }
 
             var tokenUrl = $"{serverUrl}/realms/{_options.Realm}/protocol/openid-connect/token";
-            
+
             using var request = new HttpRequestMessage(HttpMethod.Post, tokenUrl)
             {
                 Content = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -109,7 +109,7 @@ public sealed class KeycloakTokenService
             };
 
             var response = await _httpClient.SendAsync(request, cancellationToken);
-            
+
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Token refresh failed with status {StatusCode}", response.StatusCode);

@@ -38,13 +38,13 @@ public sealed class RedisSessionBlacklistCache : ISessionBlacklistCache
             var timeToLive = expiresAt.UtcDateTime - DateTime.UtcNow;
 
             await _redis.StringSetAsync(redisKey, "revoked", timeToLive);
-            
+
             _logger.LogInformation("Session blacklisted: {SessionId}", sessionId);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Redis unavailable for session blacklist, falling back to in-memory");
-            
+
             if (_fallback != null)
             {
                 await _fallback.BlacklistSessionAsync(sessionId, expiresAt, cancellationToken);
@@ -66,14 +66,14 @@ public sealed class RedisSessionBlacklistCache : ISessionBlacklistCache
         {
             var redisKey = $"{_keyPrefix}session:{sessionId}";
             var exists = await _redis.KeyExistsAsync(redisKey);
-            
+
             _logger.LogInformation("Session blacklist check for: {SessionId}, blacklisted: {IsBlacklisted}", sessionId, exists);
             return exists;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Redis unavailable for session blacklist check, falling back to in-memory");
-            
+
             if (_fallback != null)
             {
                 return await _fallback.IsBlacklistedAsync(sessionId, cancellationToken);

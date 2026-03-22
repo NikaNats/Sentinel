@@ -39,14 +39,14 @@ public sealed class RedisJtiReplayCache : IJtiReplayCache
 
             // SET key value NX EX timeout: Set if not exists, with expiration
             var result = await _redis.StringSetAsync(redisKey, "1", timeToLive, When.NotExists);
-            
+
             _logger.LogInformation("JTI replay cache operation succeeded for jti: {Jti}", jti);
             return result;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Redis unavailable for jti replay check, falling back to in-memory");
-            
+
             if (_fallback != null)
             {
                 return await _fallback.TryMarkUsedAsync(jti, expiresAt, cancellationToken);

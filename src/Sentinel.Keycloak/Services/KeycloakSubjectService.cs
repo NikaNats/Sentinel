@@ -46,7 +46,7 @@ public sealed class KeycloakSubjectService
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
             var response = await _httpClient.SendAsync(request, cancellationToken);
-            
+
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Failed to get subject with status {StatusCode}", response.StatusCode);

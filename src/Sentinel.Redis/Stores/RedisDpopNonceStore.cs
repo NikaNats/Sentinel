@@ -36,14 +36,14 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
         {
             var redisKey = $"{_keyPrefix}nonce:{thumbprint}";
             var value = await _redis.StringGetAsync(redisKey);
-            
+
             _logger.LogInformation("DPoP nonce retrieved for thumbprint: {Thumbprint}", thumbprint);
             return value.IsNullOrEmpty ? null : value.ToString();
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Redis unavailable for nonce retrieval, falling back to in-memory");
-            
+
             if (_fallback != null)
             {
                 return await _fallback.GetNonceAsync(thumbprint, cancellationToken);
@@ -67,13 +67,13 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
             var timeToLive = expiresAt.UtcDateTime - DateTime.UtcNow;
 
             await _redis.StringSetAsync(redisKey, nonce, timeToLive);
-            
+
             _logger.LogInformation("DPoP nonce set for thumbprint: {Thumbprint}", thumbprint);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Redis unavailable for nonce storage, falling back to in-memory");
-            
+
             if (_fallback != null)
             {
                 await _fallback.SetNonceAsync(thumbprint, nonce, expiresAt, cancellationToken);
