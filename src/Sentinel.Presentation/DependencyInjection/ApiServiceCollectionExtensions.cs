@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
+using Sentinel.AspNetCore.Extensions;
 using Sentinel.AspNetCore.Middleware;
 using Sentinel.Auth.Authorization;
 using Sentinel.Middleware;
@@ -89,6 +90,9 @@ public static class ApiServiceCollectionExtensions
         services.AddProblemDetails();
         services.AddControllers();
         services.AddHttpContextAccessor();
+
+        // Register Sentinel ASP.NET Core middleware and filters
+        services.AddSentinelAspNetCore().AddAll();
 
         return services;
     }

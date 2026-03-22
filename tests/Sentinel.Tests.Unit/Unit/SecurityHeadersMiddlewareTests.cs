@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Moq;
-using Sentinel.Middleware;
+using Sentinel.AspNetCore.Middleware;
 
 namespace Sentinel.Tests.Unit;
 
