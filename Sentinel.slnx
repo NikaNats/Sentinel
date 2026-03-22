@@ -6,6 +6,7 @@
     <Project Path="src/Sentinel.Domain/Sentinel.Domain.csproj" />
     <Project Path="src/Sentinel.Security.Abstractions/Sentinel.Security.Abstractions.csproj" />
     <Project Path="src/Sentinel.DPoP/Sentinel.DPoP.csproj" />
+    <Project Path="src/Sentinel.Session/Sentinel.Session.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Sentinel.Tests.Shared/Sentinel.Tests.Shared.csproj" />
@@ -13,5 +14,6 @@
     <Project Path="tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj" />
     <Project Path="tests/Sentinel.Tests.Security/Sentinel.Tests.Security.csproj" />
     <Project Path="tests/Sentinel.Tests.DPoP/Sentinel.Tests.DPoP.csproj" />
+    <Project Path="tests/Sentinel.Tests.Session/Sentinel.Tests.Session.csproj" />
   </Folder>
 </Solution>
