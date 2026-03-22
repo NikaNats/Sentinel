@@ -8,6 +8,7 @@
     <Project Path="src/Sentinel.DPoP/Sentinel.DPoP.csproj" />
     <Project Path="src/Sentinel.Session/Sentinel.Session.csproj" />
     <Project Path="src/Sentinel.SSF/Sentinel.SSF.csproj" />
+    <Project Path="src/Sentinel.SdJwt/Sentinel.SdJwt.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Sentinel.Tests.Shared/Sentinel.Tests.Shared.csproj" />
