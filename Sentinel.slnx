@@ -10,6 +10,9 @@
     <Project Path="src/Sentinel.SSF/Sentinel.SSF.csproj" />
     <Project Path="src/Sentinel.SdJwt/Sentinel.SdJwt.csproj" />
     <Project Path="src/Sentinel.RAR/Sentinel.RAR.csproj" />
+    <Project Path="src/Sentinel.Redis/Sentinel.Redis.csproj" />
+    <Project Path="src/Sentinel.EntityFrameworkCore/Sentinel.EntityFrameworkCore.csproj" />
+    <Project Path="src/Sentinel.Keycloak/Sentinel.Keycloak.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Sentinel.Tests.Shared/Sentinel.Tests.Shared.csproj" />
