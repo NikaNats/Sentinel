@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Sentinel.Errors;
 using StackExchange.Redis;
 
 namespace Sentinel.Middleware.Filters;
@@ -10,6 +10,10 @@ namespace Sentinel.Middleware.Filters;
 [AttributeUsage(AttributeTargets.Method)]
 public sealed class RequireIdempotencyAttribute : Attribute, IAsyncActionFilter
 {
+    private const string MissingIdempotencyKeyType = "/errors/missing-idempotency-key";
+    private const string IdempotencyConflictType = "/errors/idempotency-conflict";
+    private const string IdempotencyUnavailableType = "/errors/idempotency-unavailable";
+
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
         const string headerName = "Idempotency-Key";
@@ -19,7 +23,7 @@ public sealed class RequireIdempotencyAttribute : Attribute, IAsyncActionFilter
         {
             context.Result = new BadRequestObjectResult(new ProblemDetails
             {
-                Type = ErrorCodes.MissingIdempotencyKey,
+                Type = MissingIdempotencyKeyType,
                 Title = "Idempotency Key Required",
                 Detail = $"The '{headerName}' header is required for this operation.",
                 Status = StatusCodes.Status400BadRequest
@@ -73,7 +77,7 @@ public sealed class RequireIdempotencyAttribute : Attribute, IAsyncActionFilter
 
             context.Result = new ConflictObjectResult(new ProblemDetails
             {
-                Type = ErrorCodes.IdempotencyConflict,
+                Type = IdempotencyConflictType,
                 Title = "Request In Progress",
                 Detail = "A request with this Idempotency-Key is currently running.",
                 Status = StatusCodes.Status409Conflict
@@ -130,7 +134,7 @@ public sealed class RequireIdempotencyAttribute : Attribute, IAsyncActionFilter
     {
         return new ObjectResult(new ProblemDetails
         {
-            Type = ErrorCodes.IdempotencyUnavailable,
+            Type = IdempotencyUnavailableType,
             Title = "Idempotency service unavailable",
             Status = StatusCodes.Status503ServiceUnavailable
         })

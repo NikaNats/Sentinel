@@ -3,12 +3,32 @@ using System.Net.Http.Json;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Domain.Users;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Infrastructure.Auth.Services;
 
 public sealed class KeycloakUserService(HttpClient httpClient, ILogger<KeycloakUserService> logger)
-    : IKeycloakUserService
+    : IKeycloakUserService, IIdentityRegistry
 {
+    public Task<string> CreateUserAsync(
+        IdentityRegistration registration,
+        string password,
+        CancellationToken cancellationToken = default)
+    {
+        var legacyRegistration = new UserRegistration
+        {
+            Email = registration.Email,
+            Username = registration.Username,
+            Consent = new ConsentInfo(
+                registration.AcceptedTerms,
+                registration.PolicyVersion,
+                registration.AcceptedAtUtc,
+                registration.SourceIp)
+        };
+
+        return CreateUserAsync(legacyRegistration, password, cancellationToken);
+    }
+
     public async Task<string> CreateUserAsync(UserRegistration registration, string password, CancellationToken ct)
     {
         var payload = new KeycloakAdminCreateUserPayload

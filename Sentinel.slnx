@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Sentinel.AspNetCore/Sentinel.AspNetCore.csproj" />
     <Project Path="src/Sentinel.Presentation/Sentinel.Presentation.csproj" />
     <Project Path="src/Sentinel.Infrastructure/Sentinel.Infrastructure.csproj" />
     <Project Path="src/Sentinel.Application/Sentinel.Application.csproj" />

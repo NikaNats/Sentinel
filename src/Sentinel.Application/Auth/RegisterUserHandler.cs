@@ -2,18 +2,53 @@ using System.Security.Cryptography;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Domain.Users;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Application.Auth;
 
-public sealed class RegisterUserHandler(
-    ICaptchaService captchaService,
-    IKeycloakUserService keycloakUserService,
-    IEmailService emailService,
-    IEmailVerificationTokenStore verificationTokenStore,
-    IPasswordStrengthValidator passwordStrengthValidator,
-    TimeProvider? timeProvider = null)
+public sealed class RegisterUserHandler
 {
-    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly ICaptchaService _captchaService;
+    private readonly IIdentityRegistry _identityRegistry;
+    private readonly IEmailService _emailService;
+    private readonly IEmailVerificationTokenStore _verificationTokenStore;
+    private readonly IPasswordStrengthValidator _passwordStrengthValidator;
+    private readonly TimeProvider _timeProvider;
+
+    public RegisterUserHandler(
+        ICaptchaService captchaService,
+        IIdentityRegistry identityRegistry,
+        IEmailService emailService,
+        IEmailVerificationTokenStore verificationTokenStore,
+        IPasswordStrengthValidator passwordStrengthValidator,
+        TimeProvider? timeProvider = null)
+    {
+        _captchaService = captchaService;
+        _identityRegistry = identityRegistry;
+        _emailService = emailService;
+        _verificationTokenStore = verificationTokenStore;
+        _passwordStrengthValidator = passwordStrengthValidator;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
+    // Compatibility overload while callers migrate to IIdentityRegistry.
+    public RegisterUserHandler(
+        ICaptchaService captchaService,
+        IKeycloakUserService keycloakUserService,
+        IEmailService emailService,
+        IEmailVerificationTokenStore verificationTokenStore,
+        IPasswordStrengthValidator passwordStrengthValidator,
+        TimeProvider? timeProvider = null)
+        : this(
+            captchaService,
+            new KeycloakIdentityRegistryAdapter(keycloakUserService),
+            emailService,
+            verificationTokenStore,
+            passwordStrengthValidator,
+            timeProvider)
+    {
+    }
+
     public async Task<RegisterUserResult> HandleAsync(RegisterUserRequest request, string sourceIp,
         CancellationToken ct)
     {
@@ -33,12 +68,12 @@ public sealed class RegisterUserHandler(
                 "invalid_request");
         }
 
-        if (!await captchaService.VerifyAsync(request.CaptchaToken, ct))
+        if (!await _captchaService.VerifyAsync(request.CaptchaToken, ct))
         {
             return new RegisterUserResult(false, "Invalid captcha.", "invalid_captcha");
         }
 
-        var passwordValidation = passwordStrengthValidator.Validate(request.Password);
+        var passwordValidation = _passwordStrengthValidator.Validate(request.Password);
         if (!passwordValidation.IsValid)
         {
             return new RegisterUserResult(false,
@@ -60,25 +95,53 @@ public sealed class RegisterUserHandler(
         string keycloakUserId;
         try
         {
-            keycloakUserId = await keycloakUserService.CreateUserAsync(registration, request.Password, ct);
+            var identityRegistration = new IdentityRegistration(
+                registration.Email,
+                registration.Username,
+                registration.Consent.TermsAccepted,
+                registration.Consent.PrivacyPolicyVersion,
+                registration.Consent.AcceptedAtUtc,
+                registration.Consent.IpAddress);
+
+            keycloakUserId = await _identityRegistry.CreateUserAsync(identityRegistration, request.Password, ct);
         }
         catch (UserAlreadyExistsException)
         {
-            await emailService.SendWelcomeOrAlreadyRegisteredEmailAsync(registration.Email, ct);
+            await _emailService.SendWelcomeOrAlreadyRegisteredEmailAsync(registration.Email, ct);
             return new RegisterUserResult(true, "If this email is new, you'll receive a verification email.");
         }
 
         var verificationToken = Guid.NewGuid().ToString("N");
         var stored =
-            await verificationTokenStore.StoreAsync(verificationToken, keycloakUserId, TimeSpan.FromHours(24), ct);
+            await _verificationTokenStore.StoreAsync(verificationToken, keycloakUserId, TimeSpan.FromHours(24), ct);
         if (!stored)
         {
             return new RegisterUserResult(false, "Failed to create verification token.",
                 "verification_token_store_failed");
         }
 
-        await emailService.SendVerificationEmailAsync(registration.Email, verificationToken, ct);
+        await _emailService.SendVerificationEmailAsync(registration.Email, verificationToken, ct);
 
         return new RegisterUserResult(true, "If this email is new, you'll receive a verification email.");
+    }
+
+    private sealed class KeycloakIdentityRegistryAdapter(IKeycloakUserService keycloakUserService) : IIdentityRegistry
+    {
+        public Task<string> CreateUserAsync(IdentityRegistration registration, string password,
+            CancellationToken cancellationToken = default)
+        {
+            var legacyRegistration = new UserRegistration
+            {
+                Email = registration.Email,
+                Username = registration.Username,
+                Consent = new ConsentInfo(
+                    registration.AcceptedTerms,
+                    registration.PolicyVersion,
+                    registration.AcceptedAtUtc,
+                    registration.SourceIp)
+            };
+
+            return keycloakUserService.CreateUserAsync(legacyRegistration, password, cancellationToken);
+        }
     }
 }

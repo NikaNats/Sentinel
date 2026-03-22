@@ -24,6 +24,7 @@ using Sentinel.Infrastructure.Cryptography;
 using Sentinel.Infrastructure.Notifications;
 using Sentinel.Infrastructure.Persistence;
 using Sentinel.Infrastructure.Telemetry;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Infrastructure.DependencyInjection;
 
@@ -114,6 +115,8 @@ public static class SentinelModuleBuilderExtensions
                 client.BaseAddress = adminRealmEndpoint;
             })
             .AddHttpMessageHandler<KeycloakAdminAuthHandler>();
+        _ = builder.Services.AddScoped<IIdentityRegistry>(sp =>
+            (IIdentityRegistry)sp.GetRequiredService<IKeycloakUserService>());
         _ = builder.Services.AddHttpClient<IKeycloakProfileService, KeycloakProfileService>((sp, client) =>
             {
                 var keycloakOptions = sp.GetRequiredService<IOptions<KeycloakOptions>>().Value;

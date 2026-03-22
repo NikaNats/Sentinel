@@ -14,6 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Sentinel.AspNetCore\Sentinel.AspNetCore.csproj" />
     <ProjectReference Include="..\Sentinel.Application\Sentinel.Application.csproj" />
     <ProjectReference Include="..\Sentinel.Infrastructure\Sentinel.Infrastructure.csproj" />
   </ItemGroup>
