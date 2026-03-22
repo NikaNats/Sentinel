@@ -16,7 +16,7 @@ public static class RarServiceExtensions
     /// - RarValidator as a transient service
     /// - FinancialAuthorizationMatcher as a transient service
     /// - RarValidationOptions as a singleton with default configuration
-    /// 
+    ///
     /// This overload uses the built-in FinancialAuthorizationMatcher for financial transfers.
     /// </remarks>
     /// <param name="services">The service collection.</param>

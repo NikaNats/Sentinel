@@ -30,7 +30,7 @@ public interface IRarValidator
     /// specified in the authorization detail. For example:
     /// - Authorization detail specifies amount=100, currency=USD, transactionId=abc123
     /// - Request payload must have matching amount, currency, and transaction ID
-    /// 
+    ///
     /// The specific validation rules depend on the authorization detail type and
     /// the payload structure.
     /// </remarks>
