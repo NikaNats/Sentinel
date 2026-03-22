@@ -2,18 +2,20 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.IdentityModel.Tokens;
-using Sentinel.Infrastructure.Auth;
+using Sentinel.DPoP;
 
 namespace Sentinel.Tests.Unit;
 
 public sealed class DpopThumbprintHelperTests
 {
+    private readonly DpopThumbprintComputer computer = new();
+
     [Fact]
     public void ComputeJwkThumbprint_WhenEcJwkProvided_ReturnsThumbprint()
     {
         using var doc = JsonDocument.Parse("""{ "kty": "EC", "crv": "P-256", "x": "abc", "y": "def" }""");
 
-        var thumbprint = DpopThumbprintHelper.ComputeJwkThumbprint(doc.RootElement);
+        var thumbprint = computer.Compute(doc.RootElement);
 
         Assert.False(string.IsNullOrWhiteSpace(thumbprint));
     }
@@ -23,7 +25,7 @@ public sealed class DpopThumbprintHelperTests
     {
         using var doc = JsonDocument.Parse("""{ "kty": "RSA", "e": "AQAB", "n": "abc123" }""");
 
-        var thumbprint = DpopThumbprintHelper.ComputeJwkThumbprint(doc.RootElement);
+        var thumbprint = computer.Compute(doc.RootElement);
 
         Assert.False(string.IsNullOrWhiteSpace(thumbprint));
     }
@@ -39,7 +41,7 @@ public sealed class DpopThumbprintHelperTests
         });
         var expected = Base64UrlEncoder.Encode(SHA256.HashData(Encoding.UTF8.GetBytes(expectedCanonical)));
 
-        var thumbprint = DpopThumbprintHelper.ComputeJwkThumbprint(doc.RootElement);
+        var thumbprint = computer.Compute(doc.RootElement);
 
         Assert.Equal(expected, thumbprint);
     }
@@ -49,7 +51,7 @@ public sealed class DpopThumbprintHelperTests
     {
         using var doc = JsonDocument.Parse("""{ "kty": "oct", "k": "secret" }""");
 
-        var thumbprint = DpopThumbprintHelper.ComputeJwkThumbprint(doc.RootElement);
+        var thumbprint = computer.Compute(doc.RootElement);
 
         Assert.Equal(string.Empty, thumbprint);
     }

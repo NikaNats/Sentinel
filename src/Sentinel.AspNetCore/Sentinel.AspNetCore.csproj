@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Sentinel.Application\Sentinel.Application.csproj" />
+    <ProjectReference Include="..\Sentinel.DPoP\Sentinel.DPoP.csproj" />
     <ProjectReference Include="..\Sentinel.Infrastructure\Sentinel.Infrastructure.csproj" />
   </ItemGroup>
 
