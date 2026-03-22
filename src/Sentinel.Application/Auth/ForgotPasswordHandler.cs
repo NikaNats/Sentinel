@@ -2,11 +2,12 @@ using Microsoft.Extensions.Logging;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Domain.Auth;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Application.Auth;
 
 public sealed class ForgotPasswordHandler(
-    IKeycloakUserService keycloakUserService,
+    IIdentityProvider identityProvider,
     IResetTokenProvider resetTokenProvider,
     IEmailService emailService,
     ICaptchaService captchaService,
@@ -26,7 +27,7 @@ public sealed class ForgotPasswordHandler(
 
         try
         {
-            var user = await keycloakUserService.GetUserByEmailAsync(request.Email.Trim(), ct);
+            var user = await identityProvider.GetUserByEmailAsync(request.Email.Trim(), ct);
             if (user is null)
             {
                 return;

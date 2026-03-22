@@ -10,6 +10,7 @@ using Sentinel.Application.Common.Abstractions;
 using Sentinel.Controllers;
 using Sentinel.Domain.Auth;
 using Sentinel.Presentation.Controllers;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Tests.Security;
 
@@ -18,15 +19,15 @@ public sealed class ForgotPasswordAntiEnumerationSecurityTests
     [Fact]
     public async Task ForgotPassword_WhenUserDoesNotExist_Returns202Accepted()
     {
-        var keycloak = new Mock<IKeycloakUserService>();
-        keycloak.Setup(x => x.GetUserByEmailAsync("missing@example.com", It.IsAny<CancellationToken>()))
-            .ReturnsAsync((KeycloakUserSummary?)null);
+        var identityProvider = new Mock<IIdentityProvider>();
+        identityProvider.Setup(x => x.GetUserByEmailAsync("missing@example.com", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IdentityUserSummary?)null);
 
         var captcha = new Mock<ICaptchaService>();
         captcha.Setup(x => x.VerifyAsync("captcha", It.IsAny<CancellationToken>())).ReturnsAsync(true);
 
         var handler = new ForgotPasswordHandler(
-            keycloak.Object,
+            identityProvider.Object,
             Mock.Of<IResetTokenProvider>(),
             Mock.Of<IEmailService>(),
             captcha.Object,
@@ -43,7 +44,7 @@ public sealed class ForgotPasswordAntiEnumerationSecurityTests
     public async Task ForgotPassword_WhenInputMalformed_StillReturns202Accepted()
     {
         var handler = new ForgotPasswordHandler(
-            Mock.Of<IKeycloakUserService>(),
+            Mock.Of<IIdentityProvider>(),
             Mock.Of<IResetTokenProvider>(),
             Mock.Of<IEmailService>(),
             Mock.Of<ICaptchaService>(),
@@ -58,15 +59,15 @@ public sealed class ForgotPasswordAntiEnumerationSecurityTests
     [Fact]
     public async Task ForgotPassword_WhenInternalErrorOccurs_StillReturns202Accepted()
     {
-        var keycloak = new Mock<IKeycloakUserService>();
-        keycloak.Setup(x => x.GetUserByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        var identityProvider = new Mock<IIdentityProvider>();
+        identityProvider.Setup(x => x.GetUserByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("upstream error"));
 
         var captcha = new Mock<ICaptchaService>();
         captcha.Setup(x => x.VerifyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
 
         var handler = new ForgotPasswordHandler(
-            keycloak.Object,
+            identityProvider.Object,
             Mock.Of<IResetTokenProvider>(),
             Mock.Of<IEmailService>(),
             captcha.Object,
@@ -89,15 +90,14 @@ public sealed class ForgotPasswordAntiEnumerationSecurityTests
             Mock.Of<IPasswordStrengthValidator>());
 
         var resendHandler = new ResendVerificationHandler(
-            Mock.Of<IKeycloakUserService>(),
+            Mock.Of<IIdentityProvider>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             Mock.Of<IEmailService>(),
             NullLogger<ResendVerificationHandler>.Instance);
 
         var resetHandler = new ResetPasswordHandler(
             Mock.Of<IResetTokenProvider>(),
-            Mock.Of<IKeycloakUserService>(),
-            Mock.Of<IKeycloakProfileService>(),
+            Mock.Of<IIdentityProvider>(),
             Mock.Of<IJtiReplayCache>(),
             Mock.Of<IAuthRevocationService>());
 

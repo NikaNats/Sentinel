@@ -1,5 +1,8 @@
 namespace Sentinel.Application.Common.Abstractions;
 
+// DEPRECATED: Use Sentinel.Security.Abstractions.DPoP.IDpopProofValidator and DpopValidationResult instead.
+// This is a compatibility shim to avoid breaking existing code during migration to NuGet boundaries.
+
 public interface IDpopProofValidator
 {
     Task<DpopValidationResult> ValidateAsync(string dpopHeader, string accessToken, string httpMethod, string httpUrl,

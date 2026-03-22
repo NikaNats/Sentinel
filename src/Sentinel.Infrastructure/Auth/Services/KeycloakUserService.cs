@@ -8,7 +8,7 @@ using Sentinel.Security.Abstractions.Identity;
 namespace Sentinel.Infrastructure.Auth.Services;
 
 public sealed class KeycloakUserService(HttpClient httpClient, ILogger<KeycloakUserService> logger)
-    : IKeycloakUserService, IIdentityRegistry
+    : IKeycloakUserService, IIdentityRegistry, IIdentityProvider
 {
     public Task<string> CreateUserAsync(
         IdentityRegistration registration,
@@ -125,6 +125,47 @@ public sealed class KeycloakUserService(HttpClient httpClient, ILogger<KeycloakU
         }
 
         return new KeycloakUserSummary(user.Id!, user.Email ?? email.Trim(), user.Username ?? user.Email ?? string.Empty);
+    }
+
+    public async Task<bool> UpdatePasswordAsync(string email, string newPassword, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(newPassword))
+        {
+            return false;
+        }
+
+        var user = await GetUserByEmailAsync(email, cancellationToken);
+        if (user is null)
+        {
+            return false;
+        }
+
+        var payload = new KeycloakAdminPasswordResetPayload
+        {
+            Type = "password",
+            Value = newPassword,
+            Temporary = false
+        };
+
+        using var response = await httpClient.PutAsJsonAsync(
+            $"users/{Uri.EscapeDataString(user.Id)}/reset-password",
+            payload,
+            KeycloakJsonContext.Default.KeycloakAdminPasswordResetPayload,
+            cancellationToken);
+
+        return response.IsSuccessStatusCode;
+    }
+
+    // Explicit interface implementation for IIdentityProvider
+    async Task<IdentityUserSummary?> IIdentityProvider.GetUserByEmailAsync(string email, CancellationToken cancellationToken)
+    {
+        var summary = await GetUserByEmailAsync(email, cancellationToken);
+        return summary is null ? null : new IdentityUserSummary
+        {
+            Id = summary.Id,
+            Email = summary.Email,
+            Username = summary.Username
+        };
     }
 
     private static string? TryExtractUserId(Uri? locationHeader)

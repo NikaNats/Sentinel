@@ -25,6 +25,8 @@ using Sentinel.Infrastructure.Notifications;
 using Sentinel.Infrastructure.Persistence;
 using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Security.Abstractions.Identity;
+using Sentinel.DPoP;
+using Sentinel.Security.Abstractions.DPoP;
 
 namespace Sentinel.Infrastructure.DependencyInjection;
 
@@ -74,15 +76,13 @@ public static class SentinelModuleBuilderExtensions
         _ = services.AddSingleton<IResetTokenProvider, HmacResetTokenProvider>();
         _ = services.AddSingleton<TokenValidationService>();
         _ = services.AddSingleton<ISsfTokenValidator, JwtSsfTokenValidator>();
-        _ = services.AddSingleton<ISsfEventProcessor, SsfEventProcessor>();
-        _ = services.AddSingleton<ISdJwtVerifier, SdJwtVerifier>();
 
         return new SentinelSecurityBuilder(services);
     }
 
     public static ISentinelSecurityBuilder AddDPoP(this ISentinelSecurityBuilder builder)
     {
-        _ = builder.Services.AddSingleton<IDpopProofValidator, DpopProofValidator>();
+        _ = builder.Services.AddSingleton<Sentinel.Security.Abstractions.DPoP.IDpopProofValidator, DpopProofValidator>();
         return builder;
     }
 
@@ -117,6 +117,8 @@ public static class SentinelModuleBuilderExtensions
             .AddHttpMessageHandler<KeycloakAdminAuthHandler>();
         _ = builder.Services.AddScoped<IIdentityRegistry>(sp =>
             (IIdentityRegistry)sp.GetRequiredService<IKeycloakUserService>());
+        _ = builder.Services.AddScoped<IIdentityProvider>(sp =>
+            (IIdentityProvider)sp.GetRequiredService<IKeycloakUserService>());
         _ = builder.Services.AddHttpClient<IKeycloakProfileService, KeycloakProfileService>((sp, client) =>
             {
                 var keycloakOptions = sp.GetRequiredService<IOptions<KeycloakOptions>>().Value;

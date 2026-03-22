@@ -4,6 +4,7 @@ using Sentinel.Application.Auth;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Domain.Auth;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Tests.Unit;
 
@@ -12,14 +13,14 @@ public sealed class ForgotPasswordHandlerTests
     [Fact]
     public async Task HandleAsync_WhenCaptchaFails_DoesNothing()
     {
-        var keycloak = new Mock<IKeycloakUserService>();
+        var identityProvider = new Mock<IIdentityProvider>();
         var tokenProvider = new Mock<IResetTokenProvider>();
         var email = new Mock<IEmailService>();
         var captcha = new Mock<ICaptchaService>();
         captcha.Setup(x => x.VerifyAsync("captcha", It.IsAny<CancellationToken>())).ReturnsAsync(false);
 
         var sut = new ForgotPasswordHandler(
-            keycloak.Object,
+            identityProvider.Object,
             tokenProvider.Object,
             email.Object,
             captcha.Object,
@@ -27,7 +28,7 @@ public sealed class ForgotPasswordHandlerTests
 
         await sut.HandleAsync(new ForgotPasswordRequest("user@example.com", "captcha"), CancellationToken.None);
 
-        keycloak.Verify(x => x.GetUserByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        identityProvider.Verify(x => x.GetUserByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         email.Verify(
             x => x.SendResetPasswordEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -36,10 +37,10 @@ public sealed class ForgotPasswordHandlerTests
     [Fact]
     public async Task HandleAsync_WhenUserExists_SendsResetEmail()
     {
-        var keycloak = new Mock<IKeycloakUserService>();
-        keycloak
+        var identityProvider = new Mock<IIdentityProvider>();
+        identityProvider
             .Setup(x => x.GetUserByEmailAsync("user@example.com", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new KeycloakUserSummary("id-1", "user@example.com", "user"));
+            .ReturnsAsync(new IdentityUserSummary { Id = "id-1", Email = "user@example.com", Username = "user" });
 
         var tokenProvider = new Mock<IResetTokenProvider>();
         tokenProvider.Setup(x => x.GenerateToken("user@example.com")).Returns("reset-token");
@@ -49,7 +50,7 @@ public sealed class ForgotPasswordHandlerTests
         captcha.Setup(x => x.VerifyAsync("captcha", It.IsAny<CancellationToken>())).ReturnsAsync(true);
 
         var sut = new ForgotPasswordHandler(
-            keycloak.Object,
+            identityProvider.Object,
             tokenProvider.Object,
             email.Object,
             captcha.Object,

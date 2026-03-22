@@ -6,6 +6,7 @@ using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Domain.Auth;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Tests.Security;
 
@@ -24,21 +25,20 @@ public sealed class ResetPasswordReplaySecurityTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => Interlocked.Increment(ref firstUseState) == 1);
 
-        var keycloakUser = new Mock<IKeycloakUserService>();
-        var keycloakProfile = new Mock<IKeycloakProfileService>();
-        keycloakProfile
+        var identityProvider = new Mock<IIdentityProvider>();
+        identityProvider
             .Setup(x => x.UpdatePasswordAsync("user@example.com", "N3w!Pass", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
-        keycloakUser
+        identityProvider
             .Setup(x => x.GetUserByEmailAsync("user@example.com", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new KeycloakUserSummary("kc-user-1", "user@example.com", "user"));
+            .ReturnsAsync(new IdentityUserSummary { Id = "kc-user-1", Email = "user@example.com", Username = "user" });
 
         var revocation = new Mock<IAuthRevocationService>();
         revocation
             .Setup(x => x.RevokeAllSessionsAsync("kc-user-1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        var sut = new ResetPasswordHandler(tokenProvider.Object, keycloakUser.Object, keycloakProfile.Object,
+        var sut = new ResetPasswordHandler(tokenProvider.Object, identityProvider.Object,
             replayCache.Object, revocation.Object);
         var request = new ResetPasswordRequest("same-token", "N3w!Pass");
 
@@ -58,8 +58,7 @@ public sealed class ResetPasswordReplaySecurityTests
     {
         var sut = new ResetPasswordHandler(
             Mock.Of<IResetTokenProvider>(),
-            Mock.Of<IKeycloakUserService>(),
-            Mock.Of<IKeycloakProfileService>(),
+            Mock.Of<IIdentityProvider>(),
             Mock.Of<IJtiReplayCache>(),
             Mock.Of<IAuthRevocationService>());
 
@@ -77,8 +76,7 @@ public sealed class ResetPasswordReplaySecurityTests
 
         var sut = new ResetPasswordHandler(
             tokenProvider.Object,
-            Mock.Of<IKeycloakUserService>(),
-            Mock.Of<IKeycloakProfileService>(),
+            Mock.Of<IIdentityProvider>(),
             Mock.Of<IJtiReplayCache>(),
             Mock.Of<IAuthRevocationService>());
 
@@ -89,3 +87,4 @@ public sealed class ResetPasswordReplaySecurityTests
         result.ErrorCode.Should().Be("invalid_or_expired_token");
     }
 }
+

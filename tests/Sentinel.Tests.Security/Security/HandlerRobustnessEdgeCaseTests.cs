@@ -9,6 +9,7 @@ using Sentinel.Application.Common.Abstractions;
 using Sentinel.Controllers;
 using Sentinel.Domain.Auth;
 using Sentinel.Presentation.Controllers;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Tests.Security;
 
@@ -33,7 +34,7 @@ public sealed class HandlerRobustnessEdgeCaseTests
     public async Task ForgotPasswordHandler_WhenRequestIsNull_ThrowsArgumentFailure()
     {
         var sut = new ForgotPasswordHandler(
-            Mock.Of<IKeycloakUserService>(),
+            Mock.Of<IIdentityProvider>(),
             Mock.Of<IResetTokenProvider>(),
             Mock.Of<IEmailService>(),
             Mock.Of<ICaptchaService>(),
@@ -49,8 +50,7 @@ public sealed class HandlerRobustnessEdgeCaseTests
     {
         var sut = new ResetPasswordHandler(
             Mock.Of<IResetTokenProvider>(),
-            Mock.Of<IKeycloakUserService>(),
-            Mock.Of<IKeycloakProfileService>(),
+            Mock.Of<IIdentityProvider>(),
             Mock.Of<IJtiReplayCache>(),
             Mock.Of<IAuthRevocationService>());
 

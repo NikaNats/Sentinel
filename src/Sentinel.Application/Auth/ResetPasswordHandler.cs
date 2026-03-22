@@ -4,13 +4,13 @@ using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Domain.Auth;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Application.Auth;
 
 public sealed class ResetPasswordHandler(
     IResetTokenProvider resetTokenProvider,
-    IKeycloakUserService keycloakUserService,
-    IKeycloakProfileService keycloakProfileService,
+    IIdentityProvider identityProvider,
     IJtiReplayCache replayCache,
     IAuthRevocationService authRevocationService)
 {
@@ -35,14 +35,14 @@ public sealed class ResetPasswordHandler(
             return new ResetPasswordResult(false, "Token already consumed.", "token_already_consumed");
         }
 
-        var updated = await keycloakProfileService.UpdatePasswordAsync(email, request.NewPassword, ct);
+        var updated = await identityProvider.UpdatePasswordAsync(email, request.NewPassword, ct);
         if (!updated)
         {
             return new ResetPasswordResult(false, "Failed to update password in Identity Store.",
                 "password_update_failed");
         }
 
-        var user = await keycloakUserService.GetUserByEmailAsync(email, ct);
+        var user = await identityProvider.GetUserByEmailAsync(email, ct);
         if (user is null)
         {
             return new ResetPasswordResult(false, "Failed to revoke active sessions.", "session_revoke_failed");

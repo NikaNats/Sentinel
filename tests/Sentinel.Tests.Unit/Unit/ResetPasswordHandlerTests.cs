@@ -4,6 +4,7 @@ using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Domain.Auth;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Tests.Unit;
 
@@ -17,8 +18,7 @@ public sealed class ResetPasswordHandlerTests
 
         var sut = new ResetPasswordHandler(
             resetTokenProvider.Object,
-            Mock.Of<IKeycloakUserService>(),
-            Mock.Of<IKeycloakProfileService>(),
+            Mock.Of<IIdentityProvider>(),
             Mock.Of<IJtiReplayCache>(),
             Mock.Of<IAuthRevocationService>());
 
@@ -42,8 +42,7 @@ public sealed class ResetPasswordHandlerTests
 
         var sut = new ResetPasswordHandler(
             resetTokenProvider.Object,
-            Mock.Of<IKeycloakUserService>(),
-            Mock.Of<IKeycloakProfileService>(),
+            Mock.Of<IIdentityProvider>(),
             replay.Object,
             Mock.Of<IAuthRevocationService>());
 
@@ -59,13 +58,12 @@ public sealed class ResetPasswordHandlerTests
         var resetTokenProvider = new Mock<IResetTokenProvider>();
         resetTokenProvider.Setup(x => x.ValidateToken("token")).Returns((true, "user@example.com"));
 
-        var keycloakUser = new Mock<IKeycloakUserService>();
-        var keycloakProfile = new Mock<IKeycloakProfileService>();
-        keycloakProfile
+        var identityProvider = new Mock<IIdentityProvider>();
+        identityProvider
             .Setup(x => x.UpdatePasswordAsync("user@example.com", "NewPassw0rd!", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
-        keycloakUser.Setup(x => x.GetUserByEmailAsync("user@example.com", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new KeycloakUserSummary("id-1", "user@example.com", "user"));
+        identityProvider.Setup(x => x.GetUserByEmailAsync("user@example.com", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new IdentityUserSummary { Id = "id-1", Email = "user@example.com", Username = "user" });
 
         var replay = new Mock<IJtiReplayCache>();
         replay.Setup(x =>
@@ -77,8 +75,7 @@ public sealed class ResetPasswordHandlerTests
 
         var sut = new ResetPasswordHandler(
             resetTokenProvider.Object,
-            keycloakUser.Object,
-            keycloakProfile.Object,
+            identityProvider.Object,
             replay.Object,
             revocation.Object);
 

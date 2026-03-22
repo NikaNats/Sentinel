@@ -9,6 +9,7 @@ using Sentinel.Application.Common.Abstractions;
 using Sentinel.Controllers;
 using Sentinel.Domain.Auth;
 using Sentinel.Presentation.Controllers;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Tests.Unit;
 
@@ -151,7 +152,7 @@ public sealed class UsersControllerTests
     private static ResendVerificationHandler BuildResendVerificationHandler()
     {
         return new ResendVerificationHandler(
-            Mock.Of<IKeycloakUserService>(),
+            Mock.Of<IIdentityProvider>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             Mock.Of<IEmailService>(),
             NullLogger<ResendVerificationHandler>.Instance);
@@ -160,7 +161,7 @@ public sealed class UsersControllerTests
     private static ForgotPasswordHandler BuildForgotPasswordHandler()
     {
         return new ForgotPasswordHandler(
-            Mock.Of<IKeycloakUserService>(),
+            Mock.Of<IIdentityProvider>(),
             Mock.Of<IResetTokenProvider>(),
             Mock.Of<IEmailService>(),
             Mock.Of<ICaptchaService>(),
@@ -171,8 +172,7 @@ public sealed class UsersControllerTests
     {
         return new ResetPasswordHandler(
             Mock.Of<IResetTokenProvider>(),
-            Mock.Of<IKeycloakUserService>(),
-            Mock.Of<IKeycloakProfileService>(),
+            Mock.Of<IIdentityProvider>(),
             Mock.Of<IJtiReplayCache>(),
             Mock.Of<IAuthRevocationService>());
     }
