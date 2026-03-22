@@ -14,7 +14,7 @@ public interface IAuthRevocationService
     /// - When receiving a CAE/CAEP event (security event token) indicating user status change
     /// - During account lockout or password change
     /// - When credential compromise is detected
-    /// 
+    ///
     /// All active sessions, access tokens, and refresh tokens for the subject should be invalidated.
     /// </remarks>
     /// <param name="subject">The user identifier (typically 'sub' claim).</param>
