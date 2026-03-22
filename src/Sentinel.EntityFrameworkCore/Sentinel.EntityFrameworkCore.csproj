@@ -7,6 +7,11 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- NuGet Package Metadata -->
+    <IsPackable>true</IsPackable>
+    <Description>Entity Framework Core persistence layer for Sentinel OAuth 2.0 & OpenID Connect stores, entities, and migrations.</Description>
+    <PackageTags>entityframework;efcore;persistence;oauth2;openid;database;</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

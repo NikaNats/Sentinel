@@ -3,6 +3,11 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <DocumentationFile>bin/$(Configuration)/$(TargetFramework)/$(AssemblyName).xml</DocumentationFile>
+
+    <!-- NuGet Package Metadata -->
+    <IsPackable>true</IsPackable>
+    <Description>Selective Disclosure JSON Web Token (SD-JWT) implementation for Sentinel OAuth 2.0 & OpenID Connect. RFC 9457 compliant privacy-preserving claims.</Description>
+    <PackageTags>sdjwt;selective-disclosure;jwt;privacy;oauth2;openid;</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

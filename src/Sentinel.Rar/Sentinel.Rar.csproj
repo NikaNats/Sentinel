@@ -3,6 +3,11 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <DocumentationFile>bin/$(Configuration)/$(TargetFramework)/$(AssemblyName).xml</DocumentationFile>
+
+    <!-- NuGet Package Metadata -->
+    <IsPackable>true</IsPackable>
+    <Description>Resource Authorization Request (RAR) implementation for Sentinel OAuth 2.0 & OpenID Connect. RFC 9396 compliant fine-grained authorization requests with resource indicators.</Description>
+    <PackageTags>rar;resource-authorization;oauth2;openid;authorization;fine-grained;</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

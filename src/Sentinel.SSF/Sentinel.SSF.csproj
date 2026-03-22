@@ -5,6 +5,11 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
+
+    <!-- NuGet Package Metadata -->
+    <IsPackable>true</IsPackable>
+    <Description>Security Signal Framework (SSF) implementation for Sentinel OAuth 2.0 & OpenID Connect. CAEP-compliant continuous authentication event processing.</Description>
+    <PackageTags>ssf;securitysignal;caep;oauth2;openid;event-driven;</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

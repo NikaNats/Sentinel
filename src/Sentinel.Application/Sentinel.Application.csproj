@@ -5,6 +5,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- NuGet Package Metadata -->
+    <IsPackable>true</IsPackable>
+    <Description>Application service layer for Sentinel OAuth 2.0 & OpenID Connect including business logic orchestration, command and query handlers, and domain services.</Description>
+    <PackageTags>application;services;oauth2;openid;business-logic;domain-services;</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

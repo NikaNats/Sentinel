@@ -23,6 +23,17 @@
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
 
+    <!-- NuGet 2025+ Metadata (for package discoverability) -->
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+
+    <!-- Build Determinism (for reproducible builds in CI/CD) -->
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true' or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!-- Enable NativeAOT trimming validation -->
+    <TrimMode>link</TrimMode>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
     <!-- Comprehensive NoWarn: Production + Test Rules -->
     <NoWarn>
       $(NoWarn);

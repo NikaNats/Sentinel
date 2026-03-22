@@ -5,6 +5,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- NuGet Package Metadata -->
+    <IsPackable>true</IsPackable>
+    <Description>ASP.NET Core middleware and extensions for integrating Sentinel OAuth 2.0 & OpenID Connect authentication and authorization into web applications.</Description>
+    <PackageTags>aspnetcore;middleware;oauth2;openid;authentication;authorization;</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

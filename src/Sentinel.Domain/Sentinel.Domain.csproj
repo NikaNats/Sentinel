@@ -5,6 +5,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- NuGet Package Metadata -->
+    <IsPackable>true</IsPackable>
+    <Description>Core domain models and entities for Sentinel OAuth 2.0 & OpenID Connect security infrastructure.</Description>
+    <PackageTags>oauth2;openid;domain-models;security;identity</PackageTags>
   </PropertyGroup>
 
 </Project>
