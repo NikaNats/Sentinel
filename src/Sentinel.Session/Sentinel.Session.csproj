@@ -6,7 +6,7 @@
 
     <!-- NuGet Package Metadata -->
     <IsPackable>true</IsPackable>
-    <Description>Session management and lifecycle management for Sentinel OAuth 2.0 & OpenID Connect authentication flows.</Description>
+    <Description>Session management and lifecycle management for Sentinel OAuth 2.0 &amp; OpenID Connect authentication flows.</Description>
     <PackageTags>session;session-management;oauth2;openid;authentication;</PackageTags>
   </PropertyGroup>
 

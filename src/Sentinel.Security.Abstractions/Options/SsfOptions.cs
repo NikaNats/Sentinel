@@ -25,4 +25,14 @@ public sealed class SsfOptions
     /// SET tokens older than this are rejected.
     /// </summary>
     public int SetTokenLifetimeSeconds { get; init; } = 3600;
+
+    /// <summary>
+    /// Gets or sets whether SSF webhook authentication is required.
+    /// </summary>
+    public bool RequireAuthToken { get; init; }
+
+    /// <summary>
+    /// Gets or sets the authentication token for SSF webhooks.
+    /// </summary>
+    public string? AuthToken { get; init; }
 }

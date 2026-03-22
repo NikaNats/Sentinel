@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Sentinel.AspNetCore.Middleware;
-using Sentinel.AspNetCore.Middleware.Filters;
+using Sentinel.Middleware.Filters;
 
 namespace Sentinel.AspNetCore.Extensions;
 

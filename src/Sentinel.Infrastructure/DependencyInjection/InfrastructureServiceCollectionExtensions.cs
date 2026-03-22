@@ -9,12 +9,10 @@ public static class InfrastructureServiceCollectionExtensions
     {
         _ = services
             .AddSentinelCore(configuration)
-            .AddRedisReplayCache(configuration)
             .AddDPoP()
             .AddKeycloak()
             .AddNotificationsModule(configuration)
-            .AddTelemetry()
-            .AddJwtAndCertificateAuth(configuration);
+            .AddTelemetry();
 
         return services;
     }

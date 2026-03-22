@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.Middleware.Filters;
 
-namespace Sentinel.Presentation.Middleware;
+namespace Sentinel.AspNetCore.Middleware;
 
 public sealed class MtlsBindingMiddleware(RequestDelegate next, ILogger<MtlsBindingMiddleware> logger)
 {

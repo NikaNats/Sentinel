@@ -9,7 +9,7 @@ using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Telemetry;
 
-namespace Sentinel.Middleware;
+namespace Sentinel.AspNetCore.Middleware;
 
 public sealed class DpopValidationMiddleware(
     RequestDelegate next,

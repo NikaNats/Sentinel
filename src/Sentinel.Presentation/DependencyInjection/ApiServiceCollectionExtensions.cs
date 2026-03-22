@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
+using Sentinel.AspNetCore.Middleware;
 using Sentinel.Auth.Authorization;
 using Sentinel.Middleware;
 using Sentinel.Presentation.Middleware;
@@ -97,16 +98,16 @@ public static class ApiServiceCollectionExtensions
         app.UseExceptionHandler();
         app.UseStatusCodePages();
 
-        app.UseSecurityHeaders();
+        Sentinel.AspNetCore.Middleware.SecurityHeadersMiddlewareExtensions.UseSecurityHeaders(app);
 
         app.UseHttpsRedirection();
         app.UseRouting();
-        app.UseMiddleware<CorrelationIdMiddleware>();
+        app.UseMiddleware<Sentinel.AspNetCore.Middleware.CorrelationIdMiddleware>();
 
         app.UseAuthentication();
-        app.UseMiddleware<DpopValidationMiddleware>();
-        app.UseMiddleware<MtlsBindingMiddleware>();
-        app.UseMiddleware<AcrValidationMiddleware>();
+        app.UseMiddleware<Sentinel.AspNetCore.Middleware.DpopValidationMiddleware>();
+        app.UseMiddleware<Sentinel.AspNetCore.Middleware.MtlsBindingMiddleware>();
+        app.UseMiddleware<Sentinel.Middleware.AcrValidationMiddleware>();
         app.UseRateLimiter();
         app.UseAuthorization();
 

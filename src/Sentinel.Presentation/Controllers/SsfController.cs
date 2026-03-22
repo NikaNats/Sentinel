@@ -5,7 +5,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Interfaces;
-using Sentinel.Infrastructure.Auth.Ssf;
+using Sentinel.Application.Auth.Models;
+using Sentinel.Security.Abstractions.Options;
 
 namespace Sentinel.Presentation.Controllers;
 

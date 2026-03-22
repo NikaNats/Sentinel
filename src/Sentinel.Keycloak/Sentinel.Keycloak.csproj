@@ -10,7 +10,7 @@
 
     <!-- NuGet Package Metadata -->
     <IsPackable>true</IsPackable>
-    <Description>Keycloak adapter and integration library for Sentinel OAuth 2.0 & OpenID Connect identity provider interoperability and federation with Keycloak.</Description>
+    <Description>Keycloak adapter and integration library for Sentinel OAuth 2.0 &amp; OpenID Connect identity provider interoperability and federation with Keycloak.</Description>
     <PackageTags>keycloak;identity-provider;adapter;oauth2;openid;federation;sso;</PackageTags>
   </PropertyGroup>
 

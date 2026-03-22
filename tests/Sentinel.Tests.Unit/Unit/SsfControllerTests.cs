@@ -7,7 +7,7 @@ using Moq;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Controllers;
-using Sentinel.Infrastructure.Auth.Ssf;
+using Sentinel.Security.Abstractions.Options;
 using Sentinel.Presentation.Controllers;
 
 namespace Sentinel.Tests.Unit;

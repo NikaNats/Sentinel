@@ -16,8 +16,6 @@ using Sentinel.Application.Common.Abstractions;
 using Sentinel.Domain.Auth;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Auth.Handlers;
-using Sentinel.Infrastructure.Auth.SdJwt;
-using Sentinel.Infrastructure.Auth.Ssf;
 using Sentinel.Infrastructure.Auth.Services;
 using Sentinel.Infrastructure.Cache;
 using Sentinel.Infrastructure.Cryptography;
@@ -44,8 +42,7 @@ public static class SentinelModuleBuilderExtensions
         _ = services.Configure<RegistrationOptions>(configuration.GetSection("Registration"));
         _ = services.Configure<ResetTokenOptions>(configuration.GetSection("PasswordReset"));
         _ = services.Configure<SocialFederationOptions>(configuration.GetSection("SocialFederation"));
-        _ = services.Configure<SsfOptions>(configuration.GetSection(SsfOptions.SectionName));
-        _ = services.Configure<SdJwtOptions>(configuration.GetSection(SdJwtOptions.SectionName));
+
         _ = services.AddSingleton<IConfigurationManager<OpenIdConnectConfiguration>>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<KeycloakOptions>>().Value;
@@ -75,7 +72,6 @@ public static class SentinelModuleBuilderExtensions
         _ = services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
         _ = services.AddSingleton<IResetTokenProvider, HmacResetTokenProvider>();
         _ = services.AddSingleton<TokenValidationService>();
-        _ = services.AddSingleton<ISsfTokenValidator, JwtSsfTokenValidator>();
 
         return new SentinelSecurityBuilder(services);
     }
@@ -83,15 +79,6 @@ public static class SentinelModuleBuilderExtensions
     public static ISentinelSecurityBuilder AddDPoP(this ISentinelSecurityBuilder builder)
     {
         _ = builder.Services.AddSingleton<Sentinel.Security.Abstractions.DPoP.IDpopProofValidator, DpopProofValidator>();
-        return builder;
-    }
-
-    public static ISentinelSecurityBuilder AddRedisReplayCache(this ISentinelSecurityBuilder builder,
-        IConfiguration configuration)
-    {
-        _ = builder.AddSecureRedis(configuration);
-        _ = builder.Services.AddSingleton<ISessionBlacklistCache, SessionBlacklistCache>();
-        _ = builder.Services.AddSingleton<IEmailVerificationTokenStore, EmailVerificationTokenStore>();
         return builder;
     }
 
@@ -171,134 +158,6 @@ public static class SentinelModuleBuilderExtensions
                 .AddAspNetCoreInstrumentation()
                 .AddMeter(AuthTelemetry.MeterName)
                 .AddPrometheusExporter());
-
-        return builder;
-    }
-
-    public static ISentinelSecurityBuilder AddJwtAndCertificateAuth(this ISentinelSecurityBuilder builder,
-        IConfiguration configuration)
-    {
-        var keycloakOptions = configuration.GetSection(KeycloakOptions.SectionName).Get<KeycloakOptions>() ??
-                              new KeycloakOptions();
-
-        var sdJwtOptions = configuration.GetSection(SdJwtOptions.SectionName).Get<SdJwtOptions>() ?? new SdJwtOptions();
-        var sdJwtScheme = string.IsNullOrWhiteSpace(sdJwtOptions.AuthenticationScheme)
-            ? "SdJwt"
-            : sdJwtOptions.AuthenticationScheme;
-        const string compositeScheme = "SentinelAuth";
-
-        _ = builder.Services
-            .AddAuthentication(options =>
-            {
-                options.DefaultAuthenticateScheme = compositeScheme;
-                options.DefaultChallengeScheme = compositeScheme;
-            })
-            .AddPolicyScheme(compositeScheme, compositeScheme, options =>
-            {
-                options.ForwardDefaultSelector = context =>
-                {
-                    var authorization = context.Request.Headers.Authorization.ToString();
-                    if (string.IsNullOrWhiteSpace(authorization))
-                    {
-                        return JwtBearerDefaults.AuthenticationScheme;
-                    }
-
-                    var token = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-                        ? authorization["Bearer ".Length..].Trim()
-                        : authorization.StartsWith("SD-JWT ", StringComparison.OrdinalIgnoreCase)
-                            ? authorization["SD-JWT ".Length..].Trim()
-                            : string.Empty;
-
-                    return token.Contains('~', StringComparison.Ordinal)
-                        ? sdJwtScheme
-                        : JwtBearerDefaults.AuthenticationScheme;
-                };
-            })
-            .AddScheme<AuthenticationSchemeOptions, SdJwtAuthenticationHandler>(sdJwtScheme, _ => { })
-            .AddJwtBearer(options =>
-            {
-                options.Authority = keycloakOptions.Authority;
-                options.Audience = keycloakOptions.Audience;
-                options.MapInboundClaims = false;
-                options.RequireHttpsMetadata = keycloakOptions.RequireHttpsMetadata;
-                options.RefreshOnIssuerKeyNotFound = true;
-
-                options.TokenValidationParameters = new TokenValidationParameters
-                {
-                    ValidateIssuer = true,
-                    ValidateAudience = true,
-                    ValidateLifetime = true,
-                    ClockSkew = TimeSpan.Zero,
-                    ValidAlgorithms = ["PS256", "ES256", "MLDSA44", "MLDSA65", "MLDSA87"],
-                    RequireSignedTokens = true,
-                    RequireExpirationTime = true,
-                    NameClaimType = "sub",
-                    RoleClaimType = "realm_access.roles"
-                };
-
-                options.Events = new JwtBearerEvents
-                {
-                    OnMessageReceived = context =>
-                    {
-                        var authHeader = context.Request.Headers.Authorization.ToString();
-                        if (!string.IsNullOrWhiteSpace(authHeader)
-                            && authHeader.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase))
-                        {
-                            context.Token = authHeader["DPoP ".Length..].Trim();
-                        }
-
-                        return Task.CompletedTask;
-                    },
-                    OnTokenValidated = async context =>
-                    {
-                        if (context.Principal is null)
-                        {
-                            context.Fail("Missing principal.");
-                            return;
-                        }
-
-                        var validationService = context.HttpContext.RequestServices
-                            .GetRequiredService<TokenValidationService>();
-                        var outcome = await validationService.ValidateAsync(context.Principal, context.HttpContext,
-                            context.HttpContext.RequestAborted);
-                        if (outcome.IsSuccess)
-                        {
-                            return;
-                        }
-
-                        if (outcome.FailureException is not null)
-                        {
-                            context.Fail(outcome.FailureException);
-                            return;
-                        }
-
-                        context.Fail(outcome.FailureReason ?? "Token validation failed.");
-                    },
-                    OnChallenge = async context =>
-                    {
-                        if (context.AuthenticateFailure is ReplayCacheUnavailableException)
-                        {
-                            context.HandleResponse();
-                            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-                            await context.Response.WriteAsJsonAsync(new ProblemDetails
-                            {
-                                Type = "/errors/replay-cache-unavailable",
-                                Title = "Security subsystem unavailable",
-                                Detail = "Token replay protection is temporarily unavailable.",
-                                Status = StatusCodes.Status503ServiceUnavailable
-                            });
-                        }
-                    }
-                };
-            })
-            .AddCertificate(options =>
-            {
-                options.AllowedCertificateTypes = CertificateTypes.All;
-                options.Events = new CertificateAuthenticationEvents
-                {
-                    OnCertificateValidated = _ => Task.CompletedTask
-                };
-            });
 
         return builder;
     }

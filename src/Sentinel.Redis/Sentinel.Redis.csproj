@@ -10,7 +10,7 @@
 
     <!-- NuGet Package Metadata -->
     <IsPackable>true</IsPackable>
-    <Description>Redis distributed cache implementation for Sentinel OAuth 2.0 & OpenID Connect tokens, sessions, and state management.</Description>
+    <Description>Redis distributed cache implementation for Sentinel OAuth 2.0 &amp; OpenID Connect tokens, sessions, and state management.</Description>
     <PackageTags>redis;caching;distributed-cache;oauth2;openid;sessionstore;</PackageTags>
   </PropertyGroup>
 
