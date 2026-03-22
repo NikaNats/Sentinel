@@ -10,8 +10,10 @@ public sealed class RegisterUserHandler(
     IKeycloakUserService keycloakUserService,
     IEmailService emailService,
     IEmailVerificationTokenStore verificationTokenStore,
-    IPasswordStrengthValidator passwordStrengthValidator)
+    IPasswordStrengthValidator passwordStrengthValidator,
+    TimeProvider? timeProvider = null)
 {
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     public async Task<RegisterUserResult> HandleAsync(RegisterUserRequest request, string sourceIp,
         CancellationToken ct)
     {
@@ -51,7 +53,7 @@ public sealed class RegisterUserHandler(
             Consent = new ConsentInfo(
                 request.AcceptTerms,
                 "v1.0",
-                DateTime.UtcNow,
+                _timeProvider.GetUtcNow().DateTime,
                 sourceIp)
         };
 

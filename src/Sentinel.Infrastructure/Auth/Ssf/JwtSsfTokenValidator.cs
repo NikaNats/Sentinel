@@ -12,8 +12,10 @@ public sealed class JwtSsfTokenValidator(
     IOptions<KeycloakOptions> keycloakOptions,
     IOptions<SsfOptions> ssfOptions,
     IConfigurationManager<OpenIdConnectConfiguration> openIdConfigurationManager,
-    ILogger<JwtSsfTokenValidator> logger) : ISsfTokenValidator
+    ILogger<JwtSsfTokenValidator> logger,
+    TimeProvider? timeProvider = null) : ISsfTokenValidator
 {
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly JsonWebTokenHandler jwtHandler = new();
     private readonly KeycloakOptions options = keycloakOptions.Value;
     private readonly SsfOptions ssf = ssfOptions.Value;
@@ -76,7 +78,7 @@ public sealed class JwtSsfTokenValidator(
             }
 
             var issuedAt = DateTimeOffset.FromUnixTimeSeconds(iat);
-            var now = DateTimeOffset.UtcNow;
+            var now = _timeProvider.GetUtcNow();
             if (issuedAt > now.AddSeconds(Math.Max(0, ssf.AllowedClockSkewSeconds)))
             {
                 return SsfValidationResult.Fail("SET iat is in the future.");

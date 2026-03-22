@@ -16,8 +16,10 @@ public sealed class SdJwtVerifier(
     IOptions<KeycloakOptions> keycloakOptions,
     IOptions<SdJwtOptions> sdJwtOptions,
     IConfigurationManager<OpenIdConnectConfiguration> openIdConfigurationManager,
-    ILogger<SdJwtVerifier> logger) : ISdJwtVerifier
+    ILogger<SdJwtVerifier> logger,
+    TimeProvider? timeProvider = null) : ISdJwtVerifier
 {
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private static readonly JsonWebTokenHandler TokenHandler = new();
     private readonly KeycloakOptions keycloak = keycloakOptions.Value;
     private readonly SdJwtOptions options = sdJwtOptions.Value;
@@ -152,7 +154,7 @@ public sealed class SdJwtVerifier(
         }
 
         var iatTime = DateTimeOffset.FromUnixTimeSeconds(iat);
-        var age = DateTimeOffset.UtcNow - iatTime;
+        var age = _timeProvider.GetUtcNow() - iatTime;
         if (age < TimeSpan.Zero || age > TimeSpan.FromSeconds(Math.Max(1, options.KeyBindingMaxAgeSeconds)))
         {
             return "Key binding token is stale.";

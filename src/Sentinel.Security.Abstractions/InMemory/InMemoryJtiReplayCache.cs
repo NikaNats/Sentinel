@@ -11,12 +11,15 @@ namespace Sentinel.Security.Abstractions.InMemory;
 public sealed class InMemoryJtiReplayCache : IJtiReplayCache
 {
     private readonly ConcurrentDictionary<string, DateTimeOffset> _store = new();
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InMemoryJtiReplayCache"/> class.
     /// </summary>
-    public InMemoryJtiReplayCache()
+    /// <param name="timeProvider">Optional time provider for testing. Defaults to <see cref="TimeProvider.System"/>.</param>
+    public InMemoryJtiReplayCache(TimeProvider? timeProvider = null)
     {
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public Task<bool> TryMarkUsedAsync(string jti, DateTimeOffset expiresAt, CancellationToken cancellationToken = default)
@@ -28,7 +31,7 @@ public sealed class InMemoryJtiReplayCache : IJtiReplayCache
 
     public Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         foreach (var kvp in _store)
         {
             if (kvp.Value <= now)

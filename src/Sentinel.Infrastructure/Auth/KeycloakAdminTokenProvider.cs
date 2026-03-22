@@ -8,8 +8,10 @@ namespace Sentinel.Infrastructure.Auth;
 public sealed class KeycloakAdminTokenProvider(
     IHttpClientFactory httpClientFactory,
     IOptions<KeycloakOptions> options,
-    ILogger<KeycloakAdminTokenProvider> logger) : IDisposable
+    ILogger<KeycloakAdminTokenProvider> logger,
+    TimeProvider? timeProvider = null) : IDisposable
 {
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly KeycloakOptions keycloakOptions = options.Value;
     private readonly SemaphoreSlim tokenLock = new(1, 1);
 
@@ -98,7 +100,7 @@ public sealed class KeycloakAdminTokenProvider(
                 : 60;
 
             cachedAccessToken = accessTokenElement.GetString();
-            cachedAccessTokenExpiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresIn);
+            cachedAccessTokenExpiresAt = _timeProvider.GetUtcNow().AddSeconds(expiresIn);
 
             return cachedAccessToken;
         }
@@ -111,6 +113,6 @@ public sealed class KeycloakAdminTokenProvider(
     private bool HasUsableCachedToken()
     {
         return !string.IsNullOrWhiteSpace(cachedAccessToken)
-               && cachedAccessTokenExpiresAt > DateTimeOffset.UtcNow.AddSeconds(30);
+               && cachedAccessTokenExpiresAt > _timeProvider.GetUtcNow().AddSeconds(30);
     }
 }

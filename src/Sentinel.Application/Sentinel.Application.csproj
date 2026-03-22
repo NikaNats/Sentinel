@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Sentinel.Domain\Sentinel.Domain.csproj" />
+    <ProjectReference Include="..\Sentinel.Security.Abstractions\Sentinel.Security.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

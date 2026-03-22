@@ -9,12 +9,22 @@ namespace Sentinel.Security.Abstractions.InMemory;
 public sealed class InMemoryDpopNonceStore : IDpopNonceStore
 {
     private readonly ConcurrentDictionary<string, (string Nonce, DateTimeOffset Expiry)> _store = new();
+    private readonly TimeProvider _timeProvider;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="InMemoryDpopNonceStore"/> class.
+    /// </summary>
+    /// <param name="timeProvider">Optional time provider for testing. Defaults to <see cref="TimeProvider.System"/>.</param>
+    public InMemoryDpopNonceStore(TimeProvider? timeProvider = null)
+    {
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
 
     public Task<string?> GetNonceAsync(string thumbprint, CancellationToken cancellationToken = default)
     {
         if (_store.TryGetValue(thumbprint, out var entry))
         {
-            if (entry.Expiry > DateTimeOffset.UtcNow)
+            if (entry.Expiry > _timeProvider.GetUtcNow())
             {
                 return Task.FromResult((string?)entry.Nonce);
             }
@@ -34,7 +44,7 @@ public sealed class InMemoryDpopNonceStore : IDpopNonceStore
 
     public Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         foreach (var kvp in _store)
         {
             if (kvp.Value.Expiry <= now)

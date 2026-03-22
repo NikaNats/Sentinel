@@ -4,9 +4,10 @@ using Sentinel.Application.Models;
 
 namespace Sentinel.Infrastructure.Cache;
 
-public sealed class InMemoryDocumentStore : IDocumentStore
+public sealed class InMemoryDocumentStore(TimeProvider? timeProvider = null) : IDocumentStore
 {
     private readonly ConcurrentDictionary<Guid, DocumentState> documents = new();
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     public Task<IReadOnlyCollection<DocumentDto>> ListAsync(string ownerSub, CancellationToken cancellationToken)
     {
@@ -39,7 +40,7 @@ public sealed class InMemoryDocumentStore : IDocumentStore
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         var state = new DocumentState(
             Guid.NewGuid(),
             ownerSub,
@@ -69,7 +70,7 @@ public sealed class InMemoryDocumentStore : IDocumentStore
             {
                 Title = request.Title,
                 Content = request.Content,
-                UpdatedAtUtc = DateTimeOffset.UtcNow
+                UpdatedAtUtc = _timeProvider.GetUtcNow()
             };
 
             if (documents.TryUpdate(id, updated, current))

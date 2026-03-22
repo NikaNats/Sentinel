@@ -9,6 +9,16 @@ namespace Sentinel.Security.Abstractions.InMemory;
 public sealed class InMemorySessionBlacklistCache : ISessionBlacklistCache
 {
     private readonly ConcurrentDictionary<string, DateTimeOffset> _store = new();
+    private readonly TimeProvider _timeProvider;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="InMemorySessionBlacklistCache"/> class.
+    /// </summary>
+    /// <param name="timeProvider">Optional time provider for testing. Defaults to <see cref="TimeProvider.System"/>.</param>
+    public InMemorySessionBlacklistCache(TimeProvider? timeProvider = null)
+    {
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
 
     public Task BlacklistSessionAsync(string sessionId, DateTimeOffset expiresAt, CancellationToken cancellationToken = default)
     {
@@ -21,7 +31,7 @@ public sealed class InMemorySessionBlacklistCache : ISessionBlacklistCache
         if (_store.TryGetValue(sessionId, out var expiresAt))
         {
             // If not expired, it's still blacklisted
-            if (expiresAt > DateTimeOffset.UtcNow)
+            if (expiresAt > _timeProvider.GetUtcNow())
             {
                 return Task.FromResult(true);
             }
@@ -35,7 +45,7 @@ public sealed class InMemorySessionBlacklistCache : ISessionBlacklistCache
 
     public Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         foreach (var kvp in _store)
         {
             if (kvp.Value <= now)

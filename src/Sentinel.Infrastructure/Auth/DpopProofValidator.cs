@@ -10,9 +10,10 @@ using Sentinel.Infrastructure.Telemetry;
 
 namespace Sentinel.Infrastructure.Auth;
 
-public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProofValidator
+public sealed class DpopProofValidator(IJtiReplayCache replayCache, TimeProvider? timeProvider = null) : IDpopProofValidator
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     private static readonly HashSet<string> SupportedAlgorithms =
     [
@@ -121,7 +122,7 @@ public sealed class DpopProofValidator(IJtiReplayCache replayCache) : IDpopProof
             }
 
             var iatTime = DateTimeOffset.FromUnixTimeSeconds(iat);
-            var now = DateTimeOffset.UtcNow;
+            var now = _timeProvider.GetUtcNow();
             if (iatTime < now.AddSeconds(-60) || iatTime > now.AddSeconds(5))
             {
                 _ = activity?.SetTag("auth.result", "iat_window_violation");

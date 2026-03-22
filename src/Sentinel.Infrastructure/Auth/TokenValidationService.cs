@@ -7,8 +7,10 @@ namespace Sentinel.Infrastructure.Auth;
 public sealed class TokenValidationService(
     IJtiReplayCache replayCache,
     ISessionBlacklistCache sessionBlacklist,
-    ISecurityEventEmitter eventEmitter)
+    ISecurityEventEmitter eventEmitter,
+    TimeProvider? timeProvider = null)
 {
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     public async Task<TokenValidationOutcome> ValidateAsync(ClaimsPrincipal principal, HttpContext context,
         CancellationToken ct)
     {
@@ -28,7 +30,7 @@ public sealed class TokenValidationService(
             }
 
             var expTime = DateTimeOffset.FromUnixTimeSeconds(expUnix);
-            var remainingTtl = expTime - DateTimeOffset.UtcNow;
+            var remainingTtl = expTime - _timeProvider.GetUtcNow();
             if (remainingTtl <= TimeSpan.Zero)
             {
                 return TokenValidationOutcome.Fail("Token is already expired.");

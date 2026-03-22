@@ -7,8 +7,9 @@ using Sentinel.Domain.Auth;
 
 namespace Sentinel.Infrastructure.Auth;
 
-public sealed class HmacResetTokenProvider(IOptions<ResetTokenOptions> options) : IResetTokenProvider
+public sealed class HmacResetTokenProvider(IOptions<ResetTokenOptions> options, TimeProvider? timeProvider = null) : IResetTokenProvider
 {
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly int lifetimeMinutes = options.Value.LifetimeMinutes <= 0 ? 15 : options.Value.LifetimeMinutes;
     private readonly byte[] signingKey = ResolveSigningKey(options.Value.TokenSigningKey);
 
@@ -21,7 +22,7 @@ public sealed class HmacResetTokenProvider(IOptions<ResetTokenOptions> options) 
 
         var resetToken = new ResetToken(
             email.Trim(),
-            DateTime.UtcNow.AddMinutes(lifetimeMinutes),
+            _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(lifetimeMinutes),
             Guid.NewGuid().ToString("N"));
 
         var payload = resetToken.ToPlainString();
@@ -90,7 +91,7 @@ public sealed class HmacResetTokenProvider(IOptions<ResetTokenOptions> options) 
             return (false, null);
         }
 
-        if (expiry <= DateTime.UtcNow)
+        if (expiry <= _timeProvider.GetUtcNow().DateTime)
         {
             return (false, null);
         }

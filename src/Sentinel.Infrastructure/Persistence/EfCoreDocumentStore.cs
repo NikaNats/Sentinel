@@ -4,8 +4,9 @@ using Sentinel.Application.Models;
 
 namespace Sentinel.Infrastructure.Persistence;
 
-public sealed class EfCoreDocumentStore(SentinelDbContext dbContext) : IDocumentStore
+public sealed class EfCoreDocumentStore(SentinelDbContext dbContext, TimeProvider? timeProvider = null) : IDocumentStore
 {
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     public async Task<IReadOnlyCollection<DocumentDto>> ListAsync(string ownerSub, CancellationToken cancellationToken)
     {
         return await dbContext.Documents
@@ -30,7 +31,7 @@ public sealed class EfCoreDocumentStore(SentinelDbContext dbContext) : IDocument
     public async Task<DocumentDto> CreateAsync(string ownerSub, CreateDocumentRequest request,
         CancellationToken cancellationToken)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         var entity = new DocumentEntity
         {
             Id = Guid.NewGuid(),
@@ -61,7 +62,7 @@ public sealed class EfCoreDocumentStore(SentinelDbContext dbContext) : IDocument
 
         entity.Title = request.Title;
         entity.Content = request.Content;
-        entity.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        entity.UpdatedAtUtc = _timeProvider.GetUtcNow();
 
         _ = await dbContext.SaveChangesAsync(cancellationToken);
 

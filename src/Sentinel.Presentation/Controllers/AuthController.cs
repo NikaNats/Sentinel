@@ -18,9 +18,11 @@ public sealed class AuthController(
     IKeycloakProfileService keycloakProfileService,
     IPasswordStrengthValidator passwordStrengthValidator,
     ISessionBlacklistCache blacklistCache,
-    IOptions<KeycloakOptions> options) : ControllerBase
+    IOptions<KeycloakOptions> options,
+    TimeProvider? timeProvider = null) : ControllerBase
 {
     private readonly KeycloakOptions keycloakOptions = options.Value;
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     [HttpPost("refresh")]
     [AllowAnonymous]
@@ -124,7 +126,7 @@ public sealed class AuthController(
         }
 
         var authTime = DateTimeOffset.FromUnixTimeSeconds(authTimeUnix);
-        if (DateTimeOffset.UtcNow - authTime > TimeSpan.FromMinutes(5))
+        if (_timeProvider.GetUtcNow() - authTime > TimeSpan.FromMinutes(5))
         {
             Response.Headers.Append("WWW-Authenticate",
                 "Bearer error=\"insufficient_user_authentication\", error_description=\"Recent authentication required\", acr_values=\"acr3\", max_age=\"300\"");
