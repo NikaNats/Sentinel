@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsLibrary>true</IsLibrary>
+    <Description>Zero-dependency abstractions for Sentinel security infrastructure. Every other package depends on this, and it has no external dependencies.</Description>
+    <PackageTags>security;abstractions;oauth2;openid;jwt;dpop;session;ssf;sdjwt</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ZERO production dependencies. Everything here is built-in. -->
+    <PackageReference Include="System.ComponentModel.Annotations" />
+  </ItemGroup>
+
+</Project>
