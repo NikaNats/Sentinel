@@ -42,6 +42,16 @@ public static class SentinelModuleBuilderExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        _ = services.AddOptions<CryptographyOptions>()
+            .BindConfiguration(CryptographyOptions.SectionName)
+            .Validate(opts =>
+            {
+                if (string.IsNullOrWhiteSpace(opts.ActiveKeyId))
+                    return false;
+                return opts.KeyRing.ContainsKey(opts.ActiveKeyId);
+            }, "Cryptography:ActiveKeyId must reference an existing key in Cryptography:KeyRing.")
+            .ValidateOnStart();
+
         _ = services.AddTurnstileService(options => configuration.GetSection("Captcha:Turnstile").Bind(options));
         _ = services.Configure<RegistrationOptions>(configuration.GetSection("Registration"));
         _ = services.AddHmacTokenServices(options => configuration.GetSection("PasswordReset").Bind(options));

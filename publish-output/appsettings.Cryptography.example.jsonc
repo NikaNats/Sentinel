@@ -1,0 +1,76 @@
+/**
+ * NIST SP 800-57 Key Ring Configuration
+ * =====================================
+ *
+ * This demonstrates the envelope cryptography configuration for FedRAMP High compliance.
+ *
+ * Migration Strategy:
+ * 1. Generate your first versioned key (e.g., 2026-03-rev1)
+ * 2. If migrating from the old implementation, provide the LegacyMasterKey
+ * 3. Deploy the new AesGcmEncryptionService
+ * 4. All NEW encryptions use the ActiveKeyId key
+ * 5. Legacy ciphertexts are decrypted transparently using LegacyMasterKey
+ * 6. When records are updated, they're re-encrypted with the active key
+ * 7. Once all data is refreshed, you can remove the LegacyMasterKey
+ * 8. To rotate keys: add new key to KeyRing, update ActiveKeyId, deploy
+ */
+
+{
+  "Cryptography": {
+    "ActiveKeyId": "2026-03-rev1",
+    "KeyRing": {
+      // Current active key (used for all NEW encryptions)
+      "2026-03-rev1": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx=",
+
+      // Previous key(s) retained for backward compatibility
+      "2025-12-rev1": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy=",
+      "2025-09-rev1": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz="
+    },
+
+    // Legacy key from the old unversioned implementation
+    // Keep this until all data has been lazily migrated to versioned format
+    // Once all existing ciphertexts have been re-encrypted, remove this key
+    "LegacyMasterKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa="
+  }
+}
+
+/**
+ * Key Generation Instructions (using OpenSSL or .NET):
+ *
+ * PowerShell (.NET 10):
+ * =====================
+ * $key = [System.Security.Cryptography.AesGcm]::GenerateKey([System.Security.Cryptography.AesEncryption]::KeySize256)
+ * $base64Key = [Convert]::ToBase64String($key)
+ * Write-Host $base64Key
+ *
+ * OpenSSL:
+ * ========
+ * openssl rand -base64 32
+ *
+ *
+ * Azure Key Vault Integration (Recommended):
+ * ===========================================
+ * Instead of hardcoding keys in appsettings.json:
+ *
+ * 1. Store each key as a secret in Azure Key Vault:
+ *    - Secret: sentinel-crypto-2026-03-rev1
+ *    - Value: [base64-encoded key]
+ *
+ * 2. Use Azure.Identity and Azure.Security.KeyVault.Secrets:
+ *    services.Configure<CryptographyOptions>(opts =>
+ *    {
+ *        opts.ActiveKeyId = "2026-03-rev1";
+ *        opts.KeyRing["2026-03-rev1"] = kvClient.GetSecret("sentinel-crypto-2026-03-rev1").Value?.Value;
+ *        opts.LegacyMasterKey = kvClient.GetSecret("sentinel-crypto-legacy").Value?.Value;
+ *    });
+ *
+ * 3. Enable Key Vault secret rotation policies (90-day cryptoperiod)
+ *
+ * 4. SRE monitors KV for key rotation:
+ *    - When a new key is generated in KV
+ *    - Add new key ID to KeyRing in appsettings
+ *    - Update ActiveKeyId to the new key
+ *    - Deploy new application revision
+ *    - Old keys remain in KeyRing for 90 days (decrypt-only phase)
+ *    - After 90 days, remove old key from KeyRing
+ */
