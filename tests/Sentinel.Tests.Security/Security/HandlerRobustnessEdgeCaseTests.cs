@@ -6,7 +6,6 @@ using Moq;
 using Sentinel.Application.Auth;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Common.Abstractions;
-using Sentinel.Controllers;
 using Sentinel.Domain.Auth;
 using Sentinel.Presentation.Controllers;
 using Sentinel.Security.Abstractions.Identity;

@@ -3,7 +3,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using Sentinel.Application.Common.Abstractions;
-using Sentinel.Controllers;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Keycloak;
 using Sentinel.Presentation.Controllers;

@@ -1,4 +1,4 @@
-namespace Sentinel.Application.Models;
+namespace Sentinel.SampleHost.Models;
 
 public sealed record DocumentDto(
     Guid Id,

@@ -1,23 +1,28 @@
 using Microsoft.EntityFrameworkCore;
-using Sentinel.Application.Common.Abstractions;
-using Sentinel.Application.Models;
+using Sentinel.SampleHost.Models;
 
-namespace Sentinel.Infrastructure.Persistence;
+namespace Sentinel.SampleHost.Stores;
 
-internal sealed class EfCoreDocumentStore(SentinelDbContext dbContext, TimeProvider? timeProvider = null) : IDocumentStore
+internal sealed class EfCoreDocumentStore(SampleHostDbContext dbContext, TimeProvider? timeProvider = null) : IDocumentStore
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
-    public async Task<IReadOnlyCollection<DocumentDto>> ListAsync(string ownerSub, CancellationToken cancellationToken)
+    
+    async Task<IReadOnlyCollection<DocumentDto>> IDocumentStore.ListAsync(
+        string ownerSub, CancellationToken cancellationToken)
     {
-        return await dbContext.Documents
+        var dtos = await dbContext.Documents
             .AsNoTracking()
             .Where(d => d.OwnerSub == ownerSub)
             .OrderByDescending(d => d.UpdatedAtUtc)
-            .Select(d => new DocumentDto(d.Id, d.OwnerSub, d.Title, d.Content, d.CreatedAtUtc, d.UpdatedAtUtc))
+            .Select(d => new DocumentDto(
+                d.Id, d.OwnerSub, d.Title, d.Content, d.CreatedAtUtc, d.UpdatedAtUtc))
             .ToListAsync(cancellationToken);
+        
+        return dtos;
     }
 
-    public async Task<DocumentDto?> GetByIdAsync(Guid id, string ownerSub, CancellationToken cancellationToken)
+    async Task<DocumentDto?> IDocumentStore.GetByIdAsync(
+        Guid id, string ownerSub, CancellationToken cancellationToken)
     {
         var doc = await dbContext.Documents
             .AsNoTracking()
@@ -25,10 +30,12 @@ internal sealed class EfCoreDocumentStore(SentinelDbContext dbContext, TimeProvi
 
         return doc is null
             ? null
-            : new DocumentDto(doc.Id, doc.OwnerSub, doc.Title, doc.Content, doc.CreatedAtUtc, doc.UpdatedAtUtc);
+            : new DocumentDto(
+                doc.Id, doc.OwnerSub, doc.Title, doc.Content, doc.CreatedAtUtc, doc.UpdatedAtUtc);
     }
 
-    public async Task<DocumentDto> CreateAsync(string ownerSub, CreateDocumentRequest request,
+    async Task<DocumentDto> IDocumentStore.CreateAsync(
+        string ownerSub, CreateDocumentRequest request,
         CancellationToken cancellationToken)
     {
         var now = _timeProvider.GetUtcNow();
@@ -45,11 +52,12 @@ internal sealed class EfCoreDocumentStore(SentinelDbContext dbContext, TimeProvi
         dbContext.Documents.Add(entity);
         _ = await dbContext.SaveChangesAsync(cancellationToken);
 
-        return new DocumentDto(entity.Id, entity.OwnerSub, entity.Title, entity.Content, entity.CreatedAtUtc,
-            entity.UpdatedAtUtc);
+        return new DocumentDto(
+            entity.Id, entity.OwnerSub, entity.Title, entity.Content, entity.CreatedAtUtc, entity.UpdatedAtUtc);
     }
 
-    public async Task<DocumentDto?> UpdateAsync(Guid id, string ownerSub, UpdateDocumentRequest request,
+    async Task<DocumentDto?> IDocumentStore.UpdateAsync(
+        Guid id, string ownerSub, UpdateDocumentRequest request,
         CancellationToken cancellationToken)
     {
         var entity = await dbContext.Documents
@@ -66,11 +74,11 @@ internal sealed class EfCoreDocumentStore(SentinelDbContext dbContext, TimeProvi
 
         _ = await dbContext.SaveChangesAsync(cancellationToken);
 
-        return new DocumentDto(entity.Id, entity.OwnerSub, entity.Title, entity.Content, entity.CreatedAtUtc,
-            entity.UpdatedAtUtc);
+        return new DocumentDto(
+            entity.Id, entity.OwnerSub, entity.Title, entity.Content, entity.CreatedAtUtc, entity.UpdatedAtUtc);
     }
 
-    public async Task<bool> DeleteAsync(Guid id, string ownerSub, CancellationToken cancellationToken)
+    async Task<bool> IDocumentStore.DeleteAsync(Guid id, string ownerSub, CancellationToken cancellationToken)
     {
         var entity = await dbContext.Documents
             .AsTracking()

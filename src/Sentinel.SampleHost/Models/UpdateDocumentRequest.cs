@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace Sentinel.Application.Models;
+namespace Sentinel.SampleHost.Models;
 
 public sealed record UpdateDocumentRequest(
     [Required] [MaxLength(128)] string Title,

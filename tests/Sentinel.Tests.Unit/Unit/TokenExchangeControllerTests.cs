@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
-using Sentinel.Controllers;
 using Sentinel.Presentation.Controllers;
 
 namespace Sentinel.Tests.Unit;

@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sentinel.Application.Auth;
-using Sentinel.Application.Common.Abstractions;
-using Sentinel.Application.Models;
 using Sentinel.Middleware.Filters;
+using Sentinel.SampleHost.Models;
+using Sentinel.SampleHost.Stores;
 
-namespace Sentinel.Presentation.Controllers;
+namespace Sentinel.SampleHost.Controllers;
 
 [ApiController]
 [Route("v1/documents")]

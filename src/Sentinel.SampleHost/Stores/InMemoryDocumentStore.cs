@@ -1,15 +1,15 @@
 using System.Collections.Concurrent;
-using Sentinel.Application.Common.Abstractions;
-using Sentinel.Application.Models;
+using Sentinel.SampleHost.Models;
 
-namespace Sentinel.Infrastructure.Cache;
+namespace Sentinel.SampleHost.Stores;
 
 internal sealed class InMemoryDocumentStore(TimeProvider? timeProvider = null) : IDocumentStore
 {
     private readonly ConcurrentDictionary<Guid, DocumentState> documents = new();
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
-    public Task<IReadOnlyCollection<DocumentDto>> ListAsync(string ownerSub, CancellationToken cancellationToken)
+    async Task<IReadOnlyCollection<DocumentDto>> IDocumentStore.ListAsync(
+        string ownerSub, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -19,23 +19,25 @@ internal sealed class InMemoryDocumentStore(TimeProvider? timeProvider = null) :
             .Select(Map)
             .ToArray();
 
-        return Task.FromResult<IReadOnlyCollection<DocumentDto>>(results);
+        return await Task.FromResult<IReadOnlyCollection<DocumentDto>>(results);
     }
 
-    public Task<DocumentDto?> GetByIdAsync(Guid id, string ownerSub, CancellationToken cancellationToken)
+    async Task<DocumentDto?> IDocumentStore.GetByIdAsync(
+        Guid id, string ownerSub, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!documents.TryGetValue(id, out var state)
             || !string.Equals(state.OwnerSub, ownerSub, StringComparison.Ordinal))
         {
-            return Task.FromResult<DocumentDto?>(null);
+            return await Task.FromResult<DocumentDto?>(null);
         }
 
-        return Task.FromResult<DocumentDto?>(Map(state));
+        return await Task.FromResult<DocumentDto?>(Map(state));
     }
 
-    public Task<DocumentDto> CreateAsync(string ownerSub, CreateDocumentRequest request,
+    async Task<DocumentDto> IDocumentStore.CreateAsync(
+        string ownerSub, CreateDocumentRequest request,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -50,10 +52,11 @@ internal sealed class InMemoryDocumentStore(TimeProvider? timeProvider = null) :
             now);
 
         documents[state.Id] = state;
-        return Task.FromResult(Map(state));
+        return await Task.FromResult(Map(state));
     }
 
-    public Task<DocumentDto?> UpdateAsync(Guid id, string ownerSub, UpdateDocumentRequest request,
+    async Task<DocumentDto?> IDocumentStore.UpdateAsync(
+        Guid id, string ownerSub, UpdateDocumentRequest request,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -63,7 +66,7 @@ internal sealed class InMemoryDocumentStore(TimeProvider? timeProvider = null) :
         {
             if (!string.Equals(current.OwnerSub, ownerSub, StringComparison.Ordinal))
             {
-                return Task.FromResult<DocumentDto?>(null);
+                return await Task.FromResult<DocumentDto?>(null);
             }
 
             var updated = current with
@@ -75,27 +78,27 @@ internal sealed class InMemoryDocumentStore(TimeProvider? timeProvider = null) :
 
             if (documents.TryUpdate(id, updated, current))
             {
-                return Task.FromResult<DocumentDto?>(Map(updated));
+                return await Task.FromResult<DocumentDto?>(Map(updated));
             }
 
             spinWait.SpinOnce();
         }
 
-        return Task.FromResult<DocumentDto?>(null);
+        return await Task.FromResult<DocumentDto?>(null);
     }
 
-    public Task<bool> DeleteAsync(Guid id, string ownerSub, CancellationToken cancellationToken)
+    async Task<bool> IDocumentStore.DeleteAsync(Guid id, string ownerSub, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!documents.TryGetValue(id, out var existing)
             || !string.Equals(existing.OwnerSub, ownerSub, StringComparison.Ordinal))
         {
-            return Task.FromResult(false);
+            return await Task.FromResult(false);
         }
 
         var deleted = documents.TryRemove(new KeyValuePair<Guid, DocumentState>(id, existing));
-        return Task.FromResult(deleted);
+        return await Task.FromResult(deleted);
     }
 
     private static DocumentDto Map(DocumentState state)

@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Sentinel.Application.Auth;
 using Sentinel.Middleware.Filters;
 
-namespace Sentinel.Controllers;
+namespace Sentinel.SampleHost.Controllers;
 
 [ApiController]
 [Route("v1/finance")]

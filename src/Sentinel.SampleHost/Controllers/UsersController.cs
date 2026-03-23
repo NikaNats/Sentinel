@@ -9,7 +9,7 @@ using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Security.Abstractions.Identity;
 using Sentinel.Security.Abstractions.Results;
 
-namespace Sentinel.Presentation.Controllers;
+namespace Sentinel.SampleHost.Controllers;
 
 [ApiController]
 [Route("v1/users")]

@@ -72,7 +72,7 @@ public static class SentinelModuleBuilderExtensions
         var postgresConnectionString = configuration.GetConnectionString("Postgres");
         if (string.IsNullOrWhiteSpace(postgresConnectionString))
         {
-            throw new InvalidOperationException("Connection string 'Postgres' is required for document persistence.");
+            throw new InvalidOperationException("Connection string 'Postgres' is required for database setup.");
         }
 
         _ = services.AddDbContext<SentinelDbContext>(options =>
@@ -81,7 +81,6 @@ public static class SentinelModuleBuilderExtensions
             options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
         });
 
-        _ = services.AddScoped<IDocumentStore, EfCoreDocumentStore>();
         _ = services.AddSingleton<ILogoutTokenValidator, LogoutTokenValidator>();
         _ = services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
         _ = services.AddSingleton<TokenValidationService>();
