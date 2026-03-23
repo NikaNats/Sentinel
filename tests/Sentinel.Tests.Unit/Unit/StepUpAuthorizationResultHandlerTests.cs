@@ -5,17 +5,29 @@ using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Moq;
 using Sentinel.Application.Auth.Models;
 using Sentinel.AspNetCore.Middleware;
+using Sentinel.Security.Abstractions.Options;
 
 namespace Sentinel.Tests.Unit;
 
 public sealed class StepUpAuthorizationResultHandlerTests
 {
+    private static IOptionsMonitor<AcrRankingOptions> CreateAcrOptionsMonitor()
+    {
+        var options = new AcrRankingOptions();
+        var mockMonitor = new Mock<IOptionsMonitor<AcrRankingOptions>>();
+        mockMonitor.Setup(m => m.CurrentValue).Returns(options);
+        return mockMonitor.Object;
+    }
+
     [Fact]
     public async Task HandleAsync_WhenForbiddenDueToAcrRequirement_ReturnsStepUpChallenge()
     {
-        var sut = new StepUpAuthorizationResultHandler(NullLogger<StepUpAuthorizationResultHandler>.Instance);
+        var acrOptions = CreateAcrOptionsMonitor();
+        var sut = new StepUpAuthorizationResultHandler(NullLogger<StepUpAuthorizationResultHandler>.Instance, acrOptions);
         var context = new DefaultHttpContext();
         context.Request.Headers.Authorization = "DPoP test-token";
 
@@ -35,7 +47,8 @@ public sealed class StepUpAuthorizationResultHandlerTests
     [Fact]
     public async Task HandleAsync_WhenForbiddenForOtherReason_UsesDefaultHandler()
     {
-        var sut = new StepUpAuthorizationResultHandler(NullLogger<StepUpAuthorizationResultHandler>.Instance);
+        var acrOptions = CreateAcrOptionsMonitor();
+        var sut = new StepUpAuthorizationResultHandler(NullLogger<StepUpAuthorizationResultHandler>.Instance, acrOptions);
         var context = new DefaultHttpContext();
         var services = new ServiceCollection()
             .AddSingleton<IAuthenticationService, FakeAuthenticationService>()

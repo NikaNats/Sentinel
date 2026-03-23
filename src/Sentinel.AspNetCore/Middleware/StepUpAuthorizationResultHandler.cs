@@ -1,25 +1,24 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Models;
+using Sentinel.Security.Abstractions.Options;
 
 namespace Sentinel.AspNetCore.Middleware;
 
 public sealed class StepUpAuthorizationResultHandler : IAuthorizationMiddlewareResultHandler
 {
-    private static readonly Dictionary<string, int> AcrRank = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["acr1"] = 1,
-        ["acr2"] = 2,
-        ["acr3"] = 3
-    };
-
     private readonly AuthorizationMiddlewareResultHandler defaultHandler = new();
     private readonly ILogger<StepUpAuthorizationResultHandler> logger;
+    private readonly IOptionsMonitor<AcrRankingOptions> acrOptions;
 
-    public StepUpAuthorizationResultHandler(ILogger<StepUpAuthorizationResultHandler> logger)
+    public StepUpAuthorizationResultHandler(
+        ILogger<StepUpAuthorizationResultHandler> logger,
+        IOptionsMonitor<AcrRankingOptions> acrOptions)
     {
         this.logger = logger;
+        this.acrOptions = acrOptions;
     }
 
     public async Task HandleAsync(
@@ -76,11 +75,12 @@ public sealed class StepUpAuthorizationResultHandler : IAuthorizationMiddlewareR
         await defaultHandler.HandleAsync(next, context, policy, authorizeResult);
     }
 
-    private static AcrRequirement? ResolveAcrRequirementFromFailure(
+    private AcrRequirement? ResolveAcrRequirementFromFailure(
         HttpContext context,
         AuthorizationPolicy policy,
         PolicyAuthorizationResult authorizeResult)
     {
+        var rankings = acrOptions.CurrentValue.Rankings;
         var failureReasons = authorizeResult.AuthorizationFailure?
                                  .FailureReasons
                                  .Select(r => r.Message)
@@ -108,14 +108,14 @@ public sealed class StepUpAuthorizationResultHandler : IAuthorizationMiddlewareR
         }
 
         var tokenAcr = context.User.FindFirst("acr")?.Value;
-        if (!AcrRank.TryGetValue(tokenAcr ?? string.Empty, out var tokenRank))
+        if (!rankings.TryGetValue(tokenAcr ?? string.Empty, out var tokenRank))
         {
             return null;
         }
 
         var requiredAcrPolicy = policy.Requirements
             .OfType<AcrRequirement>()
-            .OrderByDescending(requirement => AcrRank.TryGetValue(requirement.MinimumAcr, out var rank) ? rank : 0)
+            .OrderByDescending(requirement => rankings.TryGetValue(requirement.MinimumAcr, out var rank) ? rank : 0)
             .FirstOrDefault();
 
         if (requiredAcrPolicy is null)
@@ -123,7 +123,7 @@ public sealed class StepUpAuthorizationResultHandler : IAuthorizationMiddlewareR
             return null;
         }
 
-        return AcrRank.TryGetValue(requiredAcrPolicy.MinimumAcr, out var requiredRank)
+        return rankings.TryGetValue(requiredAcrPolicy.MinimumAcr, out var requiredRank)
                && tokenRank < requiredRank
             ? requiredAcrPolicy
             : null;

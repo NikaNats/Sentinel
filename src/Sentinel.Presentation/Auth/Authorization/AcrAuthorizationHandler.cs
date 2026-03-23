@@ -1,24 +1,27 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Models;
+using Sentinel.Security.Abstractions.Options;
 
 namespace Sentinel.Auth.Authorization;
 
 public sealed class AcrAuthorizationHandler : AuthorizationHandler<AcrRequirement>
 {
-    private static readonly Dictionary<string, int> AcrRank = new(StringComparer.OrdinalIgnoreCase)
+    private readonly IOptionsMonitor<AcrRankingOptions> acrOptions;
+
+    public AcrAuthorizationHandler(IOptionsMonitor<AcrRankingOptions> acrOptions)
     {
-        ["acr1"] = 1,
-        ["acr2"] = 2,
-        ["acr3"] = 3
-    };
+        this.acrOptions = acrOptions;
+    }
 
     protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, AcrRequirement requirement)
     {
+        var rankings = acrOptions.CurrentValue.Rankings;
         var tokenAcr = context.User.FindFirst("acr")?.Value;
 
         if (string.IsNullOrWhiteSpace(tokenAcr)
-            || !AcrRank.TryGetValue(tokenAcr, out var tokenRank)
-            || !AcrRank.TryGetValue(requirement.MinimumAcr, out var requiredRank)
+            || !rankings.TryGetValue(tokenAcr, out var tokenRank)
+            || !rankings.TryGetValue(requirement.MinimumAcr, out var requiredRank)
             || tokenRank < requiredRank)
         {
             context.Fail(new AuthorizationFailureReason(this,

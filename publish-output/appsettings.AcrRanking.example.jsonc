@@ -1,0 +1,55 @@
+{
+  /*
+    ACR (Authentication Context Class Reference) Ranking Configuration
+
+    Defines the hierarchical mapping of ACR claim values to integer ranks.
+    Lower integer values = weaker authentication
+    Higher integer values = stronger authentication
+
+    Default configuration uses the standard NIST AAL (Assurance Levels):
+    - acr1 / aal1: Single-factor authentication (username + password)
+    - acr2 / aal2: Multi-factor authentication (MFA)
+    - acr3 / aal3: Hardware-backed multi-factor authentication
+  */
+  "AcrRanking": {
+    "Rankings": {
+      "acr1": 1,
+      "acr2": 2,
+      "acr3": 3
+    }
+  }
+  /*
+    Alternative configurations:
+
+    For NIST AAL explicitly:
+    "AcrRanking": {
+      "Rankings": {
+        "aal1": 1,
+        "aal2": 2,
+        "aal3": 3
+      }
+    }
+
+    For custom hierarchy (e.g., basic, enhanced, fortified):
+    "AcrRanking": {
+      "Rankings": {
+        "basic": 1,
+        "enhanced": 5,
+        "fortified": 10
+      }
+    }
+
+    For flexible mapping (can map multiple claim values to same rank):
+    "AcrRanking": {
+      "Rankings": {
+        "acr1": 1,
+        "authenticator:password": 1,
+        "acr2": 2,
+        "authenticator:mfa": 2,
+        "acr3": 3,
+        "authenticator:hardware": 3,
+        "authenticator:fido2": 3
+      }
+    }
+  */
+}

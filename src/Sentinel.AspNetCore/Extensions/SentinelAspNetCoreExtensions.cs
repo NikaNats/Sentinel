@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Sentinel.AspNetCore.Middleware;
@@ -111,5 +113,32 @@ public sealed class SentinelAspNetCoreBuilder
         return AddDPoPValidation()
             .AddMtlsBinding()
             .AddIdempotencyFilters();
+    }
+
+    /// <summary>
+    /// Configures ACR (Authentication Context Class Reference) ranking options.
+    /// Defines the hierarchical mapping of ACR values for authorization decisions.
+    /// </summary>
+    /// <param name="configure">Configuration action for AcrRankingOptions.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public SentinelAspNetCoreBuilder ConfigureAcrRanking(Action<AcrRankingOptions>? configure = null)
+    {
+        if (configure is not null)
+        {
+            _ = _services.Configure(configure);
+        }
+        else
+        {
+            // Bind from configuration section if present
+            _ = _services.AddOptions<AcrRankingOptions>()
+                .BindConfiguration(AcrRankingOptions.SectionName)
+                .ValidateDataAnnotations()
+                .ValidateOnStart();
+        }
+
+        // Register the step-up authorization result handler
+        _ = _services.AddSingleton<IAuthorizationMiddlewareResultHandler, StepUpAuthorizationResultHandler>();
+
+        return this;
     }
 }
