@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.Application.Common.Abstractions;
-using Sentinel.Infrastructure.Telemetry;
+using Sentinel.Security.Diagnostics;
 using Sentinel.Security.Abstractions.DPoP;
 using IDpopProofValidator = Sentinel.Security.Abstractions.DPoP.IDpopProofValidator;
 
@@ -77,8 +77,8 @@ public sealed class DpopValidationMiddleware(
         var validationRequest = new DpopValidationRequest(dpopProof, context.Request.Method, new Uri(requestUrl), token, expectedNonce);
         var validationResult = await validator.ValidateAsync(validationRequest, context.RequestAborted);
 
-        // Convert to legacy format for middleware logic compatibility
-        var result = validationResult.ToLegacyResult();
+        // Convert domain result to HTTP response format
+        var result = validationResult.ToHttpResult();
 
         if (!result.IsValid)
         {

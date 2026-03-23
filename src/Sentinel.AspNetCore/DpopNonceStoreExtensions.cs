@@ -1,30 +1,15 @@
-using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Security.Abstractions.Nonce;
-using Sentinel.Security.Abstractions.Results;
 
-namespace Sentinel.Application.Common.Abstractions;
+namespace Sentinel.AspNetCore;
 
 /// <summary>
-/// Adapter methods to bridge new Security.Abstractions APIs to older Application layer interface expectations.
-/// Used during transition to new interface signatures. Remove post-v1.0.
+/// Internal extensions for IDpopNonceStore to bridge between legacy convenience methods
+/// and new abstraction APIs. For use by AspNetCore middleware only.
 /// </summary>
-public static class SecurityAbstractionsAdapters
+internal static class DpopNonceStoreExtensions
 {
     /// <summary>
-    /// Converts DpopValidationSuccess to legacy DpopValidationResult format.
-    /// </summary>
-    public static DpopValidationResult ToLegacyResult(this SecurityResult<DpopValidationSuccess> result)
-    {
-        return new DpopValidationResult
-        {
-            IsValid = result.IsSuccess,
-            NewNonce = result.IsSuccess ? result.Value.Thumbprint : string.Empty,  // Note: using thumbprint as substitute
-            Error = result.IsSuccess ? string.Empty : result.ErrorMessage ?? "unknown_error"
-        };
-    }
-
-    /// <summary>
-    /// Adapter for TryStoreNonceAsync using new SetNonceAsync API.
+    /// Stores a nonce for a given thumbprint with a specified TTL.
     /// </summary>
     public static async Task<bool> TryStoreNonceAsync(
         this IDpopNonceStore store,
@@ -45,7 +30,7 @@ public static class SecurityAbstractionsAdapters
     }
 
     /// <summary>
-    /// Adapter for ConsumeNonceIfMatchesAsync using new GetNonceAsync API.
+    /// Retrieves and validates a stored nonce, clearing it if it matches.
     /// </summary>
     public static async Task<bool> ConsumeNonceIfMatchesAsync(
         this IDpopNonceStore store,

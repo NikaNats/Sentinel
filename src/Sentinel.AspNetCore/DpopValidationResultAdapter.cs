@@ -11,10 +11,11 @@ public static class DpopValidationResultAdapter
 {
     /// <summary>
     /// Converts a DPoP proof validation result from the internal domain model to the HTTP layer model.
+    /// Extension method for fluent conversion.
     /// </summary>
     /// <param name="validationResult">The security result from DPoP validation.</param>
     /// <returns>A converted validation result suitable for HTTP responses.</returns>
-    public static DpopValidationResult Adapt(SecurityResult<DpopValidationSuccess> validationResult)
+    public static DpopValidationResult ToHttpResult(this SecurityResult<DpopValidationSuccess> validationResult)
     {
         if (validationResult.IsSuccess)
         {
