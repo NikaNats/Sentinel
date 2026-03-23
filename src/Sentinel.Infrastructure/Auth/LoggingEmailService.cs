@@ -5,7 +5,7 @@ using Sentinel.Domain.Notifications;
 
 namespace Sentinel.Infrastructure.Auth;
 
-public sealed class LoggingEmailService(
+internal sealed class LoggingEmailService(
     ILogger<LoggingEmailService> logger,
     IOptions<RegistrationOptions> registrationOptions,
     INotificationService notificationService) : IEmailService

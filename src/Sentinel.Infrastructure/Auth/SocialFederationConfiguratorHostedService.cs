@@ -5,7 +5,7 @@ using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Infrastructure.Auth;
 
-public sealed class SocialFederationConfiguratorHostedService(
+internal sealed class SocialFederationConfiguratorHostedService(
     IIdentityFederationProvider federationProvider,
     IOptions<SocialFederationOptions> options,
     ILogger<SocialFederationConfiguratorHostedService> logger) : IHostedService

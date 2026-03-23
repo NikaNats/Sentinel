@@ -4,7 +4,7 @@ using Sentinel.Application.Models;
 
 namespace Sentinel.Infrastructure.Cache;
 
-public sealed class InMemoryDocumentStore(TimeProvider? timeProvider = null) : IDocumentStore
+internal sealed class InMemoryDocumentStore(TimeProvider? timeProvider = null) : IDocumentStore
 {
     private readonly ConcurrentDictionary<Guid, DocumentState> documents = new();
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;

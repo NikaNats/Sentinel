@@ -4,7 +4,7 @@ using Sentinel.Keycloak;
 
 namespace Sentinel.Infrastructure.Auth.Services;
 
-public sealed class KeycloakProfileService(HttpClient httpClient) : IUserProfileManager
+internal sealed class KeycloakProfileService(HttpClient httpClient) : IUserProfileManager
 {
     public async Task<bool> UpdateProfileAsync(string subjectId, string? displayName, CancellationToken cancellationToken = default)
     {

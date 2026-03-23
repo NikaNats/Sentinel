@@ -55,7 +55,7 @@ public sealed class RegisterUserHandler
         var captchaValid = await _captchaService.VerifyAsync(request.CaptchaToken, ct);
         if (!captchaValid)
         {
-            return SecurityResultFactory.Failure<RegisterUserResult>("Invalid captcha.");
+            return SecurityResultFactory.Failure<RegisterUserResult>(SecurityErrors.InvalidCaptchaMessage);
         }
 
         // Step 3: Validate password strength
@@ -63,7 +63,7 @@ public sealed class RegisterUserHandler
         if (!passwordValidation.IsValid)
         {
             return SecurityResultFactory.Failure<RegisterUserResult>(
-                passwordValidation.Message ?? "Password does not meet complexity requirements.");
+                passwordValidation.Message ?? SecurityErrors.WeakPasswordMessage);
         }
 
         // Step 4: Create user identity
@@ -78,32 +78,35 @@ public sealed class RegisterUserHandler
                 sourceIp)
         };
 
-        string keycloakUserId;
-        try
-        {
-            var identityRegistration = new IdentityRegistration(
-                registration.Email,
-                registration.Username,
-                registration.Consent.TermsAccepted,
-                registration.Consent.PrivacyPolicyVersion,
-                registration.Consent.AcceptedAtUtc,
-                registration.Consent.IpAddress);
+        var identityRegistration = new IdentityRegistration(
+            registration.Email,
+            registration.Username,
+            registration.Consent.TermsAccepted,
+            registration.Consent.PrivacyPolicyVersion,
+            registration.Consent.AcceptedAtUtc,
+            registration.Consent.IpAddress);
 
-            keycloakUserId = await _identityRegistry.CreateUserAsync(
-                identityRegistration,
-                request.Password,
-                ct);
-        }
-        catch (UserAlreadyExistsException)
+        var creationResult = await _identityRegistry.CreateUserAsync(
+            identityRegistration,
+            request.Password,
+            ct);
+
+        // If user already exists, maintain zero-knowledge principle: don't reveal if email is registered
+        if (!creationResult.IsSuccess)
         {
-            // User already exists: send informational email and return success
-            // (maintain zero-knowledge principle: don't reveal if email is registered)
-            await _emailService.SendWelcomeOrAlreadyRegisteredEmailAsync(registration.Email, ct);
-            return SecurityResultFactory.Create(
-                new RegisterUserResult(
-                    true,
-                    "If this email is new, you'll receive a verification email."));
+            if (creationResult.ErrorMessage == SecurityErrors.IdentityConflictMessage)
+            {
+                await _emailService.SendWelcomeOrAlreadyRegisteredEmailAsync(registration.Email, ct);
+                return SecurityResultFactory.Create(
+                    new RegisterUserResult(
+                        true,
+                        "If this email is new, you'll receive a verification email."));
+            }
+
+            return SecurityResultFactory.Failure<RegisterUserResult>(creationResult.ErrorMessage!);
         }
+
+        var keycloakUserId = creationResult.Value;
 
         // Step 5: Store verification token
         var verificationToken = Guid.NewGuid().ToString("N");
@@ -116,7 +119,7 @@ public sealed class RegisterUserHandler
         if (!tokenStored)
         {
             return SecurityResultFactory.Failure<RegisterUserResult>(
-                "Failed to create verification token.");
+                SecurityErrors.TokenStoreFailedMessage);
         }
 
         // Step 6: Send verification email
@@ -127,7 +130,7 @@ public sealed class RegisterUserHandler
         catch (InvalidOperationException ex)
         {
             return SecurityResultFactory.Failure<RegisterUserResult>(
-                $"Email delivery failed: {ex.Message}");
+                $"{SecurityErrors.EmailDeliveryFailedMessage}: {ex.Message}");
         }
 
         return SecurityResultFactory.Create(
@@ -144,7 +147,7 @@ public sealed class RegisterUserHandler
         if (!request.AcceptTerms)
         {
             return SecurityResultFactory.Failure<RegisterUserRequest>(
-                "Terms must be accepted.");
+                SecurityErrors.TermsNotAcceptedMessage);
         }
 
         if (string.IsNullOrWhiteSpace(request.Email)

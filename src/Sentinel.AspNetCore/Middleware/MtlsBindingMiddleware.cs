@@ -6,7 +6,7 @@ using Sentinel.Middleware.Filters;
 
 namespace Sentinel.AspNetCore.Middleware;
 
-public sealed class MtlsBindingMiddleware(RequestDelegate next, ILogger<MtlsBindingMiddleware> logger)
+internal sealed class MtlsBindingMiddleware(RequestDelegate next, ILogger<MtlsBindingMiddleware> logger)
 {
     public async Task InvokeAsync(HttpContext context)
     {

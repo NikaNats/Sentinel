@@ -2,15 +2,17 @@ using System.Net;
 using System.Net.Http.Json;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Domain.Users;
+using Sentinel.Security.Abstractions.Exceptions;
 using Sentinel.Security.Abstractions.Identity;
+using Sentinel.Security.Abstractions.Results;
 using Sentinel.Keycloak;
 
 namespace Sentinel.Infrastructure.Auth.Services;
 
-public sealed class KeycloakUserService(HttpClient httpClient, ILogger<KeycloakUserService> logger)
+internal sealed class KeycloakUserService(HttpClient httpClient, ILogger<KeycloakUserService> logger)
     : IIdentityRegistry, IIdentityProvider
 {
-    public Task<string> CreateUserAsync(
+    public Task<SecurityResult<string>> CreateUserAsync(
         IdentityRegistration registration,
         string password,
         CancellationToken cancellationToken = default)
@@ -26,10 +28,10 @@ public sealed class KeycloakUserService(HttpClient httpClient, ILogger<KeycloakU
                 registration.SourceIp)
         };
 
-        return CreateUserAsync(legacyRegistration, password, cancellationToken);
+        return CreateUserInternalAsync(legacyRegistration, password, cancellationToken);
     }
 
-    public async Task<string> CreateUserAsync(UserRegistration registration, string password, CancellationToken ct)
+    public async Task<SecurityResult<string>> CreateUserInternalAsync(UserRegistration registration, string password, CancellationToken ct)
     {
         var payload = new KeycloakAdminCreateUserPayload
         {
@@ -64,22 +66,22 @@ public sealed class KeycloakUserService(HttpClient httpClient, ILogger<KeycloakU
         {
             if (response.StatusCode == HttpStatusCode.Conflict)
             {
-                throw new UserAlreadyExistsException();
+                return SecurityResultFactory.Failure<string>(SecurityErrors.IdentityConflictMessage);
             }
 
             var error = await response.Content.ReadAsStringAsync(ct);
             logger.LogWarning("Failed to create Keycloak user. Status: {Status}. Body: {Body}",
                 (int)response.StatusCode, error);
-            throw new InvalidOperationException("Unable to create user in identity provider.");
+            return SecurityResultFactory.Failure<string>(SecurityErrors.IdentityCreationFailedMessage);
         }
 
         var userId = TryExtractUserId(response.Headers.Location);
         if (string.IsNullOrWhiteSpace(userId))
         {
-            throw new InvalidOperationException("Identity provider did not return a user identifier.");
+            return SecurityResultFactory.Failure<string>(SecurityErrors.IdentityCreationFailedMessage);
         }
 
-        return userId;
+        return SecurityResultFactory.Create(userId);
     }
 
     public async Task<bool> SetEmailVerifiedAsync(string userId, bool verified, CancellationToken cancellationToken = default)

@@ -6,7 +6,7 @@ namespace Sentinel.Infrastructure.Auth.Handlers;
 /// <summary>
 /// Injects Keycloak admin bearer tokens into outgoing admin API requests.
 /// </summary>
-public sealed class KeycloakAdminAuthHandler(KeycloakAdminTokenProvider tokenProvider) : DelegatingHandler
+internal sealed class KeycloakAdminAuthHandler(KeycloakAdminTokenProvider tokenProvider) : DelegatingHandler
 {
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
         CancellationToken cancellationToken)

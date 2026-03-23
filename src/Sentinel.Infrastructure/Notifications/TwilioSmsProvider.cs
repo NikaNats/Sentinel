@@ -6,7 +6,7 @@ using Sentinel.Domain.Notifications;
 
 namespace Sentinel.Infrastructure.Notifications;
 
-public sealed class TwilioSmsProvider(
+internal sealed class TwilioSmsProvider(
     HttpClient httpClient,
     IOptions<TwilioOptions> options) : INotificationProvider
 {

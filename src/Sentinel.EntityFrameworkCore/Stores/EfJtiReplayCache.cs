@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 /// Entity Framework Core implementation of IJtiReplayCache.
 /// Stores JWT IDs in a relational database to prevent token replay attacks.
 /// </summary>
-public sealed class EfJtiReplayCache : IJtiReplayCache
+internal sealed class EfJtiReplayCache : IJtiReplayCache
 {
     private readonly IDbContextFactory<SentinelSecurityDbContext> _contextFactory;
     private readonly ILogger<EfJtiReplayCache> _logger;

@@ -4,7 +4,7 @@ using Sentinel.Application.Models;
 
 namespace Sentinel.Infrastructure.Persistence;
 
-public sealed class EfCoreDocumentStore(SentinelDbContext dbContext, TimeProvider? timeProvider = null) : IDocumentStore
+internal sealed class EfCoreDocumentStore(SentinelDbContext dbContext, TimeProvider? timeProvider = null) : IDocumentStore
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     public async Task<IReadOnlyCollection<DocumentDto>> ListAsync(string ownerSub, CancellationToken cancellationToken)

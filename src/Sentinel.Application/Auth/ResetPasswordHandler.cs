@@ -3,7 +3,6 @@ using System.Text;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
-using Sentinel.Domain.Auth;
 using Sentinel.Security.Abstractions.Identity;
 using Sentinel.Security.Abstractions.Results;
 
@@ -34,7 +33,7 @@ public sealed class ResetPasswordHandler(
         var (isTokenValid, email) = resetTokenProvider.ValidateToken(request.Token);
         if (!isTokenValid || string.IsNullOrWhiteSpace(email))
         {
-            return SecurityResultFactory.Failure<ResetPasswordResult>("Invalid or expired token.");
+            return SecurityResultFactory.Failure<ResetPasswordResult>(SecurityErrors.TokenInvalidMessage);
         }
 
         // Step 3: Check replay cache (prevent token reuse)
@@ -43,7 +42,7 @@ public sealed class ResetPasswordHandler(
         var isFirstUse = await replayCache.TryStoreIfNotExistsAsync(cacheKey, TimeSpan.FromMinutes(15), ct);
         if (!isFirstUse)
         {
-            return SecurityResultFactory.Failure<ResetPasswordResult>("Token already consumed.");
+            return SecurityResultFactory.Failure<ResetPasswordResult>(SecurityErrors.TokenExpiredMessage);
         }
 
         // Step 4: Update password
@@ -51,7 +50,7 @@ public sealed class ResetPasswordHandler(
         if (!passwordUpdated)
         {
             return SecurityResultFactory.Failure<ResetPasswordResult>(
-                "Failed to update password in Identity Store.");
+                SecurityErrors.InternalErrorMessage);
         }
 
         // Step 5: Get user for session revocation
@@ -59,7 +58,7 @@ public sealed class ResetPasswordHandler(
         if (user is null)
         {
             return SecurityResultFactory.Failure<ResetPasswordResult>(
-                "Failed to retrieve user identity.");
+                SecurityErrors.InternalErrorMessage);
         }
 
         // Step 6: Revoke all active sessions
@@ -67,7 +66,7 @@ public sealed class ResetPasswordHandler(
         if (!sessionRevoked)
         {
             return SecurityResultFactory.Failure<ResetPasswordResult>(
-                "Failed to revoke active sessions.");
+                SecurityErrors.InternalErrorMessage);
         }
 
         return SecurityResultFactory.Create(
@@ -82,7 +81,7 @@ public sealed class ResetPasswordHandler(
         if (string.IsNullOrWhiteSpace(request.Token) || string.IsNullOrWhiteSpace(request.NewPassword))
         {
             return SecurityResultFactory.Failure<ResetPasswordRequest>(
-                "Token and new password are required.");
+                SecurityErrors.ValidationFailed);
         }
 
         return SecurityResultFactory.Create(request);

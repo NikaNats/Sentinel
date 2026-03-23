@@ -3,7 +3,7 @@ namespace Sentinel.DPoP;
 /// <summary>
 /// Computes RFC 7638 JWK thumbprints for DPoP key binding per RFC 9449.
 /// </summary>
-public sealed class DpopThumbprintComputer : IDpopThumbprintComputer
+internal sealed class DpopThumbprintComputer : IDpopThumbprintComputer
 {
     /// <summary>
     /// Computes the RFC 7638 thumbprint from a JsonElement representing a public key.

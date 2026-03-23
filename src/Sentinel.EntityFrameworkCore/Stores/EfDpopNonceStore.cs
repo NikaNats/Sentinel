@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 /// Entity Framework Core implementation of IDpopNonceStore.
 /// Stores per-client DPoP nonces in a relational database.
 /// </summary>
-public sealed class EfDpopNonceStore : IDpopNonceStore
+internal sealed class EfDpopNonceStore : IDpopNonceStore
 {
     private readonly IDbContextFactory<SentinelSecurityDbContext> _contextFactory;
     private readonly ILogger<EfDpopNonceStore> _logger;

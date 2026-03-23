@@ -5,7 +5,7 @@ using Sentinel.Keycloak;
 
 namespace Sentinel.Infrastructure.Auth.Services;
 
-public sealed class KeycloakFederationService(HttpClient httpClient) : IIdentityFederationProvider
+internal sealed class KeycloakFederationService(HttpClient httpClient) : IIdentityFederationProvider
 {
     public async Task ConfigureGoogleProviderAsync(
         string clientId,

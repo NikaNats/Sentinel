@@ -6,7 +6,7 @@ using Sentinel.Domain.Notifications;
 
 namespace Sentinel.Infrastructure.Notifications;
 
-public sealed class SendGridProvider(
+internal sealed class SendGridProvider(
     HttpClient httpClient,
     IOptions<SendGridOptions> options) : INotificationProvider
 {

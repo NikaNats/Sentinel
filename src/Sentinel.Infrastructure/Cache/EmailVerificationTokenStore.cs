@@ -3,7 +3,7 @@ using StackExchange.Redis;
 
 namespace Sentinel.Infrastructure.Cache;
 
-public sealed class EmailVerificationTokenStore(IConnectionMultiplexer redis) : IEmailVerificationTokenStore
+internal sealed class EmailVerificationTokenStore(IConnectionMultiplexer redis) : IEmailVerificationTokenStore
 {
     private readonly IDatabase db = redis.GetDatabase();
 

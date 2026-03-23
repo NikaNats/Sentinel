@@ -4,7 +4,7 @@ using Sentinel.Infrastructure.Telemetry;
 
 namespace Sentinel.Infrastructure.Auth;
 
-public sealed class TokenValidationService(
+internal sealed class TokenValidationService(
     IJtiReplayCache replayCache,
     ISessionBlacklistCache sessionBlacklist,
     ISecurityEventEmitter eventEmitter,

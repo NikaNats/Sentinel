@@ -1,5 +1,6 @@
 // Sentinel Security API - FAPI 2.0 Compliant
 
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
@@ -8,10 +9,11 @@ using Microsoft.IdentityModel.Tokens;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Telemetry;
+using Sentinel.Security.Abstractions.DPoP;
 
 namespace Sentinel.AspNetCore.Middleware;
 
-public sealed class DpopValidationMiddleware(
+internal sealed class DpopValidationMiddleware(
     RequestDelegate next,
     IDpopProofValidator validator,
     IDpopNonceStore nonceStore,
@@ -149,6 +151,14 @@ public sealed class DpopValidationMiddleware(
                 ? result.NewNonce
                 : await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted) ?? result.NewNonce;
             context.Response.Headers.Append("DPoP-Nonce", nextNonce);
+        }
+
+        // Propagate DPoP key info via Activity baggage for downstream security auditing and correlation
+        if (!string.IsNullOrWhiteSpace(thumbprint))
+        {
+            Activity.Current?.AddBaggage("dpop.jkt", thumbprint);
+            Activity.Current?.AddBaggage("dpop.alg", result.ProofAlgorithm ?? "unknown");
+            context.Items["dpop.jkt"] = thumbprint; // Also store in context for middleware access
         }
 
         await next(context);

@@ -3,7 +3,7 @@ namespace Sentinel.DPoP;
 /// <summary>
 /// Validates RFC 9449 DPoP proofs with FAPI 2.0 security requirements.
 /// </summary>
-public sealed class DpopProofValidator : IDpopProofValidator
+internal sealed class DpopProofValidator : IDpopProofValidator
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
     private readonly IDpopThumbprintComputer _thumbprintComputer;

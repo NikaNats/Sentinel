@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 /// Entity Framework Core implementation of ISessionBlacklistCache.
 /// Stores revoked/logged out sessions in a relational database.
 /// </summary>
-public sealed class EfSessionBlacklistCache : ISessionBlacklistCache
+internal sealed class EfSessionBlacklistCache : ISessionBlacklistCache
 {
     private readonly IDbContextFactory<SentinelSecurityDbContext> _contextFactory;
     private readonly ILogger<EfSessionBlacklistCache> _logger;

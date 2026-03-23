@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Sentinel.AspNetCore.Middleware;
 using Sentinel.Middleware.Filters;
+using Sentinel.Security.Abstractions.Options;
 
 namespace Sentinel.AspNetCore.Extensions;
 
@@ -43,6 +45,7 @@ public sealed class SentinelAspNetCoreBuilder
 
     /// <summary>
     /// Adds RFC 9449 DPoP (Demonstration of Proof-of-Possession) validation middleware.
+    /// Validates DPoP proof structure, signature, and nonce per specification.
     /// </summary>
     /// <returns>This builder for method chaining.</returns>
     public SentinelAspNetCoreBuilder AddDPoPValidation()
@@ -51,6 +54,11 @@ public sealed class SentinelAspNetCoreBuilder
         {
             return this;
         }
+
+        // Validate DPoP configuration via data annotations
+        _ = _services.AddOptions<DPoPOptions>()
+            .BindConfiguration(DPoPOptions.SectionName)
+            .ValidateDataAnnotations();
 
         _ = _services.AddScoped<DpopValidationMiddleware>();
         _dpopValidationAdded = true;

@@ -7,7 +7,7 @@ using Sentinel.Keycloak;
 
 namespace Sentinel.Infrastructure.Auth;
 
-public sealed class KeycloakUmaPermissionService(
+internal sealed class KeycloakUmaPermissionService(
     HttpClient httpClient,
     IOptions<KeycloakOptions> options,
     ILogger<KeycloakUmaPermissionService> logger) : IUmaPermissionService

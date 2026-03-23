@@ -4,7 +4,7 @@ using Sentinel.Application.Common.Abstractions;
 
 namespace Sentinel.Infrastructure.Cryptography;
 
-public sealed class AesGcmEncryptionService(IConfiguration configuration) : IEncryptionService
+internal sealed class AesGcmEncryptionService(IConfiguration configuration) : IEncryptionService
 {
     private readonly byte[] key = GetMasterKey(configuration);
 
