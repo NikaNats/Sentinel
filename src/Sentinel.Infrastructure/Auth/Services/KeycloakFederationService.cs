@@ -1,17 +1,21 @@
 using System.Net;
 using System.Net.Http.Json;
-using Sentinel.Application.Auth.Interfaces;
-using Sentinel.Application.Auth.Models;
+using Sentinel.Security.Abstractions.Identity;
 using Sentinel.Keycloak;
 
 namespace Sentinel.Infrastructure.Auth.Services;
 
-public sealed class KeycloakFederationService(HttpClient httpClient) : IKeycloakFederationService
+public sealed class KeycloakFederationService(HttpClient httpClient) : IIdentityFederationProvider
 {
-    public async Task ConfigureGoogleProviderAsync(GoogleFederationOptions options, string firstBrokerLoginFlowAlias,
-        CancellationToken ct)
+    public async Task ConfigureGoogleProviderAsync(
+        string clientId,
+        string clientSecret,
+        string firstBrokerLoginFlowAlias,
+        bool trustEmail = true,
+        bool storeToken = true,
+        CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(options.ClientId) || string.IsNullOrWhiteSpace(options.ClientSecret))
+        if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
         {
             return;
         }
@@ -22,26 +26,31 @@ public sealed class KeycloakFederationService(HttpClient httpClient) : IKeycloak
             DisplayName = "Google",
             ProviderId = "google",
             Enabled = true,
-            TrustEmail = options.TrustEmail,
-            StoreToken = options.StoreToken,
+            TrustEmail = trustEmail,
+            StoreToken = storeToken,
             FirstBrokerLoginFlowAlias = firstBrokerLoginFlowAlias,
             Config = new Dictionary<string, string>
             {
-                ["clientId"] = options.ClientId,
-                ["clientSecret"] = options.ClientSecret,
+                ["clientId"] = clientId,
+                ["clientSecret"] = clientSecret,
                 ["defaultScope"] = "openid profile email",
                 ["useJwksUrl"] = "true",
-                ["syncMode"] = MapSyncMode(options.SyncMode)
+                ["syncMode"] = "IMPORT"
             }
         };
 
-        await UpsertIdentityProviderAsync(payload, ct);
+        await UpsertIdentityProviderAsync(payload, cancellationToken);
     }
 
-    public async Task ConfigureGitHubProviderAsync(GitHubFederationOptions options, string firstBrokerLoginFlowAlias,
-        CancellationToken ct)
+    public async Task ConfigureGitHubProviderAsync(
+        string clientId,
+        string clientSecret,
+        string firstBrokerLoginFlowAlias,
+        bool trustEmail = true,
+        bool storeToken = true,
+        CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(options.ClientId) || string.IsNullOrWhiteSpace(options.ClientSecret))
+        if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
         {
             return;
         }
@@ -52,19 +61,19 @@ public sealed class KeycloakFederationService(HttpClient httpClient) : IKeycloak
             DisplayName = "GitHub",
             ProviderId = "github",
             Enabled = true,
-            TrustEmail = options.TrustEmail,
-            StoreToken = options.StoreToken,
+            TrustEmail = trustEmail,
+            StoreToken = storeToken,
             FirstBrokerLoginFlowAlias = firstBrokerLoginFlowAlias,
             Config = new Dictionary<string, string>
             {
-                ["clientId"] = options.ClientId,
-                ["clientSecret"] = options.ClientSecret,
+                ["clientId"] = clientId,
+                ["clientSecret"] = clientSecret,
                 ["defaultScope"] = "read:user user:email",
-                ["syncMode"] = MapSyncMode(options.SyncMode)
+                ["syncMode"] = "IMPORT"
             }
         };
 
-        await UpsertIdentityProviderAsync(payload, ct);
+        await UpsertIdentityProviderAsync(payload, cancellationToken);
     }
 
     private async Task UpsertIdentityProviderAsync(KeycloakIdentityProviderPayload payload, CancellationToken ct)
@@ -91,15 +100,5 @@ public sealed class KeycloakFederationService(HttpClient httpClient) : IKeycloak
             KeycloakJsonContext.Default.KeycloakIdentityProviderPayload,
             ct);
         updateResponse.EnsureSuccessStatusCode();
-    }
-
-    private static string MapSyncMode(FederationSyncMode syncMode)
-    {
-        return syncMode switch
-        {
-            FederationSyncMode.Import => "IMPORT",
-            FederationSyncMode.Force => "FORCE",
-            _ => "LEGACY"
-        };
     }
 }

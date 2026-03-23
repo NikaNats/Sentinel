@@ -10,6 +10,7 @@ using Sentinel.Errors;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Keycloak;
 using Sentinel.Presentation.Controllers;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Tests.Unit;
 
@@ -20,7 +21,7 @@ public sealed class AuthControllerTests
     {
         var refreshService = new Mock<ITokenRefreshService>();
         var revocationService = new Mock<IAuthRevocationService>();
-        var keycloakProfile = new Mock<IKeycloakProfileService>();
+        var userProfileManager = new Mock<IUserProfileManager>();
         var passwordValidator = new Mock<IPasswordStrengthValidator>();
         var blacklistCache = new Mock<ISessionBlacklistCache>();
         var options = BuildOptions();
@@ -28,7 +29,8 @@ public sealed class AuthControllerTests
             .Setup(x => x.RefreshTokenAsync("old-refresh", "proof", It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TokenRefreshResult(false, null, null, true));
 
-        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object,
+        var controller = new AuthController(refreshService.Object, revocationService.Object,
+            Mock.Of<IIdentityProvider>(),
             passwordValidator.Object, blacklistCache.Object, options)
         {
             ControllerContext = new ControllerContext
@@ -52,10 +54,9 @@ public sealed class AuthControllerTests
     {
         var refreshService = new Mock<ITokenRefreshService>();
         var revocationService = new Mock<IAuthRevocationService>();
-        var keycloakProfile = new Mock<IKeycloakProfileService>();
         var passwordValidator = new Mock<IPasswordStrengthValidator>();
         var blacklistCache = new Mock<ISessionBlacklistCache>();
-        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object,
+        var controller = new AuthController(refreshService.Object, revocationService.Object, Mock.Of<IIdentityProvider>(),
             passwordValidator.Object, blacklistCache.Object, BuildOptions());
 
         var result = await controller.Refresh(new AuthController.RefreshRequest(string.Empty), CancellationToken.None);
@@ -69,7 +70,6 @@ public sealed class AuthControllerTests
     {
         var refreshService = new Mock<ITokenRefreshService>();
         var revocationService = new Mock<IAuthRevocationService>();
-        var keycloakProfile = new Mock<IKeycloakProfileService>();
         var passwordValidator = new Mock<IPasswordStrengthValidator>();
         var blacklistCache = new Mock<ISessionBlacklistCache>();
         var options = BuildOptions();
@@ -78,7 +78,7 @@ public sealed class AuthControllerTests
             .Setup(x => x.RevokeCurrentSessionAsync("refresh-token", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object,
+        var controller = new AuthController(refreshService.Object, revocationService.Object, Mock.Of<IIdentityProvider>(),
             passwordValidator.Object, blacklistCache.Object, options)
         {
             ControllerContext = new ControllerContext
@@ -108,7 +108,6 @@ public sealed class AuthControllerTests
     {
         var refreshService = new Mock<ITokenRefreshService>();
         var revocationService = new Mock<IAuthRevocationService>();
-        var keycloakProfile = new Mock<IKeycloakProfileService>();
         var passwordValidator = new Mock<IPasswordStrengthValidator>();
         var blacklistCache = new Mock<ISessionBlacklistCache>();
         var options = BuildOptions();
@@ -117,7 +116,7 @@ public sealed class AuthControllerTests
             .Setup(x => x.RevokeAllSessionsAsync("user-1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
-        var controller = new AuthController(refreshService.Object, revocationService.Object, keycloakProfile.Object,
+        var controller = new AuthController(refreshService.Object, revocationService.Object, Mock.Of<IIdentityProvider>(),
             passwordValidator.Object, blacklistCache.Object, options)
         {
             ControllerContext = new ControllerContext

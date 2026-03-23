@@ -8,6 +8,7 @@ using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Keycloak;
 using Sentinel.Middleware.Filters;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Presentation.Controllers;
 
@@ -16,7 +17,7 @@ namespace Sentinel.Presentation.Controllers;
 public sealed class AuthController(
     ITokenRefreshService refreshService,
     IAuthRevocationService revocationService,
-    IKeycloakProfileService keycloakProfileService,
+    IIdentityProvider identityProvider,
     IPasswordStrengthValidator passwordStrengthValidator,
     ISessionBlacklistCache blacklistCache,
     IOptions<KeycloakOptions> options,
@@ -161,7 +162,7 @@ public sealed class AuthController(
             });
         }
 
-        var updated = await keycloakProfileService.UpdatePasswordAsync(loginIdentifier, request.NewPassword, ct);
+        var updated = await identityProvider.UpdatePasswordAsync(loginIdentifier, request.NewPassword, ct);
         if (!updated)
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails

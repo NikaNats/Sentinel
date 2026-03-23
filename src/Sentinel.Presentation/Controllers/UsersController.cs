@@ -6,6 +6,7 @@ using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Errors;
 using Sentinel.Infrastructure.Telemetry;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Presentation.Controllers;
 
@@ -17,7 +18,7 @@ public sealed class UsersController(
     ResetPasswordHandler resetPasswordHandler,
     ResendVerificationHandler resendVerificationHandler,
     IEmailVerificationTokenStore verificationTokenStore,
-    IKeycloakUserService keycloakUserService) : ControllerBase
+    IIdentityProvider identityProvider) : ControllerBase
 {
     [HttpPost("register")]
     [AllowAnonymous]
@@ -67,7 +68,7 @@ public sealed class UsersController(
             });
         }
 
-        var updated = await keycloakUserService.SetEmailVerifiedAsync(keycloakUserId, true, ct);
+        var updated = await identityProvider.SetEmailVerifiedAsync(keycloakUserId, true, ct);
         if (!updated)
         {
             return BadRequest(new ProblemDetails

@@ -20,6 +20,16 @@ public interface IIdentityProvider
     /// Updates user password in the identity provider.
     /// </summary>
     Task<bool> UpdatePasswordAsync(string email, string newPassword, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets or clears the email verified flag for a user.
+    /// </summary>
+    Task<bool> SetEmailVerifiedAsync(string userId, bool verified, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Permanently deletes a user from the identity provider.
+    /// </summary>
+    Task<bool> DeleteUserAsync(string userId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

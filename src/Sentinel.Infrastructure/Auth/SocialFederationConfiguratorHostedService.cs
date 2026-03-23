@@ -1,12 +1,12 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Infrastructure.Auth;
 
 public sealed class SocialFederationConfiguratorHostedService(
-    IKeycloakFederationService keycloakFederationService,
+    IIdentityFederationProvider federationProvider,
     IOptions<SocialFederationOptions> options,
     ILogger<SocialFederationConfiguratorHostedService> logger) : IHostedService
 {
@@ -23,17 +23,23 @@ public sealed class SocialFederationConfiguratorHostedService(
         {
             if (federationOptions.Google.Enabled)
             {
-                await keycloakFederationService.ConfigureGoogleProviderAsync(
-                    federationOptions.Google,
+                await federationProvider.ConfigureGoogleProviderAsync(
+                    federationOptions.Google.ClientId,
+                    federationOptions.Google.ClientSecret,
                     federationOptions.FirstBrokerLoginFlowAlias,
+                    federationOptions.Google.TrustEmail,
+                    federationOptions.Google.StoreToken,
                     cancellationToken);
             }
 
             if (federationOptions.GitHub.Enabled)
             {
-                await keycloakFederationService.ConfigureGitHubProviderAsync(
-                    federationOptions.GitHub,
+                await federationProvider.ConfigureGitHubProviderAsync(
+                    federationOptions.GitHub.ClientId,
+                    federationOptions.GitHub.ClientSecret,
                     federationOptions.FirstBrokerLoginFlowAlias,
+                    federationOptions.GitHub.TrustEmail,
+                    federationOptions.GitHub.StoreToken,
                     cancellationToken);
             }
         }

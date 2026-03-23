@@ -1,12 +1,12 @@
 using System.Net.Http.Json;
-using Sentinel.Application.Auth.Interfaces;
+using Sentinel.Security.Abstractions.Identity;
 using Sentinel.Keycloak;
 
 namespace Sentinel.Infrastructure.Auth.Services;
 
-public sealed class KeycloakProfileService(HttpClient httpClient) : IKeycloakProfileService
+public sealed class KeycloakProfileService(HttpClient httpClient) : IUserProfileManager
 {
-    public async Task<bool> UpdateProfileAsync(string subjectId, string? displayName, CancellationToken ct)
+    public async Task<bool> UpdateProfileAsync(string subjectId, string? displayName, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(subjectId))
         {
@@ -32,52 +32,8 @@ public sealed class KeycloakProfileService(HttpClient httpClient) : IKeycloakPro
             $"users/{Uri.EscapeDataString(subjectId)}",
             payload,
             KeycloakJsonContext.Default.KeycloakAdminUserUpdatePayload,
-            ct);
+            cancellationToken);
 
         return response.IsSuccessStatusCode;
-    }
-
-    public async Task<bool> UpdatePasswordAsync(string email, string newPassword, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(newPassword))
-        {
-            return false;
-        }
-
-        var user = await GetUserByEmailAsync(email, ct);
-        if (user is null)
-        {
-            return false;
-        }
-
-        var payload = new KeycloakAdminPasswordResetPayload
-        {
-            Type = "password",
-            Value = newPassword,
-            Temporary = false
-        };
-
-        using var response = await httpClient.PutAsJsonAsync(
-            $"users/{Uri.EscapeDataString(user.Id!)}/reset-password",
-            payload,
-            KeycloakJsonContext.Default.KeycloakAdminPasswordResetPayload,
-            ct);
-
-        return response.IsSuccessStatusCode;
-    }
-
-    private async Task<KeycloakUserResponse?> GetUserByEmailAsync(string email, CancellationToken ct)
-    {
-        var encodedEmail = Uri.EscapeDataString(email.Trim());
-        using var response = await httpClient.GetAsync($"users?email={encodedEmail}&exact=true", ct);
-        if (!response.IsSuccessStatusCode)
-        {
-            return null;
-        }
-
-        var users = await response.Content.ReadFromJsonAsync(
-            KeycloakJsonContext.Default.ListKeycloakUserResponse,
-            ct);
-        return users?.FirstOrDefault(static u => !string.IsNullOrWhiteSpace(u.Id));
     }
 }

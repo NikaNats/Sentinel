@@ -107,7 +107,7 @@ public sealed class ForgotPasswordAntiEnumerationSecurityTests
             resetHandler,
             resendHandler,
             Mock.Of<IEmailVerificationTokenStore>(),
-            Mock.Of<IKeycloakUserService>())
+            Mock.Of<IIdentityProvider>())
         {
             ControllerContext = new ControllerContext
             {

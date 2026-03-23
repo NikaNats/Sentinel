@@ -28,7 +28,7 @@ public sealed class UsersControllerTests
             Mock.Of<IEmailVerificationTokenStore>(),
             BuildPasswordStrengthValidator());
         var verificationStore = new Mock<IEmailVerificationTokenStore>();
-        var keycloakUser = new Mock<IKeycloakUserService>();
+        var identityProvider = new Mock<IIdentityProvider>();
 
         var controller = new UsersController(
             handler,
@@ -36,7 +36,7 @@ public sealed class UsersControllerTests
             BuildResetPasswordHandler(),
             BuildResendVerificationHandler(),
             verificationStore.Object,
-            keycloakUser.Object)
+            identityProvider.Object)
         {
             ControllerContext = new ControllerContext
             {
@@ -68,7 +68,7 @@ public sealed class UsersControllerTests
             BuildResetPasswordHandler(),
             BuildResendVerificationHandler(),
             BuildVerificationStore(null),
-            Mock.Of<IKeycloakUserService>());
+            Mock.Of<IIdentityProvider>());
 
         var response = await controller.VerifyEmail("missing-token", CancellationToken.None);
 
@@ -79,8 +79,8 @@ public sealed class UsersControllerTests
     [Fact]
     public async Task VerifyEmail_WhenTokenValid_MarksEmailVerified()
     {
-        var keycloakUser = new Mock<IKeycloakUserService>();
-        keycloakUser
+        var identityProvider = new Mock<IIdentityProvider>();
+        identityProvider
             .Setup(x => x.SetEmailVerifiedAsync("kc-user-1", true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
@@ -97,13 +97,13 @@ public sealed class UsersControllerTests
             BuildResetPasswordHandler(),
             BuildResendVerificationHandler(),
             BuildVerificationStore("kc-user-1"),
-            keycloakUser.Object);
+            identityProvider.Object);
 
         var response = await controller.VerifyEmail("token-1", CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(response);
         Assert.Equal(StatusCodes.Status200OK, ok.StatusCode);
-        keycloakUser.Verify(x => x.SetEmailVerifiedAsync("kc-user-1", true, It.IsAny<CancellationToken>()), Times.Once);
+        identityProvider.Verify(x => x.SetEmailVerifiedAsync("kc-user-1", true, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static IEmailVerificationTokenStore BuildVerificationStore(string? userId)
@@ -124,7 +124,7 @@ public sealed class UsersControllerTests
             BuildResetPasswordHandler(),
             BuildResendVerificationHandler(),
             BuildVerificationStore(null),
-            Mock.Of<IKeycloakUserService>());
+            Mock.Of<IIdentityProvider>());
 
         var response = await controller.ForgotPassword(new ForgotPasswordRequest("unknown@example.com", "captcha"),
             CancellationToken.None);

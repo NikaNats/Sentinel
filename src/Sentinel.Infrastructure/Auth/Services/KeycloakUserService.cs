@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Domain.Users;
 using Sentinel.Security.Abstractions.Identity;
@@ -9,7 +8,7 @@ using Sentinel.Keycloak;
 namespace Sentinel.Infrastructure.Auth.Services;
 
 public sealed class KeycloakUserService(HttpClient httpClient, ILogger<KeycloakUserService> logger)
-    : IKeycloakUserService, IIdentityRegistry, IIdentityProvider
+    : IIdentityRegistry, IIdentityProvider
 {
     public Task<string> CreateUserAsync(
         IdentityRegistration registration,
@@ -83,22 +82,22 @@ public sealed class KeycloakUserService(HttpClient httpClient, ILogger<KeycloakU
         return userId;
     }
 
-    public async Task<bool> SetEmailVerifiedAsync(string keycloakUserId, bool verified, CancellationToken ct)
+    public async Task<bool> SetEmailVerifiedAsync(string userId, bool verified, CancellationToken cancellationToken = default)
     {
         var payload = new KeycloakAdminUserUpdatePayload { EmailVerified = verified };
 
         using var response = await httpClient.PutAsJsonAsync(
-            $"users/{Uri.EscapeDataString(keycloakUserId)}",
+            $"users/{Uri.EscapeDataString(userId)}",
             payload,
             KeycloakJsonContext.Default.KeycloakAdminUserUpdatePayload,
-            ct);
+            cancellationToken);
 
         return response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NoContent;
     }
 
-    public async Task<bool> DeleteUserAsync(string keycloakUserId, CancellationToken ct)
+    public async Task<bool> DeleteUserAsync(string userId, CancellationToken cancellationToken = default)
     {
-        using var response = await httpClient.DeleteAsync($"users/{Uri.EscapeDataString(keycloakUserId)}", ct);
+        using var response = await httpClient.DeleteAsync($"users/{Uri.EscapeDataString(userId)}", cancellationToken);
         return response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NoContent;
     }
 

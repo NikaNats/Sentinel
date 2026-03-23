@@ -3,15 +3,15 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sentinel.Application.Auth;
-using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Errors;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Presentation.Controllers;
 
 [ApiController]
 [Route("v1/[controller]")]
 [Authorize(Policy = Policies.ReadProfile)]
-public sealed class ProfileController(IKeycloakProfileService keycloakProfileService) : ControllerBase
+public sealed class ProfileController(IUserProfileManager userProfileManager) : ControllerBase
 {
     [HttpGet]
     [ProducesResponseType(typeof(ProfileResponse), StatusCodes.Status200OK)]
@@ -77,7 +77,7 @@ public sealed class ProfileController(IKeycloakProfileService keycloakProfileSer
             });
         }
 
-        var updated = await keycloakProfileService.UpdateProfileAsync(sub, request.DisplayName, ct);
+        var updated = await userProfileManager.UpdateProfileAsync(sub, request.DisplayName, ct);
         if (!updated)
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails

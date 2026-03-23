@@ -91,7 +91,7 @@ public static class SentinelModuleBuilderExtensions
         _ = builder.Services.AddHttpClient<IUmaPermissionService, KeycloakUmaPermissionService>();
         _ = builder.Services.AddHttpClient<ITokenRefreshService, KeycloakTokenRefreshService>();
         _ = builder.Services.AddHttpClient<ITokenExchangeService, KeycloakTokenExchangeService>();
-        _ = builder.Services.AddHttpClient<IKeycloakUserService, KeycloakUserService>((sp, client) =>
+        _ = builder.Services.AddHttpClient<IIdentityRegistry, KeycloakUserService>((sp, client) =>
             {
                 var keycloakOptions = sp.GetRequiredService<IOptions<KeycloakOptions>>().Value;
                 if (!KeycloakAuthorityEndpoints.TryBuild(keycloakOptions.Authority.TrimEnd('/'), out _,
@@ -103,11 +103,9 @@ public static class SentinelModuleBuilderExtensions
                 client.BaseAddress = adminRealmEndpoint;
             })
             .AddHttpMessageHandler<KeycloakAdminAuthHandler>();
-        _ = builder.Services.AddScoped<IIdentityRegistry>(sp =>
-            (IIdentityRegistry)sp.GetRequiredService<IKeycloakUserService>());
         _ = builder.Services.AddScoped<IIdentityProvider>(sp =>
-            (IIdentityProvider)sp.GetRequiredService<IKeycloakUserService>());
-        _ = builder.Services.AddHttpClient<IKeycloakProfileService, KeycloakProfileService>((sp, client) =>
+            (IIdentityProvider)sp.GetRequiredService<IIdentityRegistry>());
+        _ = builder.Services.AddHttpClient<IUserProfileManager, KeycloakProfileService>((sp, client) =>
             {
                 var keycloakOptions = sp.GetRequiredService<IOptions<KeycloakOptions>>().Value;
                 if (!KeycloakAuthorityEndpoints.TryBuild(keycloakOptions.Authority.TrimEnd('/'), out _,
@@ -119,7 +117,7 @@ public static class SentinelModuleBuilderExtensions
                 client.BaseAddress = adminRealmEndpoint;
             })
             .AddHttpMessageHandler<KeycloakAdminAuthHandler>();
-        _ = builder.Services.AddHttpClient<IKeycloakFederationService, KeycloakFederationService>((sp, client) =>
+        _ = builder.Services.AddHttpClient<IIdentityFederationProvider, KeycloakFederationService>((sp, client) =>
             {
                 var keycloakOptions = sp.GetRequiredService<IOptions<KeycloakOptions>>().Value;
                 if (!KeycloakAuthorityEndpoints.TryBuild(keycloakOptions.Authority.TrimEnd('/'), out _,
