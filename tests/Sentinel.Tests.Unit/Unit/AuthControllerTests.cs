@@ -8,6 +8,7 @@ using Sentinel.Application.Common.Abstractions;
 using Sentinel.Controllers;
 using Sentinel.Errors;
 using Sentinel.Infrastructure.Auth;
+using Sentinel.Keycloak;
 using Sentinel.Presentation.Controllers;
 
 namespace Sentinel.Tests.Unit;

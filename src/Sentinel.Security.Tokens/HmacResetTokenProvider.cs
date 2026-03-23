@@ -1,11 +1,9 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-using Sentinel.Domain.Auth;
 
-namespace Sentinel.Infrastructure.Auth;
+namespace Sentinel.Security.Tokens;
 
 public sealed class HmacResetTokenProvider(IOptions<ResetTokenOptions> options, TimeProvider? timeProvider = null) : IResetTokenProvider
 {

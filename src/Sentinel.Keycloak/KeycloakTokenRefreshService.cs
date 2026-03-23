@@ -4,7 +4,7 @@ using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Common.Abstractions;
 
-namespace Sentinel.Infrastructure.Auth;
+namespace Sentinel.Keycloak;
 
 public sealed class KeycloakTokenRefreshService(
     HttpClient httpClient,

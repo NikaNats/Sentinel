@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Options;
-using Sentinel.Infrastructure.Auth;
+using Sentinel.Security.Tokens;
 
 namespace Sentinel.Tests.Unit;
 

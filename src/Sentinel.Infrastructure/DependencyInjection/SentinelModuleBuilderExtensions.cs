@@ -25,6 +25,9 @@ using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Security.Abstractions.Identity;
 using Sentinel.DPoP;
 using Sentinel.Security.Abstractions.DPoP;
+using Sentinel.Keycloak;
+using Sentinel.Security.Captcha;
+using Sentinel.Security.Tokens;
 
 namespace Sentinel.Infrastructure.DependencyInjection;
 
@@ -38,9 +41,9 @@ public static class SentinelModuleBuilderExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        _ = services.Configure<CaptchaOptions>(configuration.GetSection("Captcha:Turnstile"));
+        _ = services.AddTurnstileService(options => configuration.GetSection("Captcha:Turnstile").Bind(options));
         _ = services.Configure<RegistrationOptions>(configuration.GetSection("Registration"));
-        _ = services.Configure<ResetTokenOptions>(configuration.GetSection("PasswordReset"));
+        _ = services.AddHmacTokenServices(options => configuration.GetSection("PasswordReset").Bind(options));
         _ = services.Configure<SocialFederationOptions>(configuration.GetSection("SocialFederation"));
 
         _ = services.AddSingleton<IConfigurationManager<OpenIdConnectConfiguration>>(sp =>
@@ -70,7 +73,6 @@ public static class SentinelModuleBuilderExtensions
         _ = services.AddScoped<IDocumentStore, EfCoreDocumentStore>();
         _ = services.AddSingleton<ILogoutTokenValidator, LogoutTokenValidator>();
         _ = services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
-        _ = services.AddSingleton<IResetTokenProvider, HmacResetTokenProvider>();
         _ = services.AddSingleton<TokenValidationService>();
 
         return new SentinelSecurityBuilder(services);
@@ -89,7 +91,6 @@ public static class SentinelModuleBuilderExtensions
         _ = builder.Services.AddHttpClient<IUmaPermissionService, KeycloakUmaPermissionService>();
         _ = builder.Services.AddHttpClient<ITokenRefreshService, KeycloakTokenRefreshService>();
         _ = builder.Services.AddHttpClient<ITokenExchangeService, KeycloakTokenExchangeService>();
-        _ = builder.Services.AddHttpClient<ICaptchaService, TurnstileService>();
         _ = builder.Services.AddHttpClient<IKeycloakUserService, KeycloakUserService>((sp, client) =>
             {
                 var keycloakOptions = sp.GetRequiredService<IOptions<KeycloakOptions>>().Value;

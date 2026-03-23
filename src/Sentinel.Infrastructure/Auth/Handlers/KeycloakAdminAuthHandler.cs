@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using Sentinel.Keycloak;
 
 namespace Sentinel.Infrastructure.Auth.Handlers;
 

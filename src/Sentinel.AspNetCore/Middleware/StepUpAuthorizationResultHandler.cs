@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Mvc;
 using Sentinel.Application.Auth.Models;
 
-namespace Sentinel.Middleware;
+namespace Sentinel.AspNetCore.Middleware;
 
 public sealed class StepUpAuthorizationResultHandler : IAuthorizationMiddlewareResultHandler
 {

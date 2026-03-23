@@ -6,6 +6,7 @@ using Sentinel.Application.Common.Abstractions;
 using Sentinel.Errors;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Telemetry;
+using Sentinel.Keycloak;
 using Sentinel.Middleware.Filters;
 
 namespace Sentinel.Presentation.Controllers;

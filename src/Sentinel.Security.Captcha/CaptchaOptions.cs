@@ -1,4 +1,4 @@
-namespace Sentinel.Infrastructure.Auth;
+namespace Sentinel.Security.Captcha;
 
 public sealed class CaptchaOptions
 {

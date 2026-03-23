@@ -1,8 +1,6 @@
 using System.Net.Http.Json;
-using Microsoft.Extensions.Options;
-using Sentinel.Application.Auth.Interfaces;
 
-namespace Sentinel.Infrastructure.Auth;
+namespace Sentinel.Security.Captcha;
 
 public sealed class TurnstileService(HttpClient httpClient, IOptions<CaptchaOptions> options) : ICaptchaService
 {

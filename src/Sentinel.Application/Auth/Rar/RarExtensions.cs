@@ -1,6 +1,6 @@
 using System.Security.Claims;
 using System.Text.Json;
-using Sentinel.Domain.Auth.Rar;
+using Sentinel.RAR;
 
 namespace Sentinel.Application.Auth.Rar;
 

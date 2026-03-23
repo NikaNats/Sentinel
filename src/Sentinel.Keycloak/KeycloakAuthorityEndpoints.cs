@@ -1,6 +1,6 @@
-namespace Sentinel.Infrastructure.Auth;
+namespace Sentinel.Keycloak;
 
-internal static class KeycloakAuthorityEndpoints
+public static class KeycloakAuthorityEndpoints
 {
     public static bool TryBuild(string authority, out Uri tokenEndpoint, out Uri adminRealmEndpoint)
     {

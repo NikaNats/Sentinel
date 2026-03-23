@@ -21,7 +21,7 @@ public static class KeycloakServiceExtensions
     {
         ArgumentNullException.ThrowIfNull(services, nameof(services));
 
-        var options = new KeycloakOptions();
+        var options = new KeycloakClientOptions();
         configuration?.Bind(options);
 
         return AddKeycloakIntegration(services, options);
@@ -35,12 +35,12 @@ public static class KeycloakServiceExtensions
     /// <returns>Service collection for chaining.</returns>
     public static IServiceCollection AddKeycloakIntegration(
         this IServiceCollection services,
-        Action<KeycloakOptions> configureOptions)
+        Action<KeycloakClientOptions> configureOptions)
     {
         ArgumentNullException.ThrowIfNull(services, nameof(services));
         ArgumentNullException.ThrowIfNull(configureOptions, nameof(configureOptions));
 
-        var options = new KeycloakOptions();
+        var options = new KeycloakClientOptions();
         configureOptions(options);
 
         return AddKeycloakIntegration(services, options);
@@ -51,7 +51,7 @@ public static class KeycloakServiceExtensions
     /// </summary>
     private static IServiceCollection AddKeycloakIntegration(
         this IServiceCollection services,
-        KeycloakOptions options)
+        KeycloakClientOptions options)
     {
         if (string.IsNullOrWhiteSpace(options.ServerUrl) || string.IsNullOrWhiteSpace(options.Realm))
         {

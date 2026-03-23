@@ -31,24 +31,6 @@ public sealed class RegisterUserHandler
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    // Compatibility overload while callers migrate to IIdentityRegistry.
-    public RegisterUserHandler(
-        ICaptchaService captchaService,
-        IKeycloakUserService keycloakUserService,
-        IEmailService emailService,
-        IEmailVerificationTokenStore verificationTokenStore,
-        IPasswordStrengthValidator passwordStrengthValidator,
-        TimeProvider? timeProvider = null)
-        : this(
-            captchaService,
-            new KeycloakIdentityRegistryAdapter(keycloakUserService),
-            emailService,
-            verificationTokenStore,
-            passwordStrengthValidator,
-            timeProvider)
-    {
-    }
-
     public async Task<RegisterUserResult> HandleAsync(RegisterUserRequest request, string sourceIp,
         CancellationToken ct)
     {
@@ -123,25 +105,5 @@ public sealed class RegisterUserHandler
         await _emailService.SendVerificationEmailAsync(registration.Email, verificationToken, ct);
 
         return new RegisterUserResult(true, "If this email is new, you'll receive a verification email.");
-    }
-
-    private sealed class KeycloakIdentityRegistryAdapter(IKeycloakUserService keycloakUserService) : IIdentityRegistry
-    {
-        public Task<string> CreateUserAsync(IdentityRegistration registration, string password,
-            CancellationToken cancellationToken = default)
-        {
-            var legacyRegistration = new UserRegistration
-            {
-                Email = registration.Email,
-                Username = registration.Username,
-                Consent = new ConsentInfo(
-                    registration.AcceptedTerms,
-                    registration.PolicyVersion,
-                    registration.AcceptedAtUtc,
-                    registration.SourceIp)
-            };
-
-            return keycloakUserService.CreateUserAsync(legacyRegistration, password, cancellationToken);
-        }
     }
 }

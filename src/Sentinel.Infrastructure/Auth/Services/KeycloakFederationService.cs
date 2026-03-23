@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
+using Sentinel.Keycloak;
 
 namespace Sentinel.Infrastructure.Auth.Services;
 

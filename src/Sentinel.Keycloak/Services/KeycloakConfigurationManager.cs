@@ -5,14 +5,14 @@ namespace Sentinel.Keycloak.Services;
 /// </summary>
 public sealed class KeycloakConfigurationManager
 {
-    private readonly KeycloakOptions _options;
+    private readonly KeycloakClientOptions _options;
     private readonly HttpClient _httpClient;
     private readonly ILogger<KeycloakConfigurationManager> _logger;
     private JsonDocument? _cachedConfiguration;
     private DateTime _configurationExpiry = DateTime.MinValue;
 
     public KeycloakConfigurationManager(
-        KeycloakOptions options,
+        KeycloakClientOptions options,
         HttpClient httpClient,
         ILogger<KeycloakConfigurationManager> logger)
     {

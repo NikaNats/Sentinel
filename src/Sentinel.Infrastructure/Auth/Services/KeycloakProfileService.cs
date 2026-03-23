@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using Sentinel.Application.Auth.Interfaces;
+using Sentinel.Keycloak;
 
 namespace Sentinel.Infrastructure.Auth.Services;
 

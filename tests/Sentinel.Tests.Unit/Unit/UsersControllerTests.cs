@@ -23,7 +23,7 @@ public sealed class UsersControllerTests
 
         var handler = new RegisterUserHandler(
             captcha.Object,
-            Mock.Of<IKeycloakUserService>(),
+            Mock.Of<IIdentityRegistry>(),
             Mock.Of<IEmailService>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             BuildPasswordStrengthValidator());
@@ -57,7 +57,7 @@ public sealed class UsersControllerTests
     {
         var handler = new RegisterUserHandler(
             Mock.Of<ICaptchaService>(),
-            Mock.Of<IKeycloakUserService>(),
+            Mock.Of<IIdentityRegistry>(),
             Mock.Of<IEmailService>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             BuildPasswordStrengthValidator());
@@ -86,7 +86,7 @@ public sealed class UsersControllerTests
 
         var handler = new RegisterUserHandler(
             Mock.Of<ICaptchaService>(),
-            keycloakUser.Object,
+            Mock.Of<IIdentityRegistry>(),
             Mock.Of<IEmailService>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             BuildPasswordStrengthValidator());
@@ -136,7 +136,7 @@ public sealed class UsersControllerTests
     {
         return new RegisterUserHandler(
             Mock.Of<ICaptchaService>(),
-            Mock.Of<IKeycloakUserService>(),
+            Mock.Of<IIdentityRegistry>(),
             Mock.Of<IEmailService>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             BuildPasswordStrengthValidator());

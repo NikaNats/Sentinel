@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Sentinel.AspNetCore.Extensions;
 using Sentinel.AspNetCore.Middleware;
 using Sentinel.Auth.Authorization;
-using Sentinel.Middleware;
 using Sentinel.Presentation.Middleware;
 
 namespace Sentinel.DependencyInjection;
@@ -111,7 +110,7 @@ public static class ApiServiceCollectionExtensions
         app.UseAuthentication();
         app.UseMiddleware<Sentinel.AspNetCore.Middleware.DpopValidationMiddleware>();
         app.UseMiddleware<Sentinel.AspNetCore.Middleware.MtlsBindingMiddleware>();
-        app.UseMiddleware<Sentinel.Middleware.AcrValidationMiddleware>();
+        app.UseMiddleware<Sentinel.AspNetCore.Middleware.AcrValidationMiddleware>();
         app.UseRateLimiter();
         app.UseAuthorization();
 

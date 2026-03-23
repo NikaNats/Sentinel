@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Auth;
+using Sentinel.Keycloak;
 
 namespace Sentinel.Presentation.Controllers;
 

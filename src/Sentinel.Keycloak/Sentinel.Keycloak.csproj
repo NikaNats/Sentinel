@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../Sentinel.Security.Abstractions/Sentinel.Security.Abstractions.csproj" />
+    <ProjectReference Include="../Sentinel.Application/Sentinel.Application.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 
-namespace Sentinel.Infrastructure.Auth;
+namespace Sentinel.Keycloak;
 
 public sealed class KeycloakTokenExchangeService(
     HttpClient httpClient,

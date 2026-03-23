@@ -1,10 +1,10 @@
 namespace Sentinel.Keycloak;
 
 /// <summary>
-/// Configuration options for Keycloak integration.
+/// Configuration options for Keycloak client connections.
 /// </summary>
 #pragma warning disable CA1056 // ServerUrl property is intentionally string for configuration binding
-public sealed record KeycloakOptions
+public sealed record KeycloakClientOptions
 {
     /// <summary>
     /// Keycloak server base URL (e.g., "http://localhost:8080").
@@ -47,3 +47,42 @@ public sealed record KeycloakOptions
     public string ServerUrl => ServerUri?.ToString() ?? string.Empty;
 }
 #pragma warning restore CA1056
+
+/// <summary>
+/// Configuration options for Keycloak integration with Sentinel OAuth 2.0 server.
+/// </summary>
+public sealed class KeycloakOptions
+{
+    public const string SectionName = "Keycloak";
+
+    [System.ComponentModel.DataAnnotations.Required][System.ComponentModel.DataAnnotations.Url] public string Authority { get; init; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.Required] public string Audience { get; init; } = string.Empty;
+
+    public bool RequireHttpsMetadata { get; init; } = true;
+
+    public int SsoSessionMaxLifespanSeconds { get; init; } = 28_800;
+
+    // Backward-compatible alias for older config shape.
+    public int? SessionMaxLifespanSeconds { get; init; }
+
+    public KeycloakAdminOptions Admin { get; init; } = new();
+
+    // Backward-compatible alias for older config shape.
+    public string? AdminClientId { get; init; }
+
+    // Backward-compatible alias for older config shape.
+    public string? AdminClientSecret { get; init; }
+}
+
+/// <summary>
+/// Admin-specific options for Keycloak integration.
+/// </summary>
+public sealed class KeycloakAdminOptions
+{
+    public string ClientId { get; init; } = string.Empty;
+
+    public string ClientSecret { get; init; } = string.Empty;
+
+    public string? Scope { get; init; }
+}

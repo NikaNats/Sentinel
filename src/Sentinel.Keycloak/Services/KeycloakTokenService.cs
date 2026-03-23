@@ -7,14 +7,14 @@ using Sentinel.Keycloak.Models;
 /// </summary>
 public sealed class KeycloakTokenService
 {
-    private readonly KeycloakOptions _options;
+    private readonly KeycloakClientOptions _options;
     private readonly HttpClient _httpClient;
     private readonly ILogger<KeycloakTokenService> _logger;
     private KeycloakToken? _cachedToken;
     private DateTime _tokenExpiry = DateTime.MinValue;
 
     public KeycloakTokenService(
-        KeycloakOptions options,
+        KeycloakClientOptions options,
         HttpClient httpClient,
         ILogger<KeycloakTokenService> logger)
     {

@@ -4,6 +4,7 @@ using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Domain.Users;
 using Sentinel.Security.Abstractions.Identity;
+using Sentinel.Keycloak;
 
 namespace Sentinel.Infrastructure.Auth.Services;
 
@@ -101,7 +102,7 @@ public sealed class KeycloakUserService(HttpClient httpClient, ILogger<KeycloakU
         return response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NoContent;
     }
 
-    public async Task<KeycloakUserSummary?> GetUserByEmailAsync(string email, CancellationToken ct)
+    public async Task<IdentityUserSummary?> GetUserByEmailAsync(string email, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(email))
         {
@@ -124,7 +125,12 @@ public sealed class KeycloakUserService(HttpClient httpClient, ILogger<KeycloakU
             return null;
         }
 
-        return new KeycloakUserSummary(user.Id!, user.Email ?? email.Trim(), user.Username ?? user.Email ?? string.Empty);
+        return new IdentityUserSummary
+        {
+            Id = user.Id!,
+            Email = user.Email ?? email.Trim(),
+            Username = user.Username ?? user.Email ?? string.Empty
+        };
     }
 
     public async Task<bool> UpdatePasswordAsync(string email, string newPassword, CancellationToken cancellationToken = default)

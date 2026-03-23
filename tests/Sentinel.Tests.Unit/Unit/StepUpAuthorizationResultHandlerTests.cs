@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Sentinel.Application.Auth.Models;
-using Sentinel.Middleware;
+using Sentinel.AspNetCore.Middleware;
 
 namespace Sentinel.Tests.Unit;
 

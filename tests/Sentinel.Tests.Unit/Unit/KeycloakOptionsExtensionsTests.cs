@@ -1,4 +1,5 @@
 using Sentinel.Infrastructure.Auth;
+using Sentinel.Keycloak;
 
 namespace Sentinel.Tests.Unit;
 

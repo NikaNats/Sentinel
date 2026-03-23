@@ -1,4 +1,4 @@
-namespace Sentinel.Infrastructure.Auth;
+namespace Sentinel.Keycloak;
 
 public static class KeycloakOptionsExtensions
 {

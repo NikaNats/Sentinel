@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Moq;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Auth;
+using Sentinel.Keycloak;
 
 namespace Sentinel.Tests.Unit;
 

@@ -7,13 +7,13 @@ using Sentinel.Keycloak.Models;
 /// </summary>
 public sealed class KeycloakSubjectService
 {
-    private readonly KeycloakOptions _options;
+    private readonly KeycloakClientOptions _options;
     private readonly HttpClient _httpClient;
     private readonly KeycloakTokenService _tokenService;
     private readonly ILogger<KeycloakSubjectService> _logger;
 
     public KeycloakSubjectService(
-        KeycloakOptions options,
+        KeycloakClientOptions options,
         HttpClient httpClient,
         KeycloakTokenService tokenService,
         ILogger<KeycloakSubjectService> logger)

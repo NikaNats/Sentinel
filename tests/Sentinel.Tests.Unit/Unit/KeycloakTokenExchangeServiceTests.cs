@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Sentinel.Infrastructure.Auth;
+using Sentinel.Keycloak;
 
 namespace Sentinel.Tests.Unit;
 

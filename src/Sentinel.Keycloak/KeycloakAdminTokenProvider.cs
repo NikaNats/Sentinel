@@ -3,7 +3,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 
-namespace Sentinel.Infrastructure.Auth;
+namespace Sentinel.Keycloak;
 
 public sealed class KeycloakAdminTokenProvider(
     IHttpClientFactory httpClientFactory,

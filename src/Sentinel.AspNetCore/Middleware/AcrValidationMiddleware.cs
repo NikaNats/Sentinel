@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 
-namespace Sentinel.Middleware;
+namespace Sentinel.AspNetCore.Middleware;
 
 public sealed class AcrValidationMiddleware(RequestDelegate next)
 {

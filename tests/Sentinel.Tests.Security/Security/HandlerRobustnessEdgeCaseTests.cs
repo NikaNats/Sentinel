@@ -20,7 +20,7 @@ public sealed class HandlerRobustnessEdgeCaseTests
     {
         var sut = new RegisterUserHandler(
             Mock.Of<ICaptchaService>(),
-            Mock.Of<IKeycloakUserService>(),
+            Mock.Of<IIdentityRegistry>(),
             Mock.Of<IEmailService>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             Mock.Of<IPasswordStrengthValidator>());

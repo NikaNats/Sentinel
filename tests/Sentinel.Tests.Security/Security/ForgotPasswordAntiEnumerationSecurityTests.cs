@@ -84,7 +84,7 @@ public sealed class ForgotPasswordAntiEnumerationSecurityTests
     {
         var registerHandler = new RegisterUserHandler(
             Mock.Of<ICaptchaService>(),
-            Mock.Of<IKeycloakUserService>(),
+            Mock.Of<IIdentityRegistry>(),
             Mock.Of<IEmailService>(),
             Mock.Of<IEmailVerificationTokenStore>(),
             Mock.Of<IPasswordStrengthValidator>());
