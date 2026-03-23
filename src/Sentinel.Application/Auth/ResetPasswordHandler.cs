@@ -3,6 +3,7 @@ using System.Text;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
+using Sentinel.Domain.Auth;
 using Sentinel.Security.Abstractions.Identity;
 using Sentinel.Security.Abstractions.Results;
 

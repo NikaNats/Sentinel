@@ -1,8 +1,12 @@
+// DEPRECATED: Use Sentinel.Security.Abstractions.Nonce.IDpopNonceStore instead.
+// This file maintained for backward compatibility during migration to NuGet boundaries.
+
+using Sentinel.Security.Abstractions.Nonce;
+
 namespace Sentinel.Application.Common.Abstractions;
 
-public interface IDpopNonceStore
+#pragma warning disable CS0618 // Type is obsolete
+public interface IDpopNonceStore : Sentinel.Security.Abstractions.Nonce.IDpopNonceStore
 {
-    Task<string?> GetNonceAsync(string thumbprint, CancellationToken ct);
-    Task<bool> TryStoreNonceAsync(string thumbprint, string nonce, TimeSpan ttl, CancellationToken ct);
-    Task<bool> ConsumeNonceIfMatchesAsync(string thumbprint, string expectedNonce, CancellationToken ct);
 }
+#pragma warning restore CS0618

@@ -1,8 +1,7 @@
 namespace Sentinel.Security.Abstractions.Results;
 
 /// <summary>
-/// Non-generic discriminated union for void security operations.
-/// Use for operations that don't return a value, only success/failure status.
+/// Result type for operations that don't return a value, only success/failure status.
 /// </summary>
 public readonly record struct SecurityResult
 {
@@ -18,14 +17,27 @@ public readonly record struct SecurityResult
     /// </summary>
     public string? ErrorMessage => _errorMessage;
 
-    private SecurityResult(string? errorMessage)
+    /// <summary>
+    /// A shared pre-constructed successful result.
+    /// </summary>
+#pragma warning disable CA1805 // Exception for intentional default initialization
+    public static readonly SecurityResult SuccessValue;
+#pragma warning restore CA1805
+
+    internal SecurityResult(string? errorMessage)
     {
         _errorMessage = errorMessage;
     }
 
-    internal static SecurityResult CreateSuccess() => new(null);
+    /// <summary>
+    /// Creates a successful result.
+    /// </summary>
+    public static SecurityResult CreateSuccess() => SuccessValue;
 
-    internal static SecurityResult CreateFailure(string errorMessage) => new(errorMessage);
+    /// <summary>
+    /// Creates a failed result with the given error message.
+    /// </summary>
+    public static SecurityResult Failure(string errorMessage) => new(errorMessage);
 }
 
 /// <summary>
@@ -84,7 +96,7 @@ public static partial class SecurityResultFactory
     /// <summary>
     /// Creates a failed void result with the given error message.
     /// </summary>
-    public static SecurityResult Failure(string errorMessage) => SecurityResult.CreateFailure(errorMessage);
+    public static SecurityResult Failure(string errorMessage) => SecurityResult.Failure(errorMessage);
 
     /// <summary>
     /// Creates a successful result with the given value.

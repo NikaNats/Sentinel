@@ -142,7 +142,7 @@ public sealed class RegisterUserHandlerTests
         identityRegistry
             .Setup(x => x.CreateUserAsync(It.IsAny<IdentityRegistration>(), "StrongPassw0rd!",
                 It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new UserAlreadyExistsException());
+            .ReturnsAsync(SecurityResult<string>.Failure(SecurityErrors.IdentityConflictMessage));
 
         var sut = new RegisterUserHandler(captcha.Object, identityRegistry.Object, email.Object, tokenStore.Object,
             validator.Object);

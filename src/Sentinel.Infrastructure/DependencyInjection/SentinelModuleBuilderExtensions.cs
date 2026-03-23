@@ -13,6 +13,7 @@ using OpenTelemetry.Trace;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
+using Sentinel.DPoP.Extensions;
 using Sentinel.Domain.Auth;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Auth.Handlers;
@@ -80,7 +81,7 @@ public static class SentinelModuleBuilderExtensions
 
     public static ISentinelSecurityBuilder AddDPoP(this ISentinelSecurityBuilder builder)
     {
-        _ = builder.Services.AddSingleton<Sentinel.Security.Abstractions.DPoP.IDpopProofValidator, DpopProofValidator>();
+        _ = builder.Services.AddSentinelDPoP();
         return builder;
     }
 

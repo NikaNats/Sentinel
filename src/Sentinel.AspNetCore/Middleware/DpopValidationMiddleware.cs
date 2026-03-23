@@ -6,10 +6,10 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
-using Sentinel.Application.Common.Abstractions;
-using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Security.Abstractions.DPoP;
+using Sentinel.Security.Abstractions.Nonce;
+using Sentinel.Security.Abstractions.Security;
 
 namespace Sentinel.AspNetCore.Middleware;
 
@@ -17,6 +17,7 @@ internal sealed class DpopValidationMiddleware(
     RequestDelegate next,
     IDpopProofValidator validator,
     IDpopNonceStore nonceStore,
+    IDpopThumbprintComputer thumbprintComputer,
     ISecurityEventEmitter emitter)
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
@@ -65,7 +66,7 @@ internal sealed class DpopValidationMiddleware(
         // RFC 9449 section 4.2: htu excludes query string and fragment.
         var requestUrl = $"{context.Request.Scheme}://{context.Request.Host}{context.Request.Path}";
 
-        var thumbprint = TryExtractProofThumbprint(dpopProof);
+        var thumbprint = TryExtractProofThumbprint(dpopProof, thumbprintComputer);
         string? expectedNonce = null;
         if (!string.IsNullOrWhiteSpace(thumbprint))
         {
@@ -157,14 +158,13 @@ internal sealed class DpopValidationMiddleware(
         if (!string.IsNullOrWhiteSpace(thumbprint))
         {
             Activity.Current?.AddBaggage("dpop.jkt", thumbprint);
-            Activity.Current?.AddBaggage("dpop.alg", result.ProofAlgorithm ?? "unknown");
             context.Items["dpop.jkt"] = thumbprint; // Also store in context for middleware access
         }
 
         await next(context);
     }
 
-    private static string? TryExtractProofThumbprint(string dpopHeader)
+    private static string? TryExtractProofThumbprint(string dpopHeader, IDpopThumbprintComputer thumbprintComputer)
     {
         if (!TokenHandler.CanReadToken(dpopHeader))
         {
@@ -184,7 +184,7 @@ internal sealed class DpopValidationMiddleware(
         }
 
         using var jwkDoc = JsonDocument.Parse(jwkJson);
-        var thumbprint = DpopThumbprintHelper.ComputeJwkThumbprint(jwkDoc.RootElement);
+        var thumbprint = thumbprintComputer.Compute(jwkDoc.RootElement);
         return string.IsNullOrWhiteSpace(thumbprint) ? null : thumbprint;
     }
 

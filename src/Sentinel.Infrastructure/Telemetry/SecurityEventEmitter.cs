@@ -3,7 +3,8 @@ using Sentinel.Application.Common.Abstractions;
 
 namespace Sentinel.Infrastructure.Telemetry;
 
-public sealed class SecurityEventEmitter(ILogger<SecurityEventEmitter> logger) : ISecurityEventEmitter
+public sealed class SecurityEventEmitter(ILogger<SecurityEventEmitter> logger)
+    : ISecurityEventEmitter, Sentinel.Security.Abstractions.Security.ISecurityEventEmitter
 {
     private static readonly Action<ILogger, string, string, string, string, string, Exception?> TokenReplayAlert =
         LoggerMessage.Define<string, string, string, string, string>(
@@ -27,6 +28,27 @@ public sealed class SecurityEventEmitter(ILogger<SecurityEventEmitter> logger) :
     {
         AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", reason));
         AuthFailureEvent(logger, reason, sub ?? "OPAQUE", ipHash, GetCorrelationId(), null);
+    }
+
+    // Implementations for Sentinel.Security.Abstractions.Security.ISecurityEventEmitter
+
+    void Sentinel.Security.Abstractions.Security.ISecurityEventEmitter.EmitDpopValidationFailure(string thumbprint, string reason, string ipHash)
+    {
+        // Map to AuthFailure event with thumbprint context
+        AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("thumbprint", thumbprint));
+        AuthFailureEvent(logger, $"DPoP validation failure: {reason}", "OPAQUE", ipHash, GetCorrelationId(), null);
+    }
+
+    void Sentinel.Security.Abstractions.Security.ISecurityEventEmitter.EmitSessionRevoked(string sessionId, string? sub)
+    {
+        logger.LogInformation("Session revoked: {SessionId} for sub {Sub}. CorrelationId={CorrelationId}",
+            sessionId, sub ?? "OPAQUE", GetCorrelationId());
+    }
+
+    void Sentinel.Security.Abstractions.Security.ISecurityEventEmitter.EmitConfigurationChange(string component, string changeType, string details)
+    {
+        logger.LogWarning("Configuration change in {Component}: {ChangeType}. Details: {Details}. CorrelationId={CorrelationId}",
+            component, changeType, details, GetCorrelationId());
     }
 
     private static string GetCorrelationId() => Activity.Current?.TraceId.ToString() ?? "NONE";
