@@ -10,7 +10,7 @@ public sealed class RequireSurgicalAuthorizationAttribute : Attribute, IAsyncAct
 {
     // This attribute has been moved to Sentinel.SampleHost as it is domain-specific to the Finance transfer authorization
     // Please use Sentinel.SampleHost.Middleware.Filters.RequireSurgicalAuthorizationAttribute instead
-    
+
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
         // Stub implementation - routing to sample host implementation

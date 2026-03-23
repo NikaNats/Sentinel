@@ -6,7 +6,7 @@ namespace Sentinel.SampleHost.Stores;
 internal sealed class EfCoreDocumentStore(SampleHostDbContext dbContext, TimeProvider? timeProvider = null) : IDocumentStore
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
-    
+
     async Task<IReadOnlyCollection<DocumentDto>> IDocumentStore.ListAsync(
         string ownerSub, CancellationToken cancellationToken)
     {
@@ -17,7 +17,7 @@ internal sealed class EfCoreDocumentStore(SampleHostDbContext dbContext, TimePro
             .Select(d => new DocumentDto(
                 d.Id, d.OwnerSub, d.Title, d.Content, d.CreatedAtUtc, d.UpdatedAtUtc))
             .ToListAsync(cancellationToken);
-        
+
         return dtos;
     }
 
