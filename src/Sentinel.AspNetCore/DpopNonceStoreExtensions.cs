@@ -11,6 +11,7 @@ internal static class DpopNonceStoreExtensions
     /// <summary>
     /// Stores a nonce for a given thumbprint with a specified TTL.
     /// </summary>
+#pragma warning disable CA1031 // Intentionally catches all exceptions from nonce storage to provide safe fallback
     public static async Task<bool> TryStoreNonceAsync(
         this IDpopNonceStore store,
         string thumbprint,
@@ -28,10 +29,12 @@ internal static class DpopNonceStoreExtensions
             return false;
         }
     }
+#pragma warning restore CA1031
 
     /// <summary>
     /// Retrieves and validates a stored nonce, clearing it if it matches.
     /// </summary>
+#pragma warning disable CA1031 // Intentionally catches all exceptions from nonce retrieval to provide safe fallback
     public static async Task<bool> ConsumeNonceIfMatchesAsync(
         this IDpopNonceStore store,
         string thumbprint,
@@ -54,4 +57,5 @@ internal static class DpopNonceStoreExtensions
             return false;
         }
     }
+#pragma warning restore CA1031
 }

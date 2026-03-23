@@ -30,22 +30,10 @@ public static class RedisServiceExtensions
         var options = new RedisOptions();
         configuration?.Bind(options);
 
-        // Register singleton Redis connection if configured
+        // Register asynchronous Redis connection provider if configured
         if (!string.IsNullOrWhiteSpace(options.EndPoint))
         {
-            services.AddSingleton<IConnectionMultiplexer>(sp =>
-            {
-                var configOptions = ConfigurationOptions.Parse(options.EndPoint!);
-                configOptions.Ssl = options.UseSsl;
-                configOptions.SyncTimeout = options.SyncTimeout;
-
-                if (!string.IsNullOrWhiteSpace(options.Password))
-                {
-                    configOptions.Password = options.Password;
-                }
-
-                return ConnectionMultiplexer.Connect(configOptions);
-            });
+            services.AddSingleton<IRedisConnectionProvider, RedisConnectionProvider>();
         }
 
         // Register cache implementations
@@ -73,20 +61,8 @@ public static class RedisServiceExtensions
         var options = new RedisOptions();
         configureOptions(options);
 
-        // Register singleton Redis connection
-        services.AddSingleton<IConnectionMultiplexer>(sp =>
-        {
-            var configOptions = ConfigurationOptions.Parse(options.EndPoint ?? "localhost:6379");
-            configOptions.Ssl = options.UseSsl;
-            configOptions.SyncTimeout = options.SyncTimeout;
-
-            if (!string.IsNullOrWhiteSpace(options.Password))
-            {
-                configOptions.Password = options.Password;
-            }
-
-            return ConnectionMultiplexer.Connect(configOptions);
-        });
+        // Register asynchronous Redis connection provider
+        services.AddSingleton<IRedisConnectionProvider, RedisConnectionProvider>();
 
         // Register cache implementations
         services.AddSingleton(options);

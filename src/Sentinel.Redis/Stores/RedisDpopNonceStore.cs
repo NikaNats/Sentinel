@@ -9,17 +9,17 @@ using Sentinel.Security.Abstractions.InMemory;
 /// </summary>
 public sealed class RedisDpopNonceStore : IDpopNonceStore
 {
-    private readonly IDatabase _redis;
+    private readonly IRedisConnectionProvider _provider;
     private readonly InMemoryDpopNonceStore? _fallback;
     private readonly string _keyPrefix;
     private readonly ILogger<RedisDpopNonceStore> _logger;
 
     public RedisDpopNonceStore(
-        IConnectionMultiplexer connection,
+        IRedisConnectionProvider provider,
         RedisOptions options,
         ILogger<RedisDpopNonceStore> logger)
     {
-        _redis = connection.GetDatabase();
+        _provider = provider;
         _keyPrefix = options.KeyPrefix;
         _logger = logger;
         _fallback = options.EnableInMemoryFallback ? new InMemoryDpopNonceStore() : null;
@@ -34,8 +34,12 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
 
         try
         {
+            // Just-in-time asynchronous connection resolution
+            var multiplexer = await _provider.GetConnectionAsync(cancellationToken);
+            var db = multiplexer.GetDatabase();
+
             var redisKey = $"{_keyPrefix}nonce:{thumbprint}";
-            var value = await _redis.StringGetAsync(redisKey);
+            var value = await db.StringGetAsync(redisKey);
 
             _logger.LogInformation("DPoP nonce retrieved for thumbprint: {Thumbprint}", thumbprint);
             return value.IsNullOrEmpty ? null : value.ToString();
@@ -63,10 +67,14 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
 
         try
         {
+            // Just-in-time asynchronous connection resolution
+            var multiplexer = await _provider.GetConnectionAsync(cancellationToken);
+            var db = multiplexer.GetDatabase();
+
             var redisKey = $"{_keyPrefix}nonce:{thumbprint}";
             var timeToLive = expiresAt.UtcDateTime - DateTime.UtcNow;
 
-            await _redis.StringSetAsync(redisKey, nonce, timeToLive);
+            await db.StringSetAsync(redisKey, nonce, timeToLive);
 
             _logger.LogInformation("DPoP nonce set for thumbprint: {Thumbprint}", thumbprint);
         }
@@ -92,6 +100,10 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
     {
         try
         {
+            // Just-in-time asynchronous connection resolution
+            // (verifies connection is available without performing expensive operations)
+            _ = await _provider.GetConnectionAsync(cancellationToken);
+
             // Redis automatically expires keys via TTL
             _logger.LogDebug("Nonce cleanup (no-op in Redis, TTL-based expiration)");
             await Task.CompletedTask;

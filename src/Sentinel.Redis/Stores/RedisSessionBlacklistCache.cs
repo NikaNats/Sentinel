@@ -9,17 +9,17 @@ using Sentinel.Security.Abstractions.InMemory;
 /// </summary>
 public sealed class RedisSessionBlacklistCache : ISessionBlacklistCache
 {
-    private readonly IDatabase _redis;
+    private readonly IRedisConnectionProvider _provider;
     private readonly InMemorySessionBlacklistCache? _fallback;
     private readonly string _keyPrefix;
     private readonly ILogger<RedisSessionBlacklistCache> _logger;
 
     public RedisSessionBlacklistCache(
-        IConnectionMultiplexer connection,
+        IRedisConnectionProvider provider,
         RedisOptions options,
         ILogger<RedisSessionBlacklistCache> logger)
     {
-        _redis = connection.GetDatabase();
+        _provider = provider;
         _keyPrefix = options.KeyPrefix;
         _logger = logger;
         _fallback = options.EnableInMemoryFallback ? new InMemorySessionBlacklistCache() : null;
@@ -34,10 +34,14 @@ public sealed class RedisSessionBlacklistCache : ISessionBlacklistCache
 
         try
         {
+            // Just-in-time asynchronous connection resolution
+            var multiplexer = await _provider.GetConnectionAsync(cancellationToken);
+            var db = multiplexer.GetDatabase();
+
             var redisKey = $"{_keyPrefix}session:{sessionId}";
             var timeToLive = expiresAt.UtcDateTime - DateTime.UtcNow;
 
-            await _redis.StringSetAsync(redisKey, "revoked", timeToLive);
+            await db.StringSetAsync(redisKey, "revoked", timeToLive);
 
             _logger.LogInformation("Session blacklisted: {SessionId}", sessionId);
         }
@@ -64,8 +68,12 @@ public sealed class RedisSessionBlacklistCache : ISessionBlacklistCache
 
         try
         {
+            // Just-in-time asynchronous connection resolution
+            var multiplexer = await _provider.GetConnectionAsync(cancellationToken);
+            var db = multiplexer.GetDatabase();
+
             var redisKey = $"{_keyPrefix}session:{sessionId}";
-            var exists = await _redis.KeyExistsAsync(redisKey);
+            var exists = await db.KeyExistsAsync(redisKey);
 
             _logger.LogInformation("Session blacklist check for: {SessionId}, blacklisted: {IsBlacklisted}", sessionId, exists);
             return exists;
@@ -91,6 +99,10 @@ public sealed class RedisSessionBlacklistCache : ISessionBlacklistCache
     {
         try
         {
+            // Just-in-time asynchronous connection resolution
+            // (verifies connection is available without performing expensive operations)
+            _ = await _provider.GetConnectionAsync(cancellationToken);
+
             // Redis automatically expires keys via TTL
             _logger.LogDebug("Session cleanup (no-op in Redis, TTL-based expiration)");
             await Task.CompletedTask;
