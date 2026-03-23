@@ -4,6 +4,7 @@ using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Domain.Users;
 using Sentinel.Security.Abstractions.Identity;
+using Sentinel.Security.Abstractions.Results;
 
 namespace Sentinel.Tests.Unit;
 
@@ -33,7 +34,7 @@ public sealed class RegisterUserHandlerTests
             CancellationToken.None);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("invalid_captcha", result.ErrorCode);
+        Assert.Equal("Invalid captcha.", result.ErrorMessage);
         identityRegistry.Verify(
             x => x.CreateUserAsync(It.IsAny<IdentityRegistration>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -55,7 +56,7 @@ public sealed class RegisterUserHandlerTests
             CancellationToken.None);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("terms_not_accepted", result.ErrorCode);
+        Assert.Equal("Terms must be accepted.", result.ErrorMessage);
     }
 
     [Fact]
@@ -120,7 +121,7 @@ public sealed class RegisterUserHandlerTests
             CancellationToken.None);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("weak_password", result.ErrorCode);
+        Assert.Equal("Password is too weak.", result.ErrorMessage);
     }
 
     [Fact]
@@ -152,7 +153,7 @@ public sealed class RegisterUserHandlerTests
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal("If this email is new, you'll receive a verification email.", result.Message);
+        Assert.Equal("If this email is new, you'll receive a verification email.", result.Value.Message);
         email.Verify(x => x.SendWelcomeOrAlreadyRegisteredEmailAsync("user@example.com", It.IsAny<CancellationToken>()),
             Times.Once);
         tokenStore.Verify(

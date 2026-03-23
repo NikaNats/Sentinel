@@ -7,6 +7,7 @@ using Sentinel.Application.Auth.Models;
 using Sentinel.Errors;
 using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Security.Abstractions.Identity;
+using Sentinel.Security.Abstractions.Results;
 
 namespace Sentinel.Presentation.Controllers;
 
@@ -34,13 +35,14 @@ public sealed class UsersController(
         {
             return BadRequest(new ProblemDetails
             {
-                Title = result.Message,
+                Title = result.ErrorMessage,
                 Status = StatusCodes.Status400BadRequest,
-                Type = ResolveErrorType(result.ErrorCode)
+                Type = "registration_failed"
             });
         }
 
-        return Ok(new { result.Message });
+        var registerResult = result.Value;
+        return Ok(new { registerResult.Message });
     }
 
     [HttpPost("verify-email")]
@@ -110,42 +112,18 @@ public sealed class UsersController(
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request, CancellationToken ct)
     {
         var result = await resetPasswordHandler.HandleAsync(request, ct);
-        if (result.IsSuccess)
-        {
-            return Ok(new { result.Message });
-        }
 
-        if (result.ErrorCode is "invalid_request" or "invalid_or_expired_token" or "token_already_consumed")
+        if (!result.IsSuccess)
         {
             return BadRequest(new ProblemDetails
             {
-                Title = result.Message,
+                Title = result.ErrorMessage,
                 Status = StatusCodes.Status400BadRequest,
-                Type = ResolveErrorType(result.ErrorCode)
+                Type = "password_reset_failed"
             });
         }
 
-        return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
-        {
-            Title = result.Message,
-            Status = StatusCodes.Status500InternalServerError,
-            Type = ResolveErrorType(result.ErrorCode)
-        });
-    }
-
-    private static string? ResolveErrorType(string? errorCode)
-    {
-        return errorCode switch
-        {
-            "terms_not_accepted" => ErrorCodes.TermsNotAccepted,
-            "invalid_request" => ErrorCodes.InvalidRequest,
-            "invalid_captcha" => ErrorCodes.InvalidCaptcha,
-            "weak_password" => ErrorCodes.WeakPassword,
-            "verification_token_store_failed" => ErrorCodes.VerificationTokenStoreFailed,
-            "invalid_or_expired_token" => ErrorCodes.InvalidOrExpiredToken,
-            "token_already_consumed" => ErrorCodes.TokenAlreadyConsumed,
-            null => null,
-            _ => $"/errors/{errorCode}"
-        };
+        var resetResult = result.Value;
+        return Ok(new { resetResult.Message });
     }
 }

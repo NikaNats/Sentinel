@@ -3,6 +3,7 @@ using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Domain.Users;
 using Sentinel.Security.Abstractions.Identity;
+using Sentinel.Security.Abstractions.Results;
 
 namespace Sentinel.Application.Auth;
 
@@ -31,38 +32,41 @@ public sealed class RegisterUserHandler
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    public async Task<RegisterUserResult> HandleAsync(RegisterUserRequest request, string sourceIp,
+    /// <summary>
+    /// Handles user registration with Railway Oriented Programming pattern.
+    /// Validates request → verifies captcha → validates password → creates user → sends verification email.
+    /// </summary>
+    public async Task<SecurityResult<RegisterUserResult>> HandleAsync(
+        RegisterUserRequest request,
+        string sourceIp,
         CancellationToken ct)
     {
+        // Anti-timing attack: add random delay before validation
         await Task.Delay(RandomNumberGenerator.GetInt32(100, 301), ct);
 
-        if (!request.AcceptTerms)
+        // Step 1: Validate request structure
+        var validationResult = ValidateRequest(request);
+        if (!validationResult.IsSuccess)
         {
-            return new RegisterUserResult(false, "Terms must be accepted.", "terms_not_accepted");
+            return SecurityResultFactory.Failure<RegisterUserResult>(validationResult.ErrorMessage!);
         }
 
-        if (string.IsNullOrWhiteSpace(request.Email)
-            || string.IsNullOrWhiteSpace(request.Username)
-            || string.IsNullOrWhiteSpace(request.Password)
-            || string.IsNullOrWhiteSpace(request.CaptchaToken))
+        // Step 2: Verify captcha
+        var captchaValid = await _captchaService.VerifyAsync(request.CaptchaToken, ct);
+        if (!captchaValid)
         {
-            return new RegisterUserResult(false, "Email, username, password and captcha token are required.",
-                "invalid_request");
+            return SecurityResultFactory.Failure<RegisterUserResult>("Invalid captcha.");
         }
 
-        if (!await _captchaService.VerifyAsync(request.CaptchaToken, ct))
-        {
-            return new RegisterUserResult(false, "Invalid captcha.", "invalid_captcha");
-        }
-
+        // Step 3: Validate password strength
         var passwordValidation = _passwordStrengthValidator.Validate(request.Password);
         if (!passwordValidation.IsValid)
         {
-            return new RegisterUserResult(false,
-                passwordValidation.Message ?? "Password does not meet complexity requirements.",
-                passwordValidation.ErrorCode ?? "weak_password");
+            return SecurityResultFactory.Failure<RegisterUserResult>(
+                passwordValidation.Message ?? "Password does not meet complexity requirements.");
         }
 
+        // Step 4: Create user identity
         var registration = new UserRegistration
         {
             Email = request.Email.Trim(),
@@ -85,25 +89,73 @@ public sealed class RegisterUserHandler
                 registration.Consent.AcceptedAtUtc,
                 registration.Consent.IpAddress);
 
-            keycloakUserId = await _identityRegistry.CreateUserAsync(identityRegistration, request.Password, ct);
+            keycloakUserId = await _identityRegistry.CreateUserAsync(
+                identityRegistration,
+                request.Password,
+                ct);
         }
         catch (UserAlreadyExistsException)
         {
+            // User already exists: send informational email and return success
+            // (maintain zero-knowledge principle: don't reveal if email is registered)
             await _emailService.SendWelcomeOrAlreadyRegisteredEmailAsync(registration.Email, ct);
-            return new RegisterUserResult(true, "If this email is new, you'll receive a verification email.");
+            return SecurityResultFactory.Create(
+                new RegisterUserResult(
+                    true,
+                    "If this email is new, you'll receive a verification email."));
         }
 
+        // Step 5: Store verification token
         var verificationToken = Guid.NewGuid().ToString("N");
-        var stored =
-            await _verificationTokenStore.StoreAsync(verificationToken, keycloakUserId, TimeSpan.FromHours(24), ct);
-        if (!stored)
+        var tokenStored = await _verificationTokenStore.StoreAsync(
+            verificationToken,
+            keycloakUserId,
+            TimeSpan.FromHours(24),
+            ct);
+
+        if (!tokenStored)
         {
-            return new RegisterUserResult(false, "Failed to create verification token.",
-                "verification_token_store_failed");
+            return SecurityResultFactory.Failure<RegisterUserResult>(
+                "Failed to create verification token.");
         }
 
-        await _emailService.SendVerificationEmailAsync(registration.Email, verificationToken, ct);
+        // Step 6: Send verification email
+        try
+        {
+            await _emailService.SendVerificationEmailAsync(registration.Email, verificationToken, ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return SecurityResultFactory.Failure<RegisterUserResult>(
+                $"Email delivery failed: {ex.Message}");
+        }
 
-        return new RegisterUserResult(true, "If this email is new, you'll receive a verification email.");
+        return SecurityResultFactory.Create(
+            new RegisterUserResult(
+                true,
+                "If this email is new, you'll receive a verification email."));
+    }
+
+    /// <summary>
+    /// Validates the incoming registration request (terms acceptance and required fields).
+    /// </summary>
+    private static SecurityResult<RegisterUserRequest> ValidateRequest(RegisterUserRequest request)
+    {
+        if (!request.AcceptTerms)
+        {
+            return SecurityResultFactory.Failure<RegisterUserRequest>(
+                "Terms must be accepted.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Email)
+            || string.IsNullOrWhiteSpace(request.Username)
+            || string.IsNullOrWhiteSpace(request.Password)
+            || string.IsNullOrWhiteSpace(request.CaptchaToken))
+        {
+            return SecurityResultFactory.Failure<RegisterUserRequest>(
+                "Email, username, password and captcha token are required.");
+        }
+
+        return SecurityResultFactory.Create(request);
     }
 }

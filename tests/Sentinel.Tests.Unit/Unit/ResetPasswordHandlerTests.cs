@@ -5,6 +5,7 @@ using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Domain.Auth;
 using Sentinel.Security.Abstractions.Identity;
+using Sentinel.Security.Abstractions.Results;
 
 namespace Sentinel.Tests.Unit;
 
@@ -26,7 +27,7 @@ public sealed class ResetPasswordHandlerTests
             await sut.HandleAsync(new ResetPasswordRequest("bad-token", "NewPassw0rd!"), CancellationToken.None);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("invalid_or_expired_token", result.ErrorCode);
+        Assert.Equal("Invalid or expired token.", result.ErrorMessage);
     }
 
     [Fact]
@@ -49,7 +50,7 @@ public sealed class ResetPasswordHandlerTests
         var result = await sut.HandleAsync(new ResetPasswordRequest("token", "NewPassw0rd!"), CancellationToken.None);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("token_already_consumed", result.ErrorCode);
+        Assert.Equal("Token already consumed.", result.ErrorMessage);
     }
 
     [Fact]
@@ -82,5 +83,7 @@ public sealed class ResetPasswordHandlerTests
         var result = await sut.HandleAsync(new ResetPasswordRequest("token", "NewPassw0rd!"), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
+        Assert.Equal("Password updated successfully.", result.Value.Message);
     }
 }
+

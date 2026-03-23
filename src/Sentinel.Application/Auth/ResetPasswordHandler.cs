@@ -5,6 +5,7 @@ using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Domain.Auth;
 using Sentinel.Security.Abstractions.Identity;
+using Sentinel.Security.Abstractions.Results;
 
 namespace Sentinel.Application.Auth;
 
@@ -14,46 +15,76 @@ public sealed class ResetPasswordHandler(
     IJtiReplayCache replayCache,
     IAuthRevocationService authRevocationService)
 {
-    public async Task<ResetPasswordResult> HandleAsync(ResetPasswordRequest request, CancellationToken ct)
+    /// <summary>
+    /// Handles password reset with anti-replay token validation and session revocation.
+    /// Validates token → checks replay cache → updates password → revokes sessions.
+    /// </summary>
+    public async Task<SecurityResult<ResetPasswordResult>> HandleAsync(
+        ResetPasswordRequest request,
+        CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.Token) || string.IsNullOrWhiteSpace(request.NewPassword))
+        // Step 1: Validate request
+        var validationResult = ValidateRequest(request);
+        if (!validationResult.IsSuccess)
         {
-            return new ResetPasswordResult(false, "Token and new password are required.", "invalid_request");
+            return SecurityResultFactory.Failure<ResetPasswordResult>(validationResult.ErrorMessage!);
         }
 
-        var (isValid, email) = resetTokenProvider.ValidateToken(request.Token);
-        if (!isValid || string.IsNullOrWhiteSpace(email))
+        // Step 2: Validate token
+        var (isTokenValid, email) = resetTokenProvider.ValidateToken(request.Token);
+        if (!isTokenValid || string.IsNullOrWhiteSpace(email))
         {
-            return new ResetPasswordResult(false, "Invalid or expired token.", "invalid_or_expired_token");
+            return SecurityResultFactory.Failure<ResetPasswordResult>("Invalid or expired token.");
         }
 
+        // Step 3: Check replay cache (prevent token reuse)
         var tokenHash = SHA256.HashData(Encoding.UTF8.GetBytes(request.Token));
         var cacheKey = $"consumed_token:{Convert.ToHexString(tokenHash)}";
         var isFirstUse = await replayCache.TryStoreIfNotExistsAsync(cacheKey, TimeSpan.FromMinutes(15), ct);
         if (!isFirstUse)
         {
-            return new ResetPasswordResult(false, "Token already consumed.", "token_already_consumed");
+            return SecurityResultFactory.Failure<ResetPasswordResult>("Token already consumed.");
         }
 
-        var updated = await identityProvider.UpdatePasswordAsync(email, request.NewPassword, ct);
-        if (!updated)
+        // Step 4: Update password
+        var passwordUpdated = await identityProvider.UpdatePasswordAsync(email, request.NewPassword, ct);
+        if (!passwordUpdated)
         {
-            return new ResetPasswordResult(false, "Failed to update password in Identity Store.",
-                "password_update_failed");
+            return SecurityResultFactory.Failure<ResetPasswordResult>(
+                "Failed to update password in Identity Store.");
         }
 
+        // Step 5: Get user for session revocation
         var user = await identityProvider.GetUserByEmailAsync(email, ct);
         if (user is null)
         {
-            return new ResetPasswordResult(false, "Failed to revoke active sessions.", "session_revoke_failed");
+            return SecurityResultFactory.Failure<ResetPasswordResult>(
+                "Failed to retrieve user identity.");
         }
 
-        var revoked = await authRevocationService.RevokeAllSessionsAsync(user.Id, ct);
-        if (!revoked)
+        // Step 6: Revoke all active sessions
+        var sessionRevoked = await authRevocationService.RevokeAllSessionsAsync(user.Id, ct);
+        if (!sessionRevoked)
         {
-            return new ResetPasswordResult(false, "Failed to revoke active sessions.", "session_revoke_failed");
+            return SecurityResultFactory.Failure<ResetPasswordResult>(
+                "Failed to revoke active sessions.");
         }
 
-        return new ResetPasswordResult(true, "Password updated successfully.");
+        return SecurityResultFactory.Create(
+            new ResetPasswordResult(true, "Password updated successfully."));
+    }
+
+    /// <summary>
+    /// Validates the reset password request (token and new password).
+    /// </summary>
+    private static SecurityResult<ResetPasswordRequest> ValidateRequest(ResetPasswordRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Token) || string.IsNullOrWhiteSpace(request.NewPassword))
+        {
+            return SecurityResultFactory.Failure<ResetPasswordRequest>(
+                "Token and new password are required.");
+        }
+
+        return SecurityResultFactory.Create(request);
     }
 }
