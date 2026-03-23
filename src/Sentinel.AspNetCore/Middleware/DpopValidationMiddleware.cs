@@ -6,14 +6,14 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Security.Abstractions.DPoP;
-using Sentinel.Security.Abstractions.Nonce;
-using Sentinel.Security.Abstractions.Security;
+using IDpopProofValidator = Sentinel.Security.Abstractions.DPoP.IDpopProofValidator;
 
 namespace Sentinel.AspNetCore.Middleware;
 
-internal sealed class DpopValidationMiddleware(
+public sealed class DpopValidationMiddleware(
     RequestDelegate next,
     IDpopProofValidator validator,
     IDpopNonceStore nonceStore,
@@ -73,25 +73,12 @@ internal sealed class DpopValidationMiddleware(
             expectedNonce = await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted);
         }
 
-        DpopValidationResult result;
-        try
-        {
-            result = await validator.ValidateAsync(dpopProof, token, context.Request.Method, requestUrl, expectedNonce,
-                context.RequestAborted);
-        }
-        catch (ReplayCacheUnavailableException)
-        {
-            emitter.EmitAuthFailure("dpop_replay_cache_unavailable", context.User.FindFirst("sub")?.Value, ipHash);
-            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-            await context.Response.WriteAsJsonAsync(new ProblemDetails
-            {
-                Type = "/errors/replay-cache-unavailable",
-                Title = "Security subsystem unavailable",
-                Detail = "DPoP replay protection is temporarily unavailable.",
-                Status = StatusCodes.Status503ServiceUnavailable
-            });
-            return;
-        }
+        // Validate DPoP proof using new API
+        var validationRequest = new DpopValidationRequest(dpopProof, context.Request.Method, new Uri(requestUrl), token, expectedNonce);
+        var validationResult = await validator.ValidateAsync(validationRequest, context.RequestAborted);
+
+        // Convert to legacy format for middleware logic compatibility
+        var result = validationResult.ToLegacyResult();
 
         if (!result.IsValid)
         {
