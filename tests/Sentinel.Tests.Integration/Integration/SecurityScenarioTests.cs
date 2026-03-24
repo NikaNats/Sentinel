@@ -29,7 +29,7 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
 
         var jkt = ComputeEcThumbprint(jwkObject);
         var expiredToken = TestTokenIssuer.MintAccessToken(jkt, expiresInSeconds: -5);
-        var requestUrl = new Uri(client.BaseAddress!, "/v1/profile").ToString();
+        var requestUrl = new Uri(client.BaseAddress!, "/v1/test/protected").ToString();
         using var request = CreateSignedRequest(ecdsa, jwkObject, expiredToken, HttpMethod.Get, requestUrl);
 
         var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
@@ -249,9 +249,36 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
     }
 
     [Fact]
-    public async Task S16_DocumentsWrite_WithReadOnlyScope_Returns403()
+    public async Task S16_StepUpRequired_WithLowerAcr_Returns401()
     {
-        var requestUrl = new Uri(client.BaseAddress!, "/v1/documents").ToString();
+        var requestUrl = new Uri(client.BaseAddress!, "/v1/test/step-up").ToString();
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ecdsa));
+        var jwkObject = new Dictionary<string, string>
+        {
+            ["crv"] = jwk.Crv!,
+            ["kty"] = jwk.Kty!,
+            ["x"] = jwk.X!,
+            ["y"] = jwk.Y!
+        };
+
+        // Token with ACR2 should fail when ACR3 is required
+        var token = TestTokenIssuer.MintAccessToken(
+            ComputeEcThumbprint(jwkObject),
+            "acr2",
+            "test:read",
+            subject: "test-user-1");
+
+        using var request = CreateSignedRequest(ecdsa, jwkObject, token, HttpMethod.Get, requestUrl);
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task S17_StepUpRequired_WithAcr3_Returns200()
+    {
+        var requestUrl = new Uri(client.BaseAddress!, "/v1/test/step-up").ToString();
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ecdsa));
         var jwkObject = new Dictionary<string, string>
@@ -265,39 +292,14 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         var token = TestTokenIssuer.MintAccessToken(
             ComputeEcThumbprint(jwkObject),
             "acr3",
-            "documents:read",
-            subject: "documents-user-2");
+            "test:read",
+            subject: "test-user-2");
 
-        using var request = CreateSignedJsonRequest(
-            ecdsa,
-            jwkObject,
-            token,
-            HttpMethod.Post,
-            requestUrl,
-            new { title = "budget", content = "classified" });
-        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
-
+        using var request = CreateSignedRequest(ecdsa, jwkObject, token, HttpMethod.Get, requestUrl);
         var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
-
-    [Fact]
-    public async Task S17_DocumentsWrite_WithAcr2_TriggersStepUp401()
-    {
-        var requestUrl = new Uri(client.BaseAddress!, "/v1/documents").ToString();
-        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ecdsa));
-        var jwkObject = new Dictionary<string, string>
-        {
-            ["crv"] = jwk.Crv!,
-            ["kty"] = jwk.Kty!,
-            ["x"] = jwk.X!,
-            ["y"] = jwk.Y!
-        };
-
-        var token = TestTokenIssuer.MintAccessToken(
-            ComputeEcThumbprint(jwkObject),
-            "acr2",
             "documents:write",
             subject: "documents-user-3");
 

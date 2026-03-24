@@ -33,7 +33,7 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
     public async Task BearerTokenWithoutSdJwtFormat_IsRejectedAsDowngrade()
     {
         var token = TestTokenIssuer.MintAccessToken("fake-jkt");
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/profile");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/test/protected");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
@@ -45,7 +45,7 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
     [Fact]
     public async Task BearerSdJwtPresentation_WithInvalidKeyBinding_IsRejected()
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/profile");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/test/protected");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "issuer~disclosure~forged-kb");
 
         var response = await client.SendAsync(request, TestContext.Current.CancellationToken);

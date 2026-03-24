@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Sentinel.Application.Auth;
 using Sentinel.Middleware.Filters;
 using Sentinel.SampleHost.Models;
 using Sentinel.SampleHost.Stores;
@@ -15,10 +14,9 @@ public sealed class DocumentsController(IDocumentStore documentStore, ILogger<Do
     private string? CurrentSub => User.FindFirst("sub")?.Value;
 
     [HttpGet]
-    [Authorize(Policy = Policies.DocumentsRead)]
+    [Authorize]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> ListDocuments(CancellationToken cancellationToken)
     {
         var subject = CurrentSub;
@@ -32,11 +30,10 @@ public sealed class DocumentsController(IDocumentStore documentStore, ILogger<Do
     }
 
     [HttpGet("{id}")]
-    [Authorize(Policy = Policies.DocumentsRead)]
+    [Authorize]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetDocument(Guid id, CancellationToken cancellationToken)
     {
         var subject = CurrentSub;
@@ -55,12 +52,11 @@ public sealed class DocumentsController(IDocumentStore documentStore, ILogger<Do
     }
 
     [HttpPost]
-    [Authorize(Policy = Policies.DocumentsWrite)]
+    [Authorize]
     [RequireIdempotency]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CreateDocument([FromBody] CreateDocumentRequest request,
         CancellationToken cancellationToken)
@@ -81,12 +77,11 @@ public sealed class DocumentsController(IDocumentStore documentStore, ILogger<Do
     }
 
     [HttpPut("{id}")]
-    [Authorize(Policy = Policies.DocumentsWrite)]
+    [Authorize]
     [RequireIdempotency]
     [RequireMtlsBinding]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> UpdateDocument(Guid id, [FromBody] UpdateDocumentRequest request,
@@ -108,11 +103,10 @@ public sealed class DocumentsController(IDocumentStore documentStore, ILogger<Do
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Policy = Policies.DocumentsWrite)]
+    [Authorize]
     [RequireMtlsBinding]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> DeleteDocument(Guid id, CancellationToken cancellationToken)

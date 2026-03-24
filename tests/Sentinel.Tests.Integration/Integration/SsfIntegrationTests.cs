@@ -53,7 +53,7 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
 
         var preEventToken = TestTokenIssuer.MintAccessToken(jkt, sid: sid);
         using var preEventRequest = CreateDpopRequest(ecdsa, jwkObject, preEventToken,
-            new Uri(client.BaseAddress!, "/v1/profile").ToString(), "/v1/profile");
+            new Uri(client.BaseAddress!, "/v1/test/protected").ToString(), "/v1/test/protected");
         var preEventResponse = await client.SendAsync(preEventRequest, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, preEventResponse.StatusCode);
 
@@ -68,7 +68,7 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
 
         var postEventToken = TestTokenIssuer.MintAccessToken(jkt, sid: sid);
         using var postEventRequest = CreateDpopRequest(ecdsa, jwkObject, postEventToken,
-            new Uri(client.BaseAddress!, "/v1/profile").ToString(), "/v1/profile");
+            new Uri(client.BaseAddress!, "/v1/test/protected").ToString(), "/v1/test/protected");
         var postEventResponse = await client.SendAsync(postEventRequest, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Unauthorized, postEventResponse.StatusCode);

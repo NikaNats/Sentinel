@@ -18,7 +18,7 @@ public sealed class RateLimitingBypassAttemptsTests(SentinelApiFactory factory)
     [Fact]
     public async Task RepeatedRequests_WithSpoofedXForwardedForHeaders_DoNotBypassRateLimit()
     {
-        var requestUrl = new Uri(client.BaseAddress!, "/v1/profile").ToString();
+        var requestUrl = new Uri(client.BaseAddress!, "/v1/test/protected").ToString();
 
         var successCount = 0;
         var rateLimitedCount = 0;
