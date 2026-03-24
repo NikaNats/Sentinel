@@ -32,6 +32,11 @@
     <ProjectReference Include="..\..\src\Sentinel.Application\Sentinel.Application.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Infrastructure\Sentinel.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Presentation\Sentinel.Presentation.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.AspNetCore\Sentinel.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.SdJwt\Sentinel.SdJwt.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.Rar\Sentinel.Rar.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.Redis\Sentinel.Redis.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.EntityFrameworkCore\Sentinel.EntityFrameworkCore.csproj" />
   </ItemGroup>
 
 </Project>
