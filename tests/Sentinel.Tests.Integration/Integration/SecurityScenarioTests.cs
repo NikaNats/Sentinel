@@ -300,6 +300,25 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
+
+    [Fact]
+    public async Task S17B_DocumentsCreate_WithoutSurgicalAuth_Returns401()
+    {
+        var requestUrl = new Uri(client.BaseAddress!, "/v1/documents").ToString();
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ecdsa));
+        var jwkObject = new Dictionary<string, string>
+        {
+            ["crv"] = jwk.Crv!,
+            ["kty"] = jwk.Kty!,
+            ["x"] = jwk.X!,
+            ["y"] = jwk.Y!
+        };
+        var jkt = ComputeEcThumbprint(jwkObject);
+
+        var token = TestTokenIssuer.MintAccessToken(
+            jkt,
+            "acr3",
             "documents:write",
             subject: "documents-user-3");
 
