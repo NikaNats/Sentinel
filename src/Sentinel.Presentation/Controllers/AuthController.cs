@@ -157,7 +157,7 @@ public sealed class AuthController(
             return BadRequest(new ProblemDetails
             {
                 Type = ErrorCodes.WeakPassword,
-                Title = passwordValidation.Message ?? "Password does not meet complexity requirements.",
+                Title = passwordValidation.Error ?? "Password does not meet complexity requirements.",
                 Status = StatusCodes.Status400BadRequest
             });
         }

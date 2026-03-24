@@ -34,8 +34,8 @@
     <ProjectReference Include="..\Sentinel.Application\Sentinel.Application.csproj" />
     <ProjectReference Include="..\Sentinel.Domain\Sentinel.Domain.csproj" />
     <ProjectReference Include="..\Sentinel.Security.Abstractions\Sentinel.Security.Abstractions.csproj" />
-    <ProjectReference Include="..\Sentinel.Security.Captcha\Sentinel.Security.Captcha.csproj" />
-    <ProjectReference Include="..\Sentinel.Security.Tokens\Sentinel.Security.Tokens.csproj" />
+    <!-- <ProjectReference Include="..\Sentinel.Security.Captcha\Sentinel.Security.Captcha.csproj" /> -->
+    <!-- <ProjectReference Include="..\Sentinel.Security.Tokens\Sentinel.Security.Tokens.csproj" /> -->
     <ProjectReference Include="..\Sentinel.DPoP\Sentinel.DPoP.csproj" />
     <ProjectReference Include="..\Sentinel.Keycloak\Sentinel.Keycloak.csproj" />
   </ItemGroup>

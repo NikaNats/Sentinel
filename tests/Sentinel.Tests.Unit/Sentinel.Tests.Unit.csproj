@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <NoWarn>$(NoWarn);xUnit1051;CA2000;CA1849;CA1508;xUnit1012</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -37,6 +38,9 @@
     <ProjectReference Include="..\..\src\Sentinel.Rar\Sentinel.Rar.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Redis\Sentinel.Redis.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.EntityFrameworkCore\Sentinel.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.Session\Sentinel.Session.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.SSF\Sentinel.SSF.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.Keycloak\Sentinel.Keycloak.csproj" />
   </ItemGroup>
 
 </Project>

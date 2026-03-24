@@ -20,17 +20,29 @@ using Sentinel.Infrastructure.Auth.Handlers;
 using Sentinel.Infrastructure.Auth.Services;
 using Sentinel.Infrastructure.Cache;
 using Sentinel.Infrastructure.Cryptography;
-using Sentinel.Infrastructure.Notifications;
+// using Sentinel.Infrastructure.Notifications;
 using Sentinel.Infrastructure.Persistence;
 using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Security.Abstractions.Identity;
 using Sentinel.DPoP;
 using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Keycloak;
-using Sentinel.Security.Captcha;
-using Sentinel.Security.Tokens;
+// using Sentinel.Security.Captcha;
+// using Sentinel.Security.Tokens;
 
 namespace Sentinel.Infrastructure.DependencyInjection;
+
+// Temporary interface definition until real module exists
+public interface ISentinelSecurityBuilder
+{
+    IServiceCollection Services { get; }
+}
+
+// Temporary implementation until real builder exists
+public sealed class SentinelSecurityBuilder(IServiceCollection services) : ISentinelSecurityBuilder
+{
+    public IServiceCollection Services { get; } = services;
+}
 
 public static class SentinelModuleBuilderExtensions
 {
@@ -52,9 +64,11 @@ public static class SentinelModuleBuilderExtensions
             }, "Cryptography:ActiveKeyId must reference an existing key in Cryptography:KeyRing.")
             .ValidateOnStart();
 
-        _ = services.AddTurnstileService(options => configuration.GetSection("Captcha:Turnstile").Bind(options));
+        // TODO: Uncomment when Sentinel.Security.Captcha module is available
+        // _ = services.AddTurnstileService(options => configuration.GetSection("Captcha:Turnstile").Bind(options));
         _ = services.Configure<RegistrationOptions>(configuration.GetSection("Registration"));
-        _ = services.AddHmacTokenServices(options => configuration.GetSection("PasswordReset").Bind(options));
+        // TODO: Uncomment when Sentinel.Security.Tokens module is available
+        // _ = services.AddHmacTokenServices(options => configuration.GetSection("PasswordReset").Bind(options));
         _ = services.Configure<SocialFederationOptions>(configuration.GetSection("SocialFederation"));
 
         _ = services.AddSingleton<IConfigurationManager<OpenIdConnectConfiguration>>(sp =>
@@ -148,12 +162,13 @@ public static class SentinelModuleBuilderExtensions
     public static ISentinelSecurityBuilder AddNotificationsModule(this ISentinelSecurityBuilder builder,
         IConfiguration configuration)
     {
-        _ = builder.Services
-            .AddNotifications(configuration)
-            .AddSendGrid()
-            .AddTwilio();
-
-        _ = builder.Services.AddSingleton<IEmailService, LoggingEmailService>();
+        // TODO: Uncomment when Sentinel.Infrastructure.Notifications module is available
+        // _ = builder.Services
+        //     .AddNotifications(configuration)
+        //     .AddSendGrid()
+        //     .AddTwilio();
+        //
+        // _ = builder.Services.AddSingleton<IEmailService, LoggingEmailService>();
         return builder;
     }
 
