@@ -71,13 +71,13 @@ public sealed class CorrelationIdMiddlewareTests
         var context = new DefaultHttpContext();
         var correlationId = "test-correlation-123";
         context.Request.Headers["X-Correlation-ID"] = correlationId;
-        
+
         RequestDelegate next = _ => throw new InvalidOperationException("Test error");
         var sut = new CorrelationIdMiddleware(next, NullLogger<CorrelationIdMiddleware>.Instance);
 
         // Act & Assert
         await Assert.ThrowsAsync<InvalidOperationException>(() => sut.InvokeAsync(context));
-        
+
         context.Response.Headers["X-Correlation-ID"].ToString().Should().Be(correlationId);
         context.Items["X-Correlation-ID"].ToString().Should().Be(correlationId);
     }
@@ -96,7 +96,7 @@ public sealed class CorrelationIdMiddlewareTests
         // Assert
         var correlationId = context.Items["X-Correlation-ID"]?.ToString();
         correlationId.Should().NotBeNullOrWhiteSpace();
-        
+
         // Should be either a valid GUID or Activity trace ID format
         var isParseable = Guid.TryParse(correlationId, out _) || !string.IsNullOrWhiteSpace(correlationId);
         isParseable.Should().BeTrue();

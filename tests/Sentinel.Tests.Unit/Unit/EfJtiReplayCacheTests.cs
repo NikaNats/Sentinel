@@ -36,7 +36,7 @@ public sealed class EfJtiReplayCacheTests
         var sut = new EfJtiReplayCache(
             CreateDbContextFactory(),
             NullLogger<EfJtiReplayCache>.Instance);
-        
+
         var jti = Guid.NewGuid().ToString();
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
 
@@ -54,13 +54,13 @@ public sealed class EfJtiReplayCacheTests
         var sut = new EfJtiReplayCache(
             CreateDbContextFactory(),
             NullLogger<EfJtiReplayCache>.Instance);
-        
+
         var jti = Guid.NewGuid().ToString();
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
 
         // Act - Insert first time
         var firstResult = await sut.TryMarkUsedAsync(jti, expiresAt);
-        
+
         // Act - Insert second time (simulating a replay attack)
         var secondResult = await sut.TryMarkUsedAsync(jti, expiresAt);
 
@@ -102,7 +102,7 @@ public sealed class EfJtiReplayCacheTests
         var sut = new EfJtiReplayCache(
             CreateDbContextFactory(),
             NullLogger<EfJtiReplayCache>.Instance);
-        
+
         var jti = Guid.NewGuid().ToString();
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
 
@@ -127,7 +127,7 @@ public sealed class EfJtiReplayCacheTests
         // Insert an expired entry and a future entry
         var expiredJti = Guid.NewGuid().ToString();
         var futureJti = Guid.NewGuid().ToString();
-        
+
         await sut.TryMarkUsedAsync(expiredJti, DateTimeOffset.UtcNow.AddMinutes(-5)); // Expired
         await sut.TryMarkUsedAsync(futureJti, DateTimeOffset.UtcNow.AddMinutes(5));   // Future
 
@@ -138,7 +138,7 @@ public sealed class EfJtiReplayCacheTests
         using var context = CreateDbContext();
         var expiredEntry = await context.JtiReplayCache.FindAsync(expiredJti);
         var futureEntry = await context.JtiReplayCache.FindAsync(futureJti);
-        
+
         expiredEntry.Should().BeNull("Expired entry should be deleted");
         futureEntry.Should().NotBeNull("Future entry should be retained");
     }

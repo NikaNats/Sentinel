@@ -14,7 +14,7 @@ public sealed class RedisJtiReplayCacheTests
     {
         // Arrange
         var providerMock = new Mock<IRedisConnectionProvider>();
-        
+
         // Force the provider to throw a Redis connection exception
         providerMock
             .Setup(x => x.GetConnectionAsync(It.IsAny<CancellationToken>()))
@@ -28,7 +28,7 @@ public sealed class RedisJtiReplayCacheTests
 
         // Act - First call should succeed using in-memory fallback
         var firstResult = await sut.TryMarkUsedAsync(jti, expiresAt);
-        
+
         // Act - Second call should fail (replay detected by fallback)
         var secondResult = await sut.TryMarkUsedAsync(jti, expiresAt);
 
@@ -42,7 +42,7 @@ public sealed class RedisJtiReplayCacheTests
     {
         // Arrange
         var providerMock = new Mock<IRedisConnectionProvider>();
-        
+
         providerMock
             .Setup(x => x.GetConnectionAsync(It.IsAny<CancellationToken>()))
             .ThrowsAsync(new TimeoutException("Connection timeout"));
@@ -65,7 +65,7 @@ public sealed class RedisJtiReplayCacheTests
     {
         // Arrange
         var providerMock = new Mock<IRedisConnectionProvider>();
-        
+
         providerMock
             .Setup(x => x.GetConnectionAsync(It.IsAny<CancellationToken>()))
             .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect, "Outage"));
@@ -112,7 +112,7 @@ public sealed class RedisJtiReplayCacheTests
     {
         // Arrange
         var providerMock = new Mock<IRedisConnectionProvider>();
-        
+
         providerMock
             .Setup(x => x.GetConnectionAsync(It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Some unexpected error"));
