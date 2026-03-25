@@ -33,6 +33,9 @@
     <ProjectReference Include="..\..\src\Sentinel.Application\Sentinel.Application.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Infrastructure\Sentinel.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Presentation\Sentinel.Presentation.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.DPoP\Sentinel.DPoP.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.SdJwt\Sentinel.SdJwt.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.Security.Abstractions\Sentinel.Security.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

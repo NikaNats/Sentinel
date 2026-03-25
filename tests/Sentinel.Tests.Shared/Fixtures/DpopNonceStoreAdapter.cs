@@ -41,4 +41,12 @@ public sealed class DpopNonceStoreAdapter : AppDpopNonceStore
     {
         return _securityNonceStore.CleanupExpiredAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// Delegates to security nonce store's ConsumeNonceIfMatchesAsync.
+    /// </summary>
+    public Task<bool> ConsumeNonceIfMatchesAsync(string thumbprint, string expectedNonce, CancellationToken cancellationToken = default)
+    {
+        return _securityNonceStore.ConsumeNonceIfMatchesAsync(thumbprint, expectedNonce, cancellationToken);
+    }
 }
