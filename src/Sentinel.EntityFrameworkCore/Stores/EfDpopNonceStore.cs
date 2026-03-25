@@ -110,4 +110,45 @@ internal sealed class EfDpopNonceStore : IDpopNonceStore
             throw new NonceStoreUnavailableException("Database is unavailable for cleanup.", ex);
         }
     }
+
+    /// <summary>
+    /// Atomically verifies if the current nonce matches the expected value, and if so, deletes it.
+    /// Executes as a single SQL DELETE WHERE statement to prevent TOCTOU race conditions.
+    /// </summary>
+    public async Task<bool> ConsumeNonceIfMatchesAsync(string thumbprint, string expectedNonce, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbprint, nameof(thumbprint));
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedNonce, nameof(expectedNonce));
+
+        try
+        {
+            await using var context = _contextFactory.CreateDbContext();
+
+            // Translates to a single, atomic SQL DELETE statement.
+            // Returns the number of rows affected. If 1, it matched and was deleted. If 0, it failed.
+            var rowsDeleted = await context.DpopNonceStore
+                .Where(e => e.Thumbprint == thumbprint
+                         && e.Nonce == expectedNonce
+                         && e.ExpiresAt > DateTime.UtcNow)
+                .ExecuteDeleteAsync(cancellationToken);
+
+            bool wasConsumed = rowsDeleted > 0;
+
+            if (wasConsumed)
+            {
+                _logger.LogInformation("DPoP nonce atomically consumed for thumbprint: {Thumbprint}", thumbprint);
+            }
+            else
+            {
+                _logger.LogWarning("Atomic nonce consumption failed (mismatch or expired) for thumbprint: {Thumbprint}", thumbprint);
+            }
+
+            return wasConsumed;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Database unavailable for atomic nonce consumption");
+            throw new NonceStoreUnavailableException("Database is unavailable for nonce consumption.", ex);
+        }
+    }
 }

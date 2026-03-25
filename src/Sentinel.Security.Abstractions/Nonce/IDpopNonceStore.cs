@@ -31,4 +31,20 @@ public interface IDpopNonceStore
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <exception cref="Exceptions.NonceStoreUnavailableException">Thrown if the store is unreachable.</exception>
     Task CleanupExpiredAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically verifies if the current nonce matches the expected value, and if so, deletes it.
+    /// This prevents TOCTOU (Time-of-Check to Time-of-Use) race conditions during concurrent proof replays.
+    ///
+    /// Implementation guarantees:
+    /// - Redis: Uses Lua script for atomic compare-and-delete
+    /// - EF Core: Uses single SQL DELETE WHERE statement
+    /// - In-Memory: Uses ConcurrentDictionary with exact KeyValuePair matching
+    /// </summary>
+    /// <param name="thumbprint">JWK thumbprint identifying the client.</param>
+    /// <param name="expectedNonce">The nonce presented by the client in the DPoP proof.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True if the nonce matched and was successfully consumed; False if it was missing, expired, or mismatched.</returns>
+    /// <exception cref="Exceptions.NonceStoreUnavailableException">Thrown if the store is unreachable.</exception>
+    Task<bool> ConsumeNonceIfMatchesAsync(string thumbprint, string expectedNonce, CancellationToken cancellationToken = default);
 }

@@ -55,4 +55,29 @@ public sealed class InMemoryDpopNonceStore : IDpopNonceStore
 
         return Task.CompletedTask;
     }
+
+    public Task<bool> ConsumeNonceIfMatchesAsync(string thumbprint, string expectedNonce, CancellationToken cancellationToken = default)
+    {
+        if (_store.TryGetValue(thumbprint, out var entry))
+        {
+            // Check if expired
+            if (entry.Expiry <= _timeProvider.GetUtcNow())
+            {
+                _store.TryRemove(thumbprint, out _);
+                return Task.FromResult(false);
+            }
+
+            // Check if nonce matches
+            if (entry.Nonce == expectedNonce)
+            {
+                // Atomically remove it
+                if (_store.TryRemove(thumbprint, out _))
+                {
+                    return Task.FromResult(true);
+                }
+            }
+        }
+
+        return Task.FromResult(false);
+    }
 }
