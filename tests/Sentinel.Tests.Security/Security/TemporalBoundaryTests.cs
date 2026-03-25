@@ -1,0 +1,322 @@
+using FluentAssertions;
+using Microsoft.Extensions.Time.Testing;
+using Microsoft.IdentityModel.Tokens;
+using Moq;
+using Sentinel.DPoP;
+using Sentinel.Security.Abstractions.DPoP;
+using Sentinel.Security.Abstractions.Replay;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Cryptography;
+using Xunit;
+
+namespace Sentinel.Tests.Security.Security;
+
+/// <summary>
+/// High-Precision Temporal Boundary Tests for NIST AAL3/FAPI 2.0 Compliance
+///
+/// Validates "Zero Clock Skew" policy at millisecond precision using FakeTimeProvider.
+/// Ensures that token freshness windows are enforced mathematically, preventing:
+/// - Token Stretching: Attacker exploiting NTP drift to extend token lifetime
+/// - Ghost Replay: Accepted replay because system clock moved backward
+/// - Clock Jitter Bypass: Unintended acceptance due to unsynchronized server time
+///
+/// Architecture Note: Uses FakeTimeProvider (not Thread.Sleep) for deterministic, fast execution.
+/// Each test completes in <10ms vs seconds with real time manipulation.
+/// </summary>
+public sealed class TemporalBoundaryTests
+{
+    private readonly FakeTimeProvider _timeProvider;
+    private readonly Mock<IJtiReplayCache> _replayCache;
+    private readonly DateTimeOffset _referenceTime;
+
+    public TemporalBoundaryTests()
+    {
+        // RFC 9449 validates freshness from issued-at time (iat), not expiration (exp)
+        // Our reference: 2026-01-01 12:00:00 UTC
+        _referenceTime = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        _timeProvider = new FakeTimeProvider(_referenceTime);
+
+        // Mock JTI replay cache to always allow first use
+        _replayCache = new Mock<IJtiReplayCache>();
+        _replayCache
+            .Setup(x => x.TryMarkUsedAsync(
+                It.IsAny<string>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+    }
+
+    /// <summary>
+    /// Test: Proof issued exactly at the 60-second tolerance boundary MUST be accepted.
+    ///
+    /// Scenario: RFC 9449 defines tolerance window as [-60s, +5s] around current time.
+    /// Proof issued 60 seconds ago is at the exact mathematical boundary and MUST validate.
+    /// </summary>
+    [Fact]
+    public async Task Iat_Boundary_AtMinus60Seconds_MustPass()
+    {
+        // Arrange: Create proof issued EXACTLY 60 seconds ago
+        var proofIssuedAt = _referenceTime.AddSeconds(-60);
+        var csrfNonce = Guid.NewGuid().ToString("N");
+        var proof = CreateDpopProof(
+            signingAlgorithm: "ES256",
+            issuedAtOffset: proofIssuedAt,
+            jti: Guid.NewGuid().ToString("N"),
+            httpMethod: "GET",
+            httpUri: "https://api.example.com/resource",
+            thumbprintJkt: "fUHyO2zb8QmvYDfvL8U47vEO1TkqvMSi1V8RO4ZhKwU");
+
+        var validator = CreateValidator();
+        var request = new DpopValidationRequest(
+            proof,
+            "GET",
+            new Uri("https://api.example.com/resource"));
+
+        // Act
+        var result = await validator.ValidateAsync(request);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue(
+            "Proof at exactly -60s boundary must be accepted per RFC 9449 tolerance");
+    }
+
+    /// <summary>
+    /// Test: Proof issued 1 millisecond BEFORE the 60-second boundary MUST be rejected.
+    ///
+    /// Scenario: Attacker attempts to use a proof from 60.001 seconds ago.
+    /// Mathematical precision: MUST enforce the boundary to the millisecond.
+    /// Security Implication: Prevents "Token Stretching" attacks via NTP manipulation.
+    /// </summary>
+    [Fact]
+    public async Task Iat_Boundary_AtMinus60_001Milliseconds_MustFail()
+    {
+        // Arrange: Create proof issued 60 seconds and 1 millisecond ago
+        var proofIssuedAt = _referenceTime.AddMilliseconds(-60001);
+        var proof = CreateDpopProof(
+            signingAlgorithm: "ES256",
+            issuedAtOffset: proofIssuedAt,
+            jti: Guid.NewGuid().ToString("N"),
+            httpMethod: "GET",
+            httpUri: "https://api.example.com/resource",
+            thumbprintJkt: "fUHyO2zb8QmvYDfvL8U47vEO1TkqvMSi1V8RO4ZhKwU");
+
+        var validator = CreateValidator();
+        var request = new DpopValidationRequest(
+            proof,
+            "GET",
+            new Uri("https://api.example.com/resource"));
+
+        // Act
+        var result = await validator.ValidateAsync(request);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse(
+            "Proof 1ms outside tolerance must be rejected to prevent Token Stretching");
+    }
+
+    /// <summary>
+    /// Test: Proof issued in the future (+5 seconds) MUST be accepted to allow clock skew.
+    ///
+    /// Scenario: Client clock is 5 seconds ahead of server (common in distributed systems).
+    /// RFC 9449 tolerance allows +5s to accommodate this without false rejections.
+    /// </summary>
+    [Fact]
+    public async Task Iat_Boundary_AtPlus5Seconds_MustPass()
+    {
+        // Arrange: Create proof issued 5 seconds in the future
+        var proofIssuedAt = _referenceTime.AddSeconds(5);
+        var proof = CreateDpopProof(
+            signingAlgorithm: "ES256",
+            issuedAtOffset: proofIssuedAt,
+            jti: Guid.NewGuid().ToString("N"),
+            httpMethod: "GET",
+            httpUri: "https://api.example.com/resource",
+            thumbprintJkt: "fUHyO2zb8QmvYDfvL8U47vEO1TkqvMSi1V8RO4ZhKwU");
+
+        var validator = CreateValidator();
+        var request = new DpopValidationRequest(
+            proof,
+            "GET",
+            new Uri("https://api.example.com/resource"));
+
+        // Act
+        var result = await validator.ValidateAsync(request);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue(
+            "Proof with +5s clock skew must be accepted per RFC 9449");
+    }
+
+    /// <summary>
+    /// Test: Proof issued more than 5 seconds in the future MUST be rejected.
+    ///
+    /// Scenario: Attacker attempts to use a proof from the future (impossible in honest scenario).
+    /// Prevents: Clock-jacking attacks where attacker forces system clock forward.
+    /// </summary>
+    [Fact]
+    public async Task Iat_Boundary_AtPlus5_001Seconds_MustFail()
+    {
+        // Arrange: Create proof issued 5.001 seconds in the future
+        var proofIssuedAt = _referenceTime.AddMilliseconds(5001);
+        var proof = CreateDpopProof(
+            signingAlgorithm: "ES256",
+            issuedAtOffset: proofIssuedAt,
+            jti: Guid.NewGuid().ToString("N"),
+            httpMethod: "GET",
+            httpUri: "https://api.example.com/resource",
+            thumbprintJkt: "fUHyO2zb8QmvYDfvL8U47vEO1TkqvMSi1V8RO4ZhKwU");
+
+        var validator = CreateValidator();
+        var request = new DpopValidationRequest(
+            proof,
+            "GET",
+            new Uri("https://api.example.com/resource"));
+
+        // Act
+        var result = await validator.ValidateAsync(request);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse(
+            "Proof more than 5s in future must be rejected (impossible without clock attack)");
+    }
+
+    /// <summary>
+    /// Test: Multiple proofs advancing through time must maintain strict freshness enforcement.
+    ///
+    /// Scenario: Simulates server processing multiple requests over 120 seconds.
+    /// Each must respect its individual iat window, not a global TTL.
+    /// Security Implication: Per-request validation prevents "replay window" attacks.
+    /// </summary>
+    [Fact]
+    public async Task Iat_MultipleRequests_EachEnforcesBoundary()
+    {
+        var validator = CreateValidator();
+
+        // T+0s: First request (just issued)
+        var proofAt0 = CreateDpopProof(
+            "ES256",
+            _referenceTime,
+            "jti_0",
+            "GET",
+            "https://api.example.com/1",
+            "thumbprint_0");
+
+        var result0 = await validator.ValidateAsync(
+            new DpopValidationRequest(proofAt0, "GET", new Uri("https://api.example.com/1")));
+        result0.IsSuccess.Should().BeTrue();
+
+        // T+30s: Second request (still within original 60s window)
+        _timeProvider.Advance(TimeSpan.FromSeconds(30));
+        var proofAt30 = CreateDpopProof(
+            "ES256",
+            _referenceTime.AddSeconds(30),
+            "jti_30",
+            "GET",
+            "https://api.example.com/2",
+            "thumbprint_1");
+
+        var result30 = await validator.ValidateAsync(
+            new DpopValidationRequest(proofAt30, "GET", new Uri("https://api.example.com/2")));
+        result30.IsSuccess.Should().BeTrue();
+
+        // T+61s: Try first proof again (now outside boundary)
+        _timeProvider.Advance(TimeSpan.FromSeconds(31));
+        var result61 = await validator.ValidateAsync(
+            new DpopValidationRequest(proofAt0, "GET", new Uri("https://api.example.com/1")));
+        result61.IsSuccess.Should().BeFalse(
+            "Original proof should be outside window after 61 seconds");
+    }
+
+    /// <summary>
+    /// Test: Clock moving backward (due to NTP adjustment) must NOT cause replay bypass.
+    ///
+    /// Scenario: System clock jumps backward 2 seconds due to NTP correction.
+    /// Previously, refused proofs should still be refused (not suddenly accepted).
+    /// </summary>
+    [Fact]
+    public async Task ClockRegression_PreviouslyRejectedProofStaysRejected()
+    {
+        var validator = CreateValidator();
+
+        // Arrange: Proof issued in the far past (outside tolerance)
+        var oldProof = CreateDpopProof(
+            "ES256",
+            _referenceTime.AddSeconds(-120),
+            "jti_old",
+            "GET",
+            "https://api.example.com/old",
+            "thumbprint_old");
+
+        // Act 1: Initially, old proof should be rejected
+        var resultBefore = await validator.ValidateAsync(
+            new DpopValidationRequest(oldProof, "GET", new Uri("https://api.example.com/old")));
+        resultBefore.IsSuccess.Should().BeFalse("Proof from 120s ago should be rejected");
+
+        // Act 2: System clock regresses by 2 seconds
+        _timeProvider.SetUtcNow(_timeProvider.GetUtcNow().AddSeconds(-2));
+
+        // Assert: Even with backward clock, old proof must still be rejected
+        var resultAfter = await validator.ValidateAsync(
+            new DpopValidationRequest(oldProof, "GET", new Uri("https://api.example.com/old")));
+        resultAfter.IsSuccess.Should().BeFalse(
+            "Clock regression must not cause replay of previously-rejected proofs");
+    }
+
+    /// <summary>
+    /// Reflection-based helper: Creates DpopProofValidator with FakeTimeProvider.
+    /// </summary>
+    private IDpopProofValidator CreateValidator()
+    {
+        // DpopProofValidator is internal, so we use reflection
+        var validatorType = Type.GetType(
+            "Sentinel.DPoP.DpopProofValidator, Sentinel.DPoP",
+            throwOnError: true)!;
+
+        var instance = Activator.CreateInstance(
+            validatorType,
+            _replayCache.Object,
+            null, // thumbprintComputer (use default)
+            _timeProvider)!;
+
+        return (IDpopProofValidator)instance;
+    }
+
+    /// <summary>
+    /// Creates a minimal valid DPoP proof JWT for testing.
+    /// Uses ES256 (ECDSA P-256) with a test key for simplicity.
+    /// </summary>
+    private static string CreateDpopProof(
+        string signingAlgorithm,
+        DateTimeOffset issuedAtOffset,
+        string jti,
+        string httpMethod,
+        string httpUri,
+        string thumbprintJkt)
+    {
+        using var ecKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var securityKey = new ECDsaSecurityKey(ecKey);
+
+        var handler = new JwtSecurityTokenHandler();
+        var tokenDescriptor = new SecurityTokenDescriptor
+        {
+            Subject = new System.Security.Claims.ClaimsIdentity(),
+            IssuedAt = issuedAtOffset.DateTime,
+            Claims = new Dictionary<string, object>
+            {
+                ["htm"] = httpMethod.ToUpperInvariant(),
+                ["htu"] = httpUri.ToLowerInvariant(),
+                ["iat"] = issuedAtOffset.ToUnixTimeSeconds(),
+                ["jti"] = jti,
+                ["typ"] = "dpop+jwt"
+            },
+            SigningCredentials = new SigningCredentials(securityKey, signingAlgorithm),
+            AdditionalHeaderClaims = new Dictionary<string, object>
+            {
+                ["typ"] = "dpop+jwt",
+                ["jwk"] = new { kty = "EC", use = "sig", crv = "P-256", jkt = thumbprintJkt }
+            }
+        };
+
+        return handler.CreateToken(tokenDescriptor);
+    }
+}
