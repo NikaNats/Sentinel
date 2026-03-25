@@ -78,13 +78,15 @@ Best practice for audit readiness in this repo:
 | Filters | ✅ IEndpointFilter | Idempotency, ACR Step-Up, RAR validation |
 | Test Coverage | ✅ 141/141 passing | Zero MVC dependencies, RFC compliance verified |
 | Sample App | ✅ AOT-ready | `samples/Sentinel.Sample.MinimalApi` with `PublishAot=true` |
-| Backward Compat | ✅ MVC still works | `src/Sentinel.Presentation/` functional until v2.0 |
-| Performance | ✅ 5.5x improvement | 250ms→45ms startup, 180MB→32MB memory |
+| Zero Reflection | ✅ 100% | All MVC removed, InMemory fallback eliminated (Fail-Closed only) |
+| Native AOT | ✅ Production Ready | Self-contained binaries; no reflection metadata |
 
 ## Next Audit Cycle (v2.0 - 2026-Q3)
 
-- [ ] Remove `Sentinel.Presentation` MVC controllers
-- [ ] Archive historical gate/packaging documents
+- [x] Remove `Sentinel.Presentation` MVC controllers *(COMPLETED)*
+- [x] Archive historical gate/packaging documents *(COMPLETED)*
+- [x] Eliminate InMemory fallback logic (Fail-Closed semantics only) *(COMPLETED)*
+- [x] Remove deprecated abstraction bridges *(COMPLETED)*
 - [ ] Publish AOT-only distribution package
 - [ ] Update container images to use self-contained binaries
 - [ ] Re-certify RFC compliance with production deployment

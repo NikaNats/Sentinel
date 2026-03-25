@@ -8,12 +8,7 @@ public static class KeycloakOptionsExtensions
 
         var configuredSeconds = options.SsoSessionMaxLifespanSeconds > 0
             ? options.SsoSessionMaxLifespanSeconds
-            : options.SessionMaxLifespanSeconds ?? 28_800;
-
-        if (configuredSeconds <= 0)
-        {
-            configuredSeconds = 28_800;
-        }
+            : 28_800; // Default 8 hours
 
         return TimeSpan.FromSeconds(configuredSeconds);
     }

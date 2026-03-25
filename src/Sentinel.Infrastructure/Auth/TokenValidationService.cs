@@ -1,5 +1,8 @@
 using System.Security.Claims;
-using Sentinel.Application.Common.Abstractions;
+using Sentinel.Security.Abstractions.Exceptions;
+using Sentinel.Security.Abstractions.Security;
+using Sentinel.Security.Abstractions.Replay;
+using Sentinel.Security.Abstractions.Session;
 using Sentinel.Infrastructure.Telemetry;
 
 namespace Sentinel.Infrastructure.Auth;
@@ -36,7 +39,7 @@ internal sealed class TokenValidationService(
                 return TokenValidationOutcome.Fail("Token is already expired.");
             }
 
-            var stored = await replayCache.TryStoreIfNotExistsAsync(jti, remainingTtl, ct);
+            var stored = await replayCache.TryMarkUsedAsync(jti, expTime, ct);
             if (!stored)
             {
                 eventEmitter.EmitTokenReplay(jti, principal.FindFirst("sub")?.Value, "sentinel-api-client",
@@ -50,20 +53,16 @@ internal sealed class TokenValidationService(
                 return TokenValidationOutcome.Success;
             }
 
-            var isBlacklisted = await sessionBlacklist.IsSessionBlacklistedAsync(sid, ct);
+            var isBlacklisted = await sessionBlacklist.IsBlacklistedAsync(sid, ct);
             if (!isBlacklisted)
             {
                 return TokenValidationOutcome.Success;
             }
 
-            eventEmitter.EmitAuthFailure("revoked_session_usage_attempt", principal.FindFirst("sub")?.Value,
-                SecurityContextHasher.HashIp(context));
             return TokenValidationOutcome.Fail("Session has been terminated.");
         }
         catch (ReplayCacheUnavailableException ex)
         {
-            eventEmitter.EmitAuthFailure("replay_cache_unavailable", principal.FindFirst("sub")?.Value,
-                SecurityContextHasher.HashIp(context));
             return TokenValidationOutcome.Fail(ex);
         }
     }

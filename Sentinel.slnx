@@ -1,13 +1,10 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Sentinel.AspNetCore/Sentinel.AspNetCore.csproj" />
-    <Project Path="src/Sentinel.Presentation/Sentinel.Presentation.csproj" />
     <Project Path="src/Sentinel.Infrastructure/Sentinel.Infrastructure.csproj" />
     <Project Path="src/Sentinel.Application/Sentinel.Application.csproj" />
     <Project Path="src/Sentinel.Domain/Sentinel.Domain.csproj" />
     <Project Path="src/Sentinel.Security.Abstractions/Sentinel.Security.Abstractions.csproj" />
-    <Project Path="src/Sentinel.Security.Captcha/Sentinel.Security.Captcha.csproj" />
-    <Project Path="src/Sentinel.Security.Tokens/Sentinel.Security.Tokens.csproj" />
     <Project Path="src/Sentinel.DPoP/Sentinel.DPoP.csproj" />
     <Project Path="src/Sentinel.Session/Sentinel.Session.csproj" />
     <Project Path="src/Sentinel.SSF/Sentinel.SSF.csproj" />

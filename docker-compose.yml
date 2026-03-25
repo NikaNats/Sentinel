@@ -56,7 +56,7 @@ services:
   sentinel-api:
     build:
       context: .
-      dockerfile: src/Sentinel.Presentation/Dockerfile
+      dockerfile: src/Sentinel.AspNetCore/Dockerfile
     container_name: sentinel-api
     depends_on:
       keycloak:

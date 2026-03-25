@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -20,15 +19,12 @@ using Sentinel.Infrastructure.Auth.Handlers;
 using Sentinel.Infrastructure.Auth.Services;
 using Sentinel.Infrastructure.Cache;
 using Sentinel.Infrastructure.Cryptography;
-// using Sentinel.Infrastructure.Notifications;
 using Sentinel.Infrastructure.Persistence;
 using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Security.Abstractions.Identity;
-using Sentinel.DPoP;
 using Sentinel.Security.Abstractions.DPoP;
+using Sentinel.Security.Abstractions.Security;
 using Sentinel.Keycloak;
-// using Sentinel.Security.Captcha;
-// using Sentinel.Security.Tokens;
 
 namespace Sentinel.Infrastructure.DependencyInjection;
 
@@ -64,11 +60,7 @@ public static class SentinelModuleBuilderExtensions
             }, "Cryptography:ActiveKeyId must reference an existing key in Cryptography:KeyRing.")
             .ValidateOnStart();
 
-        // TODO: Uncomment when Sentinel.Security.Captcha module is available
-        // _ = services.AddTurnstileService(options => configuration.GetSection("Captcha:Turnstile").Bind(options));
         _ = services.Configure<RegistrationOptions>(configuration.GetSection("Registration"));
-        // TODO: Uncomment when Sentinel.Security.Tokens module is available
-        // _ = services.AddHmacTokenServices(options => configuration.GetSection("PasswordReset").Bind(options));
         _ = services.Configure<SocialFederationOptions>(configuration.GetSection("SocialFederation"));
 
         _ = services.AddSingleton<IConfigurationManager<OpenIdConnectConfiguration>>(sp =>
@@ -154,7 +146,7 @@ public static class SentinelModuleBuilderExtensions
             })
             .AddHttpMessageHandler<KeycloakAdminAuthHandler>();
         _ = builder.Services.AddHttpClient("keycloak-admin");
-        _ = builder.Services.AddHttpClient<IAuthRevocationService, KeycloakAuthRevocationService>();
+        _ = builder.Services.AddHttpClient<Sentinel.Application.Auth.Interfaces.IAuthRevocationService, KeycloakAuthRevocationService>();
         _ = builder.Services.AddHostedService<SocialFederationConfiguratorHostedService>();
         return builder;
     }
@@ -164,11 +156,9 @@ public static class SentinelModuleBuilderExtensions
     {
         // TODO: Uncomment when Sentinel.Infrastructure.Notifications module is available
         // _ = builder.Services
-        //     .AddNotifications(configuration)
-        //     .AddSendGrid()
-        //     .AddTwilio();
-        //
-        // _ = builder.Services.AddSingleton<IEmailService, LoggingEmailService>();
+        // Notifications module registration placeholder.
+        // When Sentinel.Infrastructure.Notifications module becomes available,
+        // add service registrations here.
         return builder;
     }
 

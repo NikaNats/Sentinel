@@ -144,11 +144,6 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
                 new SessionBlacklistCacheAdapter(
                     sp.GetRequiredService<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>(),
                     sp.GetService<TimeProvider>()));
-
-            // Bridge Application layer IDpopNonceStore to Security layer implementation via adapter
-            services.AddSingleton<Sentinel.Application.Common.Abstractions.IDpopNonceStore>(sp =>
-                new DpopNonceStoreAdapter(
-                    sp.GetRequiredService<Sentinel.Security.Abstractions.Nonce.IDpopNonceStore>()));
         });
     }
 

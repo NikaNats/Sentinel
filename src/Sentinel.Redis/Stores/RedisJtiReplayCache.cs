@@ -1,16 +1,18 @@
 namespace Sentinel.Redis.Stores;
 
 using Sentinel.Security.Abstractions.Replay;
-using Sentinel.Security.Abstractions.InMemory;
 
 /// <summary>
-/// Redis-backed implementation of IJtiReplayCache with graceful in-memory fallback.
+/// Redis-backed implementation of IJtiReplayCache with Fail-Closed semantics.
 /// Stores JWT ID (jti) claims to prevent replay attacks.
+///
+/// SECURITY INVARIANT: If Redis is unavailable, TryMarkUsedAsync throws an exception.
+/// This ensures replay protection never degrades to unsafe fallback behavior.
+/// Clients receive 503 Service Unavailable, not a false positive authorization.
 /// </summary>
 public sealed class RedisJtiReplayCache : IJtiReplayCache
 {
     private readonly IRedisConnectionProvider _provider;
-    private readonly InMemoryJtiReplayCache? _fallback;
     private readonly string _keyPrefix;
     private readonly ILogger<RedisJtiReplayCache> _logger;
 
@@ -22,7 +24,6 @@ public sealed class RedisJtiReplayCache : IJtiReplayCache
         _provider = provider;
         _keyPrefix = options.KeyPrefix;
         _logger = logger;
-        _fallback = options.EnableInMemoryFallback ? new InMemoryJtiReplayCache() : null;
     }
 
     /// <summary>
@@ -49,14 +50,8 @@ public sealed class RedisJtiReplayCache : IJtiReplayCache
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Redis unavailable for jti replay check, falling back to in-memory");
-
-            if (_fallback != null)
-            {
-                return await _fallback.TryMarkUsedAsync(jti, expiresAt, cancellationToken);
-            }
-
-            throw new ReplayCacheUnavailableException($"Redis is unavailable and in-memory fallback is disabled.", ex);
+            _logger.LogError(ex, "Redis unavailable and in-memory fallback is disabled (Fail-Closed)");
+            throw new ReplayCacheUnavailableException($"Redis is unavailable; replay cache check failed. System is Fail-Closed.", ex);
         }
     }
 
@@ -78,15 +73,8 @@ public sealed class RedisJtiReplayCache : IJtiReplayCache
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Redis unavailable for jti cleanup");
-
-            if (_fallback != null)
-            {
-                await _fallback.CleanupExpiredAsync(cancellationToken);
-                return;
-            }
-
-            throw new ReplayCacheUnavailableException("Redis is unavailable for cleanup.", ex);
+            _logger.LogError(ex, "Redis unavailable during cleanup (Fail-Closed)");
+            throw new ReplayCacheUnavailableException("Redis is unavailable for cleanup. System is Fail-Closed.", ex);
         }
     }
 }

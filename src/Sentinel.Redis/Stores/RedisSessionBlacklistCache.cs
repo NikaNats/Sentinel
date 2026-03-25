@@ -1,16 +1,17 @@
 namespace Sentinel.Redis.Stores;
 
 using Sentinel.Security.Abstractions.Session;
-using Sentinel.Security.Abstractions.InMemory;
 
 /// <summary>
-/// Redis-backed implementation of ISessionBlacklistCache with graceful in-memory fallback.
+/// Redis-backed implementation of ISessionBlacklistCache with Fail-Closed semantics.
 /// Stores sessions marked as revoked/logged out.
+///
+/// SECURITY INVARIANT: If Redis is unavailable, all operations throw an exception.
+/// Session blacklist MUST never degrade to unsafe fallback behavior.
 /// </summary>
 public sealed class RedisSessionBlacklistCache : ISessionBlacklistCache
 {
     private readonly IRedisConnectionProvider _provider;
-    private readonly InMemorySessionBlacklistCache? _fallback;
     private readonly string _keyPrefix;
     private readonly ILogger<RedisSessionBlacklistCache> _logger;
 
@@ -22,7 +23,6 @@ public sealed class RedisSessionBlacklistCache : ISessionBlacklistCache
         _provider = provider;
         _keyPrefix = options.KeyPrefix;
         _logger = logger;
-        _fallback = options.EnableInMemoryFallback ? new InMemorySessionBlacklistCache() : null;
     }
 
     /// <summary>
@@ -47,15 +47,8 @@ public sealed class RedisSessionBlacklistCache : ISessionBlacklistCache
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Redis unavailable for session blacklist, falling back to in-memory");
-
-            if (_fallback != null)
-            {
-                await _fallback.BlacklistSessionAsync(sessionId, expiresAt, cancellationToken);
-                return;
-            }
-
-            throw new SessionBlacklistUnavailableException("Redis is unavailable for session blacklist.", ex);
+            _logger.LogError(ex, "Redis unavailable for session blacklist (Fail-Closed)");
+            throw new SessionBlacklistUnavailableException("Redis is unavailable; session blacklist is Fail-Closed.", ex);
         }
     }
 
@@ -80,14 +73,8 @@ public sealed class RedisSessionBlacklistCache : ISessionBlacklistCache
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Redis unavailable for session blacklist check, falling back to in-memory");
-
-            if (_fallback != null)
-            {
-                return await _fallback.IsBlacklistedAsync(sessionId, cancellationToken);
-            }
-
-            throw new SessionBlacklistUnavailableException("Redis is unavailable for session blacklist check.", ex);
+            _logger.LogError(ex, "Redis unavailable for session blacklist check (Fail-Closed)");
+            throw new SessionBlacklistUnavailableException("Redis is unavailable for session blacklist check. System is Fail-Closed.", ex);
         }
     }
 
@@ -100,24 +87,16 @@ public sealed class RedisSessionBlacklistCache : ISessionBlacklistCache
         try
         {
             // Just-in-time asynchronous connection resolution
-            // (verifies connection is available without performing expensive operations)
             _ = await _provider.GetConnectionAsync(cancellationToken);
 
             // Redis automatically expires keys via TTL
-            _logger.LogDebug("Session cleanup (no-op in Redis, TTL-based expiration)");
+            _logger.LogDebug("Session blacklist cleanup (no-op in Redis, TTL-based expiration)");
             await Task.CompletedTask;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Redis unavailable for session cleanup");
-
-            if (_fallback != null)
-            {
-                await _fallback.CleanupExpiredAsync(cancellationToken);
-                return;
-            }
-
-            throw new SessionBlacklistUnavailableException("Redis is unavailable for cleanup.", ex);
+            _logger.LogError(ex, "Redis unavailable for session blacklist cleanup (Fail-Closed)");
+            throw new SessionBlacklistUnavailableException("Redis is unavailable for cleanup. System is Fail-Closed.", ex);
         }
     }
 }

@@ -6,9 +6,10 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
-using Sentinel.Application.Common.Abstractions;
 using Sentinel.Security.Diagnostics;
 using Sentinel.Security.Abstractions.DPoP;
+using Sentinel.Security.Abstractions.Nonce;
+using Sentinel.Security.Abstractions.Security;
 using IDpopProofValidator = Sentinel.Security.Abstractions.DPoP.IDpopProofValidator;
 
 namespace Sentinel.AspNetCore.Middleware;
@@ -17,8 +18,7 @@ public sealed class DpopValidationMiddleware(
     RequestDelegate next,
     IDpopProofValidator validator,
     IDpopNonceStore nonceStore,
-    IDpopThumbprintComputer thumbprintComputer,
-    ISecurityEventEmitter emitter)
+    IDpopThumbprintComputer thumbprintComputer)
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
 
@@ -39,7 +39,6 @@ public sealed class DpopValidationMiddleware(
                     return;
                 }
 
-                emitter.EmitAuthFailure("bearer_downgrade_attempt", context.User.FindFirst("sub")?.Value, ipHash);
                 AuthTelemetry.DpopFailures.Add(1,
                     new KeyValuePair<string, object?>("reason", "bearer_downgrade_attempt"));
                 context.Response.Headers.Append("WWW-Authenticate",
@@ -55,7 +54,6 @@ public sealed class DpopValidationMiddleware(
         var dpopProof = context.Request.Headers["DPoP"].ToString();
         if (string.IsNullOrWhiteSpace(dpopProof))
         {
-            emitter.EmitAuthFailure("missing_dpop_proof", context.User.FindFirst("sub")?.Value, ipHash);
             AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", "missing_dpop_proof"));
             context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"missing_dpop_proof\"");
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -82,7 +80,6 @@ public sealed class DpopValidationMiddleware(
 
         if (!result.IsValid)
         {
-            emitter.EmitAuthFailure("invalid_dpop_proof", context.User.FindFirst("sub")?.Value, ipHash);
             AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", "invalid_dpop_proof"));
 
             if (string.Equals(result.Error, "use_dpop_nonce", StringComparison.Ordinal) &&
@@ -117,7 +114,6 @@ public sealed class DpopValidationMiddleware(
                     await nonceStore.ConsumeNonceIfMatchesAsync(thumbprint, expectedNonce, context.RequestAborted);
                 if (!consumed)
                 {
-                    emitter.EmitAuthFailure("invalid_dpop_proof", context.User.FindFirst("sub")?.Value, ipHash);
                     var challengeNonce = GenerateNonce();
                     var stored = await nonceStore.TryStoreNonceAsync(thumbprint, challengeNonce,
                         TimeSpan.FromMinutes(5), context.RequestAborted);

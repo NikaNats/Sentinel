@@ -1,11 +1,13 @@
 namespace Sentinel.Redis.Stores;
 
 using Sentinel.Security.Abstractions.Nonce;
-using Sentinel.Security.Abstractions.InMemory;
 
 /// <summary>
-/// Redis-backed implementation of IDpopNonceStore with graceful in-memory fallback.
+/// Redis-backed implementation of IDpopNonceStore with Fail-Closed semantics.
 /// Stores per-client DPoP nonces (keyed by JWK thumbprint).
+///
+/// SECURITY INVARIANT: If Redis is unavailable, all nonce operations throw an exception.
+/// DPoP proof validation fails if nonce state cannot be verified atomically.
 /// </summary>
 public sealed class RedisDpopNonceStore : IDpopNonceStore
 {
@@ -22,7 +24,6 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
         end";
 
     private readonly IRedisConnectionProvider _provider;
-    private readonly InMemoryDpopNonceStore? _fallback;
     private readonly string _keyPrefix;
     private readonly ILogger<RedisDpopNonceStore> _logger;
 
@@ -34,7 +35,6 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
         _provider = provider;
         _keyPrefix = options.KeyPrefix;
         _logger = logger;
-        _fallback = options.EnableInMemoryFallback ? new InMemoryDpopNonceStore() : null;
     }
 
     /// <summary>
@@ -58,14 +58,8 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Redis unavailable for nonce retrieval, falling back to in-memory");
-
-            if (_fallback != null)
-            {
-                return await _fallback.GetNonceAsync(thumbprint, cancellationToken);
-            }
-
-            throw new NonceStoreUnavailableException($"Redis is unavailable and in-memory fallback is disabled.", ex);
+            _logger.LogError(ex, "Redis unavailable for nonce retrieval (Fail-Closed)");
+            throw new NonceStoreUnavailableException($"Redis is unavailable; nonce store is Fail-Closed.", ex);
         }
     }
 
@@ -92,15 +86,8 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Redis unavailable for nonce storage, falling back to in-memory");
-
-            if (_fallback != null)
-            {
-                await _fallback.SetNonceAsync(thumbprint, nonce, expiresAt, cancellationToken);
-                return;
-            }
-
-            throw new NonceStoreUnavailableException("Redis is unavailable for nonce storage.", ex);
+            _logger.LogError(ex, "Redis unavailable for nonce storage (Fail-Closed)");
+            throw new NonceStoreUnavailableException("Redis is unavailable for nonce storage. System is Fail-Closed.", ex);
         }
     }
 
@@ -122,15 +109,8 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Redis unavailable for nonce cleanup");
-
-            if (_fallback != null)
-            {
-                await _fallback.CleanupExpiredAsync(cancellationToken);
-                return;
-            }
-
-            throw new NonceStoreUnavailableException("Redis is unavailable for cleanup.", ex);
+            _logger.LogError(ex, "Redis unavailable during cleanup (Fail-Closed)");
+            throw new NonceStoreUnavailableException("Redis is unavailable for cleanup. System is Fail-Closed.", ex);
         }
     }
 
@@ -171,14 +151,8 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Redis unavailable for atomic nonce consumption, falling back to in-memory");
-
-            if (_fallback != null)
-            {
-                return await _fallback.ConsumeNonceIfMatchesAsync(thumbprint, expectedNonce, cancellationToken);
-            }
-
-            throw new NonceStoreUnavailableException("Redis is unavailable and in-memory fallback is disabled.", ex);
+            _logger.LogError(ex, "Redis unavailable for atomic nonce consumption (Fail-Closed)");
+            throw new NonceStoreUnavailableException("Redis is unavailable and nonce store is Fail-Closed.", ex);
         }
     }
 }

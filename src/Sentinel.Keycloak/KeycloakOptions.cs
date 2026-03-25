@@ -63,16 +63,7 @@ public sealed class KeycloakOptions
 
     public int SsoSessionMaxLifespanSeconds { get; init; } = 28_800;
 
-    // Backward-compatible alias for older config shape.
-    public int? SessionMaxLifespanSeconds { get; init; }
-
     public KeycloakAdminOptions Admin { get; init; } = new();
-
-    // Backward-compatible alias for older config shape.
-    public string? AdminClientId { get; init; }
-
-    // Backward-compatible alias for older config shape.
-    public string? AdminClientSecret { get; init; }
 }
 
 /// <summary>

@@ -10,8 +10,7 @@ This repository builds as a `net10.0` solution with a modular architecture:
 - `src/Sentinel.Domain` - Domain entities and value objects
 - `src/Sentinel.Application` - Use cases and business logic
 - `src/Sentinel.Infrastructure` - Redis, Keycloak, Cryptography, Telemetry
-- `src/Sentinel.AspNetCore` - **Minimal API endpoints, IEndpointFilter implementations** (NEW v1.1)
-- `src/Sentinel.Presentation` - **[Deprecated v2.0]** Legacy MVC controllers (backward compatible)
+- `src/Sentinel.AspNetCore` - **Minimal API endpoints, IEndpointFilter implementations**
 - `tests/Sentinel.Tests.Unit` - Unit tests with full RFC/security coverage
 - `samples/Sentinel.Sample.MinimalApi` - Reference implementation with AOT support
 

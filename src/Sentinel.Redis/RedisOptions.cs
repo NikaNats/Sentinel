@@ -21,11 +21,6 @@ public sealed record RedisOptions
     public string? Password { get; init; }
 
     /// <summary>
-    /// Enable in-memory fallback when Redis is unavailable.
-    /// </summary>
-    public bool EnableInMemoryFallback { get; init; } = true;
-
-    /// <summary>
     /// Timeout for Redis operations (milliseconds).
     /// </summary>
     public int SyncTimeout { get; init; } = 5000;

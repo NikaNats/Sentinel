@@ -39,12 +39,8 @@ public sealed class KeycloakAdminTokenProvider(
             }
 
             var authority = keycloakOptions.Authority.TrimEnd('/');
-            var adminClientId = string.IsNullOrWhiteSpace(keycloakOptions.Admin.ClientId)
-                ? keycloakOptions.AdminClientId
-                : keycloakOptions.Admin.ClientId;
-            var adminClientSecret = string.IsNullOrWhiteSpace(keycloakOptions.Admin.ClientSecret)
-                ? keycloakOptions.AdminClientSecret
-                : keycloakOptions.Admin.ClientSecret;
+            var adminClientId = keycloakOptions.Admin.ClientId;
+            var adminClientSecret = keycloakOptions.Admin.ClientSecret;
             var adminScope = keycloakOptions.Admin.Scope;
 
             if (string.IsNullOrWhiteSpace(authority)

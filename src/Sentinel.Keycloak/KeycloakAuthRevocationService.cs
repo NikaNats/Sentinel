@@ -4,7 +4,6 @@ using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
-using Sentinel.Application.Common.Abstractions;
 
 namespace Sentinel.Keycloak;
 
@@ -13,8 +12,7 @@ public sealed class KeycloakAuthRevocationService(
     IHttpClientFactory httpClientFactory,
     KeycloakAdminTokenProvider adminTokenProvider,
     IOptions<KeycloakOptions> options,
-    ISecurityEventEmitter securityEventEmitter,
-    ILogger<KeycloakAuthRevocationService> logger) : IAuthRevocationService
+    ILogger<KeycloakAuthRevocationService> logger) : Sentinel.Application.Auth.Interfaces.IAuthRevocationService
 {
     private readonly KeycloakOptions keycloakOptions = options.Value;
 
@@ -160,7 +158,6 @@ public sealed class KeycloakAuthRevocationService(
             using var response = await adminHttpClient.SendAsync(request, ct);
             if (response.IsSuccessStatusCode)
             {
-                securityEventEmitter.EmitAuthFailure("global_logout_triggered", subjectId, "internal");
                 logger.LogInformation("Global logout executed for sub {Sub}.", subjectId);
                 return true;
             }

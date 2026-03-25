@@ -118,7 +118,7 @@ Sentinel/
 |  |- Sentinel.Domain/
 |  |- Sentinel.Application/
 |  |- Sentinel.Infrastructure/
-|  |- Sentinel.Presentation/
+|  |- Sentinel.AspNetCore/
 |- tests/
 |  |- Sentinel.Tests/
 |     |- Integration/
@@ -189,7 +189,7 @@ Services:
 ### 3. Run API Directly (Without Compose)
 
 ```powershell
-cd src/Sentinel.Presentation
+cd src/Sentinel.AspNetCore
 dotnet run
 ```
 

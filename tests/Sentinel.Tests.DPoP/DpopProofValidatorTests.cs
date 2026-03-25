@@ -6,7 +6,7 @@ namespace Sentinel.Tests.DPoP;
 /// </summary>
 public class DpopProofValidatorTests
 {
-    private readonly InMemoryJtiReplayCache _replayCache;
+    private readonly Mock<IJtiReplayCache> _replayCache;
     private readonly DpopThumbprintComputer _thumbprintComputer;
     private readonly DpopProofValidator _validator;
     private readonly TimeProvider _fixedTime;
@@ -16,9 +16,14 @@ public class DpopProofValidatorTests
         var baseTime = new DateTimeOffset(2026, 3, 22, 12, 0, 0, TimeSpan.Zero);
         _fixedTime = new FakeTimeProvider(baseTime);
 
-        _replayCache = new InMemoryJtiReplayCache(_fixedTime);
+        _replayCache = new Mock<IJtiReplayCache>();
+        // Configure mock to always return true (JTI not seen before) for successful tests
+        _replayCache
+            .Setup(x => x.TryMarkUsedAsync(It.IsAny<string>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
         _thumbprintComputer = new DpopThumbprintComputer();
-        _validator = new DpopProofValidator(_replayCache, _thumbprintComputer, _fixedTime);
+        _validator = new DpopProofValidator(_replayCache.Object, _thumbprintComputer, _fixedTime);
     }
 
     [Xunit.Fact]
