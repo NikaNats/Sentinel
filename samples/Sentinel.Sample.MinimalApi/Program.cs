@@ -1,80 +1,62 @@
 /*
- * CONSUMER APPLICATION USAGE GUIDE
+ * ULTIMATE MINIMAL API SAMPLE APPLICATION
  *
- * How to integrate Sentinel Framework Minimal APIs with complete routing control.
- * The host application decides the prefix, not the framework.
+ * This demonstrates how a 2026 enterprise team consumed the Sentinel Framework:
+ * - Zero MVC controllers (pure Minimal APIs)
+ * - Envelope cryptography for data at rest
+ * - DPoP, mTLS, RAR, and ACR Step-Up security pipelines
+ * - Native AOT compatible (no reflection - no WithOpenApi calls)
+ * - Microsecond startup times
  */
 
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using StackExchange.Redis;
-using Sentinel.AspNetCore.Endpoints; // New namespace for Minimal APIs
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using Sentinel.AspNetCore.Endpoints;
 using Sentinel.Application.DependencyInjection;
 using Sentinel.Infrastructure.DependencyInjection;
-using Sentinel.Keycloak.DependencyInjection;
+using Sentinel.Infrastructure.Cryptography;
+using Sentinel.Keycloak.Extensions;
+using Sentinel.Sample.MinimalApi.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. AUTHENTICATION & AUTHORIZATION SETUP
+// 1. REGISTER SENTINEL INFRASTRUCTURE LAYERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.Authority = "https://keycloak.example.com/realms/MyRealm";
-        options.Audience = "my-application";
-        options.TokenValidationParameters.ValidateLifetime = true;
-        options.TokenValidationParameters.ClockSkew = TimeSpan.FromSeconds(5);
-    });
-
-builder.Services.AddAuthorization();
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 2. SENTINEL FRAMEWORK SERVICES (Zero MVC Dependencies)
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Core authentication & authorization services
+// Deep infrastructure: Redis, Keycloak, Cryptography, Telemetry
 builder.Services
-    .AddApplication()
-    .AddKeycloak(builder.Configuration)
-    .AddInfrastructure(builder.Configuration);
-
-// Redis for idempotency caching, session blacklist, DPoP nonce store
-var redisConnection = ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379");
-builder.Services.AddSingleton<IConnectionMultiplexer>(redisConnection);
+    .AddApplicationLayer()
+    .AddKeycloakIntegration(builder.Configuration.GetSection("Sentinel:Keycloak"))
+    .AddInfrastructureLayer(builder.Configuration);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. BUILD APPLICATION
+// 2. APPLICATION-SPECIFIC SERVICES
 // ─────────────────────────────────────────────────────────────────────────────
+
+builder.Services.AddSingleton<DocumentRepository>();
 
 var app = builder.Build();
 
-// Middleware pipeline
-app.UseHsts();
+// ─────────────────────────────────────────────────────────────────────────────
+// HTTP PIPELINE: Security middleware
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.UseDeveloperExceptionPage();
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. MAP SENTINEL ENDPOINTS - HOST CONTROLS THE PREFIX ✨
+// ROUTING: Domain-Driven Endpoint Mapping
 // ─────────────────────────────────────────────────────────────────────────────
 
-// OPTION A: Standard prefix (recommended for most applications)
-app.MapSentinelSecurity("api/v1/identity");
-// Routes: POST /api/v1/identity/auth/refresh, /auth/change-password, /auth/logout, etc.
+// A. Framework endpoints (Framework controls these implementations)
+//    Host application decides the routing prefix (not the framework)
+app.MapSentinelSecurity("api/system/security");
 
-// OPTION B: Minimal prefix (for minimalist APIs)
-// app.MapSentinelSecurity("api/security");
-// Routes: POST /api/security/auth/refresh, etc.
+// B. Business domains (Host application controls these)
+app.MapDocumentEndpoints("api/v1/documents");
+app.MapFinanceEndpoints("api/v1/finance");
 
-// OPTION C: Root-level endpoints (not recommended, but possible)
-// app.MapSentinelSecurity("");
-// Routes: POST /auth/refresh, /ssf/events, etc.
-
-// HOST APPLICATION'S OWN ENDPOINTS (Not affected by Sentinel routing)
-app.MapControllers(); // Your business logic controllers
-app.MapHealthChecks("/health");
-
-// Show endpoint summary for debugging
 app.Run();
