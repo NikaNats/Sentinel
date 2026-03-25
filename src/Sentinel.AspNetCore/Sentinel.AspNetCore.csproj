@@ -23,6 +23,9 @@
   <ItemGroup>
     <ProjectReference Include="..\Sentinel.Application\Sentinel.Application.csproj" />
     <ProjectReference Include="..\Sentinel.DPoP\Sentinel.DPoP.csproj" />
+    <ProjectReference Include="..\Sentinel.Infrastructure\Sentinel.Infrastructure.csproj" />
+    <ProjectReference Include="..\Sentinel.Keycloak\Sentinel.Keycloak.csproj" />
+    <ProjectReference Include="..\Sentinel.Security.Abstractions\Sentinel.Security.Abstractions.csproj" />
     <ProjectReference Include="..\Sentinel.Security.Diagnostics\Sentinel.Security.Diagnostics.csproj" />
   </ItemGroup>
 
