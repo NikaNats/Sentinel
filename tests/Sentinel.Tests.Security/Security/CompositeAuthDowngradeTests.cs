@@ -92,7 +92,7 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
                 .Build();
         }
 
-        public async ValueTask InitializeAsync()
+        public async Task InitializeAsync()
         {
             await redisContainer.StartAsync();
             var redisHostPort = redisContainer.GetMappedPublicPort(6379);
@@ -102,7 +102,13 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
             _ = CreateClient();
         }
 
-        ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsyncCore());
+        Task IAsyncLifetime.DisposeAsync() => DisposeAsyncCore();
+
+        private async Task DisposeAsyncCore()
+        {
+            await redisContainer.DisposeAsync();
+            await base.DisposeAsync();
+        }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -148,12 +154,6 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
                     options.ConfigurationManager = null;
                 });
             });
-        }
-
-        private async Task DisposeAsyncCore()
-        {
-            await redisContainer.DisposeAsync();
-            await base.DisposeAsync();
         }
     }
 

@@ -16,11 +16,12 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Moq" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="FsCheck.Xunit" />
     <PackageReference Include="xunit.runner.visualstudio">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="xunit.v3" />
   </ItemGroup>
 
   <ItemGroup>
@@ -36,6 +37,8 @@
     <ProjectReference Include="..\..\src\Sentinel.DPoP\Sentinel.DPoP.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.SdJwt\Sentinel.SdJwt.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Security.Abstractions\Sentinel.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.Rar\Sentinel.Rar.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.Redis\Sentinel.Redis.csproj" />
   </ItemGroup>
 
 </Project>

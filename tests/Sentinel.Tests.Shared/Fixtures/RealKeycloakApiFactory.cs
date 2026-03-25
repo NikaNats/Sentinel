@@ -18,6 +18,8 @@ using Testcontainers.Redis;
 
 namespace Sentinel.Tests.Shared.Fixtures;
 
+#pragma warning disable CA2213
+
 public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     public const string RealmName = "sentinel-test";
@@ -53,7 +55,7 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
 
     public string TokenEndpoint => $"{Authority}/protocol/openid-connect/token";
 
-    public async ValueTask InitializeAsync()
+    public async Task InitializeAsync()
     {
         await redisContainer.StartAsync();
         var redisHostPort = redisContainer.GetMappedPublicPort(6379);
@@ -68,7 +70,14 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
         _ = CreateClient();
     }
 
-    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsyncCore());
+    Task IAsyncLifetime.DisposeAsync() => DisposeAsyncCore();
+
+    private async Task DisposeAsyncCore()
+    {
+        await keycloakContainer.DisposeAsync();
+        await redisContainer.DisposeAsync();
+        await base.DisposeAsync();
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -141,13 +150,6 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
                 new DpopNonceStoreAdapter(
                     sp.GetRequiredService<Sentinel.Security.Abstractions.Nonce.IDpopNonceStore>()));
         });
-    }
-
-    private async Task DisposeAsyncCore()
-    {
-        await keycloakContainer.DisposeAsync();
-        await redisContainer.DisposeAsync();
-        await base.DisposeAsync();
     }
 
     private static async Task WaitForDiscoveryDocumentAsync(string authority)

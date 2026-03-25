@@ -19,6 +19,8 @@ using Testcontainers.Redis;
 
 namespace Sentinel.Tests.Shared.Fixtures;
 
+#pragma warning disable CA2213
+
 public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private readonly RedisContainer redisContainer;
@@ -40,7 +42,7 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
             .Build();
     }
 
-    public async ValueTask InitializeAsync()
+    public async Task InitializeAsync()
     {
         // 1. Start containers in parallel
         await Task.WhenAll(redisContainer.StartAsync(), postgresContainer.StartAsync());
@@ -65,7 +67,7 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
         await dbContext.Database.MigrateAsync();
     }
 
-    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsyncCore());
+    Task IAsyncLifetime.DisposeAsync() => DisposeAsyncCore();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {

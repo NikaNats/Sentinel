@@ -51,6 +51,8 @@
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="xunit.v3.extensibility.core" Version="3.2.2" />
+    <PackageVersion Include="FsCheck" Version="3.3.2" />
+    <PackageVersion Include="FsCheck.Xunit" Version="3.3.2" />
     <!-- API Compatibility & Source Generation -->
     <PackageVersion Include="System.ComponentModel.Annotations" Version="5.0.0" />
   </ItemGroup>
