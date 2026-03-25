@@ -48,6 +48,7 @@ public sealed class SentinelAspNetCoreBuilder
     /// <summary>
     /// Adds RFC 9449 DPoP (Demonstration of Proof-of-Possession) validation middleware.
     /// Validates DPoP proof structure, signature, and nonce per specification.
+    /// Registers middleware dependencies in DI; the middleware itself is instantiated via UseMiddleware in the pipeline.
     /// </summary>
     /// <returns>This builder for method chaining.</returns>
     public SentinelAspNetCoreBuilder AddDPoPValidation()
@@ -62,7 +63,9 @@ public sealed class SentinelAspNetCoreBuilder
             .BindConfiguration(DPoPOptions.SectionName)
             .ValidateDataAnnotations();
 
-        _ = _services.AddScoped<DpopValidationMiddleware>();
+        // NOTE: Do NOT register the middleware itself in DI (AddScoped<DpopValidationMiddleware>).
+        // Middleware is instantiated by UseMiddleware<>() in the pipeline, not from DI.
+        // Dependencies of the middleware will be resolved from DI when UseMiddleware() is called.
         _dpopValidationAdded = true;
 
         return this;
@@ -88,6 +91,7 @@ public sealed class SentinelAspNetCoreBuilder
     /// <summary>
     /// Adds mTLS (mutual TLS) certificate binding validation.
     /// Validates certificate thumbprint (x5t or x5t#S256) matches claimed identity.
+    /// Registers middleware dependencies in DI; the middleware itself is instantiated via UseMiddleware in the pipeline.
     /// </summary>
     /// <returns>This builder for method chaining.</returns>
     public SentinelAspNetCoreBuilder AddMtlsBinding()
@@ -97,7 +101,9 @@ public sealed class SentinelAspNetCoreBuilder
             return this;
         }
 
-        _ = _services.AddScoped<MtlsBindingMiddleware>();
+        // NOTE: Do NOT register the middleware itself in DI (AddScoped<MtlsBindingMiddleware>).
+        // Middleware is instantiated by UseMiddleware<>() in the pipeline, not from DI.
+        // Dependencies of the middleware will be resolved from DI when UseMiddleware() is called.
         _ = _services.AddScoped<RequireMtlsBindingAttribute>();
         _mtlsBindingAdded = true;
 

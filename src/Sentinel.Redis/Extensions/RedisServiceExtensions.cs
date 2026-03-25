@@ -30,11 +30,8 @@ public static class RedisServiceExtensions
         var options = new RedisOptions();
         configuration?.Bind(options);
 
-        // Register asynchronous Redis connection provider if configured
-        if (!string.IsNullOrWhiteSpace(options.EndPoint))
-        {
-            services.AddSingleton<IRedisConnectionProvider, RedisConnectionProvider>();
-        }
+        // ALWAYS register the Redis connection provider - it has fallback to localhost:6379
+        services.AddSingleton<IRedisConnectionProvider, RedisConnectionProvider>();
 
         // Register cache implementations
         services.AddSingleton(options);

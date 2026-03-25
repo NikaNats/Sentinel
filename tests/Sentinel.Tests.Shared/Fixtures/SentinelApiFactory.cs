@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Sentinel.Infrastructure.Persistence;
+using Sentinel.Redis.Extensions;
 using StackExchange.Redis;
 using Testcontainers.PostgreSql;
 using Testcontainers.Redis;
@@ -75,13 +76,25 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
         builder.ConfigureAppConfiguration((_, config) =>
         {
             // Keep non-connection string configurations here
-            config.AddInMemoryCollection(new Dictionary<string, string?>
+            var testSettings = new Dictionary<string, string?>
             {
                 ["Keycloak:Authority"] = "https://localhost:8443/realms/sentinel",
                 ["Keycloak:Audience"] = "sentinel-api",
                 ["Keycloak:RequireHttpsMetadata"] = "false",
-                ["FeatureFlags:Auth:DpopFlow"] = "true"
-            });
+                ["FeatureFlags:Auth:DpopFlow"] = "true",
+                // Add Redis configuration for test containers
+                ["Sentinel:Redis:EndPoint"] = $"localhost:{redisContainer.GetMappedPublicPort(6379)},abortConnect=false",
+                ["Sentinel:Redis:EnableInMemoryFallback"] = "true"
+            };
+
+            // Add test cryptography configuration
+            var cryptoConfig = TestCryptographyHelper.GenerateTestCryptographyConfig();
+            foreach (var kvp in cryptoConfig)
+            {
+                testSettings[kvp.Key] = kvp.Value;
+            }
+
+            config.AddInMemoryCollection(testSettings);
         });
 
         builder.ConfigureTestServices(services =>
@@ -98,6 +111,10 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
             // Configure Redis with explicit container connection string
             services.RemoveAll<IDistributedCache>();
             services.RemoveAll<IConnectionMultiplexer>();
+            services.RemoveAll<Sentinel.Security.Abstractions.Replay.IJtiReplayCache>();
+            services.RemoveAll<Sentinel.Security.Abstractions.Nonce.IDpopNonceStore>();
+            services.RemoveAll<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>();
+            services.RemoveAll<Sentinel.Redis.RedisOptions>();
 
             services.AddSingleton<IDistributedCache>(_ =>
                 new RedisCache(Options.Create(new RedisCacheOptions { Configuration = redisConnectionString })));
@@ -109,6 +126,33 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
                 options.ConnectRetry = 3;
                 return ConnectionMultiplexer.Connect(options);
             });
+
+            // Register Redis security caches using configuration-based approach
+            var redisConfig = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["EndPoint"] = redisConnectionString,
+                    ["EnableInMemoryFallback"] = "true"
+                })
+                .Build();
+            services.AddRedisSecurityCaches(redisConfig);
+
+            // Bridge Application layer IJtiReplayCache to Security layer implementation via adapter
+            services.AddSingleton<Sentinel.Application.Common.Abstractions.IJtiReplayCache>(sp =>
+                new JtiReplayCacheAdapter(
+                    sp.GetRequiredService<Sentinel.Security.Abstractions.Replay.IJtiReplayCache>(),
+                    sp.GetService<TimeProvider>()));
+
+            // Bridge Application layer ISessionBlacklistCache to Security layer implementation via adapter
+            services.AddSingleton<Sentinel.Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
+                new SessionBlacklistCacheAdapter(
+                    sp.GetRequiredService<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>(),
+                    sp.GetService<TimeProvider>()));
+
+            // Bridge Application layer IDpopNonceStore to Security layer implementation via adapter
+            services.AddSingleton<Sentinel.Application.Common.Abstractions.IDpopNonceStore>(sp =>
+                new DpopNonceStoreAdapter(
+                    sp.GetRequiredService<Sentinel.Security.Abstractions.Nonce.IDpopNonceStore>()));
 
             // Configure JWT authentication override
             services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>

@@ -11,6 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Sentinel.Redis.Extensions;
 using StackExchange.Redis;
 using Testcontainers.Keycloak;
 using Testcontainers.Redis;
@@ -73,20 +74,34 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
     {
         builder.ConfigureAppConfiguration((_, config) =>
         {
-            config.AddInMemoryCollection(new Dictionary<string, string?>
+            var testSettings = new Dictionary<string, string?>
             {
                 ["Keycloak:Authority"] = Authority,
                 ["Keycloak:Audience"] = ClientId,
                 ["Keycloak:RequireHttpsMetadata"] = "false",
-                ["ConnectionStrings:Redis"] = redisConnectionString,
+                ["Sentinel:Redis:EndPoint"] = redisConnectionString,
+                ["Sentinel:Redis:EnableInMemoryFallback"] = "true",
                 ["FeatureFlags:Auth:DpopFlow"] = "true"
-            });
+            };
+
+            // Add test cryptography configuration
+            var cryptoConfig = TestCryptographyHelper.GenerateTestCryptographyConfig();
+            foreach (var kvp in cryptoConfig)
+            {
+                testSettings[kvp.Key] = kvp.Value;
+            }
+
+            config.AddInMemoryCollection(testSettings);
         });
 
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IDistributedCache>();
             services.RemoveAll<IConnectionMultiplexer>();
+            services.RemoveAll<Sentinel.Security.Abstractions.Replay.IJtiReplayCache>();
+            services.RemoveAll<Sentinel.Security.Abstractions.Nonce.IDpopNonceStore>();
+            services.RemoveAll<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>();
+            services.RemoveAll<Sentinel.Redis.RedisOptions>();
 
             services.AddSingleton<IDistributedCache>(_ =>
                 new RedisCache(Options.Create(new RedisCacheOptions { Configuration = redisConnectionString })));
@@ -98,6 +113,33 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
                 options.ConnectRetry = 3;
                 return ConnectionMultiplexer.Connect(options);
             });
+
+            // Register Redis security caches using configuration-based approach
+            var redisConfig = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["EndPoint"] = redisConnectionString,
+                    ["EnableInMemoryFallback"] = "true"
+                })
+                .Build();
+            services.AddRedisSecurityCaches(redisConfig);
+
+            // Bridge Application layer IJtiReplayCache to Security layer implementation via adapter
+            services.AddSingleton<Sentinel.Application.Common.Abstractions.IJtiReplayCache>(sp =>
+                new JtiReplayCacheAdapter(
+                    sp.GetRequiredService<Sentinel.Security.Abstractions.Replay.IJtiReplayCache>(),
+                    sp.GetService<TimeProvider>()));
+
+            // Bridge Application layer ISessionBlacklistCache to Security layer implementation via adapter
+            services.AddSingleton<Sentinel.Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
+                new SessionBlacklistCacheAdapter(
+                    sp.GetRequiredService<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>(),
+                    sp.GetService<TimeProvider>()));
+
+            // Bridge Application layer IDpopNonceStore to Security layer implementation via adapter
+            services.AddSingleton<Sentinel.Application.Common.Abstractions.IDpopNonceStore>(sp =>
+                new DpopNonceStoreAdapter(
+                    sp.GetRequiredService<Sentinel.Security.Abstractions.Nonce.IDpopNonceStore>()));
         });
     }
 
