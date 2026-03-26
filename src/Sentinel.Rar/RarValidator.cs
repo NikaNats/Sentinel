@@ -1,33 +1,48 @@
 namespace Sentinel.RAR;
 
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Sentinel.Domain.Auth.Rar;
+
 /// <summary>
-/// Validates request payloads against Rich Authorization Request (RAR) constraints.
+/// High-assurance RAR validator with polymorphic matcher routing.
+/// Validates request payloads against Rich Authorization Request (RAR) constraints
+/// using a priority-weighted matcher selection strategy.
 /// </summary>
 public sealed class RarValidator : IRarValidator
 {
-    private readonly IAuthorizationDetailMatcher _matcher;
+    private readonly IEnumerable<IAuthorizationDetailMatcher> _matchers;
     private readonly RarValidationOptions _options;
     private readonly ILogger<RarValidator> _logger;
 
     /// <summary>
     /// Initializes a new instance of the RarValidator.
     /// </summary>
-    /// <param name="matcher">Provides authorization detail matching logic.</param>
-    /// <param name="options">Configuration for RAR validation.</param>
+    /// <param name="matchers">Collection of matchers supporting different authorization detail types.</param>
+    /// <param name="options">Configuration for RAR validation (from DI).</param>
     /// <param name="logger">Logger for diagnostic messages.</param>
+    /// <remarks>
+    /// ✅ FIX: Accept a collection of matchers to support polymorphic evaluation.
+    /// Replaces the anti-pattern of single-matcher injection with proper routing.
+    /// </remarks>
     public RarValidator(
-        IAuthorizationDetailMatcher matcher,
-        RarValidationOptions? options = null,
-        ILogger<RarValidator>? logger = null)
+        IEnumerable<IAuthorizationDetailMatcher> matchers,
+        IOptions<RarValidationOptions> options,
+        ILogger<RarValidator> logger)
     {
-        _matcher = matcher ?? throw new ArgumentNullException(nameof(matcher));
-        _options = options ?? new RarValidationOptions();
-        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<RarValidator>.Instance;
+        _matchers = matchers ?? throw new ArgumentNullException(nameof(matchers));
+        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
     /// Validates a request payload against an authorization detail.
     /// </summary>
+    /// <remarks>
+    /// Uses polymorphic routing to select the highest-weight matcher capable of handling
+    /// the authorization detail type. This enables extensibility without modifying RarValidator.
+    /// </remarks>
     public RarValidationResult Validate(AuthorizationDetail detail, string payloadJson)
     {
         if (detail is null)
@@ -40,34 +55,42 @@ public sealed class RarValidator : IRarValidator
             return RarValidationResult.Failure("Request payload is required.");
         }
 
+        // ✅ FIX: Polymorphic routing based on SupportWeight
+        var selectedMatcher = _matchers
+            .Select(m => new { Matcher = m, Weight = m.GetSupportWeight(detail.Type) })
+            .Where(x => x.Weight > 0)
+            .OrderByDescending(x => x.Weight)
+            .FirstOrDefault()?.Matcher;
+
+        if (selectedMatcher is null)
+        {
+            _logger.LogWarning("No capable RAR matcher found for type: {Type}", detail.Type);
+            return RarValidationResult.Failure($"Unsupported authorization detail type: {detail.Type}");
+        }
+
         try
         {
             using var doc = JsonDocument.Parse(payloadJson);
-            var payload = doc.RootElement;
 
-            if (!_matcher.Matches(detail, payload))
+            // ✅ FIX: Pass the unified _options down to the matcher to ensure CaseSensitiveComparison is respected
+            if (!selectedMatcher.Matches(detail, doc.RootElement, _options))
             {
-                _logger.LogWarning(
-                    "Payload does not match authorization detail constraints (type: {Type})",
-                    detail.Type);
-                return RarValidationResult.Failure(
-                    "Request payload does not satisfy authorization constraints.");
+                _logger.LogWarning("RAR bounds violation. Type: {Type}", detail.Type);
+                return RarValidationResult.Failure("Request payload violates signed authorization constraints.");
             }
 
             return RarValidationResult.Success(detail);
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "Failed to parse request payload as JSON");
+            _logger.LogWarning(ex, "Failed to parse payload for RAR evaluation.");
             return RarValidationResult.Failure("Request payload is not valid JSON.");
         }
-#pragma warning disable CA1031  // Continue validation upon parse failure
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Unexpected error during RAR validation");
             return RarValidationResult.Failure("RAR validation failed due to an internal error.");
         }
-#pragma warning restore CA1031
     }
 
     /// <summary>

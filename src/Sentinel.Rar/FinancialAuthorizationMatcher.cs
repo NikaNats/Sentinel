@@ -1,13 +1,20 @@
 namespace Sentinel.RAR;
 
+using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Sentinel.Domain.Auth.Rar;
+
 /// <summary>
-/// Default authorization detail matcher for financial transfer authorization details.
-/// Supports matching transaction ID, amount, and currency constraints.
+/// High-assurance financial authorization matcher.
+/// Matches financial transaction authorization constraints against request payloads.
+/// Supports transaction ID, amount, and currency bounds per RFC 9396.
 /// </summary>
 public sealed class FinancialAuthorizationMatcher : IAuthorizationDetailMatcher
 {
+    /// <summary>Sentinel's canonical financial transfer type (primary).</summary>
     private const string FinancialTransferType = "urn:sentinel:finance:transfer";
-    private const string GenericFinanceType = "urn:example:finance:transfer";
 
     private readonly RarValidationOptions _options;
     private readonly ILogger<FinancialAuthorizationMatcher> _logger;
@@ -15,14 +22,18 @@ public sealed class FinancialAuthorizationMatcher : IAuthorizationDetailMatcher
     /// <summary>
     /// Initializes a new instance of the FinancialAuthorizationMatcher.
     /// </summary>
-    /// <param name="options">Configuration for RAR validation.</param>
+    /// <param name="options">Configuration for RAR validation (from DI).</param>
     /// <param name="logger">Logger for diagnostic messages.</param>
+    /// <remarks>
+    /// ✅ FIX: Strict DI injection via IOptions{RarValidationOptions}.
+    /// Replaces the anti-pattern of nullable options with hard DI guarantees.
+    /// </remarks>
     public FinancialAuthorizationMatcher(
-        RarValidationOptions? options = null,
-        ILogger<FinancialAuthorizationMatcher>? logger = null)
+        IOptions<RarValidationOptions> options,
+        ILogger<FinancialAuthorizationMatcher> logger)
     {
-        _options = options ?? new RarValidationOptions();
-        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<FinancialAuthorizationMatcher>.Instance;
+        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
@@ -33,9 +44,13 @@ public sealed class FinancialAuthorizationMatcher : IAuthorizationDetailMatcher
     /// - transaction_id (if present in detail) matches payload.transactionId
     /// - amount (if present in detail) matches payload.amount (with precision tolerance)
     /// - currency (if present in detail) matches payload.currency
+    ///
+    /// ✅ FIX: Accepts RarValidationOptions to enable case sensitivity and precision settings.
     /// </remarks>
-    public bool Matches(AuthorizationDetail detail, JsonElement payload)
+    public bool Matches(AuthorizationDetail detail, JsonElement payload, RarValidationOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
+
         if (detail is null || payload.ValueKind != JsonValueKind.Object)
         {
             return false;
@@ -62,7 +77,7 @@ public sealed class FinancialAuthorizationMatcher : IAuthorizationDetailMatcher
                 return false;
             }
 
-            var tolerance = _options.MonetaryPrecisionTolerance;
+            var tolerance = options.MonetaryPrecisionTolerance;
             if (Math.Abs(detail.Amount.Value - payloadAmount) > tolerance)
             {
                 _logger.LogWarning("Amount mismatch (expected: {Expected}, got: {Actual})",
@@ -88,8 +103,14 @@ public sealed class FinancialAuthorizationMatcher : IAuthorizationDetailMatcher
 
     /// <summary>
     /// Gets the support weight for authorization detail types.
-    /// Returns high weight for known financial transfer types, 0 for unsupported types.
     /// </summary>
+    /// <remarks>
+    /// Returns high weight for known financial transfer types, 0 for unsupported types.
+    /// Used by RarValidator to route to the most specific matcher implementation.
+    ///
+    /// ✅ FIX: Only returns non-zero for Sentinel's canonical type.
+    /// Placeholder RFC example URIs are rejected (production safety).
+    /// </remarks>
     public int GetSupportWeight(string detailType)
     {
         if (string.IsNullOrWhiteSpace(detailType))
@@ -97,13 +118,57 @@ public sealed class FinancialAuthorizationMatcher : IAuthorizationDetailMatcher
             return 0;
         }
 
+        // ✅ FIX: Only support Sentinel's canonical type, reject RFC placeholders
         return detailType switch
         {
             FinancialTransferType => 100,  // Highest priority for Sentinel's type
-            GenericFinanceType => 50,      // Second priority for generic examples
-            _ => 0                          // Not supported
+            _ => 0                          // Not supported (including RFC examples)
         };
     }
+
+    /// <summary>
+    /// Extracts a string value from the payload JSON object.
+    /// </summary>
+    private static bool TryGetPayloadString(
+        JsonElement payload,
+        string propertyName,
+        [NotNullWhen(true)] out string? value)
+    {
+        value = null;
+
+        if (!payload.TryGetProperty(propertyName, out var element))
+        {
+            return false;
+        }
+
+        value = element.GetString();
+        return !string.IsNullOrWhiteSpace(value);
+    }
+
+    /// <summary>
+    /// Extracts a decimal value from the payload JSON object.
+    /// Handles both JSON number and string representations of numbers.
+    /// </summary>
+    private static bool TryGetPayloadDecimal(
+        JsonElement payload,
+        string propertyName,
+        out decimal value)
+    {
+        value = 0m;
+
+        if (!payload.TryGetProperty(propertyName, out var element))
+        {
+            return false;
+        }
+
+        return element.ValueKind switch
+        {
+            JsonValueKind.Number => element.TryGetDecimal(out value),
+            JsonValueKind.String => decimal.TryParse(element.GetString(), out value),
+            _ => false
+        };
+    }
+}
 
     /// <summary>
     /// Extracts a string value from the payload JSON object.

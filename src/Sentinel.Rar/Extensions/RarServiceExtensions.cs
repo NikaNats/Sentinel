@@ -1,80 +1,73 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Sentinel.RAR.Extensions;
 
 /// <summary>
-/// Dependency injection extensions for Rich Authorization Request (RAR) support.
+/// Extension methods for registering Rich Authorization Request (RAR) services with high-assurance configuration.
 /// </summary>
 public static class RarServiceExtensions
 {
     /// <summary>
-    /// Adds Rich Authorization Request (RAR) validation services to the dependency injection container.
+    /// Registers the Rich Authorization Request (RAR) validation pipeline with high-assurance configuration.
     /// </summary>
     /// <remarks>
-    /// Registers:
-    /// - RarExtractor as a transient service
-    /// - RarValidator as a transient service
-    /// - FinancialAuthorizationMatcher as a transient service
-    /// - RarValidationOptions as a singleton with default configuration
+    /// ✅ FIX: Strictly binds options so IOptions{RarValidationOptions} is resolvable.
+    /// Replaces the anti-pattern of nullable options in constructors with hard DI guarantees.
     ///
-    /// This overload uses the built-in FinancialAuthorizationMatcher for financial transfers.
+    /// Configuration Section: "Sentinel:Rar"
+    /// Example appsettings.json:
+    /// {
+    ///   "Sentinel": {
+    ///     "Rar": {
+    ///       "MaxAuthorizationDetailsCount": 10,
+    ///       "MonetaryPrecisionTolerance": 0.01,
+    ///       "CaseSensitiveComparison": true
+    ///     }
+    ///   }
+    /// }
+    ///
+    /// Services Registered:
+    /// - IRarExtractor (transient)
+    /// - IRarValidator (transient)
+    /// - IAuthorizationDetailMatcher implementations (transient)
+    /// - IOptions{RarValidationOptions} (from configuration)
+    ///
+    /// Pre-requisites:
+    /// - IConfiguration must be available
+    /// - appsettings.Rar section must exist (or provide default values)
+    ///
+    /// Usage in Program.cs:
+    /// services.AddRarValidation(builder.Configuration);
+    ///
+    /// RarValidator will then perform polymorphic matcher routing:
+    /// - Each matcher declares its support weight for authorization detail types
+    /// - RarValidator selects the highest-weight matcher for each detail type
+    /// - Enables extensibility without modifying RarValidator
     /// </remarks>
-    /// <param name="services">The service collection.</param>
-    /// <param name="configureOptions">Optional callback to configure RarValidationOptions.</param>
+    /// <param name="services">The service collection to register into.</param>
+    /// <param name="configuration">The application configuration (typically from Host/Program.cs).</param>
     /// <returns>The service collection for chaining.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if services or configuration is null.</exception>
     public static IServiceCollection AddRarValidation(
         this IServiceCollection services,
-        Action<RarValidationOptions>? configureOptions = null)
+        IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
 
-        // Configure options
-        var options = new RarValidationOptions();
-        configureOptions?.Invoke(options);
-        services.AddSingleton(options);
+        // ✅ FIX: Standardized IOptions<T> registration
+        // Strictly bind options so IOptions{RarValidationOptions} is resolvable by the container
+        services.Configure<RarValidationOptions>(
+            configuration.GetSection("Sentinel:Rar"));
 
-        // Register services
-        services.AddTransient<RarExtractor>();
-        services.AddTransient<FinancialAuthorizationMatcher>();
-        services.AddTransient<IRarValidator>(sp =>
-            new RarValidator(
-                sp.GetRequiredService<FinancialAuthorizationMatcher>(),
-                options));
+        // ✅ FIX: Correct interface-to-implementation mapping
+        services.AddTransient<IRarExtractor, RarExtractor>();
+        services.AddTransient<IRarValidator, RarValidator>();
 
-        return services;
-    }
-
-    /// <summary>
-    /// Adds Rich Authorization Request (RAR) validation with a custom authorization detail matcher.
-    /// </summary>
-    /// <remarks>
-    /// This overload allows you to provide a custom IAuthorizationDetailMatcher implementation
-    /// for domain-specific authorization detail types beyond the built-in financial transfer matcher.
-    /// </remarks>
-    /// <param name="services">The service collection.</param>
-    /// <param name="matcherFactory">Factory function to create IAuthorizationDetailMatcher instances.</param>
-    /// <param name="configureOptions">Optional callback to configure RarValidationOptions.</param>
-    /// <returns>The service collection for chaining.</returns>
-    public static IServiceCollection AddRarValidation(
-        this IServiceCollection services,
-        Func<IServiceProvider, IAuthorizationDetailMatcher> matcherFactory,
-        Action<RarValidationOptions>? configureOptions = null)
-    {
-        ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(matcherFactory);
-
-        // Configure options
-        var options = new RarValidationOptions();
-        configureOptions?.Invoke(options);
-        services.AddSingleton(options);
-
-        // Register services
-        services.AddTransient<RarExtractor>();
-        services.AddTransient(matcherFactory);
-        services.AddTransient<IRarValidator>(sp =>
-            new RarValidator(
-                sp.GetRequiredService<IAuthorizationDetailMatcher>(),
-                options));
+        // ✅ FIX: Register matchers into the IEnumerable{IAuthorizationDetailMatcher} collection
+        // Enables RarValidator to perform polymorphic routing based on GetSupportWeight()
+        services.AddTransient<IAuthorizationDetailMatcher, FinancialAuthorizationMatcher>();
 
         return services;
     }

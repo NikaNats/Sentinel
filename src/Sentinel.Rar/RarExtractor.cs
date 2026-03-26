@@ -1,7 +1,15 @@
 namespace Sentinel.RAR;
 
+using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Sentinel.Domain.Auth.Rar;
+
 /// <summary>
-/// Extracts and parses Rich Authorization Request (RAR) authorization_details claims.
+/// High-assurance RAR extractor with Native AOT compatibility.
+/// Extracts and parses Rich Authorization Request (RAR) authorization_details claims
+/// using source-generated JSON deserialization (zero reflection, zero recursion).
 /// </summary>
 public sealed class RarExtractor : IRarExtractor
 {
@@ -11,19 +19,30 @@ public sealed class RarExtractor : IRarExtractor
     /// <summary>
     /// Initializes a new instance of the RarExtractor.
     /// </summary>
-    /// <param name="options">Configuration for RAR validation.</param>
+    /// <param name="options">Configuration for RAR validation (from DI).</param>
     /// <param name="logger">Logger for diagnostic messages.</param>
+    /// <remarks>
+    /// ✅ FIX: Strict DI injection via IOptions{RarValidationOptions}.
+    /// Replaces the anti-pattern of nullable options with hard DI guarantees.
+    /// </remarks>
     public RarExtractor(
-        RarValidationOptions? options = null,
-        ILogger<RarExtractor>? logger = null)
+        IOptions<RarValidationOptions> options,
+        ILogger<RarExtractor> logger)
     {
-        _options = options ?? new RarValidationOptions();
-        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<RarExtractor>.Instance;
+        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
     /// Extracts and parses authorization details from the JSON claim value.
     /// </summary>
+    /// <remarks>
+    /// ✅ FIX: Use Native AOT Source-Generated deserialization.
+    /// Eliminates the manual, recursive-prone JsonElement traversal.
+    /// Deserializes AuthorizationDetail[] directly from JSON string using RarJsonContext.
+    /// </remarks>
+    /// <param name="claimsJson">The JSON string from the authorization_details claim.</param>
+    /// <returns>Extraction result containing parsed details or error information.</returns>
     public RarExtractionResult Extract(string claimsJson)
     {
         if (string.IsNullOrWhiteSpace(claimsJson))
@@ -33,146 +52,38 @@ public sealed class RarExtractor : IRarExtractor
 
         try
         {
-            using var doc = JsonDocument.Parse(claimsJson);
+            // ✅ FIX: Use Native AOT Source-Generated deserialization.
+            // Deserializes directly from JsonElement without manual traversal.
+            var details = JsonSerializer.Deserialize(
+                claimsJson,
+                RarJsonContext.Default.AuthorizationDetailArray);
 
-            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            if (details is null)
             {
-                _logger.LogWarning("Authorization details claim is not a JSON array");
+                _logger.LogWarning("Authorization details deserialization returned null");
                 return RarExtractionResult.Failure("Authorization details must be a JSON array.");
             }
 
-            var count = doc.RootElement.GetArrayLength();
-            if (count > _options.MaxAuthorizationDetailsCount)
+            if (details.Length > _options.MaxAuthorizationDetailsCount)
             {
                 _logger.LogWarning(
                     "Authorization details count exceeds limit (count: {Count}, max: {Max})",
-                    count, _options.MaxAuthorizationDetailsCount);
+                    details.Length, _options.MaxAuthorizationDetailsCount);
                 return RarExtractionResult.Failure(
-                    $"Authorization details exceeds maximum count ({_options.MaxAuthorizationDetailsCount}).");
+                    $"Authorization details exceed maximum count ({_options.MaxAuthorizationDetailsCount}).");
             }
 
-            var details = new List<AuthorizationDetail>(count);
-
-            foreach (var element in doc.RootElement.EnumerateArray())
-            {
-                if (!TryParseDetail(element, out var detail))
-                {
-                    _logger.LogWarning("Failed to parse authorization detail element");
-                    continue;
-                }
-
-                details.Add(detail);
-            }
-
-            return RarExtractionResult.Success(details.ToArray());
+            return RarExtractionResult.Success(details);
         }
         catch (JsonException ex)
         {
             _logger.LogWarning(ex, "Failed to parse authorization_details claim as JSON");
             return RarExtractionResult.Failure("Authorization details claim is not valid JSON.");
         }
-#pragma warning disable CA1031  // Continue extraction even if one detail fails
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Unexpected error during authorization details extraction");
             return RarExtractionResult.Failure("Authorization details extraction failed.");
         }
-#pragma warning restore CA1031
-    }
-
-    /// <summary>
-    /// Parses a single authorization detail object.
-    /// </summary>
-    private static bool TryParseDetail(JsonElement element, [NotNullWhen(true)] out AuthorizationDetail? detail)
-    {
-        detail = null;
-
-        if (element.ValueKind != JsonValueKind.Object)
-        {
-            return false;
-        }
-
-        // Type is required
-        if (!element.TryGetProperty("type", out var typeElement))
-        {
-            return false;
-        }
-
-        var type = typeElement.GetString();
-        if (string.IsNullOrWhiteSpace(type))
-        {
-            return false;
-        }
-
-        // Parse optional string arrays
-        var actions = TryParseStringArray(element, "actions");
-        var locations = TryParseStringArray(element, "locations");
-        var dataTypes = TryParseStringArray(element, "datatypes");
-
-        // Parse optional financial fields
-        string? transactionId = null;
-        decimal? amount = null;
-        string? currency = null;
-
-        if (element.TryGetProperty("transaction_id", out var txIdElement))
-        {
-            transactionId = txIdElement.GetString();
-        }
-
-        if (element.TryGetProperty("amount", out var amountElement))
-        {
-            if (amountElement.TryGetDecimal(out var amountValue))
-            {
-                amount = amountValue;
-            }
-        }
-
-        if (element.TryGetProperty("currency", out var currencyElement))
-        {
-            currency = currencyElement.GetString();
-        }
-
-        // Preserve any custom properties
-        JsonElement? customProps = element;
-
-        detail = new AuthorizationDetail(
-            type,
-            actions,
-            locations,
-            dataTypes,
-            transactionId,
-            amount,
-            currency,
-            customProps);
-
-        return true;
-    }
-
-    /// <summary>
-    /// Parses a string array from a JSON object property.
-    /// </summary>
-    private static string[]? TryParseStringArray(JsonElement element, string propertyName)
-    {
-        if (!element.TryGetProperty(propertyName, out var arrayElement))
-        {
-            return null;
-        }
-
-        if (arrayElement.ValueKind != JsonValueKind.Array)
-        {
-            return null;
-        }
-
-        var items = new List<string>();
-        foreach (var item in arrayElement.EnumerateArray())
-        {
-            var str = item.GetString();
-            if (!string.IsNullOrWhiteSpace(str))
-            {
-                items.Add(str);
-            }
-        }
-
-        return items.Count > 0 ? items.ToArray() : null;
     }
 }

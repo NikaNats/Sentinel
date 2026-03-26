@@ -68,11 +68,14 @@ public interface IAuthorizationDetailMatcher
     /// <remarks>
     /// Implementations should check that all non-null constraints in the authorization detail
     /// are satisfied by the corresponding values in the payload.
+    ///
+    /// ✅ FIX: Accepts RarValidationOptions to enable case sensitivity and precision settings.
     /// </remarks>
     /// <param name="detail">The authorization detail with constraints.</param>
     /// <param name="payload">The request payload as a JsonElement.</param>
+    /// <param name="options">RAR validation options (case sensitivity, precision tolerance, etc.).</param>
     /// <returns>True if the payload satisfies all constraints, false otherwise.</returns>
-    bool Matches(AuthorizationDetail detail, JsonElement payload);
+    bool Matches(AuthorizationDetail detail, JsonElement payload, RarValidationOptions options);
 
     /// <summary>
     /// Gets the supportability weight for a given authorization detail type.
@@ -84,6 +87,8 @@ public interface IAuthorizationDetailMatcher
     /// - Generic matcher: weight = 0
     /// - Financial transfer matcher: weight = 10 (more specific)
     /// - Custom order matcher: weight = 20 (most specific)
+    ///
+    /// ✅ FIX: Polymorphic router uses this to select the best matcher for each detail type.
     /// </remarks>
     /// <param name="detailType">The authorization detail type to match.</param>
     /// <returns>Weight indicating preference; 0 if not supported.</returns>
