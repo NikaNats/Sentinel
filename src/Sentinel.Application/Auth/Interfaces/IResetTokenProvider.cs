@@ -1,6 +1,7 @@
 namespace Sentinel.Application.Auth.Interfaces;
 
 using Sentinel.Domain.Auth;
+using Sentinel.Application.Auth.Models;
 
 /// <summary>
 /// Service contract for password reset token generation and validation.
@@ -20,15 +21,19 @@ public interface IResetTokenProvider
     Task<ResetToken> GenerateTokenAsync(string email, CancellationToken ct);
 
     /// <summary>
-    /// Validates the opaque handle and returns the associated email if valid.
+    /// Validates the opaque handle and returns a discriminated result.
     /// Implementation MUST enforce single-use semantics (consume on validation).
-    /// Expired or already-consumed tokens must return (IsValid: false, Email: null).
+    /// Provides type-safe, extensible failure reasons instead of fragile tuples.
     /// </summary>
     /// <param name="tokenHandle">Opaque token handle from user input.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>
-    /// Tuple: (IsValid, Email). IsValid=true only if token is valid, unexpired, and unconsumed.
-    /// Email is returned only if IsValid=true (prevents email leakage on invalid tokens).
+    /// Discriminated TokenValidationResult:
+    /// - Success(email): Token valid, unexpired, unconsumed
+    /// - Expired: Token past ExpiresAtUtc
+    /// - AlreadyConsumed: Single-use token already used
+    /// - NotFound: Handle not found or tampered
+    /// - ValidationFailed: Storage/processing error
     /// </returns>
-    Task<(bool IsValid, string? Email)> ValidateAndConsumeAsync(string tokenHandle, CancellationToken ct);
+    Task<TokenValidationResult> ValidateAndConsumeAsync(string tokenHandle, CancellationToken ct);
 }

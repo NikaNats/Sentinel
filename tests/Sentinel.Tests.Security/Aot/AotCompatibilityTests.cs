@@ -1,7 +1,7 @@
 using FluentAssertions;
 using Sentinel.Application;
 using Sentinel.Application.Auth.Models;
-using Sentinel.Domain.Auth.Rar;
+using Sentinel.RAR;
 using System.Text.Json;
 using Xunit;
 

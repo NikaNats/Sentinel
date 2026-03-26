@@ -2,7 +2,7 @@ namespace Sentinel.Application;
 
 using System.Text.Json.Serialization;
 using Sentinel.Application.Auth.Models;
-using Sentinel.Domain.Auth.Rar;
+using Sentinel.RAR;
 
 /// <summary>
 /// JSON serialization context for Sentinel.Application business logic models.
