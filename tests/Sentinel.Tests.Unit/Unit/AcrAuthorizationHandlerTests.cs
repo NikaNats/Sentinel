@@ -2,8 +2,8 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 using Moq;
+using Sentinel.Application.Auth.Handlers;
 using Sentinel.Application.Auth.Models;
-using Sentinel.Auth.Authorization;
 using Sentinel.Security.Abstractions.Options;
 
 namespace Sentinel.Tests.Unit;
