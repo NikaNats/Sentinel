@@ -45,12 +45,10 @@ public sealed class KeycloakUserServiceTests
             new HttpClient(handler) { BaseAddress = new Uri("https://idp/admin/realms/test") },
             NullLogger);
 
-        var registration = new UserRegistration
-        {
-            Email = "test@example.com",
-            Username = "testuser",
-            Consent = new ConsentInfo(true, "v1", DateTime.UtcNow, "192.168.1.1")
-        };
+        var registration = new UserRegistration(
+            email: "test@example.com",
+            username: "testuser",
+            consent: ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
 
         var result = await sut.CreateUserInternalAsync(registration, "password", CancellationToken.None);
 
@@ -72,12 +70,10 @@ public sealed class KeycloakUserServiceTests
             new HttpClient(handler) { BaseAddress = new Uri("https://idp/admin/realms/test") },
             NullLogger);
 
-        var registration = new UserRegistration
-        {
-            Email = "test@example.com",
-            Username = "testuser",
-            Consent = new ConsentInfo(true, "v1", DateTime.UtcNow, "192.168.1.1")
-        };
+        var registration = new UserRegistration(
+            email: "test@example.com",
+            username: "testuser",
+            consent: ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
 
         var result = await sut.CreateUserInternalAsync(registration, "password", CancellationToken.None);
 
@@ -104,12 +100,10 @@ public sealed class KeycloakUserServiceTests
             new HttpClient(handler) { BaseAddress = new Uri("https://idp/admin/realms/test") },
             NullLogger);
 
-        var registration = new UserRegistration
-        {
-            Email = "test@example.com",
-            Username = "testuser",
-            Consent = new ConsentInfo(true, "v1", DateTime.UtcNow, "192.168.1.1")
-        };
+        var registration = new UserRegistration(
+            email: "test@example.com",
+            username: "testuser",
+            consent: ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
 
         var result = await sut.CreateUserInternalAsync(registration, "password", CancellationToken.None);
 
@@ -131,12 +125,10 @@ public sealed class KeycloakUserServiceTests
             new HttpClient(handler) { BaseAddress = new Uri("https://idp/admin/realms/test") },
             NullLogger);
 
-        var registration = new UserRegistration
-        {
-            Email = "test@example.com",
-            Username = "testuser",
-            Consent = new ConsentInfo(true, "v1", DateTime.UtcNow, "192.168.1.1")
-        };
+        var registration = new UserRegistration(
+            email: "test@example.com",
+            username: "testuser",
+            consent: ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
 
         var result = await sut.CreateUserInternalAsync(registration, "password", CancellationToken.None);
 
@@ -160,12 +152,10 @@ public sealed class KeycloakUserServiceTests
             new HttpClient(handler) { BaseAddress = new Uri("https://idp/admin/realms/test") },
             NullLogger);
 
-        var registration = new UserRegistration
-        {
-            Email = "test@example.com",
-            Username = "testuser",
-            Consent = new ConsentInfo(true, "v1", DateTime.UtcNow, "192.168.1.1")
-        };
+        var registration = new UserRegistration(
+            email: "test@example.com",
+            username: "testuser",
+            consent: ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
 
         var result = await sut.CreateUserInternalAsync(registration, "password", CancellationToken.None);
 
@@ -190,12 +180,10 @@ public sealed class KeycloakUserServiceTests
             new HttpClient(handler) { BaseAddress = new Uri("https://idp/admin/realms/test") },
             NullLogger);
 
-        var registration = new UserRegistration
-        {
-            Email = "test@example.com",
-            Username = "testuser",
-            Consent = new ConsentInfo(true, "v1", DateTime.UtcNow, "192.168.1.1")
-        };
+        var registration = new UserRegistration(
+            email: "test@example.com",
+            username: "testuser",
+            consent: ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
 
         var result = await sut.CreateUserInternalAsync(registration, "password", CancellationToken.None);
 
@@ -218,12 +206,10 @@ public sealed class KeycloakUserServiceTests
             new HttpClient(handler) { BaseAddress = new Uri("https://idp/admin/realms/test") },
             NullLogger);
 
-        var registration = new UserRegistration
-        {
-            Email = "malformed@",
-            Username = "testuser",
-            Consent = new ConsentInfo(true, "v1", DateTime.UtcNow, "192.168.1.1")
-        };
+        var registration = new UserRegistration(
+            email: "malformed@",
+            username: "testuser",
+            consent: ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
 
         var result = await sut.CreateUserInternalAsync(registration, "password", CancellationToken.None);
 

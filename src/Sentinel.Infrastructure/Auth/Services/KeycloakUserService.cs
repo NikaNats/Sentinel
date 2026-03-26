@@ -17,16 +17,14 @@ internal sealed class KeycloakUserService(HttpClient httpClient, ILogger<Keycloa
         string password,
         CancellationToken cancellationToken = default)
     {
-        var legacyRegistration = new UserRegistration
-        {
-            Email = registration.Email,
-            Username = registration.Username,
-            Consent = new ConsentInfo(
-                registration.AcceptedTerms,
-                registration.PolicyVersion,
-                registration.AcceptedAtUtc,
-                registration.SourceIp)
-        };
+        var legacyRegistration = new UserRegistration(
+            email: registration.Email,
+            username: registration.Username,
+            consent: ConsentInfo.Create(
+                accepted: registration.AcceptedTerms,
+                policyVersion: registration.PolicyVersion,
+                rawIp: registration.SourceIp,
+                timestamp: new DateTimeOffset(registration.AcceptedAtUtc, TimeSpan.Zero)));
 
         return CreateUserInternalAsync(legacyRegistration, password, cancellationToken);
     }
