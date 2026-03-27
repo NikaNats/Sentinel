@@ -1,10 +1,18 @@
+using System.Buffers;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
+
 namespace Sentinel.SdJwt;
 
 /// <summary>
 /// Processes and verifies Selective Disclosure JWT (SD-JWT) presentations (RFC 9901).
 /// Handles format validation, disclosure digest verification, and key binding validation.
 /// </summary>
-public sealed class SdJwtPresenter
+public sealed class SdJwtPresenter : ISdJwtPresenter
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
     private readonly ISdJwtTokenValidator _tokenValidator;
@@ -172,26 +180,22 @@ public sealed class SdJwtPresenter
             return "Key binding token 'jwk' is not a valid JWK.";
         }
 
-        // Validate key binding signature
+        // Validate key binding signature and audience via cryptographic handler
+        // (not manual string comparison, which can be bypassed)
         var kbValidation = await TokenHandler.ValidateTokenAsync(kbJwt, new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = holderKey,
             ValidateIssuer = false,
-            ValidateAudience = false,
+            ValidateAudience = true,
+            ValidAudiences = new[] { expectedAudience },  // Cryptographic enforcement
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromSeconds(Math.Max(0, _options.AllowedClockSkewSeconds))
         });
 
         if (!kbValidation.IsValid)
         {
-            return "Key binding token signature validation failed.";
-        }
-
-        // Validate audience
-        if (!kbToken.Audiences.Contains(expectedAudience))
-        {
-            return $"Key binding token audience mismatch (expected: {expectedAudience}).";
+            return "Key binding token signature or audience validation failed.";
         }
 
         // Validate nonce if required
@@ -312,7 +316,9 @@ public sealed class SdJwtPresenter
 
             if (!TryParseDisclosure(disclosure, out var claimName, out var claimValue))
             {
-                _logger.LogWarning("Failed to parse disclosure: {Disclosure}", disclosure);
+                // Hash disclosure for log correlation without exposing PII (GDPR/CPRA compliance)
+                var disclosureHash = Base64UrlEncoder.Encode(SHA256.HashData(Encoding.ASCII.GetBytes(disclosure)));
+                _logger.LogWarning("Failed to parse disclosure (hash: {DisclosureHash})", disclosureHash);
                 continue;
             }
 
@@ -327,6 +333,7 @@ public sealed class SdJwtPresenter
 
     /// <summary>
     /// Parses a disclosure array: [salt, claim_name, claim_value].
+    /// Preserves numeric types (int/long/double), booleans, and complex values (JSON objects/arrays).
     /// </summary>
     private static bool TryParseDisclosure(string disclosure, out string? claimName, out string? claimValue)
     {
@@ -350,7 +357,10 @@ public sealed class SdJwtPresenter
                 return false;
             }
 
-            claimValue = doc.RootElement[2].ToString();
+            // Extract claim value with type preservation
+            var valueElement = doc.RootElement[2];
+            claimValue = ConvertJsonElementToClaimValue(valueElement);
+
             return claimValue is not null;
         }
 #pragma warning disable CA1031  // Continue if disclosure parsing fails
@@ -362,81 +372,160 @@ public sealed class SdJwtPresenter
     }
 
     /// <summary>
-    /// Extracts the set of allowed claim digests from issuer token's _sd array.
+    /// Converts a JsonElement to a string claim value, preserving type information.
+    /// - Numbers remain as numeric strings (int64, double)
+    /// - Booleans become "true"/"false" strings
+    /// - Objects/Arrays become JSON strings (for complex valued claims)
+    /// - Strings remain unchanged
+    /// </summary>
+    private static string? ConvertJsonElementToClaimValue(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.GetRawText(), // Preserves exact numeric representation
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Null => null,
+            // For complex types (Object, Array), serialize as JSON string
+            JsonValueKind.Object or JsonValueKind.Array => element.GetRawText(),
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Extracts the set of allowed claim digests from issuer token's _sd arrays.
+    /// RFC 9901 allows nested selective disclosure: _sd can appear at any depth in object hierarchy.
+    /// Performs recursive deep traversal to find all _sd digests (root + nested objects/arrays).
     /// </summary>
     private static HashSet<string> ExtractDigests(JsonWebToken token)
     {
         var digests = new HashSet<string>(StringComparer.Ordinal);
 
-        if (!token.TryGetPayloadValue<JsonElement>("_sd", out var sdArray)
-            || sdArray.ValueKind != JsonValueKind.Array)
+        if (!token.TryGetPayloadValue<JsonElement>("_sd", out var payload))
         {
             return digests;
         }
 
-        foreach (var element in sdArray.EnumerateArray())
-        {
-            var digest = element.GetString();
-            if (!string.IsNullOrWhiteSpace(digest))
-            {
-                digests.Add(digest);
-            }
-        }
-
+        // Start recursive extraction from token payload (typically an object)
+        ExtractDigestsRecursive(payload, digests);
         return digests;
+    }
+
+    /// <summary>
+    /// Recursively extracts all _sd digest values from a JSON structure at any nesting depth.
+    /// Traverses objects and arrays to find all _sd arrays (RFC 9901 nested disclosure support).
+    /// </summary>
+    private static void ExtractDigestsRecursive(JsonElement element, HashSet<string> digests)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                // Check for _sd array at this level
+                if (element.TryGetProperty("_sd", out var sdArray) && sdArray.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var sdElement in sdArray.EnumerateArray())
+                    {
+                        var digest = sdElement.GetString();
+                        if (!string.IsNullOrWhiteSpace(digest))
+                        {
+                            digests.Add(digest);
+                        }
+                    }
+                }
+
+                // Recursively process all properties
+                foreach (var property in element.EnumerateObject())
+                {
+                    // Skip structural SD-JWT fields
+                    if (!string.Equals(property.Name, "_sd", StringComparison.Ordinal)
+                        && !string.Equals(property.Name, "_sd_alg", StringComparison.Ordinal)
+                        && !string.Equals(property.Name, "cnf", StringComparison.Ordinal))
+                    {
+                        ExtractDigestsRecursive(property.Value, digests);
+                    }
+                }
+                break;
+
+            case JsonValueKind.Array:
+                // Recursively process array elements
+                foreach (var arrayElement in element.EnumerateArray())
+                {
+                    ExtractDigestsRecursive(arrayElement, digests);
+                }
+                break;
+
+            // Primitive values (String, Number, True, False, Null) have no nested disclosures
+        }
     }
 
     /// <summary>
     /// Computes the JWK Thumbprint (per RFC 7638) for a given JWK.
     /// Used to verify the key binding holder's public key matches issuer's cnf.jkt.
+    ///
+    /// RFC 7638 requires strict canonical JSON: lexicographic ordering, no whitespace,
+    /// exact UTF-8 encoding with preserved numeric precision via Utf8JsonWriter.
     /// </summary>
     private static string ComputeJwkThumbprint(JsonElement jwk)
     {
-        // RFC 7638 requires lexicographic order: crv, d, dp, dq, e, k, kid, kty, n, oth, p, q, qi, use, x, y
-        // For EC keys (when present), include: crv, x, y
-        // For RSA keys (when present), include: e, n
+        // RFC 7638 Section 3: Required members per key type
+        var requiredMembers = new SortedDictionary<string, JsonElement>(StringComparer.Ordinal);
 
-        var requiredMembers = new List<string>();
-
-        if (jwk.TryGetProperty("kty", out var ktyElement))
+        if (!jwk.TryGetProperty("kty", out var ktyElement))
         {
-            var kty = ktyElement.GetString();
-
-            if (string.Equals(kty, "RSA", StringComparison.Ordinal))
-            {
-                // RSA: e, n
-                if (jwk.TryGetProperty("e", out _)) requiredMembers.Add("e");
-                if (jwk.TryGetProperty("n", out _)) requiredMembers.Add("n");
-            }
-            else if (string.Equals(kty, "EC", StringComparison.Ordinal))
-            {
-                // EC: crv, x, y
-                if (jwk.TryGetProperty("crv", out _)) requiredMembers.Add("crv");
-                if (jwk.TryGetProperty("x", out _)) requiredMembers.Add("x");
-                if (jwk.TryGetProperty("y", out _)) requiredMembers.Add("y");
-            }
-            // Add kty as well
-            requiredMembers.Insert(0, "kty");
+            return string.Empty; // Invalid JWK
         }
 
-        // Build lexicographically ordered JSON
-        var orderedJson = "{";
-        var first = true;
+        var kty = ktyElement.GetString();
 
-        foreach (var member in requiredMembers.OrderBy(m => m))
+        // Always include kty (required for all key types)
+        requiredMembers["kty"] = ktyElement;
+
+        // RFC 7638 Table 1: Extract type-specific required members
+        switch (kty)
         {
-            if (jwk.TryGetProperty(member, out var value))
-            {
-                if (!first) orderedJson += ",";
-                orderedJson += $"\"{member}\":{value.GetRawText()}";
-                first = false;
-            }
+            case "RSA":
+                if (jwk.TryGetProperty("e", out var e))
+                    requiredMembers["e"] = e;
+                if (jwk.TryGetProperty("n", out var n))
+                    requiredMembers["n"] = n;
+                break;
+
+            case "EC":
+                if (jwk.TryGetProperty("crv", out var crv))
+                    requiredMembers["crv"] = crv;
+                if (jwk.TryGetProperty("x", out var x))
+                    requiredMembers["x"] = x;
+                if (jwk.TryGetProperty("y", out var y))
+                    requiredMembers["y"] = y;
+                break;
+
+            case "oct":
+                if (jwk.TryGetProperty("k", out var k))
+                    requiredMembers["k"] = k;
+                break;
+
+            // For other key types, kty is sufficient
         }
 
-        orderedJson += "}";
+        // Construct canonical JSON via Utf8JsonWriter (zero-allocation, strict compliance)
+        var buffer = new ArrayBufferWriter<byte>();
+        using var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = false });
 
-        // Compute SHA-256 and encode
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(orderedJson));
+        writer.WriteStartObject();
+
+        // Write members in lexicographic order (SortedDictionary guarantees this)
+        foreach (var kvp in requiredMembers)
+        {
+            writer.WritePropertyName(kvp.Key);
+            kvp.Value.WriteTo(writer);
+        }
+
+        writer.WriteEndObject();
+        writer.Flush();
+
+        // Compute SHA-256 thumbprint of canonical JSON
+        var hashBytes = SHA256.HashData(buffer.WrittenMemory.Span);
         return Base64UrlEncoder.Encode(hashBytes);
     }
 }

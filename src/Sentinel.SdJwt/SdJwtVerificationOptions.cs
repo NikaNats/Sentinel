@@ -16,9 +16,9 @@ public sealed class SdJwtVerificationOptions
     /// <summary>
     /// Gets or sets a value indicating whether key binding nonce validation is required.
     /// When enabled, the key binding JWT must contain a matching nonce claim.
-    /// Default: false.
+    /// Default: true (secure-by-default: prevents replay attacks).
     /// </summary>
-    public bool RequireKeyBindingNonce { get; init; }
+    public bool RequireKeyBindingNonce { get; init; } = true;
 
     /// <summary>
     /// Gets or sets the allowed clock skew in seconds for key binding token iat validation.
