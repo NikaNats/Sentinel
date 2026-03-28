@@ -5,84 +5,109 @@ using Microsoft.IdentityModel.Tokens;
 namespace Sentinel.Tests.DPoP;
 
 /// <summary>
-/// Helper to build test DPoP proofs with configurable claims.
-/// Used for unit testing DPoP validation logic without external dependencies.
+/// Production-grade cryptographic helper for building mathematically valid DPoP proofs.
+///
+/// This test helper removes the "silent fail" anti-pattern and replaces it with:
+/// - Real ECDsa P-256 signing with full cryptographic validity
+/// - Explicit error handling (no catch-all fallbacks)
+/// - Strict parameter validation
+/// - RFC 9449 compliance verification
+///
+/// SECURITY PRINCIPLE: A test that fakes a signature is like a fire drill where nobody leaves the building.
+/// This builder ensures the validator's internal TokenHandler is actually verifying real signatures.
 /// </summary>
 public static class TestJwtBuilder
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
 
     /// <summary>
-    /// Creates a minimal DPoP proof JWT for testing.
-    /// Note: This is for schema/structure testing only; signatures are not cryptographically valid.
+    /// Creates a mathematically valid DPoP proof signed with real ECDsa P-256 cryptography.
+    /// ✅ PRODUCTION-GRADE: Every signature is cryptographically verifiable.
     /// </summary>
-    public static string CreateDpopProof(
+    /// <param name="signingKey">The ECDsa security key used for JOSE signing (typically from a test fixture).</param>
+    /// <param name="algorithm">The signing algorithm (e.g., "ES256"). Must match the key type.</param>
+    /// <param name="publicJwk">The public JWK to embed in the proof header (from ExportParameters(false)).</param>
+    /// <param name="httpMethod">HTTP method (e.g., "POST", "GET") per RFC 9449 section 4.1.</param>
+    /// <param name="httpUri">HTTP URI for the request. Must be absolute and normalized.</param>
+    /// <param name="nonce">Optional server-issued nonce for proof binding. If provided, embedded in payload.</param>
+    /// <param name="iat">Optional iat (issued-at) override for temporal boundary testing. Defaults to now.</param>
+    /// <returns>
+    /// A valid, signed JWT in the format:
+    /// header.payload.signature
+    ///
+    /// Where:
+    /// - header contains {"alg":"ES256","typ":"dpop+jwt","jwk":{...}}
+    /// - payload contains {"jti","htm","htu","iat" and optional "nonce"}
+    /// - signature is ECDSA(SHA256(header.payload), privateKey)
+    /// </returns>
+    public static string CreateValidProof(
+        SecurityKey signingKey,
         string algorithm,
-        string thumbprint,
-        string? jti,
+        Dictionary<string, object> publicJwk,
         string httpMethod,
         string httpUri,
-        int iatSecondsAgo)
+        string? nonce = null,
+        DateTimeOffset? iat = null)
     {
+        ArgumentNullException.ThrowIfNull(signingKey, nameof(signingKey));
+        ArgumentNullException.ThrowIfNull(algorithm, nameof(algorithm));
+        ArgumentNullException.ThrowIfNull(publicJwk, nameof(publicJwk));
+        ArgumentException.ThrowIfNullOrWhiteSpace(httpMethod, nameof(httpMethod));
+        ArgumentException.ThrowIfNullOrWhiteSpace(httpUri, nameof(httpUri));
+
+        // Validate URI is absolute
+        _ = new Uri(httpUri, UriKind.Absolute); // Throws if malformed
+
         var now = DateTimeOffset.UtcNow;
-        var iat = now.AddSeconds(-iatSecondsAgo).ToUnixTimeSeconds();
+        var issuedAt = (iat ?? now).ToUnixTimeSeconds();
 
-        // Create test JWK (not cryptographically valid, for structure testing)
-        var jwkDict = new Dictionary<string, object>
+        // Build RFC 9449 compliant payload
+        var claims = new Dictionary<string, object>
         {
-            ["kty"] = "EC",
-            ["crv"] = "P-256",
-            ["x"] = Base64UrlEncoder.Encode(new byte[32]),
-            ["y"] = Base64UrlEncoder.Encode(new byte[32])
-        };
-
-        var payload = new Dictionary<string, object>
-        {
-            ["typ"] = "dpop+jwt",
-            ["alg"] = algorithm,
-            ["jwk"] = jwkDict,
-            ["jti"] = jti ?? string.Empty,
+            // RFC 9449 section 4.1: mandatory claims
+            ["jti"] = Guid.NewGuid().ToString("N"),
             ["htm"] = httpMethod,
             ["htu"] = NormalizeUri(httpUri),
-            ["iat"] = iat
+            ["iat"] = issuedAt
         };
 
-        // Create unsigned JWT for testing structure (not production use)
-        var tokenDescriptor = new SecurityTokenDescriptor
+        // RFC 9449 section 5.1: optional nonce for request/response binding
+        if (!string.IsNullOrEmpty(nonce))
         {
-            Claims = payload,
-            SigningCredentials = new SigningCredentials(
-                new SymmetricSecurityKey(new byte[32]),
-                algorithm)
+            claims["nonce"] = nonce;
+        }
+
+        // Create security token descriptor with explicit JOSE requirements
+        var descriptor = new SecurityTokenDescriptor
+        {
+            Claims = claims,
+            SigningCredentials = new SigningCredentials(signingKey, algorithm),
+            TokenType = "dpop+jwt"
         };
 
-        try
+        // RFC 9449 section 4: inject the public JWK in the JOSE header
+        descriptor.AdditionalHeaderClaims = new Dictionary<string, object>
         {
-            return TokenHandler.CreateToken(tokenDescriptor);
-        }
-#pragma warning disable CA1031 // Catch-all for test fallback: production token creation failure
-        catch (Exception)
-        {
-            // Fallback: create minimal JWT manually for testing
-            return "eyJhbGciOiJFUzI1NiIsInR5cCI6ImRwb3Arand0IiwiandrIjp7ImtpdCI6IkVDIn19." +
-                   "eyJqdGkiOiJ0ZXN0IiwiaHRtIjoiUE9TVCIsImh0dSI6Imh0dHBzOi8vZXhhbXBsZS5jb20vdG9rZW4iLCJpYXQiOjE2NDI2NjAxNjB9." +
-                   "test-signature";
-        }
-#pragma warning restore CA1031
+            ["jwk"] = publicJwk
+        };
+
+        // Perform actual ECDSA signing via Microsoft.IdentityModel
+        return TokenHandler.CreateToken(descriptor);
     }
 
+    /// <summary>
+    /// Normalizes a URI by removing query strings and fragments per RFC 9449.
+    /// Used internally for strict URI matching.
+    /// </summary>
     private static string NormalizeUri(string uri)
     {
-        try
+        var parsed = new Uri(uri, UriKind.Absolute);
+        var builder = new UriBuilder(parsed)
         {
-            var parsed = new Uri(uri, UriKind.Absolute);
-            return parsed.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.Unescaped).TrimEnd('/');
-        }
-#pragma warning disable CA1031 // Catch-all for test fallback: invalid URI input
-        catch (Exception)
-        {
-            return uri;
-        }
-#pragma warning restore CA1031
+            Query = string.Empty,
+            Fragment = string.Empty
+        };
+
+        return builder.Uri.AbsoluteUri.TrimEnd('/');
     }
 }

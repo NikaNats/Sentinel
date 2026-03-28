@@ -24,12 +24,12 @@ public static class DependencyInjectionExtensions
     /// </remarks>
     public static IServiceCollection AddSentinelDPoP(this IServiceCollection services, IConfiguration configuration)
     {
-        // ✅ FIX: Explicit Bind using Microsoft.Extensions.Configuration namespace
-        services.Configure<DPoPOptions>(opts =>
-        {
-            var section = configuration.GetSection(DPoPOptions.SectionName);
-            Microsoft.Extensions.Configuration.ConfigurationBinder.Bind(section, opts);
-        });
+        // ✅ FIX: Use Get<T>() for AOT-compatible configuration binding
+        var section = configuration.GetSection(DPoPOptions.SectionName);
+        var options = section.Get<DPoPOptions>() ?? new DPoPOptions();
+
+        services.Configure<DPoPOptions>(_ => { });
+        services.AddSingleton(options);
 
         // ✅ FIX: Use Transient to prevent Captive Dependencies if IJtiReplayCache is Scoped
         services.AddTransient<IDpopThumbprintComputer, DpopThumbprintComputer>();
