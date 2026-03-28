@@ -20,23 +20,35 @@ public sealed partial class SentinelSecurityDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        // JTI Replay Cache keys
+        // JTI Replay Cache entity configuration
         modelBuilder.Entity<JtiReplayCacheEntry>()
             .HasKey(e => e.Jti);
 
         modelBuilder.Entity<JtiReplayCacheEntry>()
+            .Property(e => e.CreatedAt)
+            .ValueGeneratedOnAdd();
+
+        modelBuilder.Entity<JtiReplayCacheEntry>()
             .HasIndex(e => e.ExpiresAt);
 
-        // DPoP Nonce Store keys (thumbprint is unique, only one nonce per client at a time)
+        // DPoP Nonce Store entity configuration (thumbprint is unique key, one nonce per client at a time)
         modelBuilder.Entity<DpopNonceEntry>()
             .HasKey(e => e.Thumbprint);
 
         modelBuilder.Entity<DpopNonceEntry>()
+            .Property(e => e.CreatedAt)
+            .ValueGeneratedOnAdd();
+
+        modelBuilder.Entity<DpopNonceEntry>()
             .HasIndex(e => e.ExpiresAt);
 
-        // Session Blacklist keys
+        // Session Blacklist entity configuration
         modelBuilder.Entity<SessionBlacklistEntry>()
             .HasKey(e => e.SessionId);
+
+        modelBuilder.Entity<SessionBlacklistEntry>()
+            .Property(e => e.CreatedAt)
+            .ValueGeneratedOnAdd();
 
         modelBuilder.Entity<SessionBlacklistEntry>()
             .HasIndex(e => e.ExpiresAt);

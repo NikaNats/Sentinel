@@ -33,7 +33,7 @@ internal sealed class EfDpopNonceStore : IDpopNonceStore
             await using var context = _contextFactory.CreateDbContext();
 
             var entry = await context.DpopNonceStore
-                .Where(e => e.Thumbprint == thumbprint && e.ExpiresAt > DateTime.UtcNow)
+                .Where(e => e.Thumbprint == thumbprint && e.ExpiresAt > DateTimeOffset.UtcNow)
                 .FirstOrDefaultAsync(cancellationToken);
 
             if (entry == null)
@@ -74,7 +74,7 @@ internal sealed class EfDpopNonceStore : IDpopNonceStore
             {
                 Thumbprint = thumbprint,
                 Nonce = nonce,
-                ExpiresAt = expiresAt.UtcDateTime
+                ExpiresAt = expiresAt
             };
 
             context.DpopNonceStore.Add(entry);
@@ -99,7 +99,7 @@ internal sealed class EfDpopNonceStore : IDpopNonceStore
             await using var context = _contextFactory.CreateDbContext();
 
             var expiredCount = await context.DpopNonceStore
-                .Where(e => e.ExpiresAt <= DateTime.UtcNow)
+                .Where(e => e.ExpiresAt <= DateTimeOffset.UtcNow)
                 .ExecuteDeleteAsync(cancellationToken);
 
             _logger.LogInformation("Cleaned up {Count} expired nonce entries", expiredCount);
@@ -129,7 +129,7 @@ internal sealed class EfDpopNonceStore : IDpopNonceStore
             var rowsDeleted = await context.DpopNonceStore
                 .Where(e => e.Thumbprint == thumbprint
                          && e.Nonce == expectedNonce
-                         && e.ExpiresAt > DateTime.UtcNow)
+                         && e.ExpiresAt > DateTimeOffset.UtcNow)
                 .ExecuteDeleteAsync(cancellationToken);
 
             bool wasConsumed = rowsDeleted > 0;

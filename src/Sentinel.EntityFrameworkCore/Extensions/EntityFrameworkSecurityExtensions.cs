@@ -5,6 +5,7 @@ using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Replay;
 using Sentinel.Security.Abstractions.Session;
 using Sentinel.EntityFrameworkCore.Stores;
+using Sentinel.EntityFrameworkCore.Services;
 
 /// <summary>
 /// Dependency injection extensions for Entity Framework Core cache implementations.
@@ -13,6 +14,7 @@ public static class EntityFrameworkSecurityExtensions
 {
     /// <summary>
     /// Adds Entity Framework Core security caches to the DI container.
+    /// Registers all three cache stores (JTI replay, DPoP nonce, session blacklist) and the background cleanup service.
     /// </summary>
     /// <param name="services">Service collection.</param>
     /// <returns>Service collection for chaining.</returns>
@@ -21,9 +23,14 @@ public static class EntityFrameworkSecurityExtensions
     {
         ArgumentNullException.ThrowIfNull(services, nameof(services));
 
+        // Register cache store implementations
         services.AddScoped<IJtiReplayCache, EfJtiReplayCache>();
         services.AddScoped<IDpopNonceStore, EfDpopNonceStore>();
         services.AddScoped<ISessionBlacklistCache, EfSessionBlacklistCache>();
+
+        // Register background service for periodic cleanup
+        // Prevents database disk exhaustion DoS from unbounded cache growth
+        services.AddHostedService<SecurityCacheCleanupService>();
 
         return services;
     }

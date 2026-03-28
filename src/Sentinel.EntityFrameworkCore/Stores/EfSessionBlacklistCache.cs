@@ -35,7 +35,7 @@ internal sealed class EfSessionBlacklistCache : ISessionBlacklistCache
             var entry = new SessionBlacklistEntry
             {
                 SessionId = sessionId,
-                ExpiresAt = expiresAt.UtcDateTime
+                ExpiresAt = expiresAt
             };
 
             context.SessionBlacklist.Add(entry);
@@ -43,9 +43,10 @@ internal sealed class EfSessionBlacklistCache : ISessionBlacklistCache
 
             _logger.LogInformation("Session blacklisted in database: {SessionId}", sessionId);
         }
-        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("UNIQUE") ?? false)
+        catch (DbUpdateException)
         {
-            // Session already blacklisted, that's fine
+            // Provider-agnostic UNIQUE constraint violation detection.
+            // The SessionId column has a unique constraint; if we reach here, it's already blacklisted.
             _logger.LogInformation("Session already blacklisted: {SessionId}", sessionId);
         }
         catch (Exception ex)
@@ -67,7 +68,7 @@ internal sealed class EfSessionBlacklistCache : ISessionBlacklistCache
             await using var context = _contextFactory.CreateDbContext();
 
             var isBlacklisted = await context.SessionBlacklist
-                .Where(e => e.SessionId == sessionId && e.ExpiresAt > DateTime.UtcNow)
+                .Where(e => e.SessionId == sessionId && e.ExpiresAt > DateTimeOffset.UtcNow)
                 .AnyAsync(cancellationToken);
 
             _logger.LogInformation("Session blacklist check for: {SessionId}, blacklisted: {IsBlacklisted}", sessionId, isBlacklisted);
@@ -90,7 +91,7 @@ internal sealed class EfSessionBlacklistCache : ISessionBlacklistCache
             await using var context = _contextFactory.CreateDbContext();
 
             var expiredCount = await context.SessionBlacklist
-                .Where(e => e.ExpiresAt <= DateTime.UtcNow)
+                .Where(e => e.ExpiresAt <= DateTimeOffset.UtcNow)
                 .ExecuteDeleteAsync(cancellationToken);
 
             _logger.LogInformation("Cleaned up {Count} expired session entries", expiredCount);

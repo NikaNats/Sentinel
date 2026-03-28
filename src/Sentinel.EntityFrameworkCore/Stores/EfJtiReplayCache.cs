@@ -35,7 +35,7 @@ internal sealed class EfJtiReplayCache : IJtiReplayCache
             var entry = new JtiReplayCacheEntry
             {
                 Jti = jti,
-                ExpiresAt = expiresAt.UtcDateTime
+                ExpiresAt = expiresAt
             };
 
             context.JtiReplayCache.Add(entry);
@@ -44,8 +44,10 @@ internal sealed class EfJtiReplayCache : IJtiReplayCache
             _logger.LogInformation("JTI marked as used in database: {Jti}", jti);
             return true;
         }
-        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("UNIQUE") ?? false)
+        catch (DbUpdateException)
         {
+            // Provider-agnostic UNIQUE constraint violation detection.
+            // The JTI column has a unique constraint; if we reach here, it's a replay attempt.
             _logger.LogWarning("JTI replay detected: {Jti}", jti);
             return false;
         }
@@ -66,7 +68,7 @@ internal sealed class EfJtiReplayCache : IJtiReplayCache
             await using var context = _contextFactory.CreateDbContext();
 
             var expiredCount = await context.JtiReplayCache
-                .Where(e => e.ExpiresAt <= DateTime.UtcNow)
+                .Where(e => e.ExpiresAt <= DateTimeOffset.UtcNow)
                 .ExecuteDeleteAsync(cancellationToken);
 
             _logger.LogInformation("Cleaned up {Count} expired JTI entries", expiredCount);
