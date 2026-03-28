@@ -2,16 +2,31 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <DocumentationFile>bin/$(Configuration)/$(TargetFramework)/$(AssemblyName).xml</DocumentationFile>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-all</AnalysisLevel>
+    <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
 
     <!-- NuGet Package Metadata -->
     <IsPackable>true</IsPackable>
-    <Description>Session management and lifecycle management for Sentinel OAuth 2.0 &amp; OpenID Connect authentication flows.</Description>
-    <PackageTags>session;session-management;oauth2;openid;authentication;</PackageTags>
+    <Version>1.0.0</Version>
+    <Authors>Sentinel Security Team</Authors>
+    <RepositoryUrl>https://github.com/NikaNats/Sentinel</RepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Description>High-assurance session and lifecycle management for Sentinel OAuth 2.0 &amp; OpenID Connect flows.</Description>
+    <PackageTags>session;oauth2;openid;security;fapi;dpop</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../Sentinel.Security.Abstractions/Sentinel.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\Sentinel.Security.Abstractions\Sentinel.Security.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
 </Project>
