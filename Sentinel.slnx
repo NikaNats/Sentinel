@@ -9,7 +9,8 @@
     <Project Path="src/Sentinel.Session/Sentinel.Session.csproj" />
     <Project Path="src/Sentinel.SSF/Sentinel.SSF.csproj" />
     <Project Path="src/Sentinel.SdJwt/Sentinel.SdJwt.csproj" />
-    <Project Path="src/Sentinel.RAR/Sentinel.RAR.csproj" />
+    <Project Path="src/Sentinel.Rar/Sentinel.Rar.csproj" />
+    <Project Path="src/Sentinel.Security.Diagnostics/Sentinel.Security.Diagnostics.csproj" />
     <Project Path="src/Sentinel.Redis/Sentinel.Redis.csproj" />
     <Project Path="src/Sentinel.EntityFrameworkCore/Sentinel.EntityFrameworkCore.csproj" />
     <Project Path="src/Sentinel.Keycloak/Sentinel.Keycloak.csproj" />
