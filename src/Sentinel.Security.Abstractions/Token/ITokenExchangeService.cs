@@ -1,13 +1,13 @@
 namespace Sentinel.Security.Abstractions.Token;
 
 /// <summary>
-/// Exchanges external provider tokens (federation, OAuth) for Sentinel access tokens.
-/// Supports DPoP-bound tokens and external identity federation scenarios.
+///     Exchanges external provider tokens (federation, OAuth) for Sentinel access tokens.
+///     Supports DPoP-bound tokens and external identity federation scenarios.
 /// </summary>
 public interface ITokenExchangeService
 {
     /// <summary>
-    /// Exchanges an external identity provider token for a Sentinel access token.
+    ///     Exchanges an external identity provider token for a Sentinel access token.
     /// </summary>
     /// <param name="externalToken">The external provider's token (JWT or opaque).</param>
     /// <param name="providerName">The external provider identifier (e.g., "google", "saml").</param>
@@ -24,7 +24,7 @@ public interface ITokenExchangeService
 }
 
 /// <summary>
-/// Result of a token exchange operation.
+///     Result of a token exchange operation.
 /// </summary>
 public sealed record TokenExchangeServiceResult(
     bool IsSuccess,

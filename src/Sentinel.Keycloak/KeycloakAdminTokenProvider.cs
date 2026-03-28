@@ -1,6 +1,5 @@
 // Sentinel Security API - FAPI 2.0 Compliant
 
-using System.Text.Json;
 using Microsoft.Extensions.Options;
 
 namespace Sentinel.Keycloak;

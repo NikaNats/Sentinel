@@ -1,17 +1,17 @@
 namespace Sentinel.Session;
 
 /// <summary>
-/// Session manager for handling logout, revocation, and binding validation.
-/// Coordinates session blacklist and optional DPoP proof-of-possession binding.
+///     Session manager for handling logout, revocation, and binding validation.
+///     Coordinates session blacklist and optional DPoP proof-of-possession binding.
 /// </summary>
 public sealed class SessionManager : ISessionManager
 {
     private readonly ISessionBlacklistCache _blacklist;
-    private readonly SessionManagementOptions _options;
     private readonly ILogger<SessionManager> _logger;
+    private readonly SessionManagementOptions _options;
 
     /// <summary>
-    /// Initializes a new instance with session blacklist cache, configuration, and logging.
+    ///     Initializes a new instance with session blacklist cache, configuration, and logging.
     /// </summary>
     /// <param name="blacklist">Cache for tracking revoked/blacklisted sessions.</param>
     /// <param name="options">Configuration for session management behavior.</param>
@@ -32,14 +32,14 @@ public sealed class SessionManager : ISessionManager
     }
 
     /// <summary>
-    /// Attempts to revoke a session by adding it to the blacklist.
-    /// Used for logout endpoint to prevent token reuse after user signs out.
+    ///     Attempts to revoke a session by adding it to the blacklist.
+    ///     Used for logout endpoint to prevent token reuse after user signs out.
     /// </summary>
     /// <param name="sessionId">Session identifier to revoke.</param>
     /// <param name="expiresAt">Session lifetime (cache should remove entry automatically).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// Success result on successful blacklist, fail-closed result if cache unavailable.
+    ///     Success result on successful blacklist, fail-closed result if cache unavailable.
     /// </returns>
     public async Task<SecurityResult> RevokeSessionAsync(
         string sessionId,
@@ -81,13 +81,13 @@ public sealed class SessionManager : ISessionManager
     }
 
     /// <summary>
-    /// Checks if a session has been revoked (is blacklisted).
+    ///     Checks if a session has been revoked (is blacklisted).
     /// </summary>
     /// <param name="sessionId">Session identifier to check.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// SecurityResult&lt;bool&gt; with true if revoked, false if active.
-    /// Fails closed (returns failure) if cache unavailable.
+    ///     SecurityResult&lt;bool&gt; with true if revoked, false if active.
+    ///     Fails closed (returns failure) if cache unavailable.
     /// </returns>
     public async Task<SecurityResult<bool>> IsSessionRevokedAsync(
         string sessionId,
@@ -126,13 +126,13 @@ public sealed class SessionManager : ISessionManager
     }
 
     /// <summary>
-    /// Validates that a DPoP proof is bound to the correct session's registered key.
-    /// Per RFC 9449, the DPoP thumbprint must match the session's binding.
+    ///     Validates that a DPoP proof is bound to the correct session's registered key.
+    ///     Per RFC 9449, the DPoP thumbprint must match the session's binding.
     /// </summary>
     /// <param name="dpopThumbprint">Thumbprint from the DPoP proof.</param>
     /// <param name="sessionDpopThumbprint">Thumbprint registered with the session during authentication.</param>
     /// <returns>
-    /// true if DPoP proof is bound correctly, false if thumbprints don't match or binding required but missing.
+    ///     true if DPoP proof is bound correctly, false if thumbprints don't match or binding required but missing.
     /// </returns>
     public bool ValidateDpopBinding(string dpopThumbprint, string? sessionDpopThumbprint)
     {

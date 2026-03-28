@@ -1,11 +1,11 @@
-using Sentinel.Security.Abstractions.Session;
 using AppSessionBlacklistCache = Sentinel.Application.Common.Abstractions.ISessionBlacklistCache;
 using SecSessionBlacklistCache = Sentinel.Security.Abstractions.Session.ISessionBlacklistCache;
 
 namespace Sentinel.Tests.Shared.Fixtures;
 
 /// <summary>
-/// Adapter that bridges the Application-layer ISessionBlacklistCache interface to the Security-layer ISessionBlacklistCache.
+///     Adapter that bridges the Application-layer ISessionBlacklistCache interface to the Security-layer
+///     ISessionBlacklistCache.
 /// </summary>
 public sealed class SessionBlacklistCacheAdapter : AppSessionBlacklistCache
 {
@@ -19,7 +19,7 @@ public sealed class SessionBlacklistCacheAdapter : AppSessionBlacklistCache
     }
 
     /// <summary>
-    /// Converts TimeSpan TTL to DateTimeOffset expiresAt and delegates to security cache.
+    ///     Converts TimeSpan TTL to DateTimeOffset expiresAt and delegates to security cache.
     /// </summary>
     public async Task BlacklistSessionAsync(string sessionId, TimeSpan ttl, CancellationToken ct)
     {
@@ -28,7 +28,7 @@ public sealed class SessionBlacklistCacheAdapter : AppSessionBlacklistCache
     }
 
     /// <summary>
-    /// Converts Task&lt;bool&gt; to ValueTask&lt;bool&gt; from security cache's IsBlacklistedAsync.
+    ///     Converts Task&lt;bool&gt; to ValueTask&lt;bool&gt; from security cache's IsBlacklistedAsync.
     /// </summary>
     public async ValueTask<bool> IsSessionBlacklistedAsync(string sessionId, CancellationToken ct)
     {

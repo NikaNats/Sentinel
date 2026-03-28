@@ -1,36 +1,36 @@
 namespace Sentinel.Session;
 
 /// <summary>
-/// Configuration for session management behavior.
+///     Configuration for session management behavior.
 /// </summary>
 public sealed class SessionManagementOptions
 {
     public const string SectionName = "SessionManagement";
 
     /// <summary>
-    /// If true, sessions track the DPoP thumbprint and validate it on each request.
+    ///     If true, sessions track the DPoP thumbprint and validate it on each request.
     /// </summary>
     public bool RequireDpopBinding { get; set; } = true;
 
     /// <summary>
-    /// Default session lifetime if not specified by the Identity Provider.
+    ///     Default session lifetime if not specified by the Identity Provider.
     /// </summary>
     public TimeSpan SessionMaxLifetime { get; set; } = TimeSpan.FromHours(8);
 
     /// <summary>
-    /// Cleanup interval for expired session blacklist entries.
+    ///     Cleanup interval for expired session blacklist entries.
     /// </summary>
     public TimeSpan BlacklistCleanupInterval { get; set; } = TimeSpan.FromHours(1);
 }
 
 /// <summary>
-/// Startup validation for session management options.
-/// Ensures the application fails fast if configured insecurely.
+///     Startup validation for session management options.
+///     Ensures the application fails fast if configured insecurely.
 /// </summary>
 public sealed class SessionManagementOptionsValidator : IValidateOptions<SessionManagementOptions>
 {
     /// <summary>
-    /// Validates session management options at startup.
+    ///     Validates session management options at startup.
     /// </summary>
     public ValidateOptionsResult Validate(string? name, SessionManagementOptions options)
     {

@@ -1,12 +1,11 @@
+using Sentinel.EntityFrameworkCore.Models;
+using Sentinel.Security.Abstractions.Replay;
+
 namespace Sentinel.EntityFrameworkCore.Stores;
 
-using Sentinel.Security.Abstractions.Replay;
-using Sentinel.EntityFrameworkCore.Models;
-using Microsoft.EntityFrameworkCore;
-
 /// <summary>
-/// Entity Framework Core implementation of IJtiReplayCache.
-/// Stores JWT IDs in a relational database to prevent token replay attacks.
+///     Entity Framework Core implementation of IJtiReplayCache.
+///     Stores JWT IDs in a relational database to prevent token replay attacks.
 /// </summary>
 internal sealed class EfJtiReplayCache : IJtiReplayCache
 {
@@ -22,11 +21,12 @@ internal sealed class EfJtiReplayCache : IJtiReplayCache
     }
 
     /// <summary>
-    /// Marks a JWT ID as used and prevents any further use.
+    ///     Marks a JWT ID as used and prevents any further use.
     /// </summary>
-    public async Task<bool> TryMarkUsedAsync(string jti, DateTimeOffset expiresAt, CancellationToken cancellationToken = default)
+    public async Task<bool> TryMarkUsedAsync(string jti, DateTimeOffset expiresAt,
+        CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(jti, nameof(jti));
+        ArgumentException.ThrowIfNullOrWhiteSpace(jti);
 
         try
         {
@@ -59,7 +59,7 @@ internal sealed class EfJtiReplayCache : IJtiReplayCache
     }
 
     /// <summary>
-    /// Removes expired JTI entries from the database (garbage collection).
+    ///     Removes expired JTI entries from the database (garbage collection).
     /// </summary>
     public async Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
     {

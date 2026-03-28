@@ -36,7 +36,7 @@ public sealed class RarPropertyTests
         var amount = amountCents.Item / 100m;
 
         var detail = new AuthorizationDetail(
-            Type: "urn:sentinel:finance:transfer",
+            "urn:sentinel:finance:transfer",
             TransactionId: txnId,
             Amount: amount,
             Currency: currency);
@@ -62,10 +62,10 @@ public sealed class RarPropertyTests
         var txnId = txnIdGen.Get;
         var currency = currencyGen.Get.Length >= 3 ? currencyGen.Get[..3].ToUpperInvariant() : "USD";
         var amount = amountCents.Item / 100m;
-        var tamperedAmount = amount + (deltaCents.Item / 100m);
+        var tamperedAmount = amount + deltaCents.Item / 100m;
 
         var detail = new AuthorizationDetail(
-            Type: "urn:sentinel:finance:transfer",
+            "urn:sentinel:finance:transfer",
             TransactionId: txnId,
             Amount: amount,
             Currency: currency);
@@ -85,7 +85,7 @@ public sealed class RarPropertyTests
     public void Validate_MalformedPayload_ReturnsFailure()
     {
         var detail = new AuthorizationDetail(
-            Type: "urn:sentinel:finance:transfer",
+            "urn:sentinel:finance:transfer",
             TransactionId: "txn-1",
             Amount: 10m,
             Currency: "USD");

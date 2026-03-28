@@ -1,12 +1,11 @@
+using Sentinel.EntityFrameworkCore.Models;
+using Sentinel.Security.Abstractions.Nonce;
+
 namespace Sentinel.EntityFrameworkCore.Stores;
 
-using Sentinel.Security.Abstractions.Nonce;
-using Sentinel.EntityFrameworkCore.Models;
-using Microsoft.EntityFrameworkCore;
-
 /// <summary>
-/// Entity Framework Core implementation of IDpopNonceStore.
-/// Stores per-client DPoP nonces in a relational database.
+///     Entity Framework Core implementation of IDpopNonceStore.
+///     Stores per-client DPoP nonces in a relational database.
 /// </summary>
 internal sealed class EfDpopNonceStore : IDpopNonceStore
 {
@@ -22,11 +21,11 @@ internal sealed class EfDpopNonceStore : IDpopNonceStore
     }
 
     /// <summary>
-    /// Retrieves the current nonce for a given client (identified by JWK thumbprint).
+    ///     Retrieves the current nonce for a given client (identified by JWK thumbprint).
     /// </summary>
     public async Task<string?> GetNonceAsync(string thumbprint, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(thumbprint, nameof(thumbprint));
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbprint);
 
         try
         {
@@ -53,12 +52,13 @@ internal sealed class EfDpopNonceStore : IDpopNonceStore
     }
 
     /// <summary>
-    /// Stores a new nonce for a client, invalidating any prior nonce.
+    ///     Stores a new nonce for a client, invalidating any prior nonce.
     /// </summary>
-    public async Task SetNonceAsync(string thumbprint, string nonce, DateTimeOffset expiresAt, CancellationToken cancellationToken = default)
+    public async Task SetNonceAsync(string thumbprint, string nonce, DateTimeOffset expiresAt,
+        CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(thumbprint, nameof(thumbprint));
-        ArgumentException.ThrowIfNullOrWhiteSpace(nonce, nameof(nonce));
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbprint);
+        ArgumentException.ThrowIfNullOrWhiteSpace(nonce);
 
         try
         {
@@ -90,7 +90,7 @@ internal sealed class EfDpopNonceStore : IDpopNonceStore
     }
 
     /// <summary>
-    /// Removes expired nonce entries from the database (garbage collection).
+    ///     Removes expired nonce entries from the database (garbage collection).
     /// </summary>
     public async Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
     {
@@ -112,13 +112,14 @@ internal sealed class EfDpopNonceStore : IDpopNonceStore
     }
 
     /// <summary>
-    /// Atomically verifies if the current nonce matches the expected value, and if so, deletes it.
-    /// Executes as a single SQL DELETE WHERE statement to prevent TOCTOU race conditions.
+    ///     Atomically verifies if the current nonce matches the expected value, and if so, deletes it.
+    ///     Executes as a single SQL DELETE WHERE statement to prevent TOCTOU race conditions.
     /// </summary>
-    public async Task<bool> ConsumeNonceIfMatchesAsync(string thumbprint, string expectedNonce, CancellationToken cancellationToken = default)
+    public async Task<bool> ConsumeNonceIfMatchesAsync(string thumbprint, string expectedNonce,
+        CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(thumbprint, nameof(thumbprint));
-        ArgumentException.ThrowIfNullOrWhiteSpace(expectedNonce, nameof(expectedNonce));
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbprint);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedNonce);
 
         try
         {
@@ -128,11 +129,11 @@ internal sealed class EfDpopNonceStore : IDpopNonceStore
             // Returns the number of rows affected. If 1, it matched and was deleted. If 0, it failed.
             var rowsDeleted = await context.DpopNonceStore
                 .Where(e => e.Thumbprint == thumbprint
-                         && e.Nonce == expectedNonce
-                         && e.ExpiresAt > DateTimeOffset.UtcNow)
+                            && e.Nonce == expectedNonce
+                            && e.ExpiresAt > DateTimeOffset.UtcNow)
                 .ExecuteDeleteAsync(cancellationToken);
 
-            bool wasConsumed = rowsDeleted > 0;
+            var wasConsumed = rowsDeleted > 0;
 
             if (wasConsumed)
             {
@@ -140,7 +141,8 @@ internal sealed class EfDpopNonceStore : IDpopNonceStore
             }
             else
             {
-                _logger.LogWarning("Atomic nonce consumption failed (mismatch or expired) for thumbprint: {Thumbprint}", thumbprint);
+                _logger.LogWarning("Atomic nonce consumption failed (mismatch or expired) for thumbprint: {Thumbprint}",
+                    thumbprint);
             }
 
             return wasConsumed;

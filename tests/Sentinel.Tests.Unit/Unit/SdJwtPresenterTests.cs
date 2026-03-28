@@ -1,18 +1,19 @@
+using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Sentinel.SdJwt;
-using FluentAssertions;
 
 namespace Sentinel.Tests.Unit;
 
 public sealed class SdJwtPresenterTests
 {
-    private readonly Mock<ISdJwtTokenValidator> _validatorMock = new();
     private readonly SdJwtPresenter _sut;
+    private readonly Mock<ISdJwtTokenValidator> _validatorMock = new();
 
     public SdJwtPresenterTests()
     {
-        _sut = new SdJwtPresenter(_validatorMock.Object, new SdJwtVerificationOptions(), NullLogger<SdJwtPresenter>.Instance);
+        _sut = new SdJwtPresenter(_validatorMock.Object, new SdJwtVerificationOptions(),
+            NullLogger<SdJwtPresenter>.Instance);
     }
 
     [Theory]
@@ -47,7 +48,8 @@ public sealed class SdJwtPresenterTests
     {
         // Arrange
         _validatorMock
-            .Setup(x => x.ValidateIssuerTokenAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.ValidateIssuerTokenAsync(It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(SdJwtIssuerTokenValidationResult.Failure("Issuer invalid"));
 
         // Act
@@ -63,7 +65,8 @@ public sealed class SdJwtPresenterTests
     {
         // Arrange
         _validatorMock
-            .Setup(x => x.ValidateIssuerTokenAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.ValidateIssuerTokenAsync(It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("Network down"));
 
         // Act
@@ -79,7 +82,8 @@ public sealed class SdJwtPresenterTests
     {
         // Arrange
         _validatorMock
-            .Setup(x => x.ValidateIssuerTokenAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.ValidateIssuerTokenAsync(It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
             .ThrowsAsync(new OperationCanceledException());
 
         // Act
@@ -97,7 +101,8 @@ public sealed class SdJwtPresenterTests
         var presentation = "issuer~disclosure1~disclosure2~kb";
 
         _validatorMock
-            .Setup(x => x.ValidateIssuerTokenAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.ValidateIssuerTokenAsync(It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(SdJwtIssuerTokenValidationResult.Failure("Validation fails for testing boundary"));
 
         // Act

@@ -1,19 +1,16 @@
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace Sentinel.AspNetCore.Filters;
 
 /// <summary>
-/// Native AOT-compatible Endpoint Filter for Redis-backed idempotency.
-///
-/// RFC 9110 Section 9.2.2 specifies idempotent requests should not produce
-/// multiple side effects. This filter enforces exactly-once semantics by:
-/// 1. Using Idempotency-Key header to deduplicate requests
-/// 2. Storing idempotency state in Redis with TTL
-/// 3. Returning 204 NoContent for duplicates (idempotent retry safety)
+///     Native AOT-compatible Endpoint Filter for Redis-backed idempotency.
+///     RFC 9110 Section 9.2.2 specifies idempotent requests should not produce
+///     multiple side effects. This filter enforces exactly-once semantics by:
+///     1. Using Idempotency-Key header to deduplicate requests
+///     2. Storing idempotency state in Redis with TTL
+///     3. Returning 204 NoContent for duplicates (idempotent retry safety)
 /// </summary>
 public sealed class IdempotencyFilter : IEndpointFilter
 {
@@ -123,7 +120,10 @@ public sealed class IdempotencyFilter : IEndpointFilter
     private static bool IsSuccessfulResult(object? result)
     {
         if (result is IStatusCodeHttpResult statusCodeResult)
+        {
             return statusCodeResult.StatusCode is >= 200 and < 300;
+        }
+
         return result is not null;
     }
 }

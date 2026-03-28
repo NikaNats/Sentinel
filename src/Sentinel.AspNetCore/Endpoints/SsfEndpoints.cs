@@ -1,8 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
@@ -12,9 +10,9 @@ using Sentinel.Security.Abstractions.Options;
 namespace Sentinel.AspNetCore.Endpoints;
 
 /// <summary>
-/// Shared Signals and Events (SSF) Endpoints - RFC 8936 implementation for event-driven security signaling.
-/// Receives signed SET (Security Event Token) from upstream IdP (OpenBanking, enterprise)
-/// and processes session invalidation, token revocation, credential compromise signals.
+///     Shared Signals and Events (SSF) Endpoints - RFC 8936 implementation for event-driven security signaling.
+///     Receives signed SET (Security Event Token) from upstream IdP (OpenBanking, enterprise)
+///     and processes session invalidation, token revocation, credential compromise signals.
 /// </summary>
 internal static class SsfEndpoints
 {
@@ -62,7 +60,7 @@ internal static class SsfEndpoints
         if (string.IsNullOrWhiteSpace(setToken))
         {
             return TypedResults.Problem(
-                detail: "SET token is required. Provide as raw JWT with Content-Type application/secevent+jwt or as 'set' property in JSON.",
+                "SET token is required. Provide as raw JWT with Content-Type application/secevent+jwt or as 'set' property in JSON.",
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
@@ -91,8 +89,8 @@ internal static class SsfEndpoints
     // ─────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Validates SSF-Auth-Token header using constant-time comparison to prevent timing attacks.
-    /// Follows RFC 8936 guidance on SET endpoint authentication.
+    ///     Validates SSF-Auth-Token header using constant-time comparison to prevent timing attacks.
+    ///     Follows RFC 8936 guidance on SET endpoint authentication.
     /// </summary>
     private static bool IsAuthTokenValid(HttpRequest request, SsfOptions ssfOptions)
     {
@@ -116,9 +114,9 @@ internal static class SsfEndpoints
     }
 
     /// <summary>
-    /// Reads SET token from either:
-    /// 1. Raw JWT body with Content-Type application/secevent+jwt (RFC 8936)
-    /// 2. JSON payload with 'set' property
+    ///     Reads SET token from either:
+    ///     1. Raw JWT body with Content-Type application/secevent+jwt (RFC 8936)
+    ///     2. JSON payload with 'set' property
     /// </summary>
     private static async Task<string?> ReadSecurityEventTokenAsync(HttpRequest request, CancellationToken ct)
     {

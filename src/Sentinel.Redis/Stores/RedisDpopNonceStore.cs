@@ -1,13 +1,12 @@
-namespace Sentinel.Redis.Stores;
-
 using Sentinel.Security.Abstractions.Nonce;
 
+namespace Sentinel.Redis.Stores;
+
 /// <summary>
-/// Redis-backed implementation of IDpopNonceStore with Fail-Closed semantics.
-/// Stores per-client DPoP nonces (keyed by JWK thumbprint).
-///
-/// SECURITY INVARIANT: If Redis is unavailable, all nonce operations throw an exception.
-/// DPoP proof validation fails if nonce state cannot be verified atomically.
+///     Redis-backed implementation of IDpopNonceStore with Fail-Closed semantics.
+///     Stores per-client DPoP nonces (keyed by JWK thumbprint).
+///     SECURITY INVARIANT: If Redis is unavailable, all nonce operations throw an exception.
+///     DPoP proof validation fails if nonce state cannot be verified atomically.
 /// </summary>
 public sealed class RedisDpopNonceStore : IDpopNonceStore
 {
@@ -23,9 +22,10 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
             return 0
         end";
 
-    private readonly IRedisConnectionProvider _provider;
     private readonly string _keyPrefix;
     private readonly ILogger<RedisDpopNonceStore> _logger;
+
+    private readonly IRedisConnectionProvider _provider;
 
     public RedisDpopNonceStore(
         IRedisConnectionProvider provider,
@@ -38,11 +38,11 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
     }
 
     /// <summary>
-    /// Retrieves the current nonce for a given client (identified by JWK thumbprint).
+    ///     Retrieves the current nonce for a given client (identified by JWK thumbprint).
     /// </summary>
     public async Task<string?> GetNonceAsync(string thumbprint, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(thumbprint, nameof(thumbprint));
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbprint);
 
         try
         {
@@ -59,18 +59,19 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
         catch (Exception ex)
         {
             _logger.LogError(ex, "Redis unavailable for nonce retrieval (Fail-Closed)");
-            throw new NonceStoreUnavailableException($"Redis is unavailable; nonce store is Fail-Closed.", ex);
+            throw new NonceStoreUnavailableException("Redis is unavailable; nonce store is Fail-Closed.", ex);
         }
     }
 
     /// <summary>
-    /// Stores a new nonce for a client, invalidating any prior nonce.
-    /// ✅ FIX: Respect the "Clear by Empty" protocol from the middleware.
-    /// When middleware passes string.Empty, delete the nonce instead of crashing.
+    ///     Stores a new nonce for a client, invalidating any prior nonce.
+    ///     ✅ FIX: Respect the "Clear by Empty" protocol from the middleware.
+    ///     When middleware passes string.Empty, delete the nonce instead of crashing.
     /// </summary>
-    public async Task SetNonceAsync(string thumbprint, string nonce, DateTimeOffset expiresAt, CancellationToken cancellationToken = default)
+    public async Task SetNonceAsync(string thumbprint, string nonce, DateTimeOffset expiresAt,
+        CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(thumbprint, nameof(thumbprint));
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbprint);
         // ✅ FIX: Allow empty nonce strings for "Clear by Empty" protocol (middleware consumption signal)
 
         try
@@ -90,7 +91,10 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
 
             // ✅ FIX: Safe TTL computation
             var timeToLive = expiresAt - DateTimeOffset.UtcNow;
-            if (timeToLive <= TimeSpan.Zero) timeToLive = TimeSpan.FromMilliseconds(1);
+            if (timeToLive <= TimeSpan.Zero)
+            {
+                timeToLive = TimeSpan.FromMilliseconds(1);
+            }
 
             await db.StringSetAsync(redisKey, nonce, timeToLive);
             _logger.LogTrace("DPoP nonce set for thumbprint: {Thumbprint}", thumbprint);
@@ -98,13 +102,14 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
         catch (Exception ex)
         {
             _logger.LogError(ex, "Redis unavailable for nonce storage (Fail-Closed)");
-            throw new NonceStoreUnavailableException("Redis is unavailable for nonce storage. System is Fail-Closed.", ex);
+            throw new NonceStoreUnavailableException("Redis is unavailable for nonce storage. System is Fail-Closed.",
+                ex);
         }
     }
 
     /// <summary>
-    /// Removes expired nonce entries (garbage collection).
-    /// In Redis, TTL expiration happens automatically.
+    ///     Removes expired nonce entries (garbage collection).
+    ///     In Redis, TTL expiration happens automatically.
     /// </summary>
     public async Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
     {
@@ -126,13 +131,14 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
     }
 
     /// <summary>
-    /// Atomically verifies if the current nonce matches the expected value, and if so, deletes it.
-    /// Prevents TOCTOU race conditions by executing the compare-and-delete as a single Lua script.
+    ///     Atomically verifies if the current nonce matches the expected value, and if so, deletes it.
+    ///     Prevents TOCTOU race conditions by executing the compare-and-delete as a single Lua script.
     /// </summary>
-    public async Task<bool> ConsumeNonceIfMatchesAsync(string thumbprint, string expectedNonce, CancellationToken cancellationToken = default)
+    public async Task<bool> ConsumeNonceIfMatchesAsync(string thumbprint, string expectedNonce,
+        CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(thumbprint, nameof(thumbprint));
-        ArgumentException.ThrowIfNullOrWhiteSpace(expectedNonce, nameof(expectedNonce));
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbprint);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedNonce);
 
         try
         {
@@ -143,11 +149,11 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
             // Executes the Lua script atomically on Redis single-threaded event loop
             var result = await db.ScriptEvaluateAsync(
                 ConsumeNonceScript,
-                keys: new StackExchange.Redis.RedisKey[] { redisKey },
-                values: new StackExchange.Redis.RedisValue[] { expectedNonce }
+                new RedisKey[] { redisKey },
+                new RedisValue[] { expectedNonce }
             );
 
-            bool wasConsumed = (long)result == 1;
+            var wasConsumed = (long)result == 1;
 
             if (wasConsumed)
             {
@@ -155,7 +161,8 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
             }
             else
             {
-                _logger.LogWarning("Atomic nonce consumption failed (mismatch or expired) for thumbprint: {Thumbprint}", thumbprint);
+                _logger.LogWarning("Atomic nonce consumption failed (mismatch or expired) for thumbprint: {Thumbprint}",
+                    thumbprint);
             }
 
             return wasConsumed;

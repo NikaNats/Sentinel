@@ -14,11 +14,11 @@ namespace Sentinel.Tests.Unit.Auth;
 
 public sealed class TokenValidationServiceTests
 {
-    private readonly FakeTimeProvider _timeProvider;
+    private readonly Mock<ISecurityEventEmitter> _eventEmitterMock;
     private readonly Mock<IJtiReplayCache> _replayCacheMock;
     private readonly Mock<ISessionBlacklistCache> _sessionBlacklistMock;
-    private readonly Mock<ISecurityEventEmitter> _eventEmitterMock;
     private readonly TokenValidationService _sut;
+    private readonly FakeTimeProvider _timeProvider;
 
     public TokenValidationServiceTests()
     {

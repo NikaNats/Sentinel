@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
-using Sentinel.Security.Abstractions.Identity;
 using Sentinel.Keycloak;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Infrastructure.Auth.Services;
 

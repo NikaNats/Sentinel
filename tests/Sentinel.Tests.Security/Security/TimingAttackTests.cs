@@ -1,33 +1,27 @@
-using FluentAssertions;
 using System.Diagnostics;
-using Xunit;
+using FluentAssertions;
 
 namespace Sentinel.Tests.Security.Security;
 
 /// <summary>
-/// Side-Channel Leakage: Timing Attack Detection
-///
-/// These tests use high-resolution timing to detect "Statistical Drifts" that can leak
-/// information about internal validator state to attackers.
-///
-/// Threat Model: Attacker measures network latency of requests to infer:
-/// - Whether signature verification succeeded (slow) or failed early (fast)
-/// - Whether JTI exists in cache (cache hit fast, miss slow)
-/// - Whether token is expired (quick reject) vs replayed (slow reject)
-///
-/// Attack Impact (Cache Timing):
-/// If cache lookup takes 5ms but signature verification takes 100ms, attacker can
-/// infer "request was rejected before reaching crypto" vs "rejected by crypto."
-/// This leaks state that can be used in adaptive attacks.
-///
-/// Mitigation Strategies:
-/// 1. Constant-Time: All rejection paths take same time (hard in C# with GC/JIT)
-/// 2. Random Jitter: Add 0-50ms random delay to all responses (acceptable)
-/// 3. Fixed Latency: Enforce minimum latency floor (500ms) for all rejections
-/// 4. Reorder Checks: Put expensive checks first, cheap checks last
-///
-/// Note: Perfect constant-time is impossible in C# due to garbage collection
-/// and JIT compilation variance. Target is "no obvious leaks" (>100ms difference).
+///     Side-Channel Leakage: Timing Attack Detection
+///     These tests use high-resolution timing to detect "Statistical Drifts" that can leak
+///     information about internal validator state to attackers.
+///     Threat Model: Attacker measures network latency of requests to infer:
+///     - Whether signature verification succeeded (slow) or failed early (fast)
+///     - Whether JTI exists in cache (cache hit fast, miss slow)
+///     - Whether token is expired (quick reject) vs replayed (slow reject)
+///     Attack Impact (Cache Timing):
+///     If cache lookup takes 5ms but signature verification takes 100ms, attacker can
+///     infer "request was rejected before reaching crypto" vs "rejected by crypto."
+///     This leaks state that can be used in adaptive attacks.
+///     Mitigation Strategies:
+///     1. Constant-Time: All rejection paths take same time (hard in C# with GC/JIT)
+///     2. Random Jitter: Add 0-50ms random delay to all responses (acceptable)
+///     3. Fixed Latency: Enforce minimum latency floor (500ms) for all rejections
+///     4. Reorder Checks: Put expensive checks first, cheap checks last
+///     Note: Perfect constant-time is impossible in C# due to garbage collection
+///     and JIT compilation variance. Target is "no obvious leaks" (>100ms difference).
 /// </summary>
 public sealed class TimingAttackTests
 {
@@ -36,138 +30,128 @@ public sealed class TimingAttackTests
     private const int IterationCount = 100; // Repeat to average out CPU jitter
 
     /// <summary>
-    /// Test: Rejection paths must not leak via timing.
-    ///
-    /// Scenario 1: Proof with invalid signature (requires crypto verification)
-    /// Scenario 2: Proof with missing required claim (quick logic check)
-    ///
-    /// If Scenario 1 takes significantly longer than Scenario 2, timing oracle exists.
-    ///
-    /// Security Implication: "timing-oracle" allows attacker to infer which validation
-    /// step failed, enabling adaptive attack strategies.
+    ///     Test: Rejection paths must not leak via timing.
+    ///     Scenario 1: Proof with invalid signature (requires crypto verification)
+    ///     Scenario 2: Proof with missing required claim (quick logic check)
+    ///     If Scenario 1 takes significantly longer than Scenario 2, timing oracle exists.
+    ///     Security Implication: "timing-oracle" allows attacker to infer which validation
+    ///     step failed, enabling adaptive attack strategies.
     /// </summary>
     [Fact(Skip = "Timing tests are highly sensitive to CPU load; run in isolation")]
     public void Validator_ShouldNotLeak_ViaTimingBetweenRejectionReasons()
     {
         // Arrange: Simulate two different failure scenarios
         var invalidSignatureTime = MeasureValidationPath(
-            testCase: "invalid_signature",
-            iterations: IterationCount);
+            "invalid_signature",
+            IterationCount);
 
         var missingClaimTime = MeasureValidationPath(
-            testCase: "missing_claim",
-            iterations: IterationCount);
+            "missing_claim",
+            IterationCount);
 
         // Act: Calculate variance
         var timingVariance = Math.Abs(invalidSignatureTime - missingClaimTime);
 
         // Assert: Variance must be small relative to request size
         timingVariance.Should().BeLessThan(TimingVarianceThreshold,
-            because: $"Timing difference of {timingVariance}ms between rejection reasons " +
-                     $"creates oracle: invalid_sig={invalidSignatureTime}ms, missing_claim={missingClaimTime}ms");
+            $"Timing difference of {timingVariance}ms between rejection reasons " +
+            $"creates oracle: invalid_sig={invalidSignatureTime}ms, missing_claim={missingClaimTime}ms");
     }
 
     /// <summary>
-    /// Test: JTI validation must not leak cache-hit vs cache-miss via timing.
-    ///
-    /// Scenario 1: JTI exists in cache (hit)
-    /// Scenario 2: JTI not in cache (miss)
-    ///
-    /// Cache hits are typically faster than misses. If delta is >50ms,
-    /// attacker can use timing to infer cache state.
-    ///
-    /// Security Implication: Attacker can probe cache contents without direct access.
+    ///     Test: JTI validation must not leak cache-hit vs cache-miss via timing.
+    ///     Scenario 1: JTI exists in cache (hit)
+    ///     Scenario 2: JTI not in cache (miss)
+    ///     Cache hits are typically faster than misses. If delta is >50ms,
+    ///     attacker can use timing to infer cache state.
+    ///     Security Implication: Attacker can probe cache contents without direct access.
     /// </summary>
     [Fact(Skip = "Timing tests are highly sensitive to CPU load; run in isolation")]
     public void JtiValidator_ShouldNotLeak_ViaCacheTimingOracle()
     {
         // Arrange
         var cacheHitTime = MeasureValidationPath(
-            testCase: "jti_cache_hit",
-            iterations: IterationCount);
+            "jti_cache_hit",
+            IterationCount);
 
         var cacheMissTime = MeasureValidationPath(
-            testCase: "jti_cache_miss",
-            iterations: IterationCount);
+            "jti_cache_miss",
+            IterationCount);
 
         // Act
         var timingVariance = Math.Abs(cacheHitTime - cacheMissTime);
 
         // Assert
         timingVariance.Should().BeLessThan(TimingVarianceThreshold,
-            because: $"Cache timing oracle detected: hit={cacheHitTime}ms, miss={cacheMissTime}ms");
+            $"Cache timing oracle detected: hit={cacheHitTime}ms, miss={cacheMissTime}ms");
     }
 
     /// <summary>
-    /// Test: Signature verification must not leak algorithm via timing.
-    ///
-    /// Scenario 1: Verify ES256 (ECDSA, typically ~0.5ms)
-    /// Scenario 2: Verify RS256 (RSA, typically ~5ms)
-    ///
-    /// Large delta allows attacker to infer algorithm choice.
-    ///
-    /// Security Implication: Attacker can fingerprint key material (RSA vs ECDSA)
-    /// without seeing the proof.
+    ///     Test: Signature verification must not leak algorithm via timing.
+    ///     Scenario 1: Verify ES256 (ECDSA, typically ~0.5ms)
+    ///     Scenario 2: Verify RS256 (RSA, typically ~5ms)
+    ///     Large delta allows attacker to infer algorithm choice.
+    ///     Security Implication: Attacker can fingerprint key material (RSA vs ECDSA)
+    ///     without seeing the proof.
     /// </summary>
     [Fact(Skip = "Timing tests are highly sensitive to CPU load; run in isolation")]
     public void SignatureValidator_ShouldNotLeak_ViaAlgorithmTiming()
     {
         // Arrange
         var es256Time = MeasureValidationPath(
-            testCase: "verify_es256",
-            iterations: IterationCount);
+            "verify_es256",
+            IterationCount);
 
         var rs256Time = MeasureValidationPath(
-            testCase: "verify_rs256",
-            iterations: IterationCount);
+            "verify_rs256",
+            IterationCount);
 
         // Act
         var timingVariance = Math.Abs(es256Time - rs256Time);
 
         // Assert: Large gap (>50ms) is problematic
         timingVariance.Should().BeLessThan(TimingVarianceThreshold,
-            because: $"Algorithm timing oracle: ES256={es256Time}ms, RS256={rs256Time}ms");
+            $"Algorithm timing oracle: ES256={es256Time}ms, RS256={rs256Time}ms");
     }
 
     /// <summary>
-    /// Test: Token expiration check must not leak via timing.
-    ///
-    /// Scenario 1: Token expired (quick DateTime comparison, <1ms)
-    /// Scenario 2: Token valid but replayed (cache lookup, 5-10ms)
-    ///
-    /// If Scenario 2 takes much longer, attacker knows proof is fresh (vs expired).
-    ///
-    /// Security Implication: "Probe for valid proofs" attack becomes possible.
+    ///     Test: Token expiration check must not leak via timing.
+    ///     Scenario 1: Token expired (quick DateTime comparison,
+    ///     <1ms)
+    ///         Scenario 2 : Token valid but replayed ( cache lookup, 5-10 ms)
+    ///         If Scenario 2 takes much longer, attacker knows proof is fresh ( vs expired).
+    ///         Security Implication: "Probe for valid proofs" attack becomes possible.
     /// </summary>
     [Fact(Skip = "Timing tests are highly sensitive to CPU load; run in isolation")]
     public void ExpirationValidator_ShouldNotLeak_ViaTimingOracle()
     {
         // Arrange
         var expiredTokenTime = MeasureValidationPath(
-            testCase: "token_expired",
-            iterations: IterationCount);
+            "token_expired",
+            IterationCount);
 
         var validButReplayedTime = MeasureValidationPath(
-            testCase: "token_valid_replayed",
-            iterations: IterationCount);
+            "token_valid_replayed",
+            IterationCount);
 
         // Act
         var timingVariance = Math.Abs(expiredTokenTime - validButReplayedTime);
 
         // Assert
         timingVariance.Should().BeLessThan(TimingVarianceThreshold,
-            because: $"Expiration timing oracle: expired={expiredTokenTime}ms, replayed={validButReplayedTime}ms");
+            $"Expiration timing oracle: expired={expiredTokenTime}ms, replayed={validButReplayedTime}ms");
     }
 
     /// <summary>
-    /// Test: All rejection paths must have bounded variance (< 5x difference).
-    ///
-    /// Scenario 1: JTI missing from cache (fail fast)
-    /// Scenario 2: Signature invalid (crypto verification)
-    /// Scenario 3: Token expired (DateTime comparison)
-    ///
-    /// Even if we can't achieve <50ms, we should prevent >500ms difference
-    /// (which is clearly exploitable).
+    ///     Test: All rejection paths must have bounded variance (
+    ///     < 5x difference).
+    ///         Scenario 1 : JTI missing from cache ( fail fast)
+    ///         Scenario 2 : Signature invalid ( crypto verification)
+    ///         Scenario 3 : Token expired ( DateTime comparison)
+    ///         Even if we can't achieve 
+    ///     <50ms, we should prevent>
+    ///         500ms difference
+    ///         (which is clearly exploitable).
     /// </summary>
     [Fact]
     public void AllRejectionPaths_ShouldHaveBoundedVariance()
@@ -188,17 +172,15 @@ public sealed class TimingAttackTests
 
         // Assert: Variance must be <5x (pragmatic bound for non-constant-time systems)
         variance.Should().BeLessThan(maxTime * 5,
-            because: $"Rejection path timing is too divergent: {string.Join(", ", times.Select(kv => $"{kv.Key}={kv.Value}ms"))}");
+            $"Rejection path timing is too divergent: {string.Join(", ", times.Select(kv => $"{kv.Key}={kv.Value}ms"))}");
     }
 
     /// <summary>
-    /// Test: Repeated requests with same proof must have consistent timing.
-    ///
-    /// Scenario: Same proof passed 10 times in sequence.
-    /// Expected: Consistent timing (±10ms), not wildly variable.
-    ///
-    /// Security Implication: Consistency means no state-dependent side-channels
-    /// (e.g., cache warming up or adaptive behavior).
+    ///     Test: Repeated requests with same proof must have consistent timing.
+    ///     Scenario: Same proof passed 10 times in sequence.
+    ///     Expected: Consistent timing (±10ms), not wildly variable.
+    ///     Security Implication: Consistency means no state-dependent side-channels
+    ///     (e.g., cache warming up or adaptive behavior).
     /// </summary>
     [Fact]
     public void RepeatedRequests_ShouldHaveConsistentTiming()
@@ -208,9 +190,9 @@ public sealed class TimingAttackTests
         const int repeats = 10;
 
         // Act: Measure same prooftest case repeated
-        for (int i = 0; i < repeats; i++)
+        for (var i = 0; i < repeats; i++)
         {
-            times.Add(MeasureValidationPath("same_proof_repeated", iterations: 10));
+            times.Add(MeasureValidationPath("same_proof_repeated", 10));
         }
 
         // Assert: Standard deviation should be low
@@ -218,17 +200,15 @@ public sealed class TimingAttackTests
         var stdDev = Math.Sqrt(times.Average(t => Math.Pow(t - average, 2)));
 
         stdDev.Should().BeLessThan(average * 0.3,
-            because: $"Timing should be consistent across repeated requests. " +
-                     $"Average={average:F1}ms, StdDev={stdDev:F1}ms, CV={stdDev / average:F2}");
+            $"Timing should be consistent across repeated requests. " +
+            $"Average={average:F1}ms, StdDev={stdDev:F1}ms, CV={stdDev / average:F2}");
     }
 
     /// <summary>
-    /// Test: Validate that timing measurements are stable under load.
-    ///
-    /// Scenario: Measure timing while other CPU tasks are running (simulate load).
-    /// Expected: Timing should not vary more than 2x from baseline.
-    ///
-    /// Security Implication: Prevents attacker from creating load to amplify timing leaks.
+    ///     Test: Validate that timing measurements are stable under load.
+    ///     Scenario: Measure timing while other CPU tasks are running (simulate load).
+    ///     Expected: Timing should not vary more than 2x from baseline.
+    ///     Security Implication: Prevents attacker from creating load to amplify timing leaks.
     /// </summary>
     [Fact]
     public void TimingUnderLoad_ShouldRemainStable()
@@ -255,8 +235,8 @@ public sealed class TimingAttackTests
 
             // Assert: Should not increase more than 2x
             underLoadTime.Should().BeLessThan(baselineTime * 2,
-                because: $"Validation timing under load should be stable: " +
-                         $"baseline={baselineTime}ms, under_load={underLoadTime}ms");
+                $"Validation timing under load should be stable: " +
+                $"baseline={baselineTime}ms, under_load={underLoadTime}ms");
         }
         finally
         {
@@ -267,12 +247,10 @@ public sealed class TimingAttackTests
     }
 
     /// <summary>
-    /// Test: Verify that fastest rejection path doesn't bypass security checks.
-    ///
-    /// Scenario: If "missing JTI" is fastest rejection, ensure crypto is still verified.
-    /// Expected: Even "fast" paths must verify all required checks.
-    ///
-    /// Security Implication: Attacker cannot exploit early-exit paths to bypass validation.
+    ///     Test: Verify that fastest rejection path doesn't bypass security checks.
+    ///     Scenario: If "missing JTI" is fastest rejection, ensure crypto is still verified.
+    ///     Expected: Even "fast" paths must verify all required checks.
+    ///     Security Implication: Attacker cannot exploit early-exit paths to bypass validation.
     /// </summary>
     [Fact]
     public void FastRejectionPaths_MustNotBypassSecurityChecks()
@@ -284,79 +262,79 @@ public sealed class TimingAttackTests
         // Assert: Both should take similar time (no obvious bypass)
         var difference = Math.Abs(fastestPath - immediateFail);
         difference.Should().BeLessThan(fastestPath * 2,
-            because: "If fastest path is >2x faster than 'immediate fail', " +
-                     "it likely bypassed crypto checks");
+            "If fastest path is >2x faster than 'immediate fail', " +
+            "it likely bypassed crypto checks");
     }
 
     // ============ Helpers ============
 
     /// <summary>
-    /// Simulates a DPoP validation path and measures execution time.
-    /// In production, this would measure real validator calls.
+    ///     Simulates a DPoP validation path and measures execution time.
+    ///     In production, this would measure real validator calls.
     /// </summary>
     private static long MeasureValidationPath(string testCase, int iterations)
     {
         var sw = Stopwatch.StartNew();
 
-        for (int i = 0; i < iterations; i++)
+        for (var i = 0; i < iterations; i++)
         {
             // Simulate different validation paths based on test case
             switch (testCase)
             {
                 case "invalid_signature":
                     // Simulate slow crypto verification failure
-                    SimulateEcdsaVerification(failed: true);
+                    SimulateEcdsaVerification(true);
                     break;
 
                 case "missing_claim":
                     // Simulate quick claim check
-                    SimulateClaimValidation(isPresent: false);
+                    SimulateClaimValidation(false);
                     break;
 
                 case "jti_cache_hit":
                     // Simulate cache hit
-                    SimulateCacheOperation(hit: true);
+                    SimulateCacheOperation(true);
                     break;
 
                 case "jti_cache_miss":
                     // Simulate cache miss
-                    SimulateCacheOperation(hit: false);
+                    SimulateCacheOperation(false);
                     break;
 
                 case "verify_es256":
                     // Simulate ES256 verification
-                    SimulateEcdsaVerification(failed: false);
+                    SimulateEcdsaVerification(false);
                     break;
 
                 case "verify_rs256":
                     // Simulate RS256 verification (slower)
-                    SimulateRsaVerification(failed: false);
+                    SimulateRsaVerification(false);
                     break;
 
                 case "token_expired":
                     // Simulate DateTime comparison
-                    SimulateExpirationCheck(isExpired: true);
+                    SimulateExpirationCheck(true);
                     break;
 
                 case "token_valid_replayed":
                     // Simulate cache lookup
-                    SimulateCacheOperation(hit: true);
+                    SimulateCacheOperation(true);
                     break;
 
                 case "jti_missing":
-                    SimulateCacheOperation(hit: false);
+                    SimulateCacheOperation(false);
                     break;
 
                 case "signature_invalid":
-                    SimulateEcdsaVerification(failed: true);
+                    SimulateEcdsaVerification(true);
                     break;
 
                 case "claim_missing":
-                    SimulateClaimValidation(isPresent: false);
+                    SimulateClaimValidation(false);
                     break;
 
                 case "same_proof_repeated":
-                    SimulateEcdsaVerification(failed: false);
+                    SimulateEcdsaVerification(false);
                     break;
 
                 case "baseline":
@@ -369,14 +347,11 @@ public sealed class TimingAttackTests
                     break;
 
                 case "fastest_rejection":
-                    SimulateCacheOperation(hit: false);
+                    SimulateCacheOperation(false);
                     break;
 
                 case "immediate_fail_nosecurity":
                     Thread.SpinWait(100);
-                    break;
-
-                default:
                     break;
             }
         }
@@ -386,13 +361,13 @@ public sealed class TimingAttackTests
     }
 
     /// <summary>
-    /// Simulates ECDSA signature verification (P-256, ~0.5ms).
+    ///     Simulates ECDSA signature verification (P-256, ~0.5ms).
     /// </summary>
     private static void SimulateEcdsaVerification(bool failed)
     {
         // Simulate ~0.5ms of crypto work
         var dummy = 0;
-        for (int i = 0; i < 50_000; i++)
+        for (var i = 0; i < 50_000; i++)
         {
             dummy += i * i;
         }
@@ -405,13 +380,13 @@ public sealed class TimingAttackTests
     }
 
     /// <summary>
-    /// Simulates RSA signature verification (2048-bit, ~5ms).
+    ///     Simulates RSA signature verification (2048-bit, ~5ms).
     /// </summary>
     private static void SimulateRsaVerification(bool failed)
     {
         // Simulate ~5ms of crypto work (10x more than ECDSA)
         var dummy = 0;
-        for (int i = 0; i < 500_000; i++)
+        for (var i = 0; i < 500_000; i++)
         {
             dummy += i * i;
         }
@@ -423,7 +398,7 @@ public sealed class TimingAttackTests
     }
 
     /// <summary>
-    /// Simulates cache operation (hit: fast, miss: slow).
+    ///     Simulates cache operation (hit: fast, miss: slow).
     /// </summary>
     private static void SimulateCacheOperation(bool hit)
     {
@@ -440,7 +415,7 @@ public sealed class TimingAttackTests
     }
 
     /// <summary>
-    /// Simulates token expiration check (quick DateTime comparison, <1ms).
+    ///     Simulates token expiration check (quick DateTime comparison, <1ms).
     /// </summary>
     private static void SimulateExpirationCheck(bool isExpired)
     {
@@ -452,7 +427,7 @@ public sealed class TimingAttackTests
     }
 
     /// <summary>
-    /// Simulates claim validation (presence check, <1ms).
+    ///     Simulates claim validation (presence check, <1ms).
     /// </summary>
     private static void SimulateClaimValidation(bool isPresent)
     {

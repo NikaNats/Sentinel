@@ -39,7 +39,8 @@ public sealed class SecurityEventEmitter(ILogger<SecurityEventEmitter> logger)
 
     public void EmitConfigurationChange(string component, string changeType, string details)
     {
-        logger.LogWarning("Configuration change in {Component}: {ChangeType}. Details: {Details}. CorrelationId={CorrelationId}",
+        logger.LogWarning(
+            "Configuration change in {Component}: {ChangeType}. Details: {Details}. CorrelationId={CorrelationId}",
             component, changeType, details, GetCorrelationId());
     }
 

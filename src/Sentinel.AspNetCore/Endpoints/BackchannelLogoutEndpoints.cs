@@ -1,5 +1,3 @@
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
@@ -9,11 +7,10 @@ using Sentinel.Keycloak;
 namespace Sentinel.AspNetCore.Endpoints;
 
 /// <summary>
-/// OpenID Connect Backchannel Logout (RFC 9413) Endpoints.
-///
-/// Implements server-initiated logout signaling for long-lived applications (web + mobile).
-/// When user logs out from IdP, receives logout token POST that invalidates all user sessions.
-/// Must be anonymous (endpoint doesn't authenticate caller, validates logout token JWT signature instead).
+///     OpenID Connect Backchannel Logout (RFC 9413) Endpoints.
+///     Implements server-initiated logout signaling for long-lived applications (web + mobile).
+///     When user logs out from IdP, receives logout token POST that invalidates all user sessions.
+///     Must be anonymous (endpoint doesn't authenticate caller, validates logout token JWT signature instead).
 /// </summary>
 internal static class BackchannelLogoutEndpoints
 {
@@ -35,10 +32,9 @@ internal static class BackchannelLogoutEndpoints
     // ─────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// RFC 9413 POST /backchannel-logout endpoint.
-    ///
-    /// Validates incoming logout token and blacklists the identified session.
-    /// Returns 200 OK on success (must not indicate token validation errors per RFC for security).
+    ///     RFC 9413 POST /backchannel-logout endpoint.
+    ///     Validates incoming logout token and blacklists the identified session.
+    ///     Returns 200 OK on success (must not indicate token validation errors per RFC for security).
     /// </summary>
     private static async Task<IResult> ReceiveLogoutTokenAsync(
         [FromForm(Name = "logout_token")] string logoutToken,

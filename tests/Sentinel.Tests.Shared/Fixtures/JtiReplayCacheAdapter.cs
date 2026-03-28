@@ -1,11 +1,10 @@
-using Sentinel.Application.Common.Abstractions;
 using AppJtiReplayCache = Sentinel.Application.Common.Abstractions.IJtiReplayCache;
 using SecJtiReplayCache = Sentinel.Security.Abstractions.Replay.IJtiReplayCache;
 
 namespace Sentinel.Tests.Shared.Fixtures;
 
 /// <summary>
-/// Adapter that bridges the Application-layer IJtiReplayCache interface to the Security-layer IJtiReplayCache.
+///     Adapter that bridges the Application-layer IJtiReplayCache interface to the Security-layer IJtiReplayCache.
 /// </summary>
 public sealed class JtiReplayCacheAdapter : AppJtiReplayCache
 {
@@ -19,7 +18,7 @@ public sealed class JtiReplayCacheAdapter : AppJtiReplayCache
     }
 
     /// <summary>
-    /// Converts TimeSpan TTL to DateTimeOffset expiresAt and delegates to security cache.
+    ///     Converts TimeSpan TTL to DateTimeOffset expiresAt and delegates to security cache.
     /// </summary>
     public async Task<bool> TryStoreIfNotExistsAsync(string jti, TimeSpan ttl, CancellationToken ct)
     {

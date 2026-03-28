@@ -12,7 +12,7 @@ public sealed class KeycloakAuthRevocationService(
     IHttpClientFactory httpClientFactory,
     KeycloakAdminTokenProvider adminTokenProvider,
     IOptions<KeycloakOptions> options,
-    ILogger<KeycloakAuthRevocationService> logger) : Sentinel.Application.Auth.Interfaces.IAuthRevocationService
+    ILogger<KeycloakAuthRevocationService> logger) : IAuthRevocationService
 {
     private readonly KeycloakOptions keycloakOptions = options.Value;
 

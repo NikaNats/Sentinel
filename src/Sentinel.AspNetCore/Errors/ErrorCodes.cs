@@ -1,8 +1,8 @@
 namespace Sentinel.AspNetCore.Errors;
 
 /// <summary>
-/// Standardized error type URIs for Sentinel Framework endpoints.
-/// Per RFC 7807 Problem Details for HTTP APIs, these URIs identify the error class.
+///     Standardized error type URIs for Sentinel Framework endpoints.
+///     Per RFC 7807 Problem Details for HTTP APIs, these URIs identify the error class.
 /// </summary>
 public static class ErrorCodes
 {

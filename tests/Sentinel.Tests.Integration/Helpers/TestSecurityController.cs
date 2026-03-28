@@ -5,17 +5,17 @@ using Microsoft.AspNetCore.Mvc;
 namespace Sentinel.Tests.Integration.Helpers;
 
 /// <summary>
-/// Test controller for framework-level security testing.
-/// This controller exists solely to test the framework's authorization, authentication, and cryptographic features.
-/// It should NOT be used to test business logic (documents, finance, etc.).
+///     Test controller for framework-level security testing.
+///     This controller exists solely to test the framework's authorization, authentication, and cryptographic features.
+///     It should NOT be used to test business logic (documents, finance, etc.).
 /// </summary>
 [ApiController]
 [Route("v1/test")]
 public class TestSecurityController : ControllerBase
 {
     /// <summary>
-    /// Protected endpoint requiring valid JWT + DPoP proof.
-    /// Tests: Default authorization policy (authenticated user + acr claim present).
+    ///     Protected endpoint requiring valid JWT + DPoP proof.
+    ///     Tests: Default authorization policy (authenticated user + acr claim present).
     /// </summary>
     [HttpGet("protected")]
     [Authorize]
@@ -34,8 +34,8 @@ public class TestSecurityController : ControllerBase
     }
 
     /// <summary>
-    /// Step-up authentication endpoint requiring ACR3 (highest assurance).
-    /// Tests: AcrRequirement handler, RequestObjectJwt validation, DPoP binding to token.
+    ///     Step-up authentication endpoint requiring ACR3 (highest assurance).
+    ///     Tests: AcrRequirement handler, RequestObjectJwt validation, DPoP binding to token.
     /// </summary>
     [HttpGet("step-up")]
     [Authorize(Policy = "RequireAcr3")]
@@ -54,8 +54,8 @@ public class TestSecurityController : ControllerBase
     }
 
     /// <summary>
-    /// Endpoint testing DPoP proof validation and binding to access token.
-    /// Tests: DPoP HTTP method binding, algorithm validation, replay attack prevention.
+    ///     Endpoint testing DPoP proof validation and binding to access token.
+    ///     Tests: DPoP HTTP method binding, algorithm validation, replay attack prevention.
     /// </summary>
     [HttpPost("dpop-protected")]
     [Authorize]
@@ -69,8 +69,8 @@ public class TestSecurityController : ControllerBase
     }
 
     /// <summary>
-    /// Endpoint for testing scope-based authorization.
-    /// Tests: ScopeAuthorizationHandler implementation.
+    ///     Endpoint for testing scope-based authorization.
+    ///     Tests: ScopeAuthorizationHandler implementation.
     /// </summary>
     [HttpGet("scoped/{scope}")]
     [Authorize]
@@ -91,13 +91,13 @@ public class TestSecurityController : ControllerBase
         {
             message = $"Access granted for scope: {scope}",
             requestedScope = scope,
-            userScopes = userScopes
+            userScopes
         });
     }
 
     /// <summary>
-    /// Echo endpoint for testing request/response integrity with cryptographic binding.
-    /// Tests: Token payload validation, claim extraction.
+    ///     Echo endpoint for testing request/response integrity with cryptographic binding.
+    ///     Tests: Token payload validation, claim extraction.
     /// </summary>
     [HttpPost("echo")]
     [Authorize]

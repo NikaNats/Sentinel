@@ -3,10 +3,8 @@ global using System.Security.Cryptography;
 global using System.Text;
 global using System.Text.Json;
 global using System.Linq;
-
 global using Microsoft.Extensions.Logging;
 global using Microsoft.IdentityModel.JsonWebTokens;
 global using Microsoft.IdentityModel.Tokens;
-
 global using Sentinel.Security.Abstractions;
 global using Sentinel.Security.Abstractions.Results;

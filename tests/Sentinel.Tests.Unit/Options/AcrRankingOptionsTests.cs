@@ -1,6 +1,5 @@
-using Sentinel.Security.Abstractions.Options;
-using Xunit;
 using FluentAssertions;
+using Sentinel.Security.Abstractions.Options;
 
 namespace Sentinel.Tests.Unit.Options;
 
@@ -11,10 +10,10 @@ public sealed class AcrRankingOptionsTests
     {
         var options = new AcrRankingOptions { Rankings = new Dictionary<string, int>() };
 
-        Action act = () => options.Validate();
+        var act = () => options.Validate();
 
         act.Should().Throw<InvalidOperationException>()
-           .WithMessage("*cannot be empty*");
+            .WithMessage("*cannot be empty*");
     }
 
     [Fact]
@@ -29,10 +28,10 @@ public sealed class AcrRankingOptionsTests
             }
         };
 
-        Action act = () => options.Validate();
+        var act = () => options.Validate();
 
         act.Should().Throw<InvalidOperationException>()
-           .WithMessage("*duplicate ranks*");
+            .WithMessage("*duplicate ranks*");
     }
 
     [Fact]
@@ -47,7 +46,7 @@ public sealed class AcrRankingOptionsTests
             }
         };
 
-        Action act = () => options.Validate();
+        var act = () => options.Validate();
 
         act.Should().NotThrow();
     }

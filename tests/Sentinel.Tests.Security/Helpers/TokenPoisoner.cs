@@ -5,36 +5,35 @@ using Microsoft.IdentityModel.Tokens;
 namespace Sentinel.Tests.Security.Helpers;
 
 /// <summary>
-/// Protocol Mutation Engine for negative testing.
-/// Systematically corrupts valid cryptographic structures (JWT, DPoP, SD-JWT)
-/// to test resilience against malformed and adversarial input.
-///
-/// Why this matters in .NET 10 Native AOT:
-/// - With runtime safety net removed, a single unhandled NullReferenceException
-///   in a SIMD-optimized JSON parser can destabilize the entire pipeline.
-/// - This engine generates deterministic mutations (not random fuzzing) to catch
-///   edge cases while maintaining reproducibility in CI/CD.
+///     Protocol Mutation Engine for negative testing.
+///     Systematically corrupts valid cryptographic structures (JWT, DPoP, SD-JWT)
+///     to test resilience against malformed and adversarial input.
+///     Why this matters in .NET 10 Native AOT:
+///     - With runtime safety net removed, a single unhandled NullReferenceException
+///     in a SIMD-optimized JSON parser can destabilize the entire pipeline.
+///     - This engine generates deterministic mutations (not random fuzzing) to catch
+///     edge cases while maintaining reproducibility in CI/CD.
 /// </summary>
 public static class TokenPoisoner
 {
     // High-entropy "Poison" bytes for UTF-8 and Base64Url attacks
     private static readonly string[] PoisonStrings =
     [
-        "..\\..\\..\\",                      // Path Traversal attempt
-        "\u0000",                            // Null Byte
-        "\uFFFD",                            // Unicode Replacement Character
+        "..\\..\\..\\", // Path Traversal attempt
+        "\u0000", // Null Byte
+        "\uFFFD", // Unicode Replacement Character
         "{\"\" : { \"\" : { \"\" : \"\"}}}", // Deeply nested JSON
-        "A" + new string('0', 10000),        // Large buffer (stack/heap attack)
-        "\xC0\xAF",                          // Overlong UTF-8 encoding of "/"
-        "%%%%%%%s%s%s",                      // Format string attempt
-        "NaN",                               // Numerical edge case
-        "true",                              // Type confusion (boolean vs string)
-        "[null, null]"                       // Array confusion
+        "A" + new string('0', 10000), // Large buffer (stack/heap attack)
+        "\xC0\xAF", // Overlong UTF-8 encoding of "/"
+        "%%%%%%%s%s%s", // Format string attempt
+        "NaN", // Numerical edge case
+        "true", // Type confusion (boolean vs string)
+        "[null, null]" // Array confusion
     ];
 
     /// <summary>
-    /// Generates a series of mutations (corruptions) of a valid JWT token
-    /// to stress-test validators against structural and payload attacks.
+    ///     Generates a series of mutations (corruptions) of a valid JWT token
+    ///     to stress-test validators against structural and payload attacks.
     /// </summary>
     /// <param name="validToken">A well-formed JWT (3 base64url-encoded parts separated by dots)</param>
     /// <returns>Enumerable of poisoned token strings that should all fail validation</returns>
@@ -44,7 +43,8 @@ public static class TokenPoisoner
 
         if (parts.Length != 3)
         {
-            throw new ArgumentException("Token must be a valid 3-part JWT (header.payload.signature)", nameof(validToken));
+            throw new ArgumentException("Token must be a valid 3-part JWT (header.payload.signature)",
+                nameof(validToken));
         }
 
         // 1. Structure Attack: Wrong number of segments
@@ -71,21 +71,21 @@ public static class TokenPoisoner
         }
 
         // 4. Bit-Flipping Attack: Randomly corrupt 1 byte in random segments
-        using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+        using (var rng = RandomNumberGenerator.Create())
         {
-            for (int i = 0; i < 5; i++)
+            for (var i = 0; i < 5; i++)
             {
                 var bytes = Encoding.UTF8.GetBytes(validToken);
                 var indexBytes = new byte[4];
                 rng.GetBytes(indexBytes);
-                int index = Math.Abs(BitConverter.ToInt32(indexBytes, 0)) % bytes.Length;
+                var index = Math.Abs(BitConverter.ToInt32(indexBytes, 0)) % bytes.Length;
                 bytes[index] = (byte)(bytes[index] ^ 0xFF); // XOR flip all bits
                 yield return Encoding.UTF8.GetString(bytes);
             }
         }
 
         // 5. Truncation Attack: Cut off at various points
-        for (int i = 1; i < validToken.Length; i++)
+        for (var i = 1; i < validToken.Length; i++)
         {
             yield return validToken.Substring(0, validToken.Length - i);
         }
@@ -101,9 +101,9 @@ public static class TokenPoisoner
     }
 
     /// <summary>
-    /// Generates mutations of a valid SD-JWT presentation.
-    /// SD-JWT uses '~' as a disclosure separator, unlike JWT's '.'.
-    /// This creates new attack surface for confusion attacks.
+    ///     Generates mutations of a valid SD-JWT presentation.
+    ///     SD-JWT uses '~' as a disclosure separator, unlike JWT's '.'.
+    ///     This creates new attack surface for confusion attacks.
     /// </summary>
     /// <param name="validPresentation">Valid SD-JWT presentation (jwt~disclosure1~kb_jwt)</param>
     /// <returns>Enumerable of poisoned SD-JWT presentations</returns>
@@ -143,20 +143,20 @@ public static class TokenPoisoner
     }
 
     /// <summary>
-    /// Generates completely random token-like strings to stress
-    /// the Base64Url decoder's error handling paths.
+    ///     Generates completely random token-like strings to stress
+    ///     the Base64Url decoder's error handling paths.
     /// </summary>
     /// <param name="count">Number of random tokens to generate</param>
     /// <returns>Enumerable of random byte sequences as base64url strings</returns>
     public static IEnumerable<string> GenerateRandomTokens(int count = 10)
     {
-        using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+        using (var rng = RandomNumberGenerator.Create())
         {
-            for (int i = 0; i < count; i++)
+            for (var i = 0; i < count; i++)
             {
                 var sizeBytes = new byte[4];
                 rng.GetBytes(sizeBytes);
-                int size = Math.Abs(BitConverter.ToInt32(sizeBytes, 0) % 256) + 1;
+                var size = Math.Abs(BitConverter.ToInt32(sizeBytes, 0) % 256) + 1;
 
                 var randomBytes = new byte[size];
                 rng.GetBytes(randomBytes);

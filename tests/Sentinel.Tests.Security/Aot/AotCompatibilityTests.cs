@@ -1,37 +1,31 @@
+using System.Text.Json;
 using FluentAssertions;
 using Sentinel.Application;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Domain.Auth.Rar;
-using Sentinel.RAR;
-using System.Text.Json;
-using Xunit;
 
 namespace Sentinel.Tests.Security.Aot;
 
 /// <summary>
-/// Native AOT Trim-Safety Compliance Tests
-///
-/// This test suite exercises every JSON-bound model used in the security pipeline
-/// with the ApplicationJsonContext. In a Native AOT environment with aggressive trimming,
-/// any model missing from the source-generated context will throw NotSupportedException
-/// or InvalidOperationException at runtime.
-///
-/// Why This Matters:
-/// - Native AOT strips reflection and unused code at compile time
-/// - If a model isn't in the JSON context, JsonSerializer has no metadata to deserialize it
-/// - Traditional reflection-based serialization doesn't work in AOT
-/// - This test must pass BEFORE shipping to production (non-negotiable)
-///
-/// Architect's Note: This is a "compile-time gate"; failure means the binary is broken.
-/// Every security-critical model MUST be tested here.
+///     Native AOT Trim-Safety Compliance Tests
+///     This test suite exercises every JSON-bound model used in the security pipeline
+///     with the ApplicationJsonContext. In a Native AOT environment with aggressive trimming,
+///     any model missing from the source-generated context will throw NotSupportedException
+///     or InvalidOperationException at runtime.
+///     Why This Matters:
+///     - Native AOT strips reflection and unused code at compile time
+///     - If a model isn't in the JSON context, JsonSerializer has no metadata to deserialize it
+///     - Traditional reflection-based serialization doesn't work in AOT
+///     - This test must pass BEFORE shipping to production (non-negotiable)
+///     Architect's Note: This is a "compile-time gate"; failure means the binary is broken.
+///     Every security-critical model MUST be tested here.
 /// </summary>
 public sealed class AotCompatibilityTests
 {
     /// <summary>
-    /// Test: TokenExchangeResult (OAuth2 token response) can round-trip through JSON.
-    ///
-    /// Security Impact: If TokenExchangeResult cannot deserialize in AOT, token
-    /// exchanges will fail at runtime with cryptic exceptions. Critical path.
+    ///     Test: TokenExchangeResult (OAuth2 token response) can round-trip through JSON.
+    ///     Security Impact: If TokenExchangeResult cannot deserialize in AOT, token
+    ///     exchanges will fail at runtime with cryptic exceptions. Critical path.
     /// </summary>
     [Fact]
     public void Verify_TokenExchangeResult_IsTrimSafe()
@@ -70,10 +64,9 @@ public sealed class AotCompatibilityTests
     }
 
     /// <summary>
-    /// Test: AuthorizationDetail (RAR) can round-trip through JSON.
-    ///
-    /// Security Impact: Rich Authorization Requests require deserialization of
-    /// AuthorizationDetail objects. AOT trimming must preserve this type.
+    ///     Test: AuthorizationDetail (RAR) can round-trip through JSON.
+    ///     Security Impact: Rich Authorization Requests require deserialization of
+    ///     AuthorizationDetail objects. AOT trimming must preserve this type.
     /// </summary>
     [Fact]
     public void Verify_AuthorizationDetail_IsTrimSafe()
@@ -111,10 +104,9 @@ public sealed class AotCompatibilityTests
     }
 
     /// <summary>
-    /// Test: Array of AuthorizationDetail can round-trip.
-    ///
-    /// Security Impact: Multiple authorization details in a single request.
-    /// If array type isn't in context, batch requests fail.
+    ///     Test: Array of AuthorizationDetail can round-trip.
+    ///     Security Impact: Multiple authorization details in a single request.
+    ///     If array type isn't in context, batch requests fail.
     /// </summary>
     [Fact]
     public void Verify_AuthorizationDetailArray_IsTrimSafe()
@@ -160,10 +152,9 @@ public sealed class AotCompatibilityTests
     }
 
     /// <summary>
-    /// Test: Dictionary&lt;string, object&gt; (generic claim/property bags) can round-trip.
-    ///
-    /// Security Impact: Many OAuth2 flows use untyped dictionaries for additional parameters.
-    /// If Dictionary type isn't in context, claim transformation fails.
+    ///     Test: Dictionary&lt;string, object&gt; (generic claim/property bags) can round-trip.
+    ///     Security Impact: Many OAuth2 flows use untyped dictionaries for additional parameters.
+    ///     If Dictionary type isn't in context, claim transformation fails.
     /// </summary>
     [Fact]
     public void Verify_DictionaryStringObject_IsTrimSafe()
@@ -202,10 +193,9 @@ public sealed class AotCompatibilityTests
     }
 
     /// <summary>
-    /// Test: Verify ApplicationJsonContext is properly initialized (not null).
-    ///
-    /// Security Impact: Source generators sometimes fail silently if not properly
-    /// configured. This catches that at test time, not production time.
+    ///     Test: Verify ApplicationJsonContext is properly initialized (not null).
+    ///     Security Impact: Source generators sometimes fail silently if not properly
+    ///     configured. This catches that at test time, not production time.
     /// </summary>
     [Fact]
     public void Verify_ApplicationJsonContext_IsInitialized()
@@ -224,10 +214,9 @@ public sealed class AotCompatibilityTests
     }
 
     /// <summary>
-    /// Test: Verify no exceptions are thrown during JSON operations.
-    ///
-    /// Security Impact: NotSupportedException during deserialization indicates
-    /// trimmed type. This test catches that before production.
+    ///     Test: Verify no exceptions are thrown during JSON operations.
+    ///     Security Impact: NotSupportedException during deserialization indicates
+    ///     trimmed type. This test catches that before production.
     /// </summary>
     [Fact]
     public void Verify_NoNotSupportedExceptions_OnTrimSafeTypes()
@@ -250,7 +239,7 @@ public sealed class AotCompatibilityTests
         };
 
         // Act & Assert: No NotSupportedException thrown
-        for (int i = 0; i < typesToVerify.Length; i++)
+        for (var i = 0; i < typesToVerify.Length; i++)
         {
             var type = typesToVerify[i];
             var instance = testInstances[i];
@@ -276,10 +265,9 @@ public sealed class AotCompatibilityTests
     }
 
     /// <summary>
-    /// Integration Test: Full OAuth2 Token Exchange flow with AOT constraints.
-    ///
-    /// Scenario: Client exchanges authorization code for access token.
-    /// All objects must be trim-safe for the full flow to work.
+    ///     Integration Test: Full OAuth2 Token Exchange flow with AOT constraints.
+    ///     Scenario: Client exchanges authorization code for access token.
+    ///     All objects must be trim-safe for the full flow to work.
     /// </summary>
     [Fact]
     public void Verify_FullTokenExchangeFlow_IsTrimSafe()
@@ -291,7 +279,7 @@ public sealed class AotCompatibilityTests
             TokenType = "DPoP",
             ExpiresIn = 3600,
             RefreshToken = "refresh_...",
-            Scope = "openid profile",
+            Scope = "openid profile"
             // Additional claims
         };
 

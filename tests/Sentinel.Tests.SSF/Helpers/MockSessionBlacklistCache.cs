@@ -1,15 +1,14 @@
 namespace Sentinel.Tests.SSF.Helpers;
 
 /// <summary>
-/// Mock ISessionBlacklistCache for testing.
+///     Mock ISessionBlacklistCache for testing.
 /// </summary>
 public sealed class MockSessionBlacklistCache : ISessionBlacklistCache
 {
     private readonly Dictionary<string, DateTimeOffset> _blacklist = [];
 
-    public static MockSessionBlacklistCache Create() => new();
-
-    public Task BlacklistSessionAsync(string sessionId, DateTimeOffset expiresAt, CancellationToken cancellationToken = default)
+    public Task BlacklistSessionAsync(string sessionId, DateTimeOffset expiresAt,
+        CancellationToken cancellationToken = default)
     {
         _blacklist[sessionId] = expiresAt;
         return Task.CompletedTask;
@@ -32,4 +31,6 @@ public sealed class MockSessionBlacklistCache : ISessionBlacklistCache
 
         return Task.CompletedTask;
     }
+
+    public static MockSessionBlacklistCache Create() => new();
 }

@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Net.Http.Headers;
-using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Keycloak;

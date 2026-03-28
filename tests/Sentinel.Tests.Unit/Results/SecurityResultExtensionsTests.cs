@@ -1,6 +1,5 @@
-using Sentinel.Security.Abstractions.Results;
-using Xunit;
 using FluentAssertions;
+using Sentinel.Security.Abstractions.Results;
 
 namespace Sentinel.Tests.Unit.Results;
 
@@ -52,12 +51,12 @@ public sealed class SecurityResultExtensionsTests
         var failureResult = SecurityResultFactory.Failure<string>("FAIL");
 
         var successMapped = successResult.Match(
-            onSuccess: val => $"Success: {val}",
-            onFailure: err => $"Error: {err}");
+            val => $"Success: {val}",
+            err => $"Error: {err}");
 
         var failureMapped = failureResult.Match(
-            onSuccess: val => $"Success: {val}",
-            onFailure: err => $"Error: {err}");
+            val => $"Success: {val}",
+            err => $"Error: {err}");
 
         successMapped.Should().Be("Success: OK");
         failureMapped.Should().Be("Error: FAIL");

@@ -3,13 +3,13 @@ using System.Security.Cryptography;
 namespace Sentinel.Tests.Shared;
 
 /// <summary>
-/// Generates test cryptography keys for integration testing.
+///     Generates test cryptography keys for integration testing.
 /// </summary>
 public static class TestCryptographyHelper
 {
     /// <summary>
-    /// Generates a valid test cryptography configuration that satisfies validation requirements.
-    /// Returns a dictionary with Cryptography:ActiveKeyId and Cryptography:KeyRing settings.
+    ///     Generates a valid test cryptography configuration that satisfies validation requirements.
+    ///     Returns a dictionary with Cryptography:ActiveKeyId and Cryptography:KeyRing settings.
     /// </summary>
     public static Dictionary<string, string> GenerateTestCryptographyConfig()
     {
@@ -19,7 +19,7 @@ public static class TestCryptographyHelper
         {
             rng.GetBytes(keyBytes);
         }
-        
+
         var testKeyId = "test-key-2026-01";
         var testKeyBase64 = Convert.ToBase64String(keyBytes);
 

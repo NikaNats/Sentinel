@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Interfaces;
 
@@ -8,7 +7,7 @@ namespace Sentinel.Keycloak;
 public sealed class KeycloakTokenRefreshService(
     HttpClient httpClient,
     IOptions<KeycloakOptions> options,
-    ILogger<KeycloakTokenRefreshService> logger) : Sentinel.Application.Auth.Interfaces.ITokenRefreshService
+    ILogger<KeycloakTokenRefreshService> logger) : ITokenRefreshService
 {
     private readonly KeycloakOptions keycloakOptions = options.Value;
 

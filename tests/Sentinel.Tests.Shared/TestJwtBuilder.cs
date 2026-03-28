@@ -1,20 +1,22 @@
 using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Sentinel.Tests.Shared;
 
 /// <summary>
-/// Helper to build test DPoP proofs with configurable claims.
-/// Used for unit testing DPoP validation logic without external dependencies.
+///     Helper to build test DPoP proofs with configurable claims.
+///     Used for unit testing DPoP validation logic without external dependencies.
 /// </summary>
 public static class TestJwtBuilder
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
 
     /// <summary>
-    /// Creates a minimal DPoP proof JWT for testing.
-    /// Note: This is for schema/structure testing only; signatures are not cryptographically valid.
+    ///     Creates a minimal DPoP proof JWT for testing.
+    ///     Note: This is for schema/structure testing only; signatures are not cryptographically valid.
     /// </summary>
     public static string CreateDpopProof(
         string algorithm,
@@ -72,11 +74,10 @@ public static class TestJwtBuilder
     }
 
     /// <summary>
-    /// Creates a DPoP proof with Cross-Algorithm Substitution attack:
-    /// Claims "alg" header mismatches the actual key type (e.g., EC key/key signing as RSA).
-    ///
-    /// Attack: Attacker switches algorithms in header without re-signing.
-    /// Vulnerable systems might accept this, allowing signature bypass.
+    ///     Creates a DPoP proof with Cross-Algorithm Substitution attack:
+    ///     Claims "alg" header mismatches the actual key type (e.g., EC key/key signing as RSA).
+    ///     Attack: Attacker switches algorithms in header without re-signing.
+    ///     Vulnerable systems might accept this, allowing signature bypass.
     /// </summary>
     public static string CreateMalformedProof(
         ECDsa ecDsa,
@@ -88,7 +89,7 @@ public static class TestJwtBuilder
         // Craft JWK that claims one key type but uses another for signing
         var jwkDict = new Dictionary<string, object>
         {
-            ["kty"] = kty,  // Claimed type (e.g., "RSA")
+            ["kty"] = kty, // Claimed type (e.g., "RSA")
             ["crv"] = "P-256",
             ["x"] = Base64UrlEncoder.Encode(new byte[32]),
             ["y"] = Base64UrlEncoder.Encode(new byte[32])
@@ -97,7 +98,7 @@ public static class TestJwtBuilder
         var payload = new Dictionary<string, object>
         {
             ["typ"] = "dpop+jwt",
-            ["alg"] = headerAlg,  // Claims RSA but we're signing with EC
+            ["alg"] = headerAlg, // Claims RSA but we're signing with EC
             ["jwk"] = jwkDict,
             ["jti"] = Guid.NewGuid().ToString("N"),
             ["htm"] = "POST",
@@ -117,20 +118,19 @@ public static class TestJwtBuilder
         {
             return TokenHandler.CreateToken(tokenDescriptor);
         }
-        catch (System.NotSupportedException)
+        catch (NotSupportedException)
         {
             // Fallback: deliberately malformed token when EC key creation or signing fails
-            var headerJson = Base64UrlEncoder.Encode(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new { alg = headerAlg, kty }));
-            var payloadJson = Base64UrlEncoder.Encode(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(payload));
+            var headerJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(new { alg = headerAlg, kty }));
+            var payloadJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(payload));
             return $"{headerJson}.{payloadJson}.malformed-signature";
         }
     }
 
     /// <summary>
-    /// Creates a DPoP proof using symmetric key (HMAC) instead of asymmetric.
-    ///
-    /// Attack: Symmetric Key Confusion - attacker uses HS256 (symmetric) where ES256 (asymmetric) is required.
-    /// If the validator incorrectly uses the public key as the HMAC secret, any symmetric key works.
+    ///     Creates a DPoP proof using symmetric key (HMAC) instead of asymmetric.
+    ///     Attack: Symmetric Key Confusion - attacker uses HS256 (symmetric) where ES256 (asymmetric) is required.
+    ///     If the validator incorrectly uses the public key as the HMAC secret, any symmetric key works.
     /// </summary>
     public static string CreateSymmetricProof(
         string secret,
@@ -141,15 +141,15 @@ public static class TestJwtBuilder
         var payload = new Dictionary<string, object>
         {
             ["typ"] = "dpop+jwt",
-            ["alg"] = algorithm,  // HS256 instead of ES256
-            ["jwk"] = new { kty = "oct", k = Base64UrlEncoder.Encode(System.Text.Encoding.UTF8.GetBytes(secret)) },
+            ["alg"] = algorithm, // HS256 instead of ES256
+            ["jwk"] = new { kty = "oct", k = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(secret)) },
             ["jti"] = Guid.NewGuid().ToString("N"),
             ["htm"] = "GET",
             ["htu"] = "https://api.sentinel.io/v1/resource",
             ["iat"] = now
         };
 
-        var signingKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(secret));
+        var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Claims = payload,
@@ -160,11 +160,11 @@ public static class TestJwtBuilder
         {
             return TokenHandler.CreateToken(tokenDescriptor);
         }
-        catch (System.NotSupportedException)
+        catch (NotSupportedException)
         {
             // Fallback: deliberately malformed token when symmetric key signing fails
-            var headerJson = Base64UrlEncoder.Encode(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new { alg = algorithm }));
-            var payloadJson = Base64UrlEncoder.Encode(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(payload));
+            var headerJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(new { alg = algorithm }));
+            var payloadJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(payload));
             return $"{headerJson}.{payloadJson}.hmac-signature";
         }
     }
@@ -174,7 +174,8 @@ public static class TestJwtBuilder
         try
         {
             var parsed = new Uri(uri, UriKind.Absolute);
-            return parsed.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.Unescaped).TrimEnd('/');
+            return parsed.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.Unescaped)
+                .TrimEnd('/');
         }
 #pragma warning disable CA1031 // Catch-all for test fallback: invalid URI input
         catch (Exception)

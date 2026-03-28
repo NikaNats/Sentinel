@@ -1,5 +1,3 @@
-using Sentinel.Tests.Shared.Fixtures;
-
 namespace Sentinel.Tests.Integration.Collections;
 
 [CollectionDefinition("Sentinel Real Keycloak Integration")]

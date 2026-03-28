@@ -5,7 +5,6 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
-using Sentinel.Tests.Shared.Fixtures;
 
 namespace Sentinel.Tests.Integration;
 

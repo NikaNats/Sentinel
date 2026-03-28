@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Security.Abstractions.Identity;
 

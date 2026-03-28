@@ -11,7 +11,11 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Sentinel.Redis;
 using Sentinel.Redis.Extensions;
+using Sentinel.Security.Abstractions.Nonce;
+using Sentinel.Security.Abstractions.Replay;
+using Sentinel.Security.Abstractions.Session;
 using StackExchange.Redis;
 using Testcontainers.Keycloak;
 using Testcontainers.Redis;
@@ -107,10 +111,10 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
         {
             services.RemoveAll<IDistributedCache>();
             services.RemoveAll<IConnectionMultiplexer>();
-            services.RemoveAll<Sentinel.Security.Abstractions.Replay.IJtiReplayCache>();
-            services.RemoveAll<Sentinel.Security.Abstractions.Nonce.IDpopNonceStore>();
-            services.RemoveAll<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>();
-            services.RemoveAll<Sentinel.Redis.RedisOptions>();
+            services.RemoveAll<IJtiReplayCache>();
+            services.RemoveAll<IDpopNonceStore>();
+            services.RemoveAll<ISessionBlacklistCache>();
+            services.RemoveAll<RedisOptions>();
 
             services.AddSingleton<IDistributedCache>(_ =>
                 new RedisCache(Options.Create(new RedisCacheOptions { Configuration = redisConnectionString })));
@@ -134,15 +138,15 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
             services.AddRedisSecurityCaches(redisConfig);
 
             // Bridge Application layer IJtiReplayCache to Security layer implementation via adapter
-            services.AddSingleton<Sentinel.Application.Common.Abstractions.IJtiReplayCache>(sp =>
+            services.AddSingleton<Application.Common.Abstractions.IJtiReplayCache>(sp =>
                 new JtiReplayCacheAdapter(
-                    sp.GetRequiredService<Sentinel.Security.Abstractions.Replay.IJtiReplayCache>(),
+                    sp.GetRequiredService<IJtiReplayCache>(),
                     sp.GetService<TimeProvider>()));
 
             // Bridge Application layer ISessionBlacklistCache to Security layer implementation via adapter
-            services.AddSingleton<Sentinel.Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
+            services.AddSingleton<Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
                 new SessionBlacklistCacheAdapter(
-                    sp.GetRequiredService<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>(),
+                    sp.GetRequiredService<ISessionBlacklistCache>(),
                     sp.GetService<TimeProvider>()));
         });
     }

@@ -1,13 +1,13 @@
 namespace Sentinel.Security.Abstractions.Token;
 
 /// <summary>
-/// Refreshes expired access tokens using refresh tokens.
-/// Detects refresh token reuse attacks and enforces rotation.
+///     Refreshes expired access tokens using refresh tokens.
+///     Detects refresh token reuse attacks and enforces rotation.
 /// </summary>
 public interface ITokenRefreshService
 {
     /// <summary>
-    /// Refreshes an expired access token using a valid refresh token.
+    ///     Refreshes an expired access token using a valid refresh token.
     /// </summary>
     /// <param name="refreshToken">The refresh token (typically long-lived, secure-storage protected).</param>
     /// <param name="dpopProof">RFC 9449 DPoP proof binding token to client certificate/key.</param>
@@ -22,7 +22,7 @@ public interface ITokenRefreshService
 }
 
 /// <summary>
-/// Result of a token refresh operation.
+///     Result of a token refresh operation.
 /// </summary>
 public sealed record TokenRefreshServiceResult(
     bool IsSuccess,

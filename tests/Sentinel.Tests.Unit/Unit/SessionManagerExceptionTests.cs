@@ -1,6 +1,5 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Moq;
 using Sentinel.Security.Abstractions.Session;
 using Sentinel.Session;
@@ -21,7 +20,8 @@ public sealed class SessionManagerExceptionTests
     {
         var cacheMock = new Mock<ISessionBlacklistCache>();
         cacheMock
-            .Setup(x => x.BlacklistSessionAsync(It.IsAny<string>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.BlacklistSessionAsync(It.IsAny<string>(), It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("Redis cluster down"));
 
         var sut = CreateSut(cacheMock);
@@ -37,7 +37,8 @@ public sealed class SessionManagerExceptionTests
     {
         var cacheMock = new Mock<ISessionBlacklistCache>();
         cacheMock
-            .Setup(x => x.BlacklistSessionAsync(It.IsAny<string>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.BlacklistSessionAsync(It.IsAny<string>(), It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
             .ThrowsAsync(new OperationCanceledException());
 
         var sut = CreateSut(cacheMock);
@@ -84,7 +85,7 @@ public sealed class SessionManagerExceptionTests
     public void ValidateDpopBinding_WhenThumbprintsMatch_ReturnsTrue()
     {
         var cacheMock = new Mock<ISessionBlacklistCache>();
-        var sut = CreateSut(cacheMock, requireDpopBinding: true);
+        var sut = CreateSut(cacheMock, true);
 
         var result = sut.ValidateDpopBinding("thumbprint-abc", "thumbprint-abc");
 
@@ -95,7 +96,7 @@ public sealed class SessionManagerExceptionTests
     public void ValidateDpopBinding_WhenSessionThumbprintMissingAndBindingRequired_ReturnsFalse()
     {
         var cacheMock = new Mock<ISessionBlacklistCache>();
-        var sut = CreateSut(cacheMock, requireDpopBinding: true);
+        var sut = CreateSut(cacheMock, true);
 
         var result = sut.ValidateDpopBinding("thumbprint-abc", null);
 
@@ -106,7 +107,7 @@ public sealed class SessionManagerExceptionTests
     public void ValidateDpopBinding_WhenSessionThumbprintMissingAndBindingOptional_ReturnsTrue()
     {
         var cacheMock = new Mock<ISessionBlacklistCache>();
-        var sut = CreateSut(cacheMock, requireDpopBinding: false);
+        var sut = CreateSut(cacheMock, false);
 
         var result = sut.ValidateDpopBinding("thumbprint-abc", null);
 

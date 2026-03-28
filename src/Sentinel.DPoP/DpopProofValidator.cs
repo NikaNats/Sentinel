@@ -1,31 +1,26 @@
-using System.Security.Cryptography;
 using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.JsonWebTokens;
-using Microsoft.IdentityModel.Tokens;
-using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Security.Abstractions.Options;
-using Sentinel.Security.Abstractions.Replay;
 
 namespace Sentinel.DPoP;
 
 /// <summary>
-/// Validates RFC 9449 DPoP proofs with FAPI 2.0 security requirements.
+///     Validates RFC 9449 DPoP proofs with FAPI 2.0 security requirements.
 /// </summary>
 internal sealed class DpopProofValidator : IDpopProofValidator
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
-    private readonly IDpopThumbprintComputer _thumbprintComputer;
-    private readonly IJtiReplayCache _replayCache;
-    private readonly TimeProvider _timeProvider;
     private readonly DPoPOptions _options;
+    private readonly IJtiReplayCache _replayCache;
     private readonly HashSet<string> _supportedAlgorithms;
+    private readonly IDpopThumbprintComputer _thumbprintComputer;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="DpopProofValidator"/> class.
+    ///     Initializes a new instance of the <see cref="DpopProofValidator" /> class.
     /// </summary>
     /// <remarks>
-    /// ✅ FIX: Injects IOptions&lt;DPoPOptions&gt; for configuration-driven security values
-    /// and case-insensitive algorithm matching.
+    ///     ✅ FIX: Injects IOptions&lt;DPoPOptions&gt; for configuration-driven security values
+    ///     and case-insensitive algorithm matching.
     /// </remarks>
     /// <param name="replayCache">Cache for preventing JTI replay attacks.</param>
     /// <param name="options">Configuration for DPoP validation settings.</param>
@@ -47,13 +42,13 @@ internal sealed class DpopProofValidator : IDpopProofValidator
     }
 
     /// <summary>
-    /// Validates a DPoP proof and returns cryptographic binding information per RFC 9449.
+    ///     Validates a DPoP proof and returns cryptographic binding information per RFC 9449.
     /// </summary>
     /// <param name="request">Validation context including proof, HTTP method/URI, and optional nonce.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// Success with nonce and thumbprint on valid proof.
-    /// Failure if proof is malformed, replayed, misbound, or timestamp-invalid.
+    ///     Success with nonce and thumbprint on valid proof.
+    ///     Failure if proof is malformed, replayed, misbound, or timestamp-invalid.
     /// </returns>
     public async Task<SecurityResult<DpopValidationSuccess>> ValidateAsync(
         DpopValidationRequest request,
@@ -120,7 +115,8 @@ internal sealed class DpopProofValidator : IDpopProofValidator
 
             // Validate HTTP URL binding
             if (!dpopToken.TryGetPayloadValue<string>("htu", out var htu)
-                || !string.Equals(NormalizeUri(htu), NormalizeUri(request.HttpUri.AbsoluteUri), StringComparison.Ordinal))
+                || !string.Equals(NormalizeUri(htu), NormalizeUri(request.HttpUri.AbsoluteUri),
+                    StringComparison.Ordinal))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("htu_mismatch");
             }
@@ -206,14 +202,14 @@ internal sealed class DpopProofValidator : IDpopProofValidator
     }
 
     /// <summary>
-    /// ✅ FIX: Static method since it only uses TokenHandler (static) and parameters.
-    /// Validates JWT signature using the provided keys and algorithm per RFC 7518.
+    ///     ✅ FIX: Static method since it only uses TokenHandler (static) and parameters.
+    ///     Validates JWT signature using the provided keys and algorithm per RFC 7518.
     /// </summary>
     /// <remarks>
-    /// ⚠️ ARCHITECTURE WARNING: ML-DSA Support
-    /// If ML-DSA (MLDSA44/65/87) is requested, Microsoft.IdentityModel requires a registered ICryptoProvider
-    /// that implements the post-quantum cryptography math. If absent, ValidateTokenAsync returns IsValid=false silently.
-    /// Consider logging if an ML-DSA request fails without a registered provider.
+    ///     ⚠️ ARCHITECTURE WARNING: ML-DSA Support
+    ///     If ML-DSA (MLDSA44/65/87) is requested, Microsoft.IdentityModel requires a registered ICryptoProvider
+    ///     that implements the post-quantum cryptography math. If absent, ValidateTokenAsync returns IsValid=false silently.
+    ///     Consider logging if an ML-DSA request fails without a registered provider.
     /// </remarks>
     private static async Task<bool> ValidateDpopSignatureAsync(
         string token,
@@ -254,7 +250,7 @@ internal sealed class DpopProofValidator : IDpopProofValidator
     }
 
     /// <summary>
-    /// Normalizes a URI by removing query string and fragment per RFC 9449.
+    ///     Normalizes a URI by removing query string and fragment per RFC 9449.
     /// </summary>
     private static string NormalizeUri(string uri)
     {
@@ -278,7 +274,7 @@ internal sealed class DpopProofValidator : IDpopProofValidator
     }
 
     /// <summary>
-    /// Generates a cryptographically secure random nonce for the next challenge.
+    ///     Generates a cryptographically secure random nonce for the next challenge.
     /// </summary>
     private static string GenerateNewNonce()
     {
@@ -288,12 +284,10 @@ internal sealed class DpopProofValidator : IDpopProofValidator
     }
 
     /// <summary>
-    /// Checks if an algorithm is in the supported list for DPoP signatures.
-    /// Uses case-insensitive matching to handle variant capitalizations.
+    ///     Checks if an algorithm is in the supported list for DPoP signatures.
+    ///     Uses case-insensitive matching to handle variant capitalizations.
     /// </summary>
-    private bool IsSupportedAlgorithm(string? algorithm)
-    {
-        return !string.IsNullOrWhiteSpace(algorithm)
-               && _supportedAlgorithms.Contains(algorithm);
-    }
+    private bool IsSupportedAlgorithm(string? algorithm) =>
+        !string.IsNullOrWhiteSpace(algorithm)
+        && _supportedAlgorithms.Contains(algorithm);
 }

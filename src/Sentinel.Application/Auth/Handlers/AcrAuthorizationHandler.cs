@@ -6,9 +6,9 @@ using Sentinel.Security.Abstractions.Options;
 namespace Sentinel.Application.Auth.Handlers;
 
 /// <summary>
-/// Authorization handler for ACR (Authentication Context Class Reference) validation.
-/// Implements hierarchical assurance level enforcement per NIST AAL3.
-/// Example: ACR3 satisfies ACR2 requirement; ACR1 does not.
+///     Authorization handler for ACR (Authentication Context Class Reference) validation.
+///     Implements hierarchical assurance level enforcement per NIST AAL3.
+///     Example: ACR3 satisfies ACR2 requirement; ACR1 does not.
 /// </summary>
 public sealed class AcrAuthorizationHandler : AuthorizationHandler<AcrRequirement>
 {
@@ -20,8 +20,8 @@ public sealed class AcrAuthorizationHandler : AuthorizationHandler<AcrRequiremen
     }
 
     /// <summary>
-    /// Validates user's ACR against requirement using ranking system.
-    /// User's rank must be equal to or greater than required rank.
+    ///     Validates user's ACR against requirement using ranking system.
+    ///     User's rank must be equal to or greater than required rank.
     /// </summary>
     protected override Task HandleRequirementAsync(
         AuthorizationHandlerContext context,

@@ -1,34 +1,29 @@
-using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.Extensions.Options;
 using Sentinel.Application.Common.Abstractions;
 
 namespace Sentinel.Infrastructure.Cryptography;
 
 /// <summary>
-/// NIST SP 800-57 compliant AES-256-GCM encryption service with envelope cryptography.
-///
-/// Implements versioned ciphertext envelopes allowing:
-/// - Seamless multi-key support (key rotation without re-encryption)
-/// - Backward compatibility with legacy unversioned ciphertexts
-/// - Zero-allocation Span&lt;T&gt; parsing for header metadata
-/// - FedRAMP High compliance via auditable key version information
-///
-/// Ciphertext Format (V1):
-/// [Magic: 0x56] [KeyID Len: 1B] [KeyID: VarN] [Nonce: 12B] [Tag: 16B] [Cipher: Var]
-///
-/// Legacy Format (V0 - fallback):
-/// [Nonce: 12B] [Tag: 16B] [Cipher: Var]
+///     NIST SP 800-57 compliant AES-256-GCM encryption service with envelope cryptography.
+///     Implements versioned ciphertext envelopes allowing:
+///     - Seamless multi-key support (key rotation without re-encryption)
+///     - Backward compatibility with legacy unversioned ciphertexts
+///     - Zero-allocation Span&lt;T&gt; parsing for header metadata
+///     - FedRAMP High compliance via auditable key version information
+///     Ciphertext Format (V1):
+///     [Magic: 0x56] [KeyID Len: 1B] [KeyID: VarN] [Nonce: 12B] [Tag: 16B] [Cipher: Var]
+///     Legacy Format (V0 - fallback):
+///     [Nonce: 12B] [Tag: 16B] [Cipher: Var]
 /// </summary>
 internal sealed class AesGcmEncryptionService : IEncryptionService
 {
     private const byte MagicByte = 0x56; // 'V' for Versioned
     private const int NonceSize = 12;
     private const int TagSize = 16;
+    private readonly byte[] _activeKey;
 
     private readonly string _activeKeyId;
-    private readonly byte[] _activeKey;
     private readonly Dictionary<string, byte[]> _keyRing = new(StringComparer.Ordinal);
     private readonly byte[]? _legacyKey;
 
@@ -53,6 +48,7 @@ internal sealed class AesGcmEncryptionService : IEncryptionService
                 throw new InvalidOperationException(
                     $"Key '{keyId}' must be exactly 32 bytes for AES-256. Got {keyBytes.Length}.");
             }
+
             _keyRing[keyId] = keyBytes;
         }
 
@@ -71,9 +67,8 @@ internal sealed class AesGcmEncryptionService : IEncryptionService
     }
 
     /// <summary>
-    /// Encrypts plaintext using the currently active key, wrapping it in a versioned envelope.
-    ///
-    /// Produces V1 format with Key ID metadata allowing seamless decryption after key rotation.
+    ///     Encrypts plaintext using the currently active key, wrapping it in a versioned envelope.
+    ///     Produces V1 format with Key ID metadata allowing seamless decryption after key rotation.
     /// </summary>
     public byte[] Encrypt(string plainText)
     {
@@ -101,7 +96,7 @@ internal sealed class AesGcmEncryptionService : IEncryptionService
         var envelopeSize = 1 + 1 + keyIdBytes.Length + NonceSize + TagSize + cipherBytes.Length;
         var result = new byte[envelopeSize];
 
-        int cursor = 0;
+        var cursor = 0;
         result[cursor++] = MagicByte;
         result[cursor++] = (byte)keyIdBytes.Length;
 
@@ -120,11 +115,10 @@ internal sealed class AesGcmEncryptionService : IEncryptionService
     }
 
     /// <summary>
-    /// Decrypts ciphertext from either V1 (versioned) or V0 (legacy) format.
-    ///
-    /// Attempts V1 format first. If that fails with AEAD tag corruption (legitimate for legacy data),
-    /// falls back to V0 format using the legacy key. This gracefully handles the 1/256 probability
-    /// that a legacy payload randomly starts with 0x56.
+    ///     Decrypts ciphertext from either V1 (versioned) or V0 (legacy) format.
+    ///     Attempts V1 format first. If that fails with AEAD tag corruption (legitimate for legacy data),
+    ///     falls back to V0 format using the legacy key. This gracefully handles the 1/256 probability
+    ///     that a legacy payload randomly starts with 0x56.
     /// </summary>
     public string Decrypt(byte[] cipherData)
     {
@@ -161,15 +155,14 @@ internal sealed class AesGcmEncryptionService : IEncryptionService
     }
 
     /// <summary>
-    /// Decrypts V1 (versioned) format ciphertext.
-    ///
-    /// Parses the Key ID from the envelope header and uses the corresponding key
-    /// from the key ring to decrypt. Allows seamless support for historical keys.
+    ///     Decrypts V1 (versioned) format ciphertext.
+    ///     Parses the Key ID from the envelope header and uses the corresponding key
+    ///     from the key ring to decrypt. Allows seamless support for historical keys.
     /// </summary>
     private string DecryptV1(ReadOnlySpan<byte> payload)
     {
-        int cursor = 1; // Skip MagicByte
-        byte keyIdLen = payload[cursor++];
+        var cursor = 1; // Skip MagicByte
+        var keyIdLen = payload[cursor++];
 
         if (payload.Length < cursor + keyIdLen + NonceSize + TagSize)
         {
@@ -205,10 +198,9 @@ internal sealed class AesGcmEncryptionService : IEncryptionService
     }
 
     /// <summary>
-    /// Decrypts V0 (legacy unversioned) format ciphertext.
-    ///
-    /// Used for data encrypted before key versioning was introduced.
-    /// Format: [Nonce: 12B] [Tag: 16B] [Cipher: Var]
+    ///     Decrypts V0 (legacy unversioned) format ciphertext.
+    ///     Used for data encrypted before key versioning was introduced.
+    ///     Format: [Nonce: 12B] [Tag: 16B] [Cipher: Var]
     /// </summary>
     private string DecryptLegacy(ReadOnlySpan<byte> payload)
     {

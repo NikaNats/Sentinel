@@ -4,7 +4,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Sentinel.Application.Auth;
 using Sentinel.Application.Auth.Handlers;
-using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Auth.Options;
 using Sentinel.Security.Abstractions.Options;
@@ -46,8 +45,8 @@ public static class ApplicationServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Registers application layer with configuration-driven options.
-    /// Recommended for production use to enable appsettings-based security policies.
+    ///     Registers application layer with configuration-driven options.
+    ///     Recommended for production use to enable appsettings-based security policies.
     /// </summary>
     public static IServiceCollection AddApplicationLayer(
         this IServiceCollection services,
@@ -85,4 +84,3 @@ public static class ApplicationServiceCollectionExtensions
         return services;
     }
 }
-

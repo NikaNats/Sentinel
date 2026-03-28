@@ -18,14 +18,16 @@ public sealed class WeakKeyTests
     public WeakKeyTests()
     {
         _replayCacheMock
-            .Setup(x => x.TryMarkUsedAsync(It.IsAny<string>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.TryMarkUsedAsync(It.IsAny<string>(), It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
     }
 
     [Fact]
     public async Task DpopValidatorMustRejectAlgorithmNoneProof()
     {
-        var proof = "eyJhbGciOiJub25lIiwidHlwIjoiZHBvcCtqd3QifQ.eyJodG0iOiJQT1NUIiwiaHR1IjoiaHR0cHM6Ly9hcGkuZXhhbXBsZS5jb20vdG9rZW4iLCJpYXQiOjE3MDAwMDAwMDAsImp0aSI6InQifQ.";
+        var proof =
+            "eyJhbGciOiJub25lIiwidHlwIjoiZHBvcCtqd3QifQ.eyJodG0iOiJQT1NUIiwiaHR1IjoiaHR0cHM6Ly9hcGkuZXhhbXBsZS5jb20vdG9rZW4iLCJpYXQiOjE3MDAwMDAwMDAsImp0aSI6InQifQ.";
         var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.example.com/token"));
 
         var result = await CreateValidator().ValidateAsync(request);
@@ -86,9 +88,10 @@ public sealed class WeakKeyTests
 
     private IDpopProofValidator CreateValidator()
     {
-        var validatorType = Type.GetType("Sentinel.DPoP.DpopProofValidator, Sentinel.DPoP", throwOnError: true)!;
+        var validatorType = Type.GetType("Sentinel.DPoP.DpopProofValidator, Sentinel.DPoP", true)!;
         var options = Options.Create(new DPoPOptions());
-        var instance = Activator.CreateInstance(validatorType, _replayCacheMock.Object, options, null, TimeProvider.System)!;
+        var instance =
+            Activator.CreateInstance(validatorType, _replayCacheMock.Object, options, null, TimeProvider.System)!;
         return (IDpopProofValidator)instance;
     }
 }

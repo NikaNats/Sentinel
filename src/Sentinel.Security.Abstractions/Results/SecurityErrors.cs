@@ -1,9 +1,9 @@
 namespace Sentinel.Security.Abstractions.Results;
 
 /// <summary>
-/// Centralized error codes and messages for security operations.
-/// Replaces raw strings in SecurityResult.Failure() calls.
-/// Enables consistent error handling across the NuGet suite.
+///     Centralized error codes and messages for security operations.
+///     Replaces raw strings in SecurityResult.Failure() calls.
+///     Enables consistent error handling across the NuGet suite.
 /// </summary>
 public static class SecurityErrors
 {

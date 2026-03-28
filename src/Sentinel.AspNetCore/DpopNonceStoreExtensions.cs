@@ -3,13 +3,13 @@ using Sentinel.Security.Abstractions.Nonce;
 namespace Sentinel.AspNetCore;
 
 /// <summary>
-/// Internal extensions for IDpopNonceStore to bridge between legacy convenience methods
-/// and new abstraction APIs. For use by AspNetCore middleware only.
+///     Internal extensions for IDpopNonceStore to bridge between legacy convenience methods
+///     and new abstraction APIs. For use by AspNetCore middleware only.
 /// </summary>
 internal static class DpopNonceStoreExtensions
 {
     /// <summary>
-    /// Stores a nonce for a given thumbprint with a specified TTL.
+    ///     Stores a nonce for a given thumbprint with a specified TTL.
     /// </summary>
 #pragma warning disable CA1031 // Intentionally catches all exceptions from nonce storage to provide safe fallback
     public static async Task<bool> TryStoreNonceAsync(
@@ -32,7 +32,7 @@ internal static class DpopNonceStoreExtensions
 #pragma warning restore CA1031
 
     /// <summary>
-    /// Retrieves and validates a stored nonce, clearing it if it matches.
+    ///     Retrieves and validates a stored nonce, clearing it if it matches.
     /// </summary>
 #pragma warning disable CA1031 // Intentionally catches all exceptions from nonce retrieval to provide safe fallback
     public static async Task<bool> ConsumeNonceIfMatchesAsync(
@@ -50,6 +50,7 @@ internal static class DpopNonceStoreExtensions
                 await store.SetNonceAsync(thumbprint, string.Empty, DateTimeOffset.UtcNow, ct);
                 return true;
             }
+
             return false;
         }
         catch

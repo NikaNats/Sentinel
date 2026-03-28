@@ -1,21 +1,20 @@
 namespace Sentinel.Redis;
 
 /// <summary>
-/// Thread-safe asynchronous connection provider for Redis.
-///
-/// Uses double-check locking pattern to ensure:
-/// - Only one connection multiplexer instance is created
-/// - No thundering herd of concurrent connection attempts during startup
-/// - Graceful background reconnection (AbortOnConnectFail = false)
-/// - Clean async/await semantics (no blocking thread pool threads)
+///     Thread-safe asynchronous connection provider for Redis.
+///     Uses double-check locking pattern to ensure:
+///     - Only one connection multiplexer instance is created
+///     - No thundering herd of concurrent connection attempts during startup
+///     - Graceful background reconnection (AbortOnConnectFail = false)
+///     - Clean async/await semantics (no blocking thread pool threads)
 /// </summary>
 internal sealed class RedisConnectionProvider : IRedisConnectionProvider
 {
-    private readonly ConfigurationOptions _options;
-    private readonly ILogger<RedisConnectionProvider> _logger;
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
-    private ConnectionMultiplexer? _multiplexer;
+    private readonly ILogger<RedisConnectionProvider> _logger;
+    private readonly ConfigurationOptions _options;
     private bool _disposed; // ✅ FIX: Explicit disposal state to prevent race conditions
+    private ConnectionMultiplexer? _multiplexer;
 
     public RedisConnectionProvider(RedisOptions redisOptions, ILogger<RedisConnectionProvider> logger)
     {
@@ -34,10 +33,9 @@ internal sealed class RedisConnectionProvider : IRedisConnectionProvider
     }
 
     /// <summary>
-    /// Asynchronously retrieves the connection multiplexer.
-    ///
-    /// Fast path (connection already exists): Returns immediately.
-    /// Slow path (first call): Acquires lock, establishes connection, registers reconnect handlers.
+    ///     Asynchronously retrieves the connection multiplexer.
+    ///     Fast path (connection already exists): Returns immediately.
+    ///     Slow path (first call): Acquires lock, establishes connection, registers reconnect handlers.
     /// </summary>
 #pragma warning disable CA1508 // The second null check after lock is valid in double-check locking pattern
     public async ValueTask<IConnectionMultiplexer> GetConnectionAsync(CancellationToken cancellationToken = default)
@@ -94,12 +92,15 @@ internal sealed class RedisConnectionProvider : IRedisConnectionProvider
 #pragma warning restore CA1508
 
     /// <summary>
-    /// Gracefully disposes the connection and internal synchronization primitive.
-    /// ✅ FIX: Acquire lock during disposal to safely block incoming GetConnectionAsync requests.
+    ///     Gracefully disposes the connection and internal synchronization primitive.
+    ///     ✅ FIX: Acquire lock during disposal to safely block incoming GetConnectionAsync requests.
     /// </summary>
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            return;
+        }
 
         // ✅ FIX: Acquire the lock during disposal to safe block incoming GetConnectionAsync requests
         await _connectionLock.WaitAsync();

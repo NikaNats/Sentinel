@@ -27,7 +27,8 @@ public sealed class StepUpAuthorizationResultHandlerTests
     public async Task HandleAsync_WhenForbiddenDueToAcrRequirement_ReturnsStepUpChallenge()
     {
         var acrOptions = CreateAcrOptionsMonitor();
-        var sut = new StepUpAuthorizationResultHandler(NullLogger<StepUpAuthorizationResultHandler>.Instance, acrOptions);
+        var sut = new StepUpAuthorizationResultHandler(NullLogger<StepUpAuthorizationResultHandler>.Instance,
+            acrOptions);
         var context = new DefaultHttpContext();
         context.Request.Headers.Authorization = "DPoP test-token";
 
@@ -48,7 +49,8 @@ public sealed class StepUpAuthorizationResultHandlerTests
     public async Task HandleAsync_WhenForbiddenForOtherReason_UsesDefaultHandler()
     {
         var acrOptions = CreateAcrOptionsMonitor();
-        var sut = new StepUpAuthorizationResultHandler(NullLogger<StepUpAuthorizationResultHandler>.Instance, acrOptions);
+        var sut = new StepUpAuthorizationResultHandler(NullLogger<StepUpAuthorizationResultHandler>.Instance,
+            acrOptions);
         var context = new DefaultHttpContext();
         var services = new ServiceCollection()
             .AddSingleton<IAuthenticationService, FakeAuthenticationService>()

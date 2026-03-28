@@ -4,7 +4,7 @@ using Sentinel.Keycloak;
 namespace Sentinel.Infrastructure.Auth.Handlers;
 
 /// <summary>
-/// Injects Keycloak admin bearer tokens into outgoing admin API requests.
+///     Injects Keycloak admin bearer tokens into outgoing admin API requests.
 /// </summary>
 internal sealed class KeycloakAdminAuthHandler(KeycloakAdminTokenProvider tokenProvider) : DelegatingHandler
 {

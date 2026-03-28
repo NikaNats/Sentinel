@@ -1,5 +1,3 @@
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Sentinel.Application.Auth.Interfaces;
@@ -8,8 +6,8 @@ using Sentinel.AspNetCore.Errors;
 namespace Sentinel.AspNetCore.Endpoints;
 
 /// <summary>
-/// Token Exchange Endpoints - OAuth 2.0 Token Exchange (RFC 8693) implementation for external IdP federation.
-/// Supports ExternalToken (JWT/SAML) → SentinelToken transformation with DPoP binding.
+///     Token Exchange Endpoints - OAuth 2.0 Token Exchange (RFC 8693) implementation for external IdP federation.
+///     Supports ExternalToken (JWT/SAML) → SentinelToken transformation with DPoP binding.
 /// </summary>
 internal static class TokenExchangeEndpoints
 {
@@ -40,7 +38,7 @@ internal static class TokenExchangeEndpoints
             || string.IsNullOrWhiteSpace(request.CodeVerifier))
         {
             return TypedResults.Problem(
-                detail: "External token, provider name, and code verifier are required.",
+                "External token, provider name, and code verifier are required.",
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
@@ -62,7 +60,7 @@ internal static class TokenExchangeEndpoints
         if (result is null || string.IsNullOrWhiteSpace(result.AccessToken))
         {
             return TypedResults.Problem(
-                detail: "Token exchange failed.",
+                "Token exchange failed.",
                 statusCode: StatusCodes.Status401Unauthorized);
         }
 

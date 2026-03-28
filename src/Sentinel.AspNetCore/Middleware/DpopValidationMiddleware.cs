@@ -3,14 +3,12 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.AspNetCore.Telemetry;
-using Sentinel.Security.Diagnostics;
 using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Security.Abstractions.Nonce;
-using Sentinel.Security.Abstractions.Security;
+using Sentinel.Security.Diagnostics;
 using IDpopProofValidator = Sentinel.Security.Abstractions.DPoP.IDpopProofValidator;
 
 namespace Sentinel.AspNetCore.Middleware;
@@ -73,7 +71,8 @@ public sealed class DpopValidationMiddleware(
         }
 
         // ✅ FIX: Validate the proof and check expected nonce (but DO NOT consume it yet)
-        var validationRequest = new DpopValidationRequest(dpopProof, context.Request.Method, new Uri(requestUrl), token, expectedNonce);
+        var validationRequest = new DpopValidationRequest(dpopProof, context.Request.Method, new Uri(requestUrl), token,
+            expectedNonce);
         var validationResult = await validator.ValidateAsync(validationRequest, context.RequestAborted);
 
         // Convert domain result to HTTP response format

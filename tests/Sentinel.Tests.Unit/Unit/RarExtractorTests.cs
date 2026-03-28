@@ -1,6 +1,5 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Sentinel.RAR;
 
 namespace Sentinel.Tests.Unit;
@@ -38,7 +37,7 @@ public sealed class RarExtractorTests
     [Fact]
     public void Extract_WhenDetailsExceedMaxCount_ReturnsFailure()
     {
-        var sut = CreateSut(maxCount: 1);
+        var sut = CreateSut(1);
         var result = sut.Extract("[{\"type\":\"urn:test:one\"},{\"type\":\"urn:test:two\"}]");
 
         result.IsValid.Should().BeFalse();
@@ -49,7 +48,9 @@ public sealed class RarExtractorTests
     public void Extract_WhenJsonHasValidArray_ReturnsSuccess()
     {
         var sut = CreateSut();
-        var result = sut.Extract("[{\"type\":\"urn:test:payment\",\"transaction_id\":\"txn-1\",\"amount\":10.0,\"currency\":\"USD\"}]");
+        var result =
+            sut.Extract(
+                "[{\"type\":\"urn:test:payment\",\"transaction_id\":\"txn-1\",\"amount\":10.0,\"currency\":\"USD\"}]");
 
         result.IsValid.Should().BeTrue();
         result.Details.Should().NotBeNull();

@@ -1,33 +1,27 @@
 using System.Net;
+using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Sentinel.Domain.Users;
 using Sentinel.Infrastructure.Auth.Services;
 using Sentinel.Security.Abstractions.Results;
-using Xunit;
-using FluentAssertions;
 
 namespace Sentinel.Tests.Unit.Auth;
 
 /// <summary>
-/// Keycloak User Service Tests (Identity Creation and Location Header Parsing)
-///
-/// When Keycloak Admin API creates a user, it returns HTTP 201 Created with a Location header
-/// containing the newly created user's UUID. Vulnerabilities in parsing this header can lead to:
-///
-/// 1. Information Enumeration: If a 409 Conflict response is not properly mapped, attackers
-///    can enumerate existing users by observing different error messages.
-///
-/// 2. UUID Extraction Failures: Malformed Location headers could cause exceptions that leak
-///    the raw header to logs/monitoring, or fail to create user sessions.
-///
-/// 3. Path Traversal: If the UUID isn't extracted from the exact last segment, an attacker
-///    might inject path components that get reflected.
-///
-/// This test suite ensures:
-/// - 409 Conflict is mapped to a generic security error (no user enumeration)
-/// - Location header parsing is robust for various URL structures
-/// - Invalid responses fail gracefully without exceptions
+///     Keycloak User Service Tests (Identity Creation and Location Header Parsing)
+///     When Keycloak Admin API creates a user, it returns HTTP 201 Created with a Location header
+///     containing the newly created user's UUID. Vulnerabilities in parsing this header can lead to:
+///     1. Information Enumeration: If a 409 Conflict response is not properly mapped, attackers
+///     can enumerate existing users by observing different error messages.
+///     2. UUID Extraction Failures: Malformed Location headers could cause exceptions that leak
+///     the raw header to logs/monitoring, or fail to create user sessions.
+///     3. Path Traversal: If the UUID isn't extracted from the exact last segment, an attacker
+///     might inject path components that get reflected.
+///     This test suite ensures:
+///     - 409 Conflict is mapped to a generic security error (no user enumeration)
+///     - Location header parsing is robust for various URL structures
+///     - Invalid responses fail gracefully without exceptions
 /// </summary>
 public sealed class KeycloakUserServiceTests
 {
@@ -46,14 +40,15 @@ public sealed class KeycloakUserServiceTests
             NullLogger);
 
         var registration = new UserRegistration(
-            email: "test@example.com",
-            username: "testuser",
-            consent: ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
+            "test@example.com",
+            "testuser",
+            ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
 
         var result = await sut.CreateUserInternalAsync(registration, "password", CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse("409 Conflict should be treated as failure");
-        result.ErrorMessage.Should().Be(SecurityErrors.IdentityConflictMessage, "Error message should not reveal if user exists");
+        result.ErrorMessage.Should().Be(SecurityErrors.IdentityConflictMessage,
+            "Error message should not reveal if user exists");
     }
 
     [Fact]
@@ -71,9 +66,9 @@ public sealed class KeycloakUserServiceTests
             NullLogger);
 
         var registration = new UserRegistration(
-            email: "test@example.com",
-            username: "testuser",
-            consent: ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
+            "test@example.com",
+            "testuser",
+            ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
 
         var result = await sut.CreateUserInternalAsync(registration, "password", CancellationToken.None);
 
@@ -101,9 +96,9 @@ public sealed class KeycloakUserServiceTests
             NullLogger);
 
         var registration = new UserRegistration(
-            email: "test@example.com",
-            username: "testuser",
-            consent: ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
+            "test@example.com",
+            "testuser",
+            ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
 
         var result = await sut.CreateUserInternalAsync(registration, "password", CancellationToken.None);
 
@@ -126,9 +121,9 @@ public sealed class KeycloakUserServiceTests
             NullLogger);
 
         var registration = new UserRegistration(
-            email: "test@example.com",
-            username: "testuser",
-            consent: ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
+            "test@example.com",
+            "testuser",
+            ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
 
         var result = await sut.CreateUserInternalAsync(registration, "password", CancellationToken.None);
 
@@ -153,9 +148,9 @@ public sealed class KeycloakUserServiceTests
             NullLogger);
 
         var registration = new UserRegistration(
-            email: "test@example.com",
-            username: "testuser",
-            consent: ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
+            "test@example.com",
+            "testuser",
+            ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
 
         var result = await sut.CreateUserInternalAsync(registration, "password", CancellationToken.None);
 
@@ -181,9 +176,9 @@ public sealed class KeycloakUserServiceTests
             NullLogger);
 
         var registration = new UserRegistration(
-            email: "test@example.com",
-            username: "testuser",
-            consent: ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
+            "test@example.com",
+            "testuser",
+            ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
 
         var result = await sut.CreateUserInternalAsync(registration, "password", CancellationToken.None);
 
@@ -207,9 +202,9 @@ public sealed class KeycloakUserServiceTests
             NullLogger);
 
         var registration = new UserRegistration(
-            email: "malformed@",
-            username: "testuser",
-            consent: ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
+            "malformed@",
+            "testuser",
+            ConsentInfo.Create(true, "v1", "192.168.1.1", DateTimeOffset.UtcNow));
 
         var result = await sut.CreateUserInternalAsync(registration, "password", CancellationToken.None);
 
@@ -220,7 +215,7 @@ public sealed class KeycloakUserServiceTests
     }
 
     /// <summary>
-    /// Stubs HttpMessageHandler for testing without actual HTTP calls.
+    ///     Stubs HttpMessageHandler for testing without actual HTTP calls.
     /// </summary>
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
         : HttpMessageHandler

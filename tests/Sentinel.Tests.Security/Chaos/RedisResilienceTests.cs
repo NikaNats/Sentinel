@@ -1,25 +1,19 @@
 using System.Net.Sockets;
 using FluentAssertions;
 using Moq;
-using StackExchange.Redis;
-using Xunit;
-using Sentinel.Infrastructure.Cache;
-using Sentinel.Security.Abstractions.Replay;
 using Sentinel.Security.Abstractions.Session;
+using StackExchange.Redis;
 
 namespace Sentinel.Tests.Security.Chaos;
 
 /// <summary>
-/// Chaos Engineering: Redis Resilience & Fail-Closed Semantics
-///
-/// This suite proves the "Fail-Closed" claim: If Redis becomes unavailable, slow, or partial,
-/// the system MUST choose to be unavailable (503 Service Unavailable) rather than insecure.
-///
-/// Real production outages are "Gray Failures" — partial latency, cascade delays, connection pools
-/// exhausted. This tests against such scenarios, not just "Up" vs "Down."
-///
-/// Safety Principle: Strict Mocking (MockBehavior.Strict) verifies that on ANY infrastructure
-/// failure, the system IMMEDIATELY fails and never enters an "accept anyway" state.
+///     Chaos Engineering: Redis Resilience & Fail-Closed Semantics
+///     This suite proves the "Fail-Closed" claim: If Redis becomes unavailable, slow, or partial,
+///     the system MUST choose to be unavailable (503 Service Unavailable) rather than insecure.
+///     Real production outages are "Gray Failures" — partial latency, cascade delays, connection pools
+///     exhausted. This tests against such scenarios, not just "Up" vs "Down."
+///     Safety Principle: Strict Mocking (MockBehavior.Strict) verifies that on ANY infrastructure
+///     failure, the system IMMEDIATELY fails and never enters an "accept anyway" state.
 /// </summary>
 public sealed class RedisResilienceTests
 {
@@ -32,13 +26,11 @@ public sealed class RedisResilienceTests
     }
 
     /// <summary>
-    /// Test: Session revocation MUST fail-closed if cache is unavailable (timeout).
-    ///
-    /// Scenario: Client initiates session revocation via SSF event. Redis timeouts on write.
-    /// Expected: Return failure immediately; never allow state inconsistency.
-    ///
-    /// Security: If we say "yes I revoked" but didn't actually revoke, attacker retains access.
-    /// Fail-closed = "I don't know if revocation succeeded, so deny access."
+    ///     Test: Session revocation MUST fail-closed if cache is unavailable (timeout).
+    ///     Scenario: Client initiates session revocation via SSF event. Redis timeouts on write.
+    ///     Expected: Return failure immediately; never allow state inconsistency.
+    ///     Security: If we say "yes I revoked" but didn't actually revoke, attacker retains access.
+    ///     Fail-closed = "I don't know if revocation succeeded, so deny access."
     /// </summary>
     [Fact(DisplayName = "⏱️ Redis Timeout → Fail-Closed (Revocation Unavailable)")]
     public async Task SessionRevocation_FailsClosed_WhenRedisTimeout()
@@ -53,7 +45,7 @@ public sealed class RedisResilienceTests
             .Verifiable("Blacklist must be attempted");
 
         // Act
-        Func<Task> act = async () => await _cacheServiceMock.Object.BlacklistSessionAsync(
+        var act = async () => await _cacheServiceMock.Object.BlacklistSessionAsync(
             sessionId,
             expiresAt,
             CancellationToken.None);
@@ -66,12 +58,10 @@ public sealed class RedisResilienceTests
     }
 
     /// <summary>
-    /// Test: Session query (is session blacklisted?) MUST fail-closed if cache is unavailable.
-    ///
-    /// Scenario: Incoming request presents session token. Cache is slow (>1s).
-    /// Expected: Reject the request; never guess "probably not revoked."
-    ///
-    /// Security: On ambiguity, deny. DoS > AccLeak.
+    ///     Test: Session query (is session blacklisted?) MUST fail-closed if cache is unavailable.
+    ///     Scenario: Incoming request presents session token. Cache is slow (>1s).
+    ///     Expected: Reject the request; never guess "probably not revoked."
+    ///     Security: On ambiguity, deny. DoS > AccLeak.
     /// </summary>
     [Theory(DisplayName = "🔴 Redis Connection Failure Types (all fail-closed)")]
     [InlineData(typeof(RedisConnectionException), "Connection refused/pool exhausted")]
@@ -101,13 +91,11 @@ public sealed class RedisResilienceTests
     }
 
     /// <summary>
-    /// Test: Partial Redis failure (cluster quorum lost) MUST be treated as total failure.
-    ///
-    /// Scenario: Redis cluster has 5 nodes. 3 go down. Cluster can't reach quorum.
-    /// Write attempts get RedisTimeoutException (queued but unexecuted).
-    /// Expected: REJECT; never accept writes that couldn't complete.
-    ///
-    /// Security: Writes that "might have succeeded" are worse than timeouts that clearly failed.
+    ///     Test: Partial Redis failure (cluster quorum lost) MUST be treated as total failure.
+    ///     Scenario: Redis cluster has 5 nodes. 3 go down. Cluster can't reach quorum.
+    ///     Write attempts get RedisTimeoutException (queued but unexecuted).
+    ///     Expected: REJECT; never accept writes that couldn't complete.
+    ///     Security: Writes that "might have succeeded" are worse than timeouts that clearly failed.
     /// </summary>
     [Fact(DisplayName = "🔗 Partial Redis Cluster Failure → Fail-Closed")]
     public async Task SessionRevocation_FailsClosed_OnPartialClusterFailure()
@@ -133,13 +121,11 @@ public sealed class RedisResilienceTests
     }
 
     /// <summary>
-    /// Test: State inconsistency prevention across cascading failures.
-    ///
-    /// Scenario: First revocation write succeeds. Session query times out.
-    /// Expected: Fail on query; never allow "well, we revoked it, so assume it worked."
-    ///
-    /// Security: Each operation must succeed independently or fail independently.
-    /// No state assumptions across failures.
+    ///     Test: State inconsistency prevention across cascading failures.
+    ///     Scenario: First revocation write succeeds. Session query times out.
+    ///     Expected: Fail on query; never allow "well, we revoked it, so assume it worked."
+    ///     Security: Each operation must succeed independently or fail independently.
+    ///     No state assumptions across failures.
     /// </summary>
     [Fact(DisplayName = "📊 Cascade Failure (write OK, read fail) → each fails independently")]
     public async Task NoStatePropagationAcrossInfrastructureFailures()

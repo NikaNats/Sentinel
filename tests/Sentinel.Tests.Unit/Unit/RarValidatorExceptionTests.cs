@@ -1,10 +1,9 @@
 using System.Text.Json;
+using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Moq;
 using Sentinel.Domain.Auth.Rar;
 using Sentinel.RAR;
-using FluentAssertions;
 
 namespace Sentinel.Tests.Unit.Rar;
 
@@ -61,8 +60,9 @@ public sealed class RarValidatorExceptionTests
     {
         var matcherMock = new Mock<IAuthorizationDetailMatcher>();
         matcherMock.Setup(x => x.GetSupportWeight(It.IsAny<string>())).Returns(100);
-        matcherMock.Setup(x => x.Matches(It.IsAny<AuthorizationDetail>(), It.IsAny<JsonElement>(), It.IsAny<RarValidationOptions>()))
-                   .Returns(false);
+        matcherMock.Setup(x =>
+                x.Matches(It.IsAny<AuthorizationDetail>(), It.IsAny<JsonElement>(), It.IsAny<RarValidationOptions>()))
+            .Returns(false);
 
         var sut = CreateSut(matcherMock.Object);
         var detail = new AuthorizationDetail("urn:test");
@@ -78,8 +78,9 @@ public sealed class RarValidatorExceptionTests
     {
         var matcherMock = new Mock<IAuthorizationDetailMatcher>();
         matcherMock.Setup(x => x.GetSupportWeight(It.IsAny<string>())).Returns(100);
-        matcherMock.Setup(x => x.Matches(It.IsAny<AuthorizationDetail>(), It.IsAny<JsonElement>(), It.IsAny<RarValidationOptions>()))
-                   .Throws(new InvalidOperationException("Matcher error"));
+        matcherMock.Setup(x =>
+                x.Matches(It.IsAny<AuthorizationDetail>(), It.IsAny<JsonElement>(), It.IsAny<RarValidationOptions>()))
+            .Throws(new InvalidOperationException("Matcher error"));
 
         var sut = CreateSut(matcherMock.Object);
         var detail = new AuthorizationDetail("urn:test");
@@ -95,7 +96,7 @@ public sealed class RarValidatorExceptionTests
     {
         var matcherMock = new Mock<IAuthorizationDetailMatcher>();
         matcherMock.Setup(x => x.GetSupportWeight(It.IsAny<string>())).Returns(100);
-        var sut = CreateSut(matcherMock.Object, caseSensitive: true);
+        var sut = CreateSut(matcherMock.Object, true);
         var details = new[] { new AuthorizationDetail("urn:expected:type") };
 
         var result = sut.ValidateByType(details, "urn:different:type", "{}");
@@ -135,8 +136,9 @@ public sealed class RarValidatorExceptionTests
     {
         var matcherMock = new Mock<IAuthorizationDetailMatcher>();
         matcherMock.Setup(x => x.GetSupportWeight(It.IsAny<string>())).Returns(100);
-        matcherMock.Setup(x => x.Matches(It.IsAny<AuthorizationDetail>(), It.IsAny<JsonElement>(), It.IsAny<RarValidationOptions>()))
-                   .Returns(true);
+        matcherMock.Setup(x =>
+                x.Matches(It.IsAny<AuthorizationDetail>(), It.IsAny<JsonElement>(), It.IsAny<RarValidationOptions>()))
+            .Returns(true);
 
         var sut = CreateSut(matcherMock.Object);
         var detail = new AuthorizationDetail("urn:test");
@@ -153,10 +155,11 @@ public sealed class RarValidatorExceptionTests
     {
         var matcherMock = new Mock<IAuthorizationDetailMatcher>();
         matcherMock.Setup(x => x.GetSupportWeight(It.IsAny<string>())).Returns(100);
-        matcherMock.Setup(x => x.Matches(It.IsAny<AuthorizationDetail>(), It.IsAny<JsonElement>(), It.IsAny<RarValidationOptions>()))
-                   .Returns(true);
+        matcherMock.Setup(x =>
+                x.Matches(It.IsAny<AuthorizationDetail>(), It.IsAny<JsonElement>(), It.IsAny<RarValidationOptions>()))
+            .Returns(true);
 
-        var sut = CreateSut(matcherMock.Object, caseSensitive: false);
+        var sut = CreateSut(matcherMock.Object, false);
         var detail = new AuthorizationDetail("urn:test:type");
         var details = new[] { detail };
 
@@ -170,8 +173,9 @@ public sealed class RarValidatorExceptionTests
     {
         var matcherMock = new Mock<IAuthorizationDetailMatcher>();
         matcherMock.Setup(x => x.GetSupportWeight(It.IsAny<string>())).Returns(100);
-        matcherMock.Setup(x => x.Matches(It.IsAny<AuthorizationDetail>(), It.IsAny<JsonElement>(), It.IsAny<RarValidationOptions>()))
-                   .Returns(true);
+        matcherMock.Setup(x =>
+                x.Matches(It.IsAny<AuthorizationDetail>(), It.IsAny<JsonElement>(), It.IsAny<RarValidationOptions>()))
+            .Returns(true);
 
         var sut = CreateSut(matcherMock.Object);
         var detail = new AuthorizationDetail("urn:valid:type");

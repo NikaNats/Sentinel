@@ -3,8 +3,8 @@ using System.Diagnostics;
 namespace Sentinel.AspNetCore.Middleware;
 
 /// <summary>
-/// Propagates correlation ID and DPoP/security context via Activity baggage.
-/// Enables downstream services (SQL auditing, messaging, etc.) to correlate security events.
+///     Propagates correlation ID and DPoP/security context via Activity baggage.
+///     Enables downstream services (SQL auditing, messaging, etc.) to correlate security events.
 /// </summary>
 public sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
 {

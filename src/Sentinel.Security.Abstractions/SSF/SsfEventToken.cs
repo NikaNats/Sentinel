@@ -4,8 +4,8 @@ using System.Text.Json.Serialization;
 namespace Sentinel.Security.Abstractions.SSF;
 
 /// <summary>
-/// Represents a Server-Sent Event token (RFC 8936 / CAEP specification).
-/// Contains security event information from an identity provider.
+///     Represents a Server-Sent Event token (RFC 8936 / CAEP specification).
+///     Contains security event information from an identity provider.
 /// </summary>
 /// <param name="Issuer">The issuer of the event token.</param>
 /// <param name="IssuedAt">The time the token was issued (Unix timestamp, seconds).</param>
@@ -22,7 +22,7 @@ public sealed record SsfEventToken(
     [property: JsonPropertyName("events")] Dictionary<string, JsonElement> Events)
 {
     /// <summary>
-    /// Gets the IssuedAt time as a DateTimeOffset in UTC.
+    ///     Gets the IssuedAt time as a DateTimeOffset in UTC.
     /// </summary>
     public DateTimeOffset IssuedAtDateTimeOffset => DateTimeOffset.FromUnixTimeSeconds(IssuedAt);
 }

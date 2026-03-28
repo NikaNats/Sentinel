@@ -1,7 +1,6 @@
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Moq;
 using Sentinel.Security.Abstractions.Security;
 using Sentinel.Security.Abstractions.Session;
@@ -12,8 +11,11 @@ namespace Sentinel.Tests.Unit.Ssf;
 
 public sealed class SsfEventProcessorResiliencyTests
 {
-    private const string SessionRevokedEventType = "https://schemas.openid.net/secevent/caep/event-type/session-revoked";
-    private const string CredentialChangeEventType = "https://schemas.openid.net/secevent/caep/event-type/credential-change";
+    private const string SessionRevokedEventType =
+        "https://schemas.openid.net/secevent/caep/event-type/session-revoked";
+
+    private const string CredentialChangeEventType =
+        "https://schemas.openid.net/secevent/caep/event-type/credential-change";
 
     private static SsfEventProcessor CreateSut(
         ISsfTokenValidator validator,
@@ -96,7 +98,9 @@ public sealed class SsfEventProcessorResiliencyTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().NotBeNull();
         result.ErrorMessage!.ToLowerInvariant().Should().Contain("failed to process");
-        blacklistMock.Verify(x => x.BlacklistSessionAsync("sid-1", It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once);
+        blacklistMock.Verify(
+            x => x.BlacklistSessionAsync("sid-1", It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
+            Times.Once);
         revocationMock.Verify(x => x.RevokeAllSessionsAsync("user-2", It.IsAny<CancellationToken>()), Times.Once);
     }
 

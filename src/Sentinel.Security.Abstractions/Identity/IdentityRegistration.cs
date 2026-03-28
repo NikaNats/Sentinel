@@ -1,7 +1,7 @@
 namespace Sentinel.Security.Abstractions.Identity;
 
 /// <summary>
-/// Provider-agnostic identity registration payload.
+///     Provider-agnostic identity registration payload.
 /// </summary>
 public sealed record IdentityRegistration(
     string Email,

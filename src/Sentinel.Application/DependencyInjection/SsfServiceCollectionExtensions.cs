@@ -6,40 +6,36 @@ using Sentinel.SSF;
 namespace Sentinel.Application.DependencyInjection;
 
 /// <summary>
-/// Extension methods for registering Security Signal Framework (SSF) services.
+///     Extension methods for registering Security Signal Framework (SSF) services.
 /// </summary>
 public static class SsfServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the Security Signal Framework (SSF) processing pipeline with high-assurance configuration.
+    ///     Registers the Security Signal Framework (SSF) processing pipeline with high-assurance configuration.
     /// </summary>
     /// <remarks>
-    /// ✅ FIX: Strictly binds options so IOptions{SsfProcessingOptions} is resolvable.
-    /// Replaces the anti-pattern of nullable options in constructors with hard DI guarantees.
-    ///
-    /// Configuration Section: "Sentinel:Ssf"
-    /// Example appsettings.json:
-    /// {
-    ///   "Sentinel": {
+    ///     ✅ FIX: Strictly binds options so IOptions{SsfProcessingOptions} is resolvable.
+    ///     Replaces the anti-pattern of nullable options in constructors with hard DI guarantees.
+    ///     Configuration Section: "Sentinel:Ssf"
+    ///     Example appsettings.json:
+    ///     {
+    ///     "Sentinel": {
     ///     "Ssf": {
-    ///       "SessionRevocationTtlSeconds": 28800,
-    ///       "MaxEventAgeSeconds": 300,
-    ///       "AllowedClockSkewSeconds": 300
+    ///     "SessionRevocationTtlSeconds": 28800,
+    ///     "MaxEventAgeSeconds": 300,
+    ///     "AllowedClockSkewSeconds": 300
     ///     }
-    ///   }
-    /// }
-    ///
-    /// Dependencies (must be registered separately by Auth/Keycloak module):
-    /// - ISsfTokenValidator (owning module must provide based on JWKS + issuer)
-    /// - ISessionBlacklistCache (Redis implementation from Session module)
-    /// - IAuthRevocationService (implementation from Security module)
-    ///
-    /// Pre-requisites:
-    /// - IConfiguration must be available
-    /// - appsettings.Ssf section must exist (or provide default values)
-    ///
-    /// Usage:
-    /// services.AddSsfProcessing(configuration);
+    ///     }
+    ///     }
+    ///     Dependencies (must be registered separately by Auth/Keycloak module):
+    ///     - ISsfTokenValidator (owning module must provide based on JWKS + issuer)
+    ///     - ISessionBlacklistCache (Redis implementation from Session module)
+    ///     - IAuthRevocationService (implementation from Security module)
+    ///     Pre-requisites:
+    ///     - IConfiguration must be available
+    ///     - appsettings.Ssf section must exist (or provide default values)
+    ///     Usage:
+    ///     services.AddSsfProcessing(configuration);
     /// </remarks>
     /// <param name="services">The service collection to register into.</param>
     /// <param name="configuration">The application configuration (typically from Host/Program.cs).</param>

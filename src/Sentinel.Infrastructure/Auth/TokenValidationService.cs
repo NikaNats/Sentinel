@@ -1,9 +1,9 @@
 using System.Security.Claims;
-using Sentinel.Security.Abstractions.Exceptions;
-using Sentinel.Security.Abstractions.Security;
-using Sentinel.Security.Abstractions.Replay;
-using Sentinel.Security.Abstractions.Session;
 using Sentinel.Infrastructure.Telemetry;
+using Sentinel.Security.Abstractions.Exceptions;
+using Sentinel.Security.Abstractions.Replay;
+using Sentinel.Security.Abstractions.Security;
+using Sentinel.Security.Abstractions.Session;
 
 namespace Sentinel.Infrastructure.Auth;
 
@@ -14,6 +14,7 @@ internal sealed class TokenValidationService(
     TimeProvider? timeProvider = null)
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+
     public async Task<TokenValidationOutcome> ValidateAsync(ClaimsPrincipal principal, HttpContext context,
         CancellationToken ct)
     {

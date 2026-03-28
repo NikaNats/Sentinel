@@ -1,20 +1,19 @@
-namespace Sentinel.Keycloak.Extensions;
-
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using Sentinel.Keycloak.Services;
 
+namespace Sentinel.Keycloak.Extensions;
+
 /// <summary>
-/// Dependency injection extensions for Keycloak integration.
+///     Dependency injection extensions for Keycloak integration.
 /// </summary>
 public static class KeycloakServiceExtensions
 {
     /// <summary>
-    /// Adds Keycloak OIDC integration services to the DI container.
+    ///     Adds Keycloak OIDC integration services to the DI container.
     /// </summary>
     /// <remarks>
-    /// ✅ FIX: Properly configures options and registers typed clients as Transient (no captive dependencies).
+    ///     ✅ FIX: Properly configures options and registers typed clients as Transient (no captive dependencies).
     /// </remarks>
     /// <param name="services">Service collection.</param>
     /// <param name="configuration">Configuration section (e.g., "Keycloak").</param>
@@ -23,8 +22,8 @@ public static class KeycloakServiceExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(services, nameof(services));
-        ArgumentNullException.ThrowIfNull(configuration, nameof(configuration));
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
 
         // ✅ FIX: Bind options from configuration using IOptions<KeycloakOptions> pattern
         services.Configure<KeycloakOptions>(configuration.GetSection(KeycloakOptions.SectionName));

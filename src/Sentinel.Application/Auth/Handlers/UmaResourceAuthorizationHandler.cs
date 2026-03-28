@@ -6,13 +6,13 @@ using Sentinel.Application.Auth.Models;
 namespace Sentinel.Application.Auth.Handlers;
 
 /// <summary>
-/// Authorization handler for UMA 2.0 (User-Managed Access) resource permissions.
-/// Validates resource access through Keycloak UMA permission endpoint.
+///     Authorization handler for UMA 2.0 (User-Managed Access) resource permissions.
+///     Validates resource access through Keycloak UMA permission endpoint.
 /// </summary>
 public sealed class UmaResourceAuthorizationHandler : AuthorizationHandler<UmaResourceRequirement>
 {
-    private readonly IUmaPermissionService permissionService;
     private readonly IHttpContextAccessor httpContextAccessor;
+    private readonly IUmaPermissionService permissionService;
 
     public UmaResourceAuthorizationHandler(
         IUmaPermissionService permissionService,
@@ -23,8 +23,8 @@ public sealed class UmaResourceAuthorizationHandler : AuthorizationHandler<UmaRe
     }
 
     /// <summary>
-    /// Validates resource access using UMA permission endpoint.
-    /// Extracts access token from Authorization header and resource ID from route values.
+    ///     Validates resource access using UMA permission endpoint.
+    ///     Extracts access token from Authorization header and resource ID from route values.
     /// </summary>
     protected override async Task HandleRequirementAsync(
         AuthorizationHandlerContext context,
@@ -76,7 +76,7 @@ public sealed class UmaResourceAuthorizationHandler : AuthorizationHandler<UmaRe
     }
 
     /// <summary>
-    /// Extracts bearer token from Authorization header, handling both "Bearer" and "DPoP" schemes.
+    ///     Extracts bearer token from Authorization header, handling both "Bearer" and "DPoP" schemes.
     /// </summary>
     private static string ExtractToken(string authHeader)
     {

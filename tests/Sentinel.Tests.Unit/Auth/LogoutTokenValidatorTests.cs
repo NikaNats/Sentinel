@@ -1,33 +1,29 @@
 using System.Security.Cryptography;
-using System.Text.Json;
+using FluentAssertions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
-using Xunit;
-using FluentAssertions;
 using Moq;
 using Sentinel.Infrastructure.Auth;
 
 namespace Sentinel.Tests.Unit.Auth;
 
 /// <summary>
-/// RFC 6587 OIDC Backchannel Logout Token Validation Tests
-///
-/// OIDC Backchannel Logout (RFC 9413) mandates strict requirements:
-/// - Logout tokens MUST NOT contain a 'nonce' claim (distinguishes from ID tokens)
-/// - Logout tokens MUST contain an 'events' claim with backchannel-logout event
-/// - Missing these triggers a security rejection (prevents token replay attacks)
-///
-/// These tests verify compliance and prevent CVE-class vulnerabilities where
-/// a standard ID token could be repurposed as a logout token.
+///     RFC 6587 OIDC Backchannel Logout Token Validation Tests
+///     OIDC Backchannel Logout (RFC 9413) mandates strict requirements:
+///     - Logout tokens MUST NOT contain a 'nonce' claim (distinguishes from ID tokens)
+///     - Logout tokens MUST contain an 'events' claim with backchannel-logout event
+///     - Missing these triggers a security rejection (prevents token replay attacks)
+///     These tests verify compliance and prevent CVE-class vulnerabilities where
+///     a standard ID token could be repurposed as a logout token.
 /// </summary>
 public sealed class LogoutTokenValidatorTests
 {
-    private readonly ECDsa _signingKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-    private readonly ECDsaSecurityKey _securityKey;
     private readonly Mock<IOptionsMonitor<JwtBearerOptions>> _optionsMonitorMock;
+    private readonly ECDsaSecurityKey _securityKey;
+    private readonly ECDsa _signingKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
     private readonly LogoutTokenValidator _sut;
 
     public LogoutTokenValidatorTests()

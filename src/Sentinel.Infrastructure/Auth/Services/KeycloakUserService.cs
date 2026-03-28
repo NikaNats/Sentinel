@@ -1,11 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
-using Sentinel.Application.Auth.Models;
 using Sentinel.Domain.Users;
-using Sentinel.Security.Abstractions.Exceptions;
+using Sentinel.Keycloak;
 using Sentinel.Security.Abstractions.Identity;
 using Sentinel.Security.Abstractions.Results;
-using Sentinel.Keycloak;
 
 namespace Sentinel.Infrastructure.Auth.Services;
 
@@ -18,18 +16,19 @@ internal sealed class KeycloakUserService(HttpClient httpClient, ILogger<Keycloa
         CancellationToken cancellationToken = default)
     {
         var legacyRegistration = new UserRegistration(
-            email: registration.Email,
-            username: registration.Username,
-            consent: ConsentInfo.Create(
-                accepted: registration.AcceptedTerms,
-                policyVersion: registration.PolicyVersion,
-                rawIp: registration.SourceIp,
-                timestamp: new DateTimeOffset(registration.AcceptedAtUtc, TimeSpan.Zero)));
+            registration.Email,
+            registration.Username,
+            ConsentInfo.Create(
+                registration.AcceptedTerms,
+                registration.PolicyVersion,
+                registration.SourceIp,
+                new DateTimeOffset(registration.AcceptedAtUtc, TimeSpan.Zero)));
 
         return CreateUserInternalAsync(legacyRegistration, password, cancellationToken);
     }
 
-    public async Task<SecurityResult<string>> CreateUserInternalAsync(UserRegistration registration, string password, CancellationToken ct)
+    public async Task<SecurityResult<string>> CreateUserInternalAsync(UserRegistration registration, string password,
+        CancellationToken ct)
     {
         var payload = new KeycloakAdminCreateUserPayload
         {
@@ -82,7 +81,8 @@ internal sealed class KeycloakUserService(HttpClient httpClient, ILogger<Keycloa
         return SecurityResultFactory.Create(userId);
     }
 
-    public async Task<bool> SetEmailVerifiedAsync(string userId, bool verified, CancellationToken cancellationToken = default)
+    public async Task<bool> SetEmailVerifiedAsync(string userId, bool verified,
+        CancellationToken cancellationToken = default)
     {
         var payload = new KeycloakAdminUserUpdatePayload { EmailVerified = verified };
 
@@ -132,7 +132,8 @@ internal sealed class KeycloakUserService(HttpClient httpClient, ILogger<Keycloa
         };
     }
 
-    public async Task<bool> UpdatePasswordAsync(string email, string newPassword, CancellationToken cancellationToken = default)
+    public async Task<bool> UpdatePasswordAsync(string email, string newPassword,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(newPassword))
         {

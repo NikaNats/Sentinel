@@ -4,46 +4,41 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Sentinel.RAR.Extensions;
 
 /// <summary>
-/// Extension methods for registering Rich Authorization Request (RAR) services with high-assurance configuration.
+///     Extension methods for registering Rich Authorization Request (RAR) services with high-assurance configuration.
 /// </summary>
 public static class RarServiceExtensions
 {
     /// <summary>
-    /// Registers the Rich Authorization Request (RAR) validation pipeline with high-assurance configuration.
+    ///     Registers the Rich Authorization Request (RAR) validation pipeline with high-assurance configuration.
     /// </summary>
     /// <remarks>
-    /// ✅ FIX: Strictly binds options so IOptions{RarValidationOptions} is resolvable.
-    /// Replaces the anti-pattern of nullable options in constructors with hard DI guarantees.
-    ///
-    /// Configuration Section: "Sentinel:Rar"
-    /// Example appsettings.json:
-    /// {
-    ///   "Sentinel": {
+    ///     ✅ FIX: Strictly binds options so IOptions{RarValidationOptions} is resolvable.
+    ///     Replaces the anti-pattern of nullable options in constructors with hard DI guarantees.
+    ///     Configuration Section: "Sentinel:Rar"
+    ///     Example appsettings.json:
+    ///     {
+    ///     "Sentinel": {
     ///     "Rar": {
-    ///       "MaxAuthorizationDetailsCount": 10,
-    ///       "MonetaryPrecisionTolerance": 0.01,
-    ///       "CaseSensitiveComparison": true
+    ///     "MaxAuthorizationDetailsCount": 10,
+    ///     "MonetaryPrecisionTolerance": 0.01,
+    ///     "CaseSensitiveComparison": true
     ///     }
-    ///   }
-    /// }
-    ///
-    /// Services Registered:
-    /// - IRarExtractor (transient)
-    /// - IRarValidator (transient)
-    /// - IAuthorizationDetailMatcher implementations (transient)
-    /// - IOptions{RarValidationOptions} (from configuration)
-    ///
-    /// Pre-requisites:
-    /// - IConfiguration must be available
-    /// - appsettings.Rar section must exist (or provide default values)
-    ///
-    /// Usage in Program.cs:
-    /// services.AddRarValidation(builder.Configuration);
-    ///
-    /// RarValidator will then perform polymorphic matcher routing:
-    /// - Each matcher declares its support weight for authorization detail types
-    /// - RarValidator selects the highest-weight matcher for each detail type
-    /// - Enables extensibility without modifying RarValidator
+    ///     }
+    ///     }
+    ///     Services Registered:
+    ///     - IRarExtractor (transient)
+    ///     - IRarValidator (transient)
+    ///     - IAuthorizationDetailMatcher implementations (transient)
+    ///     - IOptions{RarValidationOptions} (from configuration)
+    ///     Pre-requisites:
+    ///     - IConfiguration must be available
+    ///     - appsettings.Rar section must exist (or provide default values)
+    ///     Usage in Program.cs:
+    ///     services.AddRarValidation(builder.Configuration);
+    ///     RarValidator will then perform polymorphic matcher routing:
+    ///     - Each matcher declares its support weight for authorization detail types
+    ///     - RarValidator selects the highest-weight matcher for each detail type
+    ///     - Enables extensibility without modifying RarValidator
     /// </remarks>
     /// <param name="services">The service collection to register into.</param>
     /// <param name="configuration">The application configuration (typically from Host/Program.cs).</param>
@@ -59,10 +54,7 @@ public static class RarServiceExtensions
         // ✅ FIX: Use extension method call from IConfigurationSection
         // The Bind extension is defined in Microsoft.Extensions.Configuration.Binder
         // and does not require a using statement when called directly on the section
-        services.Configure<RarValidationOptions>(opts =>
-        {
-            configuration.GetSection("Sentinel:Rar").Bind(opts);
-        });
+        services.Configure<RarValidationOptions>(opts => { configuration.GetSection("Sentinel:Rar").Bind(opts); });
 
         // ✅ FIX: Correct interface-to-implementation mapping
         services.AddTransient<IRarExtractor, RarExtractor>();

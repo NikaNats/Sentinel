@@ -4,7 +4,6 @@ using Microsoft.Extensions.Options;
 using Moq;
 using Sentinel.DPoP;
 using Sentinel.RAR;
-using Sentinel.Security.Abstractions.Options;
 using Sentinel.Security.Abstractions.Replay;
 
 namespace Sentinel.Tests.Security;

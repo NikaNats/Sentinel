@@ -1,44 +1,32 @@
-namespace Sentinel.Tests.DPoP;
-
 using System.Collections.Concurrent;
-using System.Security.Cryptography;
-using FluentAssertions;
 using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.Tokens;
-using Sentinel.DPoP;
-using Sentinel.DPoP.Extensions;
-using Sentinel.Security.Abstractions.DPoP;
-using Sentinel.Security.Abstractions.Options;
-using Sentinel.Security.Abstractions.Replay;
-using Sentinel.Tests.DPoP.Mocks;
 using Xunit;
 
+namespace Sentinel.Tests.DPoP;
+
 /// <summary>
-/// High-Assurance Security Invariant Suite for RFC 9449 (DPoP).
-///
-/// This suite treats security requirements as executable specifications.
-/// Every test proves a specific mitigation in the Sentinel Threat Model.
-///
-/// ARCHITECTURE PRINCIPLES:
-/// ✅ Deterministic Temporal Logic: Boundary testing at exact millisecond edges (-61,-60,+5,+6)
-/// ✅ Cryptographic Reality: Real ECDsa P-256 signatures, not fake JWTs
-/// ✅ Strict Verification: FakeJtiReplayCache with explicit expectations and assertion
-/// ✅ Fail-Closed: Infrastructure unavailability results in automatic denial (no degradation)
-/// ✅ Error Sanitization: Topology details never leak in error messages
-/// ✅ Adversarial Verification: Signature tampering, JWK swaps, temporal attacks all tested
-/// ✅ Resource Hygiene: IDisposable ensures proper cryptographic cleanup
+///     High-Assurance Security Invariant Suite for RFC 9449 (DPoP).
+///     This suite treats security requirements as executable specifications.
+///     Every test proves a specific mitigation in the Sentinel Threat Model.
+///     ARCHITECTURE PRINCIPLES:
+///     ✅ Deterministic Temporal Logic: Boundary testing at exact millisecond edges (-61,-60,+5,+6)
+///     ✅ Cryptographic Reality: Real ECDsa P-256 signatures, not fake JWTs
+///     ✅ Strict Verification: FakeJtiReplayCache with explicit expectations and assertion
+///     ✅ Fail-Closed: Infrastructure unavailability results in automatic denial (no degradation)
+///     ✅ Error Sanitization: Topology details never leak in error messages
+///     ✅ Adversarial Verification: Signature tampering, JWK swaps, temporal attacks all tested
+///     ✅ Resource Hygiene: IDisposable ensures proper cryptographic cleanup
 /// </summary>
 public sealed class DpopProofValidatorTests : IDisposable
 {
-    private readonly StrictJtiReplayCache _replayCache;
-    private readonly DpopThumbprintComputer _thumbprintComputer;
-    private readonly DpopProofValidator _validator;
-    private readonly FakeTimeProvider _timeProvider;
-
     // ✅ Real cryptographic material for mathematically valid test vectors
     private readonly ECDsa _ecdsa;
-    private readonly ECDsaSecurityKey _securityKey;
     private readonly Dictionary<string, object> _publicJwk;
+    private readonly StrictJtiReplayCache _replayCache;
+    private readonly ECDsaSecurityKey _securityKey;
+    private readonly DpopThumbprintComputer _thumbprintComputer;
+    private readonly FakeTimeProvider _timeProvider;
+    private readonly DpopProofValidator _validator;
 
     public DpopProofValidatorTests()
     {
@@ -78,6 +66,11 @@ public sealed class DpopProofValidatorTests : IDisposable
             _timeProvider);
     }
 
+    public void Dispose() =>
+        // ✅ Resource cleanup: Dispose cryptographic material
+        // Prevents memory leaks in long-running CI/CD agents
+        _ecdsa?.Dispose();
+
     [Fact(DisplayName = "✅ Invariant: Perfectly signed and timed proof MUST authorize")]
     public async Task ValidateAsync_ValidProof_ReturnsSuccess()
     {
@@ -107,7 +100,9 @@ public sealed class DpopProofValidatorTests : IDisposable
         var parts = validProof.Split('.');
 
         if (parts.Length != 3)
+        {
             throw new InvalidOperationException("Invalid JWT structure");
+        }
 
         // Flip bits in the signature segment (adversarial mutation)
         var tamperedSignature = new string(parts[2].Reverse().ToArray());
@@ -294,16 +289,15 @@ public sealed class DpopProofValidatorTests : IDisposable
     // ====== Test Helper: Production-Grade Cryptographic Proof Generation ======
 
     /// <summary>
-    /// Creates a mathematically valid, cryptographically signed DPoP proof.
-    /// Used by all tests to ensure validator interacts with real JOSE structures.
+    ///     Creates a mathematically valid, cryptographically signed DPoP proof.
+    ///     Used by all tests to ensure validator interacts with real JOSE structures.
     /// </summary>
     private string CreateSignedProof(
         string method,
         string uri,
         string? nonce = null,
-        DateTimeOffset? iat = null)
-    {
-        return TestJwtBuilder.CreateValidProof(
+        DateTimeOffset? iat = null) =>
+        TestJwtBuilder.CreateValidProof(
             _securityKey,
             SecurityAlgorithms.EcdsaSha256,
             _publicJwk,
@@ -311,26 +305,65 @@ public sealed class DpopProofValidatorTests : IDisposable
             uri,
             nonce,
             iat);
-    }
-
-    public void Dispose()
-    {
-        // ✅ Resource cleanup: Dispose cryptographic material
-        // Prevents memory leaks in long-running CI/CD agents
-        _ecdsa?.Dispose();
-    }
 
     /// <summary>
-    /// Strict in-memory JTI replay cache for testing.
-    /// Enforces that cache calls happen only when expected.
+    ///     Strict in-memory JTI replay cache for testing.
+    ///     Enforces that cache calls happen only when expected.
     /// </summary>
     private sealed class StrictJtiReplayCache : IJtiReplayCache
     {
         private readonly ConcurrentDictionary<string, DateTimeOffset> _usedJtis = new();
-        private bool _shouldFail;
-        private bool _expectCalls = true;
         private bool _callHappened;
+        private bool _expectCalls = true;
         private int _expectedReturnValue = 1; // 1 = true, 0 = false, -1 = no call expected
+        private bool _shouldFail;
+
+        public async Task<bool> TryMarkUsedAsync(
+            string jti,
+            DateTimeOffset expiresAt,
+            CancellationToken cancellationToken = default)
+        {
+            _callHappened = true;
+
+            if (!_expectCalls)
+            {
+                throw new InvalidOperationException("Cache was called when it should not have been");
+            }
+
+            if (_shouldFail)
+            {
+                _shouldFail = false;
+                throw new InvalidOperationException("Cache operation failed");
+            }
+
+            if (_expectedReturnValue == 1)
+            {
+                return await Task.FromResult(_usedJtis.TryAdd(jti, expiresAt));
+            }
+
+            if (_expectedReturnValue == 0)
+            {
+                return await Task.FromResult(false);
+            }
+
+            throw new InvalidOperationException("Invalid expected return value");
+        }
+
+        public async Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var expiredJtis = _usedJtis
+                .Where(kvp => kvp.Value <= now)
+                .Select(kvp => kvp.Key)
+                .ToList();
+
+            foreach (var jti in expiredJtis)
+            {
+                _usedJtis.TryRemove(jti, out _);
+            }
+
+            await Task.CompletedTask;
+        }
 
         public void ExpectSuccess()
         {
@@ -356,13 +389,17 @@ public sealed class DpopProofValidatorTests : IDisposable
         public void Verify()
         {
             if (_expectCalls && !_callHappened)
+            {
                 throw new InvalidOperationException("Expected cache call did not happen");
+            }
         }
 
         public void VerifyNoCalls()
         {
             if (_callHappened)
+            {
                 throw new InvalidOperationException("Unexpected cache call occurred");
+            }
         }
 
         public void Reset()
@@ -371,49 +408,6 @@ public sealed class DpopProofValidatorTests : IDisposable
             _callHappened = false;
         }
 
-        public void SetShouldFail()
-        {
-            _shouldFail = true;
-        }
-
-        public async Task<bool> TryMarkUsedAsync(
-            string jti,
-            DateTimeOffset expiresAt,
-            CancellationToken cancellationToken = default)
-        {
-            _callHappened = true;
-
-            if (!_expectCalls)
-                throw new InvalidOperationException("Cache was called when it should not have been");
-
-            if (_shouldFail)
-            {
-                _shouldFail = false;
-                throw new InvalidOperationException("Cache operation failed");
-            }
-
-            if (_expectedReturnValue == 1)
-                return await Task.FromResult(_usedJtis.TryAdd(jti, expiresAt));
-            else if (_expectedReturnValue == 0)
-                return await Task.FromResult(false);
-
-            throw new InvalidOperationException("Invalid expected return value");
-        }
-
-        public async Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
-        {
-            var now = DateTimeOffset.UtcNow;
-            var expiredJtis = _usedJtis
-                .Where(kvp => kvp.Value <= now)
-                .Select(kvp => kvp.Key)
-                .ToList();
-
-            foreach (var jti in expiredJtis)
-            {
-                _usedJtis.TryRemove(jti, out _);
-            }
-
-            await Task.CompletedTask;
-        }
+        public void SetShouldFail() => _shouldFail = true;
     }
 }

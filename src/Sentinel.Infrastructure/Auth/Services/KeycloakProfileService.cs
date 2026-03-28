@@ -1,12 +1,13 @@
 using System.Net.Http.Json;
-using Sentinel.Security.Abstractions.Identity;
 using Sentinel.Keycloak;
+using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Infrastructure.Auth.Services;
 
 internal sealed class KeycloakProfileService(HttpClient httpClient) : IUserProfileManager
 {
-    public async Task<bool> UpdateProfileAsync(string subjectId, string? displayName, CancellationToken cancellationToken = default)
+    public async Task<bool> UpdateProfileAsync(string subjectId, string? displayName,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(subjectId))
         {

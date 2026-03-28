@@ -1,39 +1,35 @@
+using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Moq;
 using Sentinel.DPoP;
 using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Security.Abstractions.Options;
 using Sentinel.Security.Abstractions.Replay;
-using System.Security.Cryptography;
-using Moq;
-using Xunit;
 using Sentinel.Tests.Shared;
 
 namespace Sentinel.Tests.Security.Security;
 
 /// <summary>
-/// Algorithm Agility & Downgrade Resilience Tests for NIST AAL3/FAPI 2.0
-///
-/// Prevents Cross-Algorithm Substitution Attacks where an attacker:
-/// - Presents an EC key but uses RSA algorithm (PS256)
-/// - Uses "alg: none" to bypass signature verification
-/// - Substitutes weaker algorithm (HS256) for stronger (ES256)
-/// - Exploits algorithm confusion between RSA and EC signatures
-///
-/// Architecture Note: DPoP validator MUST enforce strict mapping between:
-/// - JWK key type ("kty": "EC" | "RSA" | "OKP")
-/// - Claims algorithm ("alg": "ES256" | "PS256" | "EdDSA")
-/// No exceptions, no upgrades, no downgrades.
-///
-/// Safety Principle: Strict Mocking (MockBehavior.Strict)
-/// If the validator tries to call cache methods it shouldn't, or skip security checks,
-/// the mock will throw an immediate failure. No sneaky passes-by-default.
+///     Algorithm Agility & Downgrade Resilience Tests for NIST AAL3/FAPI 2.0
+///     Prevents Cross-Algorithm Substitution Attacks where an attacker:
+///     - Presents an EC key but uses RSA algorithm (PS256)
+///     - Uses "alg: none" to bypass signature verification
+///     - Substitutes weaker algorithm (HS256) for stronger (ES256)
+///     - Exploits algorithm confusion between RSA and EC signatures
+///     Architecture Note: DPoP validator MUST enforce strict mapping between:
+///     - JWK key type ("kty": "EC" | "RSA" | "OKP")
+///     - Claims algorithm ("alg": "ES256" | "PS256" | "EdDSA")
+///     No exceptions, no upgrades, no downgrades.
+///     Safety Principle: Strict Mocking (MockBehavior.Strict)
+///     If the validator tries to call cache methods it shouldn't, or skip security checks,
+///     the mock will throw an immediate failure. No sneaky passes-by-default.
 /// </summary>
 public sealed class AlgorithmResilienceTests : IDisposable
 {
-    private readonly Mock<IJtiReplayCache> _replayCacheMock;
     private readonly ECDsa _ecDsa;
+    private readonly Mock<IJtiReplayCache> _replayCacheMock;
     private readonly RSA _rsa;
     private readonly DpopProofValidator _validator;
 
@@ -60,14 +56,18 @@ public sealed class AlgorithmResilienceTests : IDisposable
         _validator = new DpopProofValidator(_replayCacheMock.Object, options);
     }
 
+    public void Dispose()
+    {
+        _ecDsa.Dispose();
+        _rsa.Dispose();
+    }
+
     /// <summary>
-    /// Security Invariant: Cross-Algorithm Substitution Attack (EC-to-RSA)
-    ///
-    /// Attacker presents a valid P-256 EC key in the JWK claim, but claims
-    /// the algorithm is "PS256" (RSA-PSS). If the validator is confused,
-    /// it might accept this as valid, leading to signature bypass.
-    ///
-    /// Expected: REJECT with "unsupported_algorithm" error.
+    ///     Security Invariant: Cross-Algorithm Substitution Attack (EC-to-RSA)
+    ///     Attacker presents a valid P-256 EC key in the JWK claim, but claims
+    ///     the algorithm is "PS256" (RSA-PSS). If the validator is confused,
+    ///     it might accept this as valid, leading to signature bypass.
+    ///     Expected: REJECT with "unsupported_algorithm" error.
     /// </summary>
     [Fact(DisplayName = "🔐 Cross-Algorithm Substitution (EC key + RS256 claim) MUST be rejected")]
     public async Task ValidateAsync_RejectsEcKeyClaimingRsAlgorithm()
@@ -75,8 +75,8 @@ public sealed class AlgorithmResilienceTests : IDisposable
         // Arrange: Create malformed proof (EC key, RSA algorithm claim)
         var maliciousProof = TestJwtBuilder.CreateMalformedProof(
             _ecDsa,
-            headerAlg: SecurityAlgorithms.RsaSsaPssSha256,
-            kty: "EC");
+            SecurityAlgorithms.RsaSsaPssSha256,
+            "EC");
 
         var request = new DpopValidationRequest(
             maliciousProof,
@@ -94,15 +94,12 @@ public sealed class AlgorithmResilienceTests : IDisposable
     }
 
     /// <summary>
-    /// Security Invariant: Symmetric Key Confusion Attack (HMAC masquerade)
-    ///
-    /// Symmetric algorithms (HMAC: HS256, HS384, HS512) sign with a shared secret.
-    /// Asymmetric algorithms (RSA, EC) sign with a private key.
-    ///
-    /// If a validator uses the PUBLIC key as an HMAC secret, an attacker can
-    /// forge proofs by re-signing with their own secret (payload substitution).
-    ///
-    /// Expected: REJECT symmetric algorithms entirely (only allow ES256, PS256, EdDSA).
+    ///     Security Invariant: Symmetric Key Confusion Attack (HMAC masquerade)
+    ///     Symmetric algorithms (HMAC: HS256, HS384, HS512) sign with a shared secret.
+    ///     Asymmetric algorithms (RSA, EC) sign with a private key.
+    ///     If a validator uses the PUBLIC key as an HMAC secret, an attacker can
+    ///     forge proofs by re-signing with their own secret (payload substitution).
+    ///     Expected: REJECT symmetric algorithms entirely (only allow ES256, PS256, EdDSA).
     /// </summary>
     [Theory(DisplayName = "🛡️ Symmetric Key Confusion (HMAC) MUST be rejected")]
     [InlineData(SecurityAlgorithms.HmacSha256, "Weak HMAC-SHA256")]
@@ -128,20 +125,18 @@ public sealed class AlgorithmResilienceTests : IDisposable
     }
 
     /// <summary>
-    /// Security Invariant: "alg: none" Attack
-    ///
-    /// An attacker might create a proof with header claim "alg": "none",
-    /// attempting to bypass signature verification entirely.
-    ///
-    /// Expected: REJECT with "unsupported_algorithm" (none is not a supported algorithm).
+    ///     Security Invariant: "alg: none" Attack
+    ///     An attacker might create a proof with header claim "alg": "none",
+    ///     attempting to bypass signature verification entirely.
+    ///     Expected: REJECT with "unsupported_algorithm" (none is not a supported algorithm).
     /// </summary>
     [Fact(DisplayName = "⚠️ Algorithm 'None' Attack MUST be rejected")]
     public async Task ValidateAsync_RejectsAlgorithmNoneAttack()
     {
         // Arrange: Manually construct JWT with "alg": "none"
         var noneProof = "eyJhbGciOiJub25lIiwidHlwIjoiZHBvcCtqd3QiLCJqa2siOnsia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiJ9fQ." +
-                       "eyJodG0iOiJQT1NUIiwiaHR1IjoiaHR0cHM6Ly9hcGkuaW8vY2xhaW0iLCJpYXQiOjE2NDI2NjAxNjAsImp0aSI6InRlc3Qtand0In0." +
-                       "";  // "none" has no signature
+                        "eyJodG0iOiJQT1NUIiwiaHR1IjoiaHR0cHM6Ly9hcGkuaW8vY2xhaW0iLCJpYXQiOjE2NDI2NjAxNjAsImp0aSI6InRlc3Qtand0In0." +
+                        ""; // "none" has no signature
 
         var request = new DpopValidationRequest(
             noneProof,
@@ -154,11 +149,5 @@ public sealed class AlgorithmResilienceTests : IDisposable
         // Assert
         result.IsSuccess.Should().BeFalse(
             "Algorithm 'none' must be rejected (no signature verification)");
-    }
-
-    public void Dispose()
-    {
-        _ecDsa.Dispose();
-        _rsa.Dispose();
     }
 }

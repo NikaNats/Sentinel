@@ -1,27 +1,23 @@
-using Sentinel.Keycloak;
-using Xunit;
 using FluentAssertions;
+using Sentinel.Keycloak;
 
 namespace Sentinel.Tests.Unit.Keycloak;
 
 /// <summary>
-/// Keycloak Authority Endpoint Parsing Tests (SSRF Prevention)
-///
-/// Production Keycloak deployments vary significantly:
-/// - Standard: /realms/sentinel
-/// - With prefix: /auth/realms/sentinel (older versions behind reverse proxy)
-/// - Custom sub-paths: /identity/admin/realms/sentinel
-/// - Trailing slashes may be present or absent
-///
-/// This test suite ensures that URL parsing is:
-/// 1. Robust to variations without becoming vulnerable to SSRF
-/// 2. Correctly appends the protocol paths
-/// 3. Properly validates realm names (prevents injection)
-///
-/// If parsing is incorrect, an attacker could:
-/// - Cause the API to make requests to internal IPs (SSRF)
-/// - Bypass URL validation in the reverse proxy
-/// - Extract sensitive data from error messages
+///     Keycloak Authority Endpoint Parsing Tests (SSRF Prevention)
+///     Production Keycloak deployments vary significantly:
+///     - Standard: /realms/sentinel
+///     - With prefix: /auth/realms/sentinel (older versions behind reverse proxy)
+///     - Custom sub-paths: /identity/admin/realms/sentinel
+///     - Trailing slashes may be present or absent
+///     This test suite ensures that URL parsing is:
+///     1. Robust to variations without becoming vulnerable to SSRF
+///     2. Correctly appends the protocol paths
+///     3. Properly validates realm names (prevents injection)
+///     If parsing is incorrect, an attacker could:
+///     - Cause the API to make requests to internal IPs (SSRF)
+///     - Bypass URL validation in the reverse proxy
+///     - Extract sensitive data from error messages
 /// </summary>
 public sealed class KeycloakAuthorityEndpointsTests
 {

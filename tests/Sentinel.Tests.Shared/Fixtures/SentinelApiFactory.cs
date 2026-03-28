@@ -12,7 +12,11 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Sentinel.Infrastructure.Persistence;
+using Sentinel.Redis;
 using Sentinel.Redis.Extensions;
+using Sentinel.Security.Abstractions.Nonce;
+using Sentinel.Security.Abstractions.Replay;
+using Sentinel.Security.Abstractions.Session;
 using StackExchange.Redis;
 using Testcontainers.PostgreSql;
 using Testcontainers.Redis;
@@ -23,10 +27,10 @@ namespace Sentinel.Tests.Shared.Fixtures;
 
 public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    private readonly RedisContainer redisContainer;
     private readonly PostgreSqlContainer postgresContainer;
-    private string redisConnectionString = string.Empty;
+    private readonly RedisContainer redisContainer;
     private string postgresConnectionString = string.Empty;
+    private string redisConnectionString = string.Empty;
 
     public SentinelApiFactory()
     {
@@ -85,7 +89,8 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
                 ["Keycloak:RequireHttpsMetadata"] = "false",
                 ["FeatureFlags:Auth:DpopFlow"] = "true",
                 // Add Redis configuration for test containers
-                ["Sentinel:Redis:EndPoint"] = $"localhost:{redisContainer.GetMappedPublicPort(6379)},abortConnect=false",
+                ["Sentinel:Redis:EndPoint"] =
+                    $"localhost:{redisContainer.GetMappedPublicPort(6379)},abortConnect=false",
                 ["Sentinel:Redis:EnableInMemoryFallback"] = "true"
             };
 
@@ -105,18 +110,15 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
 
             // Configure DbContext with explicit container connection string
             services.RemoveAll<DbContextOptions<SentinelDbContext>>();
-            services.AddDbContext<SentinelDbContext>(options =>
-            {
-                options.UseNpgsql(postgresConnectionString);
-            });
+            services.AddDbContext<SentinelDbContext>(options => { options.UseNpgsql(postgresConnectionString); });
 
             // Configure Redis with explicit container connection string
             services.RemoveAll<IDistributedCache>();
             services.RemoveAll<IConnectionMultiplexer>();
-            services.RemoveAll<Sentinel.Security.Abstractions.Replay.IJtiReplayCache>();
-            services.RemoveAll<Sentinel.Security.Abstractions.Nonce.IDpopNonceStore>();
-            services.RemoveAll<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>();
-            services.RemoveAll<Sentinel.Redis.RedisOptions>();
+            services.RemoveAll<IJtiReplayCache>();
+            services.RemoveAll<IDpopNonceStore>();
+            services.RemoveAll<ISessionBlacklistCache>();
+            services.RemoveAll<RedisOptions>();
 
             services.AddSingleton<IDistributedCache>(_ =>
                 new RedisCache(Options.Create(new RedisCacheOptions { Configuration = redisConnectionString })));
@@ -140,15 +142,15 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
             services.AddRedisSecurityCaches(redisConfig);
 
             // Bridge Application layer IJtiReplayCache to Security layer implementation via adapter
-            services.AddSingleton<Sentinel.Application.Common.Abstractions.IJtiReplayCache>(sp =>
+            services.AddSingleton<Application.Common.Abstractions.IJtiReplayCache>(sp =>
                 new JtiReplayCacheAdapter(
-                    sp.GetRequiredService<Sentinel.Security.Abstractions.Replay.IJtiReplayCache>(),
+                    sp.GetRequiredService<IJtiReplayCache>(),
                     sp.GetService<TimeProvider>()));
 
             // Bridge Application layer ISessionBlacklistCache to Security layer implementation via adapter
-            services.AddSingleton<Sentinel.Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
+            services.AddSingleton<Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
                 new SessionBlacklistCacheAdapter(
-                    sp.GetRequiredService<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>(),
+                    sp.GetRequiredService<ISessionBlacklistCache>(),
                     sp.GetService<TimeProvider>()));
 
             // Configure JWT authentication override

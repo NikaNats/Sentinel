@@ -1,11 +1,11 @@
-namespace Sentinel.EntityFrameworkCore;
-
 using Sentinel.EntityFrameworkCore.Models;
 
+namespace Sentinel.EntityFrameworkCore;
+
 /// <summary>
-/// Entity Framework context for Sentinel security caches.
+///     Entity Framework context for Sentinel security caches.
 /// </summary>
-public sealed partial class SentinelSecurityDbContext : DbContext
+public sealed class SentinelSecurityDbContext : DbContext
 {
     public SentinelSecurityDbContext(DbContextOptions<SentinelSecurityDbContext> options)
         : base(options)

@@ -1,8 +1,6 @@
 using System.Net;
-using Microsoft.Extensions.Logging.Abstractions;
-using Sentinel.Infrastructure.Auth.Services;
-using Xunit;
 using FluentAssertions;
+using Sentinel.Infrastructure.Auth.Services;
 
 namespace Sentinel.Tests.Unit.Auth;
 
@@ -29,7 +27,9 @@ public sealed class KeycloakFederationServiceTests
         {
             requestMethods.Add(req.Method);
             if (req.Method == HttpMethod.Get)
+            {
                 return new HttpResponseMessage(HttpStatusCode.NotFound); // Triggers Create
+            }
 
             return new HttpResponseMessage(HttpStatusCode.Created);
         });
@@ -49,7 +49,9 @@ public sealed class KeycloakFederationServiceTests
         {
             requestMethods.Add(req.Method);
             if (req.Method == HttpMethod.Get)
+            {
                 return new HttpResponseMessage(HttpStatusCode.OK); // Triggers Update
+            }
 
             return new HttpResponseMessage(HttpStatusCode.NoContent);
         });
@@ -61,9 +63,11 @@ public sealed class KeycloakFederationServiceTests
         requestMethods.Should().ContainInOrder(HttpMethod.Get, HttpMethod.Put);
     }
 
-    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
+    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
+        : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
             => Task.FromResult(responseFactory(request));
     }
 }

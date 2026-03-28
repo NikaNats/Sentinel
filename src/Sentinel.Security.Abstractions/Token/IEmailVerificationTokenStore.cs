@@ -1,13 +1,13 @@
 namespace Sentinel.Security.Abstractions.Token;
 
 /// <summary>
-/// Stores and consumes email verification tokens (one-time tokens for email confirmation).
-/// Enforces single-use semantics and TTL-based expiration.
+///     Stores and consumes email verification tokens (one-time tokens for email confirmation).
+///     Enforces single-use semantics and TTL-based expiration.
 /// </summary>
 public interface IEmailVerificationTokenStore
 {
     /// <summary>
-    /// Stores an email verification token with TTL enforcement.
+    ///     Stores an email verification token with TTL enforcement.
     /// </summary>
     /// <param name="token">The verification token (typically a CSPRNG-generated string).</param>
     /// <param name="keycloakUserId">The Keycloak user ID associated with this verification.</param>
@@ -17,8 +17,8 @@ public interface IEmailVerificationTokenStore
     Task<bool> StoreAsync(string token, string keycloakUserId, TimeSpan ttl, CancellationToken ct);
 
     /// <summary>
-    /// Consumes (and removes) an email verification token if valid.
-    /// Enforces single-use semantics: token is deleted after consumption.
+    ///     Consumes (and removes) an email verification token if valid.
+    ///     Enforces single-use semantics: token is deleted after consumption.
     /// </summary>
     /// <param name="token">The verification token to consume.</param>
     /// <param name="ct">Cancellation token.</param>

@@ -1,39 +1,37 @@
-namespace Sentinel.Tests.SSF;
-
 using System.Text.Json;
-using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
-using Sentinel.Tests.SSF.Helpers;
-using Xunit;
+
+namespace Sentinel.Tests.SSF;
 
 /// <summary>
-/// High-assurance test suite for SsfEventProcessor (Security Event Token handler).
-///
-/// This suite implements adversarial testing patterns to verify:
-/// 1. Correct interpretation of CAEP (Continuous Access Evaluation Profile) payloads
-/// 2. Proper temporal boundary enforcement (replay attack prevention)
-/// 3. Fail-closed security posture (infrastructure unavailability)
-/// 4. Graceful degradation under malformed input
-///
-/// SECURITY PRINCIPLES:
-/// - Temporal Hardening: Tests verify exact iat (issued-at) boundaries
-/// - Fail-Closed: System returns false (deny) on any infrastructure failure
-/// - Logical Completeness: Both sid (session) and sub (user) revocation paths tested
-/// - Real-World Context: Uses IANA-registered CAEP event URIs
+///     High-assurance test suite for SsfEventProcessor (Security Event Token handler).
+///     This suite implements adversarial testing patterns to verify:
+///     1. Correct interpretation of CAEP (Continuous Access Evaluation Profile) payloads
+///     2. Proper temporal boundary enforcement (replay attack prevention)
+///     3. Fail-closed security posture (infrastructure unavailability)
+///     4. Graceful degradation under malformed input
+///     SECURITY PRINCIPLES:
+///     - Temporal Hardening: Tests verify exact iat (issued-at) boundaries
+///     - Fail-Closed: System returns false (deny) on any infrastructure failure
+///     - Logical Completeness: Both sid (session) and sub (user) revocation paths tested
+///     - Real-World Context: Uses IANA-registered CAEP event URIs
 /// </summary>
 public sealed class SsfEventProcessorTests
 {
     // IANA-registered CAEP event URIs per the specification
     private const string SessionRevokedUri = "https://schemas.openid.net/secevent/caep/event-type/session-revoked";
-    private const string UserStatusChangedUri = "https://schemas.openid.net/secevent/caep/event-type/user-status-changed";
 
-    private readonly MockSsfTokenValidator _validator;
+    private const string UserStatusChangedUri =
+        "https://schemas.openid.net/secevent/caep/event-type/user-status-changed";
+
     private readonly MockSessionBlacklistCache _cache;
+    private readonly IOptions<SsfProcessingOptions> _options;
     private readonly MockAuthRevocationService _revocation;
     private readonly SsfEventProcessor _sut;
-    private readonly IOptions<SsfProcessingOptions> _options;
+
+    private readonly MockSsfTokenValidator _validator;
 
     public SsfEventProcessorTests()
     {
@@ -58,10 +56,9 @@ public sealed class SsfEventProcessorTests
     }
 
     /// <summary>
-    /// Tests: Valid CAEP session-revoked event adds the specific session to blacklist.
-    ///
-    /// CAEP Logic: A 'session-revoked' event with a 'sid' (session ID) must invalidate
-    /// only that specific session, not the entire user account.
+    ///     Tests: Valid CAEP session-revoked event adds the specific session to blacklist.
+    ///     CAEP Logic: A 'session-revoked' event with a 'sid' (session ID) must invalidate
+    ///     only that specific session, not the entire user account.
     /// </summary>
     [Fact(DisplayName = "✅ Valid Session-Revoked Event Adds Session to Blacklist")]
     public async Task ProcessAsync_WithValidSessionRevokedEvent_AddsSessionToBlacklist()
@@ -85,10 +82,9 @@ public sealed class SsfEventProcessorTests
     }
 
     /// <summary>
-    /// Tests: CAEP event without 'sid' triggers global subject-level revocation.
-    ///
-    /// CAEP Logic: A 'session-revoked' event with ONLY 'sub' (subject/user) revokes
-    /// all sessions for that user account, not just one session.
+    ///     Tests: CAEP event without 'sid' triggers global subject-level revocation.
+    ///     CAEP Logic: A 'session-revoked' event with ONLY 'sub' (subject/user) revokes
+    ///     all sessions for that user account, not just one session.
     /// </summary>
     [Fact(DisplayName = "🔐 Subject-Level Revocation Triggers Global Logout")]
     public async Task ProcessAsync_WithSubjectRevokedEvent_TriggersGlobalRevocation()
@@ -112,12 +108,11 @@ public sealed class SsfEventProcessorTests
     }
 
     /// <summary>
-    /// Tests: Temporal boundary enforcement against replayed or stale tokens.
-    ///
-    /// SECURITY: SET tokens outside the validity window (too old or too new) must
-    /// be rejected to prevent replay attacks and clock skew exploits.
-    ///
-    /// RFC 8417 (SET) requires: (now - MaxEventAgeSeconds) is less-than-or-equal-to iat is less-than-or-equal-to (now + AllowedClockSkewSeconds)
+    ///     Tests: Temporal boundary enforcement against replayed or stale tokens.
+    ///     SECURITY: SET tokens outside the validity window (too old or too new) must
+    ///     be rejected to prevent replay attacks and clock skew exploits.
+    ///     RFC 8417 (SET) requires: (now - MaxEventAgeSeconds) is less-than-or-equal-to iat is less-than-or-equal-to (now +
+    ///     AllowedClockSkewSeconds)
     /// </summary>
     [Theory(DisplayName = "⏱️ Temporal Boundary Tests: Enforce SET Token Age & Clock Skew")]
     [InlineData(-600, "Stale token (10 mins old, exceeds 5-min max window)")]
@@ -136,20 +131,18 @@ public sealed class SsfEventProcessorTests
         var result = await _sut.ProcessAsync("temporal-boundary-token");
 
         // Assert - Stale and future-dated tokens must be rejected
-        bool shouldFail = (secondsOffset < -300) || (secondsOffset > 60);
+        var shouldFail = secondsOffset < -300 || secondsOffset > 60;
         result.IsSuccess.Should().Be(!shouldFail,
             $"Test: {scenario} — Tokens outside the valid window must be rejected to prevent replay");
     }
 
     /// <summary>
-    /// Tests: System fails-closed when cache/database is unavailable.
-    ///
-    /// SECURITY PRINCIPLE: If the processor cannot guarantee that the security action
-    /// (blacklisting a session) succeeded, it MUST return failure. This signals to the
-    /// issuer (Keycloak) that the event wasn't processed, prompting a retry.
-    ///
-    /// Returning success on infrastructure failure is a critical security vulnerability
-    /// because the access token would be leaked despite a revocation signal.
+    ///     Tests: System fails-closed when cache/database is unavailable.
+    ///     SECURITY PRINCIPLE: If the processor cannot guarantee that the security action
+    ///     (blacklisting a session) succeeded, it MUST return failure. This signals to the
+    ///     issuer (Keycloak) that the event wasn't processed, prompting a retry.
+    ///     Returning success on infrastructure failure is a critical security vulnerability
+    ///     because the access token would be leaked despite a revocation signal.
     /// </summary>
     [Fact(DisplayName = "⚠️ Fail-Closed: Cache Unavailability Returns Failure")]
     public async Task ProcessAsync_WhenCacheIsUnavailable_FailsClosed()
@@ -188,11 +181,10 @@ public sealed class SsfEventProcessorTests
     }
 
     /// <summary>
-    /// Tests: Malformed CAEP event payloads are gracefully rejected.
-    ///
-    /// ROBUSTNESS: Even if the SET token passes cryptographic validation,
-    /// the event structure might be corrupted or invalid. The processor must
-    /// detect this without crashing and return a sensible error.
+    ///     Tests: Malformed CAEP event payloads are gracefully rejected.
+    ///     ROBUSTNESS: Even if the SET token passes cryptographic validation,
+    ///     the event structure might be corrupted or invalid. The processor must
+    ///     detect this without crashing and return a sensible error.
     /// </summary>
     [Fact(DisplayName = "❌ Malformed Event Payload Returns Failure")]
     public async Task ProcessAsync_WithMalformedEventPayload_ReturnsFailure()
@@ -200,7 +192,7 @@ public sealed class SsfEventProcessorTests
         // Arrange: Send a CAEP event with invalid structure (integer instead of object)
         var events = new Dictionary<string, JsonElement>
         {
-            [SessionRevokedUri] = MockSsfTokenValidator.CreateCaepPayload(12345)  // Invalid: should be an object
+            [SessionRevokedUri] = MockSsfTokenValidator.CreateCaepPayload(12345) // Invalid: should be an object
         };
         _validator.CustomResult = SsfValidationResult.Success(CreateToken(events));
 
@@ -213,10 +205,9 @@ public sealed class SsfEventProcessorTests
     }
 
     /// <summary>
-    /// Tests: Multiple events in a single SET token are all processed.
-    ///
-    /// SPECIFICATION: A SET token can contain multiple events (e.g., both
-    /// session-revoked and user-status-changed). The processor must handle all of them.
+    ///     Tests: Multiple events in a single SET token are all processed.
+    ///     SPECIFICATION: A SET token can contain multiple events (e.g., both
+    ///     session-revoked and user-status-changed). The processor must handle all of them.
     /// </summary>
     [Fact(DisplayName = "📦 Multiple CAEP Events in Single Token")]
     public async Task ProcessAsync_WithMultipleEvents_ProcessesAll()
@@ -243,9 +234,8 @@ public sealed class SsfEventProcessorTests
     }
 
     /// <summary>
-    /// Tests: Empty event dictionary (valid token, no events) is handled safely.
-    ///
-    /// This is technically valid per the spec but represents a no-op from the issuer.
+    ///     Tests: Empty event dictionary (valid token, no events) is handled safely.
+    ///     This is technically valid per the spec but represents a no-op from the issuer.
     /// </summary>
     [Fact(DisplayName = "✓ Empty Event Token (No-Op) Returns Success")]
     public async Task ProcessAsync_WithNoEvents_ReturnsSuccess()
@@ -264,14 +254,12 @@ public sealed class SsfEventProcessorTests
     private static SsfEventToken CreateToken(
         Dictionary<string, JsonElement> events,
         string sub = "user-1",
-        long? issuedAt = null)
-    {
-        return new SsfEventToken(
-            Issuer: "https://idp.sentinel.io",
-            IssuedAt: issuedAt ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-            Jti: $"evt-{Guid.NewGuid():N}",
-            Audience: "sentinel-api",
-            Subject: sub,
-            Events: events);
-    }
+        long? issuedAt = null) =>
+        new(
+            "https://idp.sentinel.io",
+            issuedAt ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            $"evt-{Guid.NewGuid():N}",
+            "sentinel-api",
+            sub,
+            events);
 }

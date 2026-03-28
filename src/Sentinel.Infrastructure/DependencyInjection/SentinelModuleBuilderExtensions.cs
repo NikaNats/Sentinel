@@ -1,30 +1,23 @@
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Certificate;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
-using Microsoft.IdentityModel.Tokens;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.DPoP.Extensions;
-using Sentinel.Domain.Auth;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Auth.Handlers;
 using Sentinel.Infrastructure.Auth.Services;
-using Sentinel.Infrastructure.Cache;
 using Sentinel.Infrastructure.Cryptography;
 using Sentinel.Infrastructure.Persistence;
 using Sentinel.Infrastructure.Telemetry;
-using Sentinel.Security.Abstractions.Identity;
-using Sentinel.Security.Abstractions.DPoP;
-using Sentinel.Security.Abstractions.Security;
 using Sentinel.Keycloak;
+using Sentinel.Security.Abstractions.Identity;
+using Sentinel.Security.Abstractions.Security;
+using IAuthRevocationService = Sentinel.Application.Auth.Interfaces.IAuthRevocationService;
 
 namespace Sentinel.Infrastructure.DependencyInjection;
 
@@ -55,7 +48,10 @@ public static class SentinelModuleBuilderExtensions
             .Validate(opts =>
             {
                 if (string.IsNullOrWhiteSpace(opts.ActiveKeyId))
+                {
                     return false;
+                }
+
                 return opts.KeyRing.ContainsKey(opts.ActiveKeyId);
             }, "Cryptography:ActiveKeyId must reference an existing key in Cryptography:KeyRing.")
             .ValidateOnStart();
@@ -94,12 +90,14 @@ public static class SentinelModuleBuilderExtensions
         return new SentinelSecurityBuilder(services);
     }
 
-    public static ISentinelSecurityBuilder AddDPoP(this ISentinelSecurityBuilder builder, IConfiguration? configuration = null)
+    public static ISentinelSecurityBuilder AddDPoP(this ISentinelSecurityBuilder builder,
+        IConfiguration? configuration = null)
     {
         if (configuration != null)
         {
             _ = builder.Services.AddSentinelDPoP(configuration);
         }
+
         return builder;
     }
 
@@ -149,7 +147,7 @@ public static class SentinelModuleBuilderExtensions
             })
             .AddHttpMessageHandler<KeycloakAdminAuthHandler>();
         _ = builder.Services.AddHttpClient("keycloak-admin");
-        _ = builder.Services.AddHttpClient<Sentinel.Application.Auth.Interfaces.IAuthRevocationService, KeycloakAuthRevocationService>();
+        _ = builder.Services.AddHttpClient<IAuthRevocationService, KeycloakAuthRevocationService>();
         _ = builder.Services.AddHostedService<SocialFederationConfiguratorHostedService>();
         return builder;
     }

@@ -1,22 +1,16 @@
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
-using Microsoft.IdentityModel.Tokens;
-using Sentinel.Security.Abstractions.DPoP;
-
 namespace Sentinel.DPoP;
 
 /// <summary>
-/// Computes RFC 7638 JWK thumbprints for DPoP key binding per RFC 9449.
+///     Computes RFC 7638 JWK thumbprints for DPoP key binding per RFC 9449.
 /// </summary>
 internal sealed class DpopThumbprintComputer : IDpopThumbprintComputer
 {
     /// <summary>
-    /// Computes the RFC 7638 thumbprint from a JsonElement representing a public key.
+    ///     Computes the RFC 7638 thumbprint from a JsonElement representing a public key.
     /// </summary>
     /// <remarks>
-    /// ✅ FIX: Uses source-generated context to guarantee Native AOT compliance.
-    /// Reflection-based serialization is blocked in trimmed environments.
+    ///     ✅ FIX: Uses source-generated context to guarantee Native AOT compliance.
+    ///     Reflection-based serialization is blocked in trimmed environments.
     /// </remarks>
     /// <param name="jwk">JsonElement containing a JWK (e.g., from a JWT header).</param>
     /// <returns>Base64url-encoded thumbprint string, or empty string if JWK is unsupported.</returns>

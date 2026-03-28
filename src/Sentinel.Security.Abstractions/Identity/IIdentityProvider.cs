@@ -1,39 +1,40 @@
 namespace Sentinel.Security.Abstractions.Identity;
 
 /// <summary>
-/// Abstracts common identity provider user operations (lookup, password update, revocation).
-/// Implementations should be provider-agnostic (Keycloak, Auth0, etc.).
+///     Abstracts common identity provider user operations (lookup, password update, revocation).
+///     Implementations should be provider-agnostic (Keycloak, Auth0, etc.).
 /// </summary>
 public interface IIdentityProvider
 {
     /// <summary>
-    /// Creates a user in the configured identity provider and returns provider-specific user id.
+    ///     Creates a user in the configured identity provider and returns provider-specific user id.
     /// </summary>
-    Task<string> CreateUserAsync(IdentityRegistration registration, string password, CancellationToken cancellationToken = default);
+    Task<string> CreateUserAsync(IdentityRegistration registration, string password,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Retrieves user summary by email address.
+    ///     Retrieves user summary by email address.
     /// </summary>
     Task<IdentityUserSummary?> GetUserByEmailAsync(string email, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Updates user password in the identity provider.
+    ///     Updates user password in the identity provider.
     /// </summary>
     Task<bool> UpdatePasswordAsync(string email, string newPassword, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Sets or clears the email verified flag for a user.
+    ///     Sets or clears the email verified flag for a user.
     /// </summary>
     Task<bool> SetEmailVerifiedAsync(string userId, bool verified, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Permanently deletes a user from the identity provider.
+    ///     Permanently deletes a user from the identity provider.
     /// </summary>
     Task<bool> DeleteUserAsync(string userId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
-/// Summary of a user retrieved from the identity provider.
+///     Summary of a user retrieved from the identity provider.
 /// </summary>
 public sealed class IdentityUserSummary
 {

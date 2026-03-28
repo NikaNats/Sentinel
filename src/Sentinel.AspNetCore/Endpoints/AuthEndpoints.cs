@@ -1,23 +1,19 @@
 using System.Security.Claims;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.AspNetCore.Errors;
-using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Keycloak;
 using Sentinel.Security.Abstractions.Identity;
-using Sentinel.Security.Abstractions.Options;
 
 namespace Sentinel.AspNetCore.Endpoints;
 
 /// <summary>
-/// Auth Endpoints - Minimal API equivalents of the legacy AuthController.
-/// All endpoints are AOT-compatible with zero reflection.
+///     Auth Endpoints - Minimal API equivalents of the legacy AuthController.
+///     All endpoints are AOT-compatible with zero reflection.
 /// </summary>
 internal static class AuthEndpoints
 {
@@ -130,7 +126,7 @@ internal static class AuthEndpoints
         if (string.IsNullOrWhiteSpace(request.RefreshToken))
         {
             return TypedResults.Problem(
-                detail: "Refresh token is required.",
+                "Refresh token is required.",
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
@@ -157,7 +153,7 @@ internal static class AuthEndpoints
         }
 
         return TypedResults.Problem(
-            detail: "Invalid refresh token",
+            "Invalid refresh token",
             statusCode: StatusCodes.Status401Unauthorized);
     }
 
@@ -175,7 +171,7 @@ internal static class AuthEndpoints
         if (string.IsNullOrWhiteSpace(request.NewPassword))
         {
             return TypedResults.Problem(
-                detail: "New password is required.",
+                "New password is required.",
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
@@ -231,7 +227,7 @@ internal static class AuthEndpoints
         if (string.IsNullOrWhiteSpace(request.RefreshToken))
         {
             return TypedResults.Problem(
-                detail: "Refresh token is required.",
+                "Refresh token is required.",
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
@@ -375,9 +371,9 @@ internal static class AuthEndpoints
         _ = request;
         return Task.FromResult<IResult>(TypedResults.StatusCode(StatusCodes.Status501NotImplemented)
             as IResult ?? TypedResults.Problem(
-                type: ErrorCodes.MfaNotConfigured,
-                title: "MFA management endpoints are not configured yet.",
-                statusCode: StatusCodes.Status501NotImplemented));
+            type: ErrorCodes.MfaNotConfigured,
+            title: "MFA management endpoints are not configured yet.",
+            statusCode: StatusCodes.Status501NotImplemented));
     }
 
     private static Task<IResult> VerifyTotpAsync(
@@ -386,36 +382,36 @@ internal static class AuthEndpoints
         _ = request;
         return Task.FromResult<IResult>(TypedResults.StatusCode(StatusCodes.Status501NotImplemented)
             as IResult ?? TypedResults.Problem(
-                type: ErrorCodes.MfaNotConfigured,
-                title: "MFA management endpoints are not configured yet.",
-                statusCode: StatusCodes.Status501NotImplemented));
+            type: ErrorCodes.MfaNotConfigured,
+            title: "MFA management endpoints are not configured yet.",
+            statusCode: StatusCodes.Status501NotImplemented));
     }
 
     private static Task<IResult> DeleteTotpAsync()
     {
         return Task.FromResult<IResult>(TypedResults.StatusCode(StatusCodes.Status501NotImplemented)
             as IResult ?? TypedResults.Problem(
-                type: ErrorCodes.MfaNotConfigured,
-                title: "MFA management endpoints are not configured yet.",
-                statusCode: StatusCodes.Status501NotImplemented));
+            type: ErrorCodes.MfaNotConfigured,
+            title: "MFA management endpoints are not configured yet.",
+            statusCode: StatusCodes.Status501NotImplemented));
     }
 
     private static Task<IResult> GetRecoveryCodesAsync()
     {
         return Task.FromResult<IResult>(TypedResults.StatusCode(StatusCodes.Status501NotImplemented)
             as IResult ?? TypedResults.Problem(
-                type: ErrorCodes.MfaNotConfigured,
-                title: "MFA management endpoints are not configured yet.",
-                statusCode: StatusCodes.Status501NotImplemented));
+            type: ErrorCodes.MfaNotConfigured,
+            title: "MFA management endpoints are not configured yet.",
+            statusCode: StatusCodes.Status501NotImplemented));
     }
 
     private static Task<IResult> RegenerateRecoveryCodesAsync()
     {
         return Task.FromResult<IResult>(TypedResults.StatusCode(StatusCodes.Status501NotImplemented)
             as IResult ?? TypedResults.Problem(
-                type: ErrorCodes.MfaNotConfigured,
-                title: "MFA management endpoints are not configured yet.",
-                statusCode: StatusCodes.Status501NotImplemented));
+            type: ErrorCodes.MfaNotConfigured,
+            title: "MFA management endpoints are not configured yet.",
+            statusCode: StatusCodes.Status501NotImplemented));
     }
 
     // ─────────────────────────────────────────────────────────────────────────────

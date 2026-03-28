@@ -1,20 +1,18 @@
-namespace Sentinel.Tests.Session;
-
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Sentinel.Tests.Session.Helpers;
 
+namespace Sentinel.Tests.Session;
+
 /// <summary>
-/// High-Assurance Tests for SessionManager
-///
-/// MISSION: Verify that SessionManager is a "Fail-Closed" component that:
-/// 1. MUST reject when infrastructure is unavailable (Fail-Closed)
-/// 2. MUST NOT leak topology details in error messages (Sanitization)
-/// 3. MUST use byte-exact comparisons for security-sensitive operations (Ordinal)
-/// 4. MUST reject requests when required DPoP binding is missing (Zero Trust)
-///
-/// These are security tests, not functional tests. We're verifying the system
-/// behaves CORRECTLY when things go wrong, not just when they work normally.
+///     High-Assurance Tests for SessionManager
+///     MISSION: Verify that SessionManager is a "Fail-Closed" component that:
+///     1. MUST reject when infrastructure is unavailable (Fail-Closed)
+///     2. MUST NOT leak topology details in error messages (Sanitization)
+///     3. MUST use byte-exact comparisons for security-sensitive operations (Ordinal)
+///     4. MUST reject requests when required DPoP binding is missing (Zero Trust)
+///     These are security tests, not functional tests. We're verifying the system
+///     behaves CORRECTLY when things go wrong, not just when they work normally.
 /// </summary>
 public class SessionManagerTests
 {
@@ -63,7 +61,7 @@ public class SessionManagerTests
                 "auth credentials, or other infrastructure details to attackers.");
     }
 
-    [Xunit.Fact]
+    [Fact]
     public async Task RevokeSessionAsync_WithValidSession_AddsToBlacklist()
     {
         // Arrange
@@ -94,7 +92,7 @@ public class SessionManagerTests
                 "The system must assume the session is UNSAFE and reject the request.");
     }
 
-    [Xunit.Fact]
+    [Fact]
     public async Task IsSessionRevokedAsync_WithBlacklistedSession_ReturnsTrue()
     {
         // Arrange
@@ -109,7 +107,7 @@ public class SessionManagerTests
         result.Value.Should().BeTrue("Session must be marked as revoked.");
     }
 
-    [Xunit.Fact]
+    [Fact]
     public async Task IsSessionRevokedAsync_WithActiveSession_ReturnsFalse()
     {
         // Arrange
@@ -123,7 +121,7 @@ public class SessionManagerTests
         result.Value.Should().BeFalse("Active session must not be marked as revoked.");
     }
 
-    [Xunit.Fact]
+    [Fact]
     public async Task RevokeSessionAsync_MultipleRequests_AllBlacklisted()
     {
         // Arrange
@@ -148,7 +146,7 @@ public class SessionManagerTests
 
     [Theory(DisplayName = "Cryptographic comparison must be byte-exact (Ordinal)")]
     [InlineData("match", "match", true)]
-    [InlineData("MATCH", "match", false)]  // Case mismatch = fail (prevents Unicode collisions)
+    [InlineData("MATCH", "match", false)] // Case mismatch = fail (prevents Unicode collisions)
     [InlineData("mismatch", "other", false)]
     public void ValidateDpopBinding_MustUseOrdinalComparison(string proof, string stored, bool expected)
     {
@@ -177,7 +175,7 @@ public class SessionManagerTests
             "request MUST be rejected. Allowing unbound proofs violates Zero Trust.");
     }
 
-    [Xunit.Fact]
+    [Fact]
     public void ValidateDpopBinding_WithMatchingThumbprints_ReturnsTrue()
     {
         // Arrange
@@ -190,7 +188,7 @@ public class SessionManagerTests
         result.Should().BeTrue();
     }
 
-    [Xunit.Fact]
+    [Fact]
     public void ValidateDpopBinding_WithMismatchedThumbprints_ReturnsFalse()
     {
         // Arrange
@@ -204,7 +202,7 @@ public class SessionManagerTests
         result.Should().BeFalse();
     }
 
-    [Xunit.Fact]
+    [Fact]
     public void ValidateDpopBinding_WithNullSessionThumbprint_RejectsWhenRequireDpopBindingIsTrue()
     {
         // Arrange: RequireDpopBinding=true (default from constructor)
@@ -218,7 +216,7 @@ public class SessionManagerTests
         result.Should().BeFalse("DPoP binding is required but session has no binding.");
     }
 
-    [Xunit.Fact]
+    [Fact]
     public void ValidateDpopBinding_WithEmptySessionThumbprint_RejectsWhenRequireDpopBindingIsTrue()
     {
         // Arrange: RequireDpopBinding=true (default from constructor)
@@ -232,7 +230,7 @@ public class SessionManagerTests
         result.Should().BeFalse("DPoP binding is required but session has empty binding.");
     }
 
-    [Xunit.Fact(DisplayName = "Case sensitivity: Base64url IS case-sensitive")]
+    [Fact(DisplayName = "Case sensitivity: Base64url IS case-sensitive")]
     public void ValidateDpopBinding_CaseSensitive_DifferentCase_ReturnsFalse()
     {
         // Arrange: Uppercase vs. lowercase

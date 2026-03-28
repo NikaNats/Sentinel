@@ -1,20 +1,19 @@
-namespace Sentinel.Redis.Stores;
-
 using Sentinel.Security.Abstractions.Replay;
 
+namespace Sentinel.Redis.Stores;
+
 /// <summary>
-/// Redis-backed implementation of IJtiReplayCache with Fail-Closed semantics.
-/// Stores JWT ID (jti) claims to prevent replay attacks.
-///
-/// SECURITY INVARIANT: If Redis is unavailable, TryMarkUsedAsync throws an exception.
-/// This ensures replay protection never degrades to unsafe fallback behavior.
-/// Clients receive 503 Service Unavailable, not a false positive authorization.
+///     Redis-backed implementation of IJtiReplayCache with Fail-Closed semantics.
+///     Stores JWT ID (jti) claims to prevent replay attacks.
+///     SECURITY INVARIANT: If Redis is unavailable, TryMarkUsedAsync throws an exception.
+///     This ensures replay protection never degrades to unsafe fallback behavior.
+///     Clients receive 503 Service Unavailable, not a false positive authorization.
 /// </summary>
 public sealed class RedisJtiReplayCache : IJtiReplayCache
 {
-    private readonly IRedisConnectionProvider _provider;
     private readonly string _keyPrefix;
     private readonly ILogger<RedisJtiReplayCache> _logger;
+    private readonly IRedisConnectionProvider _provider;
     private readonly TimeProvider _timeProvider;
 
     public RedisJtiReplayCache(
@@ -30,12 +29,14 @@ public sealed class RedisJtiReplayCache : IJtiReplayCache
     }
 
     /// <summary>
-    /// Marks a JWT ID as used and prevents any further use.
-    /// ✅ FIX: Safe TTL computation. Protect the clock-skew window with a 1-second minimum TTL to prevent negative TimeSpan exceptions.
+    ///     Marks a JWT ID as used and prevents any further use.
+    ///     ✅ FIX: Safe TTL computation. Protect the clock-skew window with a 1-second minimum TTL to prevent negative TimeSpan
+    ///     exceptions.
     /// </summary>
-    public async Task<bool> TryMarkUsedAsync(string jti, DateTimeOffset expiresAt, CancellationToken cancellationToken = default)
+    public async Task<bool> TryMarkUsedAsync(string jti, DateTimeOffset expiresAt,
+        CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(jti, nameof(jti));
+        ArgumentException.ThrowIfNullOrWhiteSpace(jti);
 
         try
         {
@@ -63,13 +64,14 @@ public sealed class RedisJtiReplayCache : IJtiReplayCache
         catch (Exception ex)
         {
             _logger.LogError(ex, "Redis unavailable and in-memory fallback is disabled (Fail-Closed)");
-            throw new ReplayCacheUnavailableException($"Redis is unavailable; replay cache check failed. System is Fail-Closed.", ex);
+            throw new ReplayCacheUnavailableException(
+                "Redis is unavailable; replay cache check failed. System is Fail-Closed.", ex);
         }
     }
 
     /// <summary>
-    /// Removes expired JTI entries (garbage collection).
-    /// In Redis, TTL expiration happens automatically, so this is a no-op.
+    ///     Removes expired JTI entries (garbage collection).
+    ///     In Redis, TTL expiration happens automatically, so this is a no-op.
     /// </summary>
     public async Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
     {

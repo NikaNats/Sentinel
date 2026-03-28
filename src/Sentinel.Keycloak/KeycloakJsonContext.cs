@@ -1,6 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using System.Diagnostics.CodeAnalysis;
 using Sentinel.Keycloak.Models;
 
 namespace Sentinel.Keycloak;
@@ -82,8 +79,8 @@ public sealed class KeycloakIdentityProviderPayload
 }
 
 /// <summary>
-/// ✅ FIX: Typed payload to replace anonymous object { Enabled = value } in user disable operations.
-/// Enables source-generated JSON serialization instead of reflection.
+///     ✅ FIX: Typed payload to replace anonymous object { Enabled = value } in user disable operations.
+///     Enables source-generated JSON serialization instead of reflection.
 /// </summary>
 public sealed class KeycloakAdminDisablePayload
 {

@@ -1,35 +1,18 @@
 using System.Collections.Concurrent;
-using Sentinel.Security.Abstractions.Replay;
 
 namespace Sentinel.Tests.DPoP.Mocks;
 
 /// <summary>
-/// Simple in-memory mock implementation of IJtiReplayCache for testing.
+///     Simple in-memory mock implementation of IJtiReplayCache for testing.
 /// </summary>
 public sealed class FakeJtiReplayCache : IJtiReplayCache
 {
     private readonly ConcurrentDictionary<string, DateTimeOffset> _usedJtis = new();
-    private bool _shouldFail;
     private string? _nextJti;
+    private bool _shouldFail;
 
     /// <summary>
-    /// Sets whether the cache should fail on the next call.
-    /// </summary>
-    public void SetShouldFail(bool fail)
-    {
-        _shouldFail = fail;
-    }
-
-    /// <summary>
-    /// Expects the next call to be for a specific JTI.
-    /// </summary>
-    public void ExpectNextJti(string? jti)
-    {
-        _nextJti = jti;
-    }
-
-    /// <summary>
-    /// Tries to mark a JTI as used.
+    ///     Tries to mark a JTI as used.
     /// </summary>
     public async Task<bool> TryMarkUsedAsync(
         string jti,
@@ -51,7 +34,7 @@ public sealed class FakeJtiReplayCache : IJtiReplayCache
     }
 
     /// <summary>
-    /// Cleans up expired JTI entries.
+    ///     Cleans up expired JTI entries.
     /// </summary>
     public async Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
     {
@@ -70,10 +53,17 @@ public sealed class FakeJtiReplayCache : IJtiReplayCache
     }
 
     /// <summary>
-    /// Clears all cached JTIs.
+    ///     Sets whether the cache should fail on the next call.
     /// </summary>
-    public void Clear()
-    {
-        _usedJtis.Clear();
-    }
+    public void SetShouldFail(bool fail) => _shouldFail = fail;
+
+    /// <summary>
+    ///     Expects the next call to be for a specific JTI.
+    /// </summary>
+    public void ExpectNextJti(string? jti) => _nextJti = jti;
+
+    /// <summary>
+    ///     Clears all cached JTIs.
+    /// </summary>
+    public void Clear() => _usedJtis.Clear();
 }

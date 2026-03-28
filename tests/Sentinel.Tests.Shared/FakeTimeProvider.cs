@@ -1,15 +1,15 @@
 namespace Sentinel.Tests.Shared;
 
 /// <summary>
-/// Mock TimeProvider for deterministic test time handling.
-/// Allows tests to control the current time without actual delays.
+///     Mock TimeProvider for deterministic test time handling.
+///     Allows tests to control the current time without actual delays.
 /// </summary>
 public sealed class FakeTimeProvider : TimeProvider
 {
     private DateTimeOffset _currentTime;
 
     /// <summary>
-    /// Initializes a new instance with a fixed time.
+    ///     Initializes a new instance with a fixed time.
     /// </summary>
     public FakeTimeProvider(DateTimeOffset fixedTime)
     {
@@ -17,7 +17,7 @@ public sealed class FakeTimeProvider : TimeProvider
     }
 
     /// <summary>
-    /// Gets or sets the current time (for advancing time in tests).
+    ///     Gets or sets the current time (for advancing time in tests).
     /// </summary>
     public DateTimeOffset CurrentTime
     {
@@ -25,19 +25,19 @@ public sealed class FakeTimeProvider : TimeProvider
         set => _currentTime = value;
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
     public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Utc;
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
     public override DateTimeOffset GetUtcNow() => _currentTime;
 
     /// <summary>
-    /// Advances the current time by the specified duration.
+    ///     Advances the current time by the specified duration.
     /// </summary>
     public void Advance(TimeSpan duration) => _currentTime = _currentTime.Add(duration);
 
     /// <summary>
-    /// Resets to a specific time.
+    ///     Resets to a specific time.
     /// </summary>
     public void SetTime(DateTimeOffset newTime) => _currentTime = newTime;
 }

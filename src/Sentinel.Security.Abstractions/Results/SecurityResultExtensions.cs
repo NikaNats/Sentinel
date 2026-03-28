@@ -1,14 +1,14 @@
 namespace Sentinel.Security.Abstractions.Results;
 
 /// <summary>
-/// Railway Oriented Programming (ROP) extension methods for SecurityResult&lt;T&gt;.
-/// Enables functional composition of security operations with automatic error propagation.
+///     Railway Oriented Programming (ROP) extension methods for SecurityResult&lt;T&gt;.
+///     Enables functional composition of security operations with automatic error propagation.
 /// </summary>
 public static class SecurityResultExtensions
 {
     /// <summary>
-    /// Binds (flatMaps) the result to a new operation, composing security checks.
-    /// If the current result is a failure, short-circuits and returns the failure.
+    ///     Binds (flatMaps) the result to a new operation, composing security checks.
+    ///     If the current result is a failure, short-circuits and returns the failure.
     /// </summary>
     /// <typeparam name="T">The type of the current result value.</typeparam>
     /// <typeparam name="TNext">The type of the next result value.</typeparam>
@@ -17,16 +17,14 @@ public static class SecurityResultExtensions
     /// <returns>The result of the binder if successful; otherwise the original failure.</returns>
     public static SecurityResult<TNext> Bind<T, TNext>(
         this SecurityResult<T> result,
-        Func<T, SecurityResult<TNext>> binder)
-    {
-        return result.IsSuccess
+        Func<T, SecurityResult<TNext>> binder) =>
+        result.IsSuccess
             ? binder(result.Value)
             : SecurityResultFactory.Failure<TNext>(result.ErrorMessage!);
-    }
 
     /// <summary>
-    /// Binds (flatMaps) the result to an async operation, composing security checks asynchronously.
-    /// If the current result is a failure, short-circuits and returns the failure.
+    ///     Binds (flatMaps) the result to an async operation, composing security checks asynchronously.
+    ///     If the current result is a failure, short-circuits and returns the failure.
     /// </summary>
     /// <typeparam name="T">The type of the current result value.</typeparam>
     /// <typeparam name="TNext">The type of the next result value.</typeparam>
@@ -46,8 +44,8 @@ public static class SecurityResultExtensions
     }
 
     /// <summary>
-    /// Maps (transforms) the successful result value to a new value, applying a pure function.
-    /// If the result is a failure, returns the failure unchanged.
+    ///     Maps (transforms) the successful result value to a new value, applying a pure function.
+    ///     If the result is a failure, returns the failure unchanged.
     /// </summary>
     /// <typeparam name="T">The type of the current result value.</typeparam>
     /// <typeparam name="TNext">The type of the mapped result value.</typeparam>
@@ -56,16 +54,14 @@ public static class SecurityResultExtensions
     /// <returns>A successful result with the transformed value, or the original failure.</returns>
     public static SecurityResult<TNext> Map<T, TNext>(
         this SecurityResult<T> result,
-        Func<T, TNext> mapper)
-    {
-        return result.IsSuccess
+        Func<T, TNext> mapper) =>
+        result.IsSuccess
             ? SecurityResultFactory.Create(mapper(result.Value))
             : SecurityResultFactory.Failure<TNext>(result.ErrorMessage!);
-    }
 
     /// <summary>
-    /// Maps (transforms) the successful result value asynchronously.
-    /// If the result is a failure, returns the failure unchanged.
+    ///     Maps (transforms) the successful result value asynchronously.
+    ///     If the result is a failure, returns the failure unchanged.
     /// </summary>
     /// <typeparam name="T">The type of the current result value.</typeparam>
     /// <typeparam name="TNext">The type of the mapped result value.</typeparam>
@@ -86,8 +82,8 @@ public static class SecurityResultExtensions
     }
 
     /// <summary>
-    /// Matches (pattern matches) the result, applying different functions based on success/failure.
-    /// Use this to extract values or perform different actions based on the result state.
+    ///     Matches (pattern matches) the result, applying different functions based on success/failure.
+    ///     Use this to extract values or perform different actions based on the result state.
     /// </summary>
     /// <typeparam name="T">The type of the result value.</typeparam>
     /// <typeparam name="TResult">The type of the match return value.</typeparam>
@@ -98,15 +94,13 @@ public static class SecurityResultExtensions
     public static TResult Match<T, TResult>(
         this SecurityResult<T> result,
         Func<T, TResult> onSuccess,
-        Func<string, TResult> onFailure)
-    {
-        return result.IsSuccess
+        Func<string, TResult> onFailure) =>
+        result.IsSuccess
             ? onSuccess(result.Value)
             : onFailure(result.ErrorMessage!);
-    }
 
     /// <summary>
-    /// Matches (pattern matches) the result asynchronously.
+    ///     Matches (pattern matches) the result asynchronously.
     /// </summary>
     /// <typeparam name="T">The type of the result value.</typeparam>
     /// <typeparam name="TResult">The type of the match return value.</typeparam>
@@ -117,16 +111,14 @@ public static class SecurityResultExtensions
     public static async Task<TResult> MatchAsync<T, TResult>(
         this SecurityResult<T> result,
         Func<T, Task<TResult>> onSuccess,
-        Func<string, Task<TResult>> onFailure)
-    {
-        return result.IsSuccess
+        Func<string, Task<TResult>> onFailure) =>
+        result.IsSuccess
             ? await onSuccess(result.Value)
             : await onFailure(result.ErrorMessage!);
-    }
 
     /// <summary>
-    /// Recovers from a failure by providing an alternative value or result.
-    /// If the result is already successful, returns it unchanged.
+    ///     Recovers from a failure by providing an alternative value or result.
+    ///     If the result is already successful, returns it unchanged.
     /// </summary>
     /// <typeparam name="T">The type of the result value.</typeparam>
     /// <param name="result">The result to recover.</param>
@@ -134,16 +126,14 @@ public static class SecurityResultExtensions
     /// <returns>The original successful result, or a success result with the recovered value.</returns>
     public static SecurityResult<T> Recover<T>(
         this SecurityResult<T> result,
-        Func<string, T> recover)
-    {
-        return result.IsSuccess
+        Func<string, T> recover) =>
+        result.IsSuccess
             ? result
             : SecurityResultFactory.Create(recover(result.ErrorMessage!));
-    }
 
     /// <summary>
-    /// Recovers from a failure by providing an alternative result.
-    /// If the result is already successful, returns it unchanged.
+    ///     Recovers from a failure by providing an alternative result.
+    ///     If the result is already successful, returns it unchanged.
     /// </summary>
     /// <typeparam name="T">The type of the result value.</typeparam>
     /// <param name="result">The result to recover.</param>
@@ -151,16 +141,14 @@ public static class SecurityResultExtensions
     /// <returns>The original successful result, or the result from the recover function.</returns>
     public static SecurityResult<T> RecoverWith<T>(
         this SecurityResult<T> result,
-        Func<string, SecurityResult<T>> recover)
-    {
-        return result.IsSuccess
+        Func<string, SecurityResult<T>> recover) =>
+        result.IsSuccess
             ? result
             : recover(result.ErrorMessage!);
-    }
 
     /// <summary>
-    /// Performs a side effect when the result is successful, without modifying the result.
-    /// Useful for logging, tracking, or triggering notifications.
+    ///     Performs a side effect when the result is successful, without modifying the result.
+    ///     Useful for logging, tracking, or triggering notifications.
     /// </summary>
     /// <typeparam name="T">The type of the result value.</typeparam>
     /// <param name="result">The result to tap.</param>
@@ -179,7 +167,7 @@ public static class SecurityResultExtensions
     }
 
     /// <summary>
-    /// Performs an async side effect when the result is successful, without modifying the result.
+    ///     Performs an async side effect when the result is successful, without modifying the result.
     /// </summary>
     /// <typeparam name="T">The type of the result value.</typeparam>
     /// <param name="result">The result to tap.</param>
@@ -198,7 +186,7 @@ public static class SecurityResultExtensions
     }
 
     /// <summary>
-    /// Performs a side effect for both success and failure cases.
+    ///     Performs a side effect for both success and failure cases.
     /// </summary>
     /// <typeparam name="T">The type of the result value.</typeparam>
     /// <param name="result">The result to tap.</param>
@@ -223,8 +211,8 @@ public static class SecurityResultExtensions
     }
 
     /// <summary>
-    /// Gets the value if successful, or a default value if failed.
-    /// Safe way to extract the value without throwing exceptions.
+    ///     Gets the value if successful, or a default value if failed.
+    ///     Safe way to extract the value without throwing exceptions.
     /// </summary>
     /// <typeparam name="T">The type of the result value.</typeparam>
     /// <param name="result">The result to extract from.</param>
@@ -232,13 +220,11 @@ public static class SecurityResultExtensions
     /// <returns>The result value if successful; otherwise the default value.</returns>
     public static T GetValueOrDefault<T>(
         this SecurityResult<T> result,
-        T defaultValue)
-    {
-        return result.IsSuccess ? result.Value : defaultValue;
-    }
+        T defaultValue) =>
+        result.IsSuccess ? result.Value : defaultValue;
 
     /// <summary>
-    /// Gets the value if successful, or computes a default value if failed.
+    ///     Gets the value if successful, or computes a default value if failed.
     /// </summary>
     /// <typeparam name="T">The type of the result value.</typeparam>
     /// <param name="result">The result to extract from.</param>
@@ -246,14 +232,12 @@ public static class SecurityResultExtensions
     /// <returns>The result value if successful; otherwise the computed default value.</returns>
     public static T GetValueOrDefault<T>(
         this SecurityResult<T> result,
-        Func<string, T> defaultFactory)
-    {
-        return result.IsSuccess ? result.Value : defaultFactory(result.ErrorMessage!);
-    }
+        Func<string, T> defaultFactory) =>
+        result.IsSuccess ? result.Value : defaultFactory(result.ErrorMessage!);
 
     /// <summary>
-    /// Filters a successful result based on a predicate.
-    /// If the predicate returns false, returns a failure with the specified error message.
+    ///     Filters a successful result based on a predicate.
+    ///     If the predicate returns false, returns a failure with the specified error message.
     /// </summary>
     /// <typeparam name="T">The type of the result value.</typeparam>
     /// <param name="result">The result to filter.</param>
@@ -263,21 +247,16 @@ public static class SecurityResultExtensions
     public static SecurityResult<T> Filter<T>(
         this SecurityResult<T> result,
         Func<T, bool> predicate,
-        string errorMessage)
-    {
-        return result.IsSuccess && predicate(result.Value)
+        string errorMessage) =>
+        result.IsSuccess && predicate(result.Value)
             ? result
             : SecurityResultFactory.Failure<T>(errorMessage);
-    }
 
     /// <summary>
-    /// Converts a SecurityResult to a task if it isn't already async.
+    ///     Converts a SecurityResult to a task if it isn't already async.
     /// </summary>
     /// <typeparam name="T">The type of the result value.</typeparam>
     /// <param name="result">The result to convert.</param>
     /// <returns>A completed task containing the result.</returns>
-    public static Task<SecurityResult<T>> AsTask<T>(this SecurityResult<T> result)
-    {
-        return Task.FromResult(result);
-    }
+    public static Task<SecurityResult<T>> AsTask<T>(this SecurityResult<T> result) => Task.FromResult(result);
 }

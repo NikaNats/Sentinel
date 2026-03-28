@@ -1,18 +1,16 @@
 using System.Security.Claims;
+using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
-using Microsoft.AspNetCore.Mvc;
 using Sentinel.AspNetCore.Middleware;
-using FluentAssertions;
 
 namespace Sentinel.Tests.Unit;
 
 /// <summary>
-/// High-Assurance Tests for AcrValidationMiddleware
-///
-/// MISSION: Test "Fail-Closed" logic and protect against operational safety edge cases.
-/// Ensures middleware doesn't crash the pipeline or expose topology details.
-/// Tests focus on adversarial scenarios: response already started, missing headers, etc.
+///     High-Assurance Tests for AcrValidationMiddleware
+///     MISSION: Test "Fail-Closed" logic and protect against operational safety edge cases.
+///     Ensures middleware doesn't crash the pipeline or expose topology details.
+///     Tests focus on adversarial scenarios: response already started, missing headers, etc.
 /// </summary>
 public sealed class AcrValidationMiddlewareTests
 {
@@ -31,7 +29,7 @@ public sealed class AcrValidationMiddlewareTests
         var sut = new AcrValidationMiddleware(_ => Task.CompletedTask);
 
         // Act
-        Func<Task> act = async () => await sut.InvokeAsync(context);
+        var act = async () => await sut.InvokeAsync(context);
 
         // Assert
         // If the middleware tries to write to a started response, it throws InvalidOperationException.
@@ -47,7 +45,11 @@ public sealed class AcrValidationMiddlewareTests
         // Arrange
         var context = new DefaultHttpContext();
         var nextCalled = false;
-        var sut = new AcrValidationMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
+        var sut = new AcrValidationMiddleware(_ =>
+        {
+            nextCalled = true;
+            return Task.CompletedTask;
+        });
 
         // Act
         await sut.InvokeAsync(context);
@@ -89,7 +91,11 @@ public sealed class AcrValidationMiddlewareTests
         ], "Bearer"));
 
         var nextCalled = false;
-        var sut = new AcrValidationMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
+        var sut = new AcrValidationMiddleware(_ =>
+        {
+            nextCalled = true;
+            return Task.CompletedTask;
+        });
 
         // Act
         await sut.InvokeAsync(context);
@@ -168,7 +174,11 @@ public sealed class AcrValidationMiddlewareTests
         context.User = new ClaimsPrincipal(identity);
 
         var nextCalled = false;
-        var sut = new AcrValidationMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
+        var sut = new AcrValidationMiddleware(_ =>
+        {
+            nextCalled = true;
+            return Task.CompletedTask;
+        });
 
         // Act
         await sut.InvokeAsync(context);
@@ -179,8 +189,8 @@ public sealed class AcrValidationMiddlewareTests
 
     // ====== Test Helper: Mock IHttpResponseFeature ======
     /// <summary>
-    /// Mock implementation of IHttpResponseFeature to simulate a response that has already started.
-    /// Used to test edge case where middleware must not attempt to write headers/body.
+    ///     Mock implementation of IHttpResponseFeature to simulate a response that has already started.
+    ///     Used to test edge case where middleware must not attempt to write headers/body.
     /// </summary>
     private sealed class MockResponseFeature : IHttpResponseFeature
     {
@@ -189,7 +199,13 @@ public sealed class AcrValidationMiddlewareTests
         public IHeaderDictionary Headers { get; set; } = new HeaderDictionary();
         public Stream Body { get; set; } = new MemoryStream();
         public bool HasStarted { get; set; }
-        public void OnStarting(Func<object, Task> callback, object state) { }
-        public void OnCompleted(Func<object, Task> callback, object state) { }
+
+        public void OnStarting(Func<object, Task> callback, object state)
+        {
+        }
+
+        public void OnCompleted(Func<object, Task> callback, object state)
+        {
+        }
     }
 }

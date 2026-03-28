@@ -1,21 +1,20 @@
-namespace Sentinel.Redis.Extensions;
-
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Sentinel.Redis.Stores;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Replay;
 using Sentinel.Security.Abstractions.Session;
-using Sentinel.Redis.Stores;
-using StackExchange.Redis;
+
+namespace Sentinel.Redis.Extensions;
 
 /// <summary>
-/// Dependency injection extensions for Redis cache implementations.
+///     Dependency injection extensions for Redis cache implementations.
 /// </summary>
 public static class RedisServiceExtensions
 {
     /// <summary>
-    /// Adds Redis-backed security caches (JTI replay, DPoP nonce, session blacklist) to DI.
-    /// Falls back to in-memory implementations if Redis is unavailable.
+    ///     Adds Redis-backed security caches (JTI replay, DPoP nonce, session blacklist) to DI.
+    ///     Falls back to in-memory implementations if Redis is unavailable.
     /// </summary>
     /// <param name="services">Service collection.</param>
     /// <param name="configuration">Configuration section (e.g., "Sentinel:Redis").</param>
@@ -24,7 +23,7 @@ public static class RedisServiceExtensions
         this IServiceCollection services,
         IConfiguration? configuration = null)
     {
-        ArgumentNullException.ThrowIfNull(services, nameof(services));
+        ArgumentNullException.ThrowIfNull(services);
 
         // ✅ FIX (AOT): Use Get<T>() instead of Bind() for Native AOT compatibility
         // ConfigurationBinder.Bind uses reflection which requires unreferenced code in AOT scenarios
@@ -45,7 +44,7 @@ public static class RedisServiceExtensions
     }
 
     /// <summary>
-    /// Adds Redis-backed security caches with explicit options.
+    ///     Adds Redis-backed security caches with explicit options.
     /// </summary>
     /// <param name="services">Service collection.</param>
     /// <param name="configureOptions">Options configuration delegate.</param>
@@ -54,8 +53,8 @@ public static class RedisServiceExtensions
         this IServiceCollection services,
         Action<RedisOptions> configureOptions)
     {
-        ArgumentNullException.ThrowIfNull(services, nameof(services));
-        ArgumentNullException.ThrowIfNull(configureOptions, nameof(configureOptions));
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configureOptions);
 
         var options = new RedisOptions();
         configureOptions(options);

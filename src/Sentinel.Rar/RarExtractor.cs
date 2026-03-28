@@ -1,29 +1,25 @@
+using Microsoft.Extensions.Options;
+
 namespace Sentinel.RAR;
 
-using System.Diagnostics.CodeAnalysis;
-using System.Text.Json;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using Sentinel.Domain.Auth.Rar;
-
 /// <summary>
-/// High-assurance RAR extractor with Native AOT compatibility.
-/// Extracts and parses Rich Authorization Request (RAR) authorization_details claims
-/// using source-generated JSON deserialization (zero reflection, zero recursion).
+///     High-assurance RAR extractor with Native AOT compatibility.
+///     Extracts and parses Rich Authorization Request (RAR) authorization_details claims
+///     using source-generated JSON deserialization (zero reflection, zero recursion).
 /// </summary>
 public sealed class RarExtractor : IRarExtractor
 {
-    private readonly RarValidationOptions _options;
     private readonly ILogger<RarExtractor> _logger;
+    private readonly RarValidationOptions _options;
 
     /// <summary>
-    /// Initializes a new instance of the RarExtractor.
+    ///     Initializes a new instance of the RarExtractor.
     /// </summary>
     /// <param name="options">Configuration for RAR validation (from DI).</param>
     /// <param name="logger">Logger for diagnostic messages.</param>
     /// <remarks>
-    /// ✅ FIX: Strict DI injection via IOptions{RarValidationOptions}.
-    /// Replaces the anti-pattern of nullable options with hard DI guarantees.
+    ///     ✅ FIX: Strict DI injection via IOptions{RarValidationOptions}.
+    ///     Replaces the anti-pattern of nullable options with hard DI guarantees.
     /// </remarks>
     public RarExtractor(
         IOptions<RarValidationOptions> options,
@@ -34,12 +30,12 @@ public sealed class RarExtractor : IRarExtractor
     }
 
     /// <summary>
-    /// Extracts and parses authorization details from the JSON claim value.
+    ///     Extracts and parses authorization details from the JSON claim value.
     /// </summary>
     /// <remarks>
-    /// ✅ FIX: Use Native AOT Source-Generated deserialization.
-    /// Eliminates the manual, recursive-prone JsonElement traversal.
-    /// Deserializes AuthorizationDetail[] directly from JSON string using RarJsonContext.
+    ///     ✅ FIX: Use Native AOT Source-Generated deserialization.
+    ///     Eliminates the manual, recursive-prone JsonElement traversal.
+    ///     Deserializes AuthorizationDetail[] directly from JSON string using RarJsonContext.
     /// </remarks>
     /// <param name="claimsJson">The JSON string from the authorization_details claim.</param>
     /// <returns>Extraction result containing parsed details or error information.</returns>

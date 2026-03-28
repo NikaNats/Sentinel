@@ -1,29 +1,23 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Sentinel.Application.Common.Abstractions;
 using Sentinel.Security.Abstractions.Nonce;
-using Sentinel.Tests.Shared.Fixtures;
-using Xunit;
 
 namespace Sentinel.Tests.Integration.Integration;
 
 /// <summary>
-/// High-contention atomicity verification test suite for DPoP nonce consumption.
-///
-/// SECURITY INVARIANT:
-/// "If successCount in the concurrency test is ever >1, your system is vulnerable to DPoP proof replay,
-/// allowing an attacker to reuse a captured proof for multiple API calls."
-///
-/// This test verifies that the Redis Lua atomic compare-and-delete script prevents TOCTOU race conditions
-/// where two concurrent requests both see the same nonce and both attempt to consume it.
-///
-/// Expected behavior: Exactly ONE request wins, other 99 MUST return false because first deleted key.
+///     High-contention atomicity verification test suite for DPoP nonce consumption.
+///     SECURITY INVARIANT:
+///     "If successCount in the concurrency test is ever >1, your system is vulnerable to DPoP proof replay,
+///     allowing an attacker to reuse a captured proof for multiple API calls."
+///     This test verifies that the Redis Lua atomic compare-and-delete script prevents TOCTOU race conditions
+///     where two concurrent requests both see the same nonce and both attempt to consume it.
+///     Expected behavior: Exactly ONE request wins, other 99 MUST return false because first deleted key.
 /// </summary>
 [Collection("Sentinel Integration")]
 public sealed class ConcurrencyRaceTests : IAsyncLifetime
 {
     private readonly SentinelApiFactory _factory;
-    private readonly Security.Abstractions.Nonce.IDpopNonceStore _nonce_store;
+    private readonly IDpopNonceStore _nonce_store;
 
     public ConcurrencyRaceTests(SentinelApiFactory factory)
     {
@@ -36,15 +30,13 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
     public async Task DisposeAsync() => await _factory.DisposeAsync();
 
     /// <summary>
-    /// Test: RaceCondition_100ConcurrentNonceConsumption_ExactlyOneSucceeds
-    ///
-    /// Verifies that when 100 concurrent tasks attempt to consume the SAME nonce:
-    /// 1. Exactly ONE succeeds (returns true)
-    /// 2. Exactly 99 fail (return false) because the key is already deleted
-    /// 3. The nonce is null in Redis after all tasks complete
-    ///
-    /// This validates the Lua atomic compare-and-delete script prevents duplicate consumption.
-    /// If this test fails with successCount > 1, the system is vulnerable to DPoP proof replay.
+    ///     Test: RaceCondition_100ConcurrentNonceConsumption_ExactlyOneSucceeds
+    ///     Verifies that when 100 concurrent tasks attempt to consume the SAME nonce:
+    ///     1. Exactly ONE succeeds (returns true)
+    ///     2. Exactly 99 fail (return false) because the key is already deleted
+    ///     3. The nonce is null in Redis after all tasks complete
+    ///     This validates the Lua atomic compare-and-delete script prevents duplicate consumption.
+    ///     If this test fails with successCount > 1, the system is vulnerable to DPoP proof replay.
     /// </summary>
     [Fact]
     public async Task RaceCondition_100ConcurrentNonceConsumption_ExactlyOneSucceeds()
@@ -86,15 +78,13 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Test: RaceCondition_100ConcurrentNonceConsumption_DifferentThumbprints_AllSucceed
-    ///
-    /// Control test: Verifies that when 100 concurrent tasks consume DIFFERENT nonces:
-    /// 1. ALL 100 succeed (each gets its own key)
-    /// 2. All nonces are consumed atomically
-    /// 3. Redis key space is properly isolated by thumbprint
-    ///
-    /// This control validates that the concurrency issue is NOT due to Redis connection pooling,
-    /// but specifically due to the shared key in the high-contention case.
+    ///     Test: RaceCondition_100ConcurrentNonceConsumption_DifferentThumbprints_AllSucceed
+    ///     Control test: Verifies that when 100 concurrent tasks consume DIFFERENT nonces:
+    ///     1. ALL 100 succeed (each gets its own key)
+    ///     2. All nonces are consumed atomically
+    ///     3. Redis key space is properly isolated by thumbprint
+    ///     This control validates that the concurrency issue is NOT due to Redis connection pooling,
+    ///     but specifically due to the shared key in the high-contention case.
     /// </summary>
     [Fact]
     public async Task RaceCondition_100ConcurrentNonceConsumption_DifferentThumbprints_AllSucceed()
@@ -102,7 +92,7 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
         // Arrange: Pre-populate 100 unique nonces (one per thumbprint)
         var noncesByThumbprint = new Dictionary<string, string>();
 
-        for (int i = 0; i < 100; i++)
+        for (var i = 0; i < 100; i++)
         {
             var thumbprint = $"test_jwk_thumbprint_unique_{i:D3}";
             var nonce = $"unique_nonce_value_{i:D5}";
@@ -130,7 +120,7 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
             "No task should fail when operating on independent keys.");
 
         // Verify ALL nonces are deleted
-        for (int i = 0; i < 100; i++)
+        for (var i = 0; i < 100; i++)
         {
             var thumbprint = $"test_jwk_thumbprint_unique_{i:D3}";
             var remainingNonce = await _nonce_store.GetNonceAsync(thumbprint);
@@ -140,15 +130,13 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Test: RaceCondition_ParallelSetAndConsume_OrderingPreserved
-    ///
-    /// Verifies that even when SetNonce and ConsumeNonce race each other:
-    /// 1. If SetNonce wins, ConsumeNonce should find the new value and fail (stale nonce)
-    /// 2. If ConsumeNonce wins, it deletes the key and SetNonce's value is never visible
-    /// 3. No race condition can produce a state where BOTH succeed on the same logical nonce
-    ///
-    /// This validates ordering correctness in the DPoP proof rotation lifecycle:
-    /// - Attacker cannot trigger both SetNonce and ConsumeNonce on same proof
+    ///     Test: RaceCondition_ParallelSetAndConsume_OrderingPreserved
+    ///     Verifies that even when SetNonce and ConsumeNonce race each other:
+    ///     1. If SetNonce wins, ConsumeNonce should find the new value and fail (stale nonce)
+    ///     2. If ConsumeNonce wins, it deletes the key and SetNonce's value is never visible
+    ///     3. No race condition can produce a state where BOTH succeed on the same logical nonce
+    ///     This validates ordering correctness in the DPoP proof rotation lifecycle:
+    ///     - Attacker cannot trigger both SetNonce and ConsumeNonce on same proof
     /// </summary>
     [Fact]
     public async Task RaceCondition_ParallelSetAndConsume_OrderingPreserved()
@@ -197,13 +185,11 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Test: RaceCondition_InvalidNoncePattern_ExactlyOneConsumes
-    ///
-    /// Verifies that even when nonce values are identical but invalid UTF-8:
-    /// 1. Exactly ONE consumption succeeds
-    /// 2. No race condition produces a bypass where multiple consume succeed
-    ///
-    /// This validates the Lua script behavior with edge-case nonce values.
+    ///     Test: RaceCondition_InvalidNoncePattern_ExactlyOneConsumes
+    ///     Verifies that even when nonce values are identical but invalid UTF-8:
+    ///     1. Exactly ONE consumption succeeds
+    ///     2. No race condition produces a bypass where multiple consume succeed
+    ///     This validates the Lua script behavior with edge-case nonce values.
     /// </summary>
     [Fact]
     public async Task RaceCondition_InvalidNoncePattern_ExactlyOneConsumes()
@@ -239,13 +225,11 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Test: RaceCondition_CachedVsRedisContention_ConsistencyPreserved
-    ///
-    /// Verifies that when in-memory fallback is enabled and Redis is operational:
-    /// 1. Both paths respect the same atomicity semantics
-    /// 2. No cross-path contamination (Redis deletion doesn't leave stale in-memory copy)
-    ///
-    /// This validates the fallback pattern doesn't introduce race conditions.
+    ///     Test: RaceCondition_CachedVsRedisContention_ConsistencyPreserved
+    ///     Verifies that when in-memory fallback is enabled and Redis is operational:
+    ///     1. Both paths respect the same atomicity semantics
+    ///     2. No cross-path contamination (Redis deletion doesn't leave stale in-memory copy)
+    ///     This validates the fallback pattern doesn't introduce race conditions.
     /// </summary>
     [Fact]
     public async Task RaceCondition_HighContention_AtLeastOneSucceeds()
@@ -254,7 +238,7 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
         const int roundsCount = 10;
         const int tasksPerRound = 50;
 
-        for (int round = 0; round < roundsCount; round++)
+        for (var round = 0; round < roundsCount; round++)
         {
             var roundThumbprint = $"test_round_{round:D2}";
             var roundNonce = $"round_nonce_{round:D6}";

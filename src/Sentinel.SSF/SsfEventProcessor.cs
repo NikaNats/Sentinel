@@ -1,31 +1,35 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Sentinel.Security.Abstractions.SSF;
 
 namespace Sentinel.SSF;
 
 /// <summary>
-/// High-Assurance SSF Event Processor (Native AOT Compatible).
-/// Implements strict temporal bounding (replay prevention), zero-allocation JSON parsing,
-/// and robust fail-closed error handling per RFC 8936 / CAEP specification.
+///     High-Assurance SSF Event Processor (Native AOT Compatible).
+///     Implements strict temporal bounding (replay prevention), zero-allocation JSON parsing,
+///     and robust fail-closed error handling per RFC 8936 / CAEP specification.
 /// </summary>
 public sealed class SsfEventProcessor : ISsfEventProcessor
 {
-    private readonly ISsfTokenValidator _tokenValidator;
-    private readonly ISessionBlacklistCache _blacklistCache;
-    private readonly IAuthRevocationService _authRevocationService;
-    private readonly SsfProcessingOptions _options;
-    private readonly ILogger<SsfEventProcessor> _logger;
-    private readonly TimeProvider _timeProvider;
-
     // IANA-registered event type URIs (RFC 8936)
-    private const string SessionRevokedEventType = "https://schemas.openid.net/secevent/caep/event-type/session-revoked";
-    private const string UserStatusChangedEventType = "https://schemas.openid.net/secevent/caep/event-type/user-status-changed";
-    private const string CredentialChangeEventType = "https://schemas.openid.net/secevent/caep/event-type/credential-change";
+    private const string SessionRevokedEventType =
+        "https://schemas.openid.net/secevent/caep/event-type/session-revoked";
+
+    private const string UserStatusChangedEventType =
+        "https://schemas.openid.net/secevent/caep/event-type/user-status-changed";
+
+    private const string CredentialChangeEventType =
+        "https://schemas.openid.net/secevent/caep/event-type/credential-change";
+
+    private readonly IAuthRevocationService _authRevocationService;
+    private readonly ISessionBlacklistCache _blacklistCache;
+    private readonly ILogger<SsfEventProcessor> _logger;
+    private readonly SsfProcessingOptions _options;
+    private readonly TimeProvider _timeProvider;
+    private readonly ISsfTokenValidator _tokenValidator;
 
     /// <summary>
-    /// Initializes a new instance of the SsfEventProcessor.
+    ///     Initializes a new instance of the SsfEventProcessor.
     /// </summary>
     /// <param name="tokenValidator">Validates SET token signatures and structure.</param>
     /// <param name="blacklistCache">Caches blacklisted session IDs.</param>
@@ -34,8 +38,8 @@ public sealed class SsfEventProcessor : ISsfEventProcessor
     /// <param name="logger">Logger for diagnostics and security events.</param>
     /// <param name="timeProvider">Time provider for testability; defaults to System.</param>
     /// <remarks>
-    /// ✅ FIX: Strict DI injection, no nullable options, use TimeProvider for testability.
-    /// All parameters must be provided by the container (see SsfServiceCollectionExtensions).
+    ///     ✅ FIX: Strict DI injection, no nullable options, use TimeProvider for testability.
+    ///     All parameters must be provided by the container (see SsfServiceCollectionExtensions).
     /// </remarks>
     public SsfEventProcessor(
         ISsfTokenValidator tokenValidator,
@@ -47,32 +51,32 @@ public sealed class SsfEventProcessor : ISsfEventProcessor
     {
         _tokenValidator = tokenValidator ?? throw new ArgumentNullException(nameof(tokenValidator));
         _blacklistCache = blacklistCache ?? throw new ArgumentNullException(nameof(blacklistCache));
-        _authRevocationService = authRevocationService ?? throw new ArgumentNullException(nameof(authRevocationService));
-        _options = options?.Value ?? throw new ArgumentNullException(nameof(options)); // ✅ FIX: Let DI container guarantee presence
+        _authRevocationService =
+            authRevocationService ?? throw new ArgumentNullException(nameof(authRevocationService));
+        _options = options?.Value ??
+                   throw new ArgumentNullException(nameof(options)); // ✅ FIX: Let DI container guarantee presence
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <summary>
-    /// Processes a Server-Sent Event token with high-assurance security guarantees.
+    ///     Processes a Server-Sent Event token with high-assurance security guarantees.
     /// </summary>
     /// <remarks>
-    /// Processing flow:
-    /// 1. Validates SET token signature and issuer claims
-    /// 2. Enforces temporal bounds (prevents replay attacks beyond max age + clock skew)
-    /// 3. Processes each event in the token:
-    ///    - session-revoked: Blacklists specific session or revokes all sessions for subject
-    ///    - user-status-changed: Revokes all sessions for affected subject
-    ///    - credential-change: Revokes all sessions for affected subject
-    /// 4. Returns failure if ANY event fails to process (fail-closed revocation guarantee)
-    ///
-    /// ✅ FIX: Temporal Bounding / Replay Prevention
-    /// - If Redis is down, infrastructure exceptions propagate and endpoint returns 500
-    /// - Keycloak's webhook retries the event later instead of assuming success
-    ///
-    /// ✅ FIX: Zero-Allocation JSON Parsing
-    /// - Uses JsonSerializer.Deserialize(payload, SsfJsonContext.Default.X)
-    /// - Bypasses reflection-based serializer for Native AOT trimming
+    ///     Processing flow:
+    ///     1. Validates SET token signature and issuer claims
+    ///     2. Enforces temporal bounds (prevents replay attacks beyond max age + clock skew)
+    ///     3. Processes each event in the token:
+    ///     - session-revoked: Blacklists specific session or revokes all sessions for subject
+    ///     - user-status-changed: Revokes all sessions for affected subject
+    ///     - credential-change: Revokes all sessions for affected subject
+    ///     4. Returns failure if ANY event fails to process (fail-closed revocation guarantee)
+    ///     ✅ FIX: Temporal Bounding / Replay Prevention
+    ///     - If Redis is down, infrastructure exceptions propagate and endpoint returns 500
+    ///     - Keycloak's webhook retries the event later instead of assuming success
+    ///     ✅ FIX: Zero-Allocation JSON Parsing
+    ///     - Uses JsonSerializer.Deserialize(payload, SsfJsonContext.Default.X)
+    ///     - Bypasses reflection-based serializer for Native AOT trimming
     /// </remarks>
     /// <param name="setToken">The SET JWT token.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -80,7 +84,9 @@ public sealed class SsfEventProcessor : ISsfEventProcessor
     public async Task<SecurityResult> ProcessAsync(string setToken, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(setToken))
+        {
             return SecurityResult.Failure("SET token is required.");
+        }
 
         try
         {
@@ -105,12 +111,15 @@ public sealed class SsfEventProcessor : ISsfEventProcessor
 
             // ✅ FIX: Eliminate inline magic numbers, trust Options
             var ttl = TimeSpan.FromSeconds(_options.SessionRevocationTtlSeconds);
-            bool hasFailures = false;
+            var hasFailures = false;
 
             foreach (var (eventType, payload) in validation.Token.Events)
             {
                 var success = await ProcessEventAsync(eventType, payload, validation.Token, ttl, cancellationToken);
-                if (!success) hasFailures = true;
+                if (!success)
+                {
+                    hasFailures = true;
+                }
             }
 
             // ✅ FIX: Do not return Success if an underlying infrastructure failure occurred.
@@ -127,12 +136,12 @@ public sealed class SsfEventProcessor : ISsfEventProcessor
     }
 
     /// <summary>
-    /// Processes a single event, returning success/failure to allow partial batches
-    /// while ensuring infrastructure failures propagate correctly.
+    ///     Processes a single event, returning success/failure to allow partial batches
+    ///     while ensuring infrastructure failures propagate correctly.
     /// </summary>
     /// <remarks>
-    /// ✅ FIX: Returns bool instead of void to enable fail-closed retry semantics.
-    /// Exceptions are caught, logged, and surface to the caller to prevent false-positive ACKs.
+    ///     ✅ FIX: Returns bool instead of void to enable fail-closed retry semantics.
+    ///     Exceptions are caught, logged, and surface to the caller to prevent false-positive ACKs.
     /// </remarks>
     private async Task<bool> ProcessEventAsync(
         string eventType,
@@ -147,8 +156,11 @@ public sealed class SsfEventProcessor : ISsfEventProcessor
             {
                 case SessionRevokedEventType:
                     // ✅ FIX: Zero-allocation Native AOT deserialization. Reads directly from JsonElement.
-                    var sessionData = JsonSerializer.Deserialize(payload, SsfJsonContext.Default.SessionRevokedPayload);
-                    if (sessionData is null) return false;
+                    var sessionData = payload.Deserialize(SsfJsonContext.Default.SessionRevokedPayload);
+                    if (sessionData is null)
+                    {
+                        return false;
+                    }
 
                     if (!string.IsNullOrWhiteSpace(sessionData.SessionId))
                     {
@@ -160,24 +172,27 @@ public sealed class SsfEventProcessor : ISsfEventProcessor
                     {
                         await _authRevocationService.RevokeAllSessionsAsync(sessionData.Subject ?? token.Subject!, ct);
                     }
+
                     break;
 
                 case UserStatusChangedEventType:
-                    var statusData = JsonSerializer.Deserialize(payload, SsfJsonContext.Default.UserStatusChangedPayload);
+                    var statusData = payload.Deserialize(SsfJsonContext.Default.UserStatusChangedPayload);
                     var statusSub = statusData?.Subject ?? token.Subject;
                     if (!string.IsNullOrWhiteSpace(statusSub))
                     {
                         await _authRevocationService.RevokeAllSessionsAsync(statusSub, ct);
                     }
+
                     break;
 
                 case CredentialChangeEventType:
-                    var credData = JsonSerializer.Deserialize(payload, SsfJsonContext.Default.CredentialChangePayload);
+                    var credData = payload.Deserialize(SsfJsonContext.Default.CredentialChangePayload);
                     var credSub = credData?.Subject ?? token.Subject;
                     if (!string.IsNullOrWhiteSpace(credSub))
                     {
                         await _authRevocationService.RevokeAllSessionsAsync(credSub, ct);
                     }
+
                     break;
 
                 default:
@@ -185,6 +200,7 @@ public sealed class SsfEventProcessor : ISsfEventProcessor
                     _logger.LogWarning("Ignored unknown CAEP event type: {EventType}", eventType);
                     break;
             }
+
             return true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -195,4 +211,3 @@ public sealed class SsfEventProcessor : ISsfEventProcessor
         }
     }
 }
-

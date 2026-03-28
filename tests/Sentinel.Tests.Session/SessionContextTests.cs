@@ -1,15 +1,13 @@
 namespace Sentinel.Tests.Session;
 
 /// <summary>
-/// High-Assurance Tests for SessionContext Value Object
-///
-/// MISSION: Verify security invariants as executable specifications:
-/// 1. Constructor Hardening: Cannot be "poisoned" with null or empty identifiers
-/// 2. Deterministic Expiration Boundaries: Exact nanosecond-level precision
-/// 3. DPoP Binding Integrity: Optional but immutable
-///
-/// These tests treat SessionContext as the boundary enforcer between untrusted input
-/// and the secure session lifecycle.
+///     High-Assurance Tests for SessionContext Value Object
+///     MISSION: Verify security invariants as executable specifications:
+///     1. Constructor Hardening: Cannot be "poisoned" with null or empty identifiers
+///     2. Deterministic Expiration Boundaries: Exact nanosecond-level precision
+///     3. DPoP Binding Integrity: Optional but immutable
+///     These tests treat SessionContext as the boundary enforcer between untrusted input
+///     and the secure session lifecycle.
 /// </summary>
 public class SessionContextTests
 {
@@ -107,9 +105,9 @@ public class SessionContextTests
     }
 
     [Theory(DisplayName = "Deterministic boundary testing: relative to reference time")]
-    [InlineData(1, false)]   // 1 second in the future = NOT expired
-    [InlineData(0, true)]    // Exactly at expiry = expired
-    [InlineData(-1, true)]   // 1 second in the past = expired
+    [InlineData(1, false)] // 1 second in the future = NOT expired
+    [InlineData(0, true)] // Exactly at expiry = expired
+    [InlineData(-1, true)] // 1 second in the past = expired
     public void IsExpired_RelativeToExpiryTime_MustReturnExpected(int secondsOffset, bool expectedExpired)
     {
         // Arrange

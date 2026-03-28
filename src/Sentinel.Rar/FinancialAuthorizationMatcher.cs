@@ -1,32 +1,30 @@
-namespace Sentinel.RAR;
-
-using System.Diagnostics.CodeAnalysis;
-using System.Text.Json;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Sentinel.Domain.Auth.Rar;
 
+namespace Sentinel.RAR;
+
 /// <summary>
-/// High-assurance financial authorization matcher.
-/// Matches financial transaction authorization constraints against request payloads.
-/// Supports transaction ID, amount, and currency bounds per RFC 9396.
+///     High-assurance financial authorization matcher.
+///     Matches financial transaction authorization constraints against request payloads.
+///     Supports transaction ID, amount, and currency bounds per RFC 9396.
 /// </summary>
 public sealed class FinancialAuthorizationMatcher : IAuthorizationDetailMatcher
 {
     /// <summary>Sentinel's canonical financial transfer type (primary).</summary>
     private const string FinancialTransferType = "urn:sentinel:finance:transfer";
 
-    private readonly RarValidationOptions _options;
     private readonly ILogger<FinancialAuthorizationMatcher> _logger;
 
+    private readonly RarValidationOptions _options;
+
     /// <summary>
-    /// Initializes a new instance of the FinancialAuthorizationMatcher.
+    ///     Initializes a new instance of the FinancialAuthorizationMatcher.
     /// </summary>
     /// <param name="options">Configuration for RAR validation (from DI).</param>
     /// <param name="logger">Logger for diagnostic messages.</param>
     /// <remarks>
-    /// ✅ FIX: Strict DI injection via IOptions{RarValidationOptions}.
-    /// Replaces the anti-pattern of nullable options with hard DI guarantees.
+    ///     ✅ FIX: Strict DI injection via IOptions{RarValidationOptions}.
+    ///     Replaces the anti-pattern of nullable options with hard DI guarantees.
     /// </remarks>
     public FinancialAuthorizationMatcher(
         IOptions<RarValidationOptions> options,
@@ -37,15 +35,14 @@ public sealed class FinancialAuthorizationMatcher : IAuthorizationDetailMatcher
     }
 
     /// <summary>
-    /// Matches financial authorization constraints against a request payload.
+    ///     Matches financial authorization constraints against a request payload.
     /// </summary>
     /// <remarks>
-    /// Checks that:
-    /// - transaction_id (if present in detail) matches payload.transactionId
-    /// - amount (if present in detail) matches payload.amount (with precision tolerance)
-    /// - currency (if present in detail) matches payload.currency
-    ///
-    /// ✅ FIX: Accepts RarValidationOptions to enable case sensitivity and precision settings.
+    ///     Checks that:
+    ///     - transaction_id (if present in detail) matches payload.transactionId
+    ///     - amount (if present in detail) matches payload.amount (with precision tolerance)
+    ///     - currency (if present in detail) matches payload.currency
+    ///     ✅ FIX: Accepts RarValidationOptions to enable case sensitivity and precision settings.
     /// </remarks>
     public bool Matches(AuthorizationDetail detail, JsonElement payload, RarValidationOptions options)
     {
@@ -102,14 +99,13 @@ public sealed class FinancialAuthorizationMatcher : IAuthorizationDetailMatcher
     }
 
     /// <summary>
-    /// Gets the support weight for authorization detail types.
+    ///     Gets the support weight for authorization detail types.
     /// </summary>
     /// <remarks>
-    /// Returns high weight for known financial transfer types, 0 for unsupported types.
-    /// Used by RarValidator to route to the most specific matcher implementation.
-    ///
-    /// ✅ FIX: Only returns non-zero for Sentinel's canonical type.
-    /// Placeholder RFC example URIs are rejected (production safety).
+    ///     Returns high weight for known financial transfer types, 0 for unsupported types.
+    ///     Used by RarValidator to route to the most specific matcher implementation.
+    ///     ✅ FIX: Only returns non-zero for Sentinel's canonical type.
+    ///     Placeholder RFC example URIs are rejected (production safety).
     /// </remarks>
     public int GetSupportWeight(string detailType)
     {
@@ -121,13 +117,13 @@ public sealed class FinancialAuthorizationMatcher : IAuthorizationDetailMatcher
         // ✅ FIX: Only support Sentinel's canonical type, reject RFC placeholders
         return detailType switch
         {
-            FinancialTransferType => 100,  // Highest priority for Sentinel's type
-            _ => 0                          // Not supported (including RFC examples)
+            FinancialTransferType => 100, // Highest priority for Sentinel's type
+            _ => 0 // Not supported (including RFC examples)
         };
     }
 
     /// <summary>
-    /// Extracts a string value from the payload JSON object.
+    ///     Extracts a string value from the payload JSON object.
     /// </summary>
     private static bool TryGetPayloadString(
         JsonElement payload,
@@ -146,8 +142,8 @@ public sealed class FinancialAuthorizationMatcher : IAuthorizationDetailMatcher
     }
 
     /// <summary>
-    /// Extracts a decimal value from the payload JSON object.
-    /// Handles both JSON number and string representations of numbers.
+    ///     Extracts a decimal value from the payload JSON object.
+    ///     Handles both JSON number and string representations of numbers.
     /// </summary>
     private static bool TryGetPayloadDecimal(
         JsonElement payload,

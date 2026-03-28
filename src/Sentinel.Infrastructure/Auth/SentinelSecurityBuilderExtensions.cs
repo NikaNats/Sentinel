@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Infrastructure.DependencyInjection;
+
 // using Sentinel.Infrastructure.Notifications;
 
 namespace Sentinel.Infrastructure.Auth;

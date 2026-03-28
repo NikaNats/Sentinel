@@ -1,30 +1,28 @@
-namespace Sentinel.RAR;
-
-using System.Text.Json;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Sentinel.Domain.Auth.Rar;
 
+namespace Sentinel.RAR;
+
 /// <summary>
-/// High-assurance RAR validator with polymorphic matcher routing.
-/// Validates request payloads against Rich Authorization Request (RAR) constraints
-/// using a priority-weighted matcher selection strategy.
+///     High-assurance RAR validator with polymorphic matcher routing.
+///     Validates request payloads against Rich Authorization Request (RAR) constraints
+///     using a priority-weighted matcher selection strategy.
 /// </summary>
 public sealed class RarValidator : IRarValidator
 {
+    private readonly ILogger<RarValidator> _logger;
     private readonly IEnumerable<IAuthorizationDetailMatcher> _matchers;
     private readonly RarValidationOptions _options;
-    private readonly ILogger<RarValidator> _logger;
 
     /// <summary>
-    /// Initializes a new instance of the RarValidator.
+    ///     Initializes a new instance of the RarValidator.
     /// </summary>
     /// <param name="matchers">Collection of matchers supporting different authorization detail types.</param>
     /// <param name="options">Configuration for RAR validation (from DI).</param>
     /// <param name="logger">Logger for diagnostic messages.</param>
     /// <remarks>
-    /// ✅ FIX: Accept a collection of matchers to support polymorphic evaluation.
-    /// Replaces the anti-pattern of single-matcher injection with proper routing.
+    ///     ✅ FIX: Accept a collection of matchers to support polymorphic evaluation.
+    ///     Replaces the anti-pattern of single-matcher injection with proper routing.
     /// </remarks>
     public RarValidator(
         IEnumerable<IAuthorizationDetailMatcher> matchers,
@@ -37,11 +35,11 @@ public sealed class RarValidator : IRarValidator
     }
 
     /// <summary>
-    /// Validates a request payload against an authorization detail.
+    ///     Validates a request payload against an authorization detail.
     /// </summary>
     /// <remarks>
-    /// Uses polymorphic routing to select the highest-weight matcher capable of handling
-    /// the authorization detail type. This enables extensibility without modifying RarValidator.
+    ///     Uses polymorphic routing to select the highest-weight matcher capable of handling
+    ///     the authorization detail type. This enables extensibility without modifying RarValidator.
     /// </remarks>
     public RarValidationResult Validate(AuthorizationDetail detail, string payloadJson)
     {
@@ -94,7 +92,7 @@ public sealed class RarValidator : IRarValidator
     }
 
     /// <summary>
-    /// Validates a payload by finding and matching a specific authorization detail type.
+    ///     Validates a payload by finding and matching a specific authorization detail type.
     /// </summary>
     public RarValidationResult ValidateByType(
         AuthorizationDetail[] details,

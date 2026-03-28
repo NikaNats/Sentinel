@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Domain.Notifications;

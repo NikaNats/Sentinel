@@ -3,20 +3,19 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Sentinel.SdJwt.Extensions;
 
 /// <summary>
-/// Dependency injection extensions for Selective Disclosure JWT (SD-JWT) support.
+///     Dependency injection extensions for Selective Disclosure JWT (SD-JWT) support.
 /// </summary>
 public static class SdJwtServiceExtensions
 {
     /// <summary>
-    /// Adds SD-JWT presentation verification services to the dependency injection container.
+    ///     Adds SD-JWT presentation verification services to the dependency injection container.
     /// </summary>
     /// <remarks>
-    /// Registers:
-    /// - SdJwtPresenter as a transient service
-    /// - SdJwtVerificationOptions as a singleton with default configuration
-    ///
-    /// An ISdJwtTokenValidator implementation must be registered separately,
-    /// as the verification strategy depends on your token issuer (e.g., Keycloak, OIDC, etc.).
+    ///     Registers:
+    ///     - SdJwtPresenter as a transient service
+    ///     - SdJwtVerificationOptions as a singleton with default configuration
+    ///     An ISdJwtTokenValidator implementation must be registered separately,
+    ///     as the verification strategy depends on your token issuer (e.g., Keycloak, OIDC, etc.).
     /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <param name="configureOptions">Optional callback to configure SdJwtVerificationOptions.</param>
@@ -39,11 +38,11 @@ public static class SdJwtServiceExtensions
     }
 
     /// <summary>
-    /// Adds SD-JWT presentation verification with a custom token validator factory.
+    ///     Adds SD-JWT presentation verification with a custom token validator factory.
     /// </summary>
     /// <remarks>
-    /// This overload allows you to provide a factory function that creates ISdJwtTokenValidator instances.
-    /// Useful when the validator needs access to specific DI services.
+    ///     This overload allows you to provide a factory function that creates ISdJwtTokenValidator instances.
+    ///     Useful when the validator needs access to specific DI services.
     /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <param name="validatorFactory">Factory function to create ISdJwtTokenValidator instances.</param>

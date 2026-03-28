@@ -1,22 +1,20 @@
-using System.Text.Json;
 using System.Net.Http.Json;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Sentinel.Keycloak.Services;
 
 /// <summary>
-/// Manages Keycloak OpenID Connect configuration with thread-safe caching.
-/// ✅ FIX: Uses SemaphoreSlim for thread safety, stores immutable Dictionary&lt;string, JsonElement&gt;
-/// instead of disposable JsonDocument, uses TimeProvider for testability.
+///     Manages Keycloak OpenID Connect configuration with thread-safe caching.
+///     ✅ FIX: Uses SemaphoreSlim for thread safety, stores immutable Dictionary&lt;string, JsonElement&gt;
+///     instead of disposable JsonDocument, uses TimeProvider for testability.
 /// </summary>
 public sealed class KeycloakConfigurationManager : IDisposable
 {
-    private readonly KeycloakOptions _options;
     private readonly HttpClient _httpClient;
-    private readonly ILogger<KeycloakConfigurationManager> _logger;
-    private readonly TimeProvider _timeProvider;
     private readonly SemaphoreSlim _lock = new(1, 1);
+    private readonly ILogger<KeycloakConfigurationManager> _logger;
+    private readonly KeycloakOptions _options;
+    private readonly TimeProvider _timeProvider;
 
     // ✅ FIX: Cache an immutable Dictionary (thread-safe), not a disposable JsonDocument
     private Dictionary<string, JsonElement>? _cachedConfig;
@@ -34,8 +32,13 @@ public sealed class KeycloakConfigurationManager : IDisposable
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
+    public void Dispose()
+    {
+        _lock.Dispose();
+    }
+
     /// <summary>
-    /// Gets the JWKS URI from the OpenID Connect configuration (with caching).
+    ///     Gets the JWKS URI from the OpenID Connect configuration (with caching).
     /// </summary>
     public async Task<string?> GetJwksUriAsync(CancellationToken cancellationToken = default)
     {
@@ -85,7 +88,7 @@ public sealed class KeycloakConfigurationManager : IDisposable
     }
 
     /// <summary>
-    /// Invalidates the cached configuration to force refresh on next request.
+    ///     Invalidates the cached configuration to force refresh on next request.
     /// </summary>
     public void InvalidateCache()
     {
@@ -104,10 +107,5 @@ public sealed class KeycloakConfigurationManager : IDisposable
         }
 
         return null;
-    }
-
-    public void Dispose()
-    {
-        _lock.Dispose();
     }
 }

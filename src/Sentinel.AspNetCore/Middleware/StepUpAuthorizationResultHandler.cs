@@ -9,9 +9,9 @@ namespace Sentinel.AspNetCore.Middleware;
 
 public sealed class StepUpAuthorizationResultHandler : IAuthorizationMiddlewareResultHandler
 {
+    private readonly IOptionsMonitor<AcrRankingOptions> acrOptions;
     private readonly AuthorizationMiddlewareResultHandler defaultHandler = new();
     private readonly ILogger<StepUpAuthorizationResultHandler> logger;
-    private readonly IOptionsMonitor<AcrRankingOptions> acrOptions;
 
     public StepUpAuthorizationResultHandler(
         ILogger<StepUpAuthorizationResultHandler> logger,

@@ -1,45 +1,42 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using Sentinel.AspNetCore.Middleware;
 using Sentinel.Security.Abstractions.Options;
 
 namespace Sentinel.AspNetCore.Extensions;
 
 /// <summary>
-/// Dependency injection extensions for Sentinel ASP.NET Core integration.
-/// Provides a fluent API for configuring DPoP validation, mTLS binding, and idempotency filters.
+///     Dependency injection extensions for Sentinel ASP.NET Core integration.
+///     Provides a fluent API for configuring DPoP validation, mTLS binding, and idempotency filters.
 /// </summary>
 public static class SentinelAspNetCoreExtensions
 {
     /// <summary>
-    /// Adds Sentinel ASP.NET Core middleware and filters to the service collection.
+    ///     Adds Sentinel ASP.NET Core middleware and filters to the service collection.
     /// </summary>
     /// <param name="services">Service collection.</param>
     /// <returns>Builder for fluent configuration.</returns>
     public static SentinelAspNetCoreBuilder AddSentinelAspNetCore(this IServiceCollection services)
     {
-        ArgumentNullException.ThrowIfNull(services, nameof(services));
+        ArgumentNullException.ThrowIfNull(services);
         return new SentinelAspNetCoreBuilder(services);
     }
 
     /// <summary>
-    /// Enforces the strict cryptographic and security pipeline ordering.
-    /// MUST be called before UseAuthentication and UseAuthorization.
-    ///
-    /// This method ensures the following middleware order (non-negotiable):
-    /// 1. SecurityHeadersMiddleware - Hardening headers (must be first to catch early rejections)
-    /// 2. CorrelationIdMiddleware - Correlation and tracing context
-    /// 3. DpopValidationMiddleware - Sender-constraining cryptographic validation (RFC 9449)
-    /// 4. MtlsBindingMiddleware - Transport-layer identity binding
-    /// 5. AcrValidationMiddleware - Authentication Context Class Reference enforcement
+    ///     Enforces the strict cryptographic and security pipeline ordering.
+    ///     MUST be called before UseAuthentication and UseAuthorization.
+    ///     This method ensures the following middleware order (non-negotiable):
+    ///     1. SecurityHeadersMiddleware - Hardening headers (must be first to catch early rejections)
+    ///     2. CorrelationIdMiddleware - Correlation and tracing context
+    ///     3. DpopValidationMiddleware - Sender-constraining cryptographic validation (RFC 9449)
+    ///     4. MtlsBindingMiddleware - Transport-layer identity binding
+    ///     5. AcrValidationMiddleware - Authentication Context Class Reference enforcement
     /// </summary>
     /// <param name="app">Application builder.</param>
     /// <returns>Application builder for method chaining.</returns>
     public static IApplicationBuilder UseSentinelSecurityPipeline(this IApplicationBuilder app)
     {
-        ArgumentNullException.ThrowIfNull(app, nameof(app));
+        ArgumentNullException.ThrowIfNull(app);
 
         // 1. Hardening headers (must be first to catch early rejections)
         app.UseMiddleware<SecurityHeadersMiddleware>();
@@ -61,7 +58,7 @@ public static class SentinelAspNetCoreExtensions
 }
 
 /// <summary>
-/// Builder for configuring Sentinel ASP.NET Core features.
+///     Builder for configuring Sentinel ASP.NET Core features.
 /// </summary>
 public sealed class SentinelAspNetCoreBuilder
 {
@@ -71,7 +68,7 @@ public sealed class SentinelAspNetCoreBuilder
     private int _mtlsBindingAdded;
 
     /// <summary>
-    /// Initializes a new instance of <see cref="SentinelAspNetCoreBuilder"/>.
+    ///     Initializes a new instance of <see cref="SentinelAspNetCoreBuilder" />.
     /// </summary>
     /// <param name="services">Service collection.</param>
     public SentinelAspNetCoreBuilder(IServiceCollection services)
@@ -80,9 +77,9 @@ public sealed class SentinelAspNetCoreBuilder
     }
 
     /// <summary>
-    /// Adds RFC 9449 DPoP (Demonstration of Proof-of-Possession) validation middleware.
-    /// Validates DPoP proof structure, signature, and nonce per specification.
-    /// Registers middleware dependencies in DI; the middleware itself is instantiated via UseMiddleware in the pipeline.
+    ///     Adds RFC 9449 DPoP (Demonstration of Proof-of-Possession) validation middleware.
+    ///     Validates DPoP proof structure, signature, and nonce per specification.
+    ///     Registers middleware dependencies in DI; the middleware itself is instantiated via UseMiddleware in the pipeline.
     /// </summary>
     /// <returns>This builder for method chaining.</returns>
     public SentinelAspNetCoreBuilder AddDPoPValidation()
@@ -106,7 +103,7 @@ public sealed class SentinelAspNetCoreBuilder
     }
 
     /// <summary>
-    /// Adds idempotency enforcement via Idempotency-Key header with Redis-backed state storage.
+    ///     Adds idempotency enforcement via Idempotency-Key header with Redis-backed state storage.
     /// </summary>
     /// <returns>This builder for method chaining.</returns>
     public SentinelAspNetCoreBuilder AddIdempotencyFilters()
@@ -124,9 +121,9 @@ public sealed class SentinelAspNetCoreBuilder
     }
 
     /// <summary>
-    /// Adds mTLS (mutual TLS) certificate binding validation.
-    /// Validates certificate thumbprint (x5t or x5t#S256) matches claimed identity.
-    /// Registers middleware dependencies in DI; the middleware itself is instantiated via UseMiddleware in the pipeline.
+    ///     Adds mTLS (mutual TLS) certificate binding validation.
+    ///     Validates certificate thumbprint (x5t or x5t#S256) matches claimed identity.
+    ///     Registers middleware dependencies in DI; the middleware itself is instantiated via UseMiddleware in the pipeline.
     /// </summary>
     /// <returns>This builder for method chaining.</returns>
     public SentinelAspNetCoreBuilder AddMtlsBinding()
@@ -145,7 +142,7 @@ public sealed class SentinelAspNetCoreBuilder
     }
 
     /// <summary>
-    /// Adds all Sentinel ASP.NET Core features (DPoP validation, mTLS binding, idempotency).
+    ///     Adds all Sentinel ASP.NET Core features (DPoP validation, mTLS binding, idempotency).
     /// </summary>
     /// <returns>This builder for method chaining.</returns>
     public SentinelAspNetCoreBuilder AddAll()
@@ -156,8 +153,8 @@ public sealed class SentinelAspNetCoreBuilder
     }
 
     /// <summary>
-    /// Configures ACR (Authentication Context Class Reference) ranking options.
-    /// Defines the hierarchical mapping of ACR values for authorization decisions.
+    ///     Configures ACR (Authentication Context Class Reference) ranking options.
+    ///     Defines the hierarchical mapping of ACR values for authorization decisions.
     /// </summary>
     /// <param name="configure">Configuration action for AcrRankingOptions.</param>
     /// <returns>This builder for method chaining.</returns>
