@@ -3,6 +3,13 @@ namespace Sentinel.Security.Diagnostics;
 /// <summary>
 /// Centralized telemetry metrics and activities for Sentinel authentication and authorization events.
 /// Native to the Security layer - can be used independently of any application infrastructure.
+///
+/// IMPORTANT LIFECYCLE NOTE:
+/// Because Meter and ActivitySource are static, they must be registered with the OpenTelemetry SDK
+/// during host startup (e.g., using AddMeter and AddSource in the OpenTelemetry configuration).
+/// The OTel SDK's IHostedService will ensure they are properly flushed and disposed during an
+/// application shutdown (SIGTERM), preventing the loss of critical security events in the final seconds
+/// of operation (which may contain traces of exploits that caused the crash).
 /// </summary>
 public static class AuthTelemetry
 {
@@ -48,11 +55,14 @@ public static class AuthTelemetry
         description: "Number of issued tokens by assurance level");
 
     /// <summary>
-    /// Histogram: Token validation latency in milliseconds.
+    /// Histogram: Token validation latency in seconds.
+    /// ✅ FIX: Renamed to remove _ms suffix; unit set to "s" strictly following OTel Semantic Conventions.
+    /// Prometheus/OTLP require metrics to use seconds for duration measurements, not milliseconds.
     /// </summary>
     public static readonly Histogram<double> ValidationDuration = Meter.CreateHistogram<double>(
-        "auth.token.validation.duration_ms",
-        "ms");
+        "auth.token.validation.duration",
+        unit: "s",
+        description: "Duration of token validation in seconds");
 
     /// <summary>
     /// Counter: Redis degradation events triggering node-local replay protection.
