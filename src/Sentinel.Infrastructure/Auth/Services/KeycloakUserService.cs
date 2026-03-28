@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using Sentinel.Domain.Users;
 using Sentinel.Keycloak;
 using Sentinel.Security.Abstractions.Identity;
@@ -8,23 +10,45 @@ using Sentinel.Security.Abstractions.Results;
 namespace Sentinel.Infrastructure.Auth.Services;
 
 internal sealed class KeycloakUserService(HttpClient httpClient, ILogger<KeycloakUserService> logger)
-    : IIdentityRegistry
+    : IIdentityRegistry, IIdentityProvider
 {
     public Task<SecurityResult<string>> CreateUserAsync(
         IdentityRegistration registration,
         string password,
         CancellationToken cancellationToken = default)
     {
-        var legacyRegistration = new UserRegistration(
-            registration.Email,
-            registration.Username,
-            ConsentInfo.Create(
-                registration.AcceptedTerms,
-                registration.PolicyVersion,
-                registration.SourceIp,
-                new DateTimeOffset(registration.AcceptedAtUtc, TimeSpan.Zero)));
+        if (!registration.AcceptedTerms)
+        {
+            return Task.FromResult(SecurityResultFactory.Failure<string>(SecurityErrors.TermsNotAcceptedMessage));
+        }
+
+        var legacyRegistration = new UserRegistration
+        {
+            Id = Guid.NewGuid(),
+            Email = registration.Email.Trim().ToLowerInvariant(),
+            Username = registration.Username.Trim(),
+            Consent = new ConsentInfo
+            {
+                TermsAccepted = registration.AcceptedTerms,
+                PrivacyPolicyVersion = registration.PolicyVersion,
+                AcceptedAtUtc = new DateTimeOffset(registration.AcceptedAtUtc, TimeSpan.Zero),
+                SourceIpHash = HashConsentIp(registration.SourceIp)
+            }
+        };
 
         return CreateUserInternalAsync(legacyRegistration, password, cancellationToken);
+    }
+
+    async Task<string> IIdentityProvider.CreateUserAsync(IdentityRegistration registration, string password,
+        CancellationToken cancellationToken)
+    {
+        var result = await CreateUserAsync(registration, password, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            throw new InvalidOperationException(result.ErrorMessage ?? SecurityErrors.IdentityCreationFailedMessage);
+        }
+
+        return result.Value;
     }
 
     public async Task<SecurityResult<string>> CreateUserInternalAsync(UserRegistration registration, string password,
@@ -171,5 +195,28 @@ internal sealed class KeycloakUserService(HttpClient httpClient, ILogger<Keycloa
 
         var segments = locationHeader.Segments;
         return segments.Length == 0 ? null : segments[^1].Trim('/');
+    }
+
+    private static string HashConsentIp(string ipAddress)
+    {
+        if (string.IsNullOrWhiteSpace(ipAddress))
+        {
+            return "[anonymous]";
+        }
+
+        try
+        {
+            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes("sentinel-ip-salt"));
+            var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(ipAddress));
+            return Convert.ToBase64String(hash);
+        }
+        catch (ArgumentException)
+        {
+            return "[error]";
+        }
+        catch (FormatException)
+        {
+            return "[error]";
+        }
     }
 }

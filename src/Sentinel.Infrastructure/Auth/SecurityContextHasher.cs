@@ -1,9 +1,9 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Sentinel.Infrastructure.Telemetry;
+namespace Sentinel.Infrastructure.Auth;
 
-public static class SecurityContextHasher
+internal static class SecurityContextHasher
 {
     public static string HashIp(HttpContext context)
     {

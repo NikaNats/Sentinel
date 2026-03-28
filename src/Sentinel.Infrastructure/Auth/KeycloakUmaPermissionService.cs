@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using System.Net.Http.Headers;
 using Sentinel.Application.Auth.Interfaces;
-using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Keycloak;
+using Sentinel.Security.Diagnostics;
 
 namespace Sentinel.Infrastructure.Auth;
 

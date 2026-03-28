@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <!-- ZERO production dependencies. Everything here is built-in. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="System.ComponentModel.Annotations" />
   </ItemGroup>
 

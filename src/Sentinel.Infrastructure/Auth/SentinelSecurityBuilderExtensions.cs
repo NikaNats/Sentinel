@@ -1,6 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Infrastructure.DependencyInjection;
+using Sentinel.Security.Abstractions.DependencyInjection;
 
 // using Sentinel.Infrastructure.Notifications;
 
@@ -52,7 +55,8 @@ public static class SentinelSecurityBuilderExtensions
             options.GitHub = federationBuilder.Options.GitHub;
         });
 
-        _ = builder.Services.AddHostedService<SocialFederationConfiguratorHostedService>();
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHostedService, SocialFederationConfiguratorHostedService>());
         return builder;
     }
 }

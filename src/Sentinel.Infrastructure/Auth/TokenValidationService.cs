@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Security.Abstractions.Exceptions;
 using Sentinel.Security.Abstractions.Replay;
 using Sentinel.Security.Abstractions.Security;
@@ -63,6 +62,10 @@ internal sealed class TokenValidationService(
             return TokenValidationOutcome.Fail("Session has been terminated.");
         }
         catch (ReplayCacheUnavailableException ex)
+        {
+            return TokenValidationOutcome.Fail(ex);
+        }
+        catch (SessionBlacklistUnavailableException ex)
         {
             return TokenValidationOutcome.Fail(ex);
         }

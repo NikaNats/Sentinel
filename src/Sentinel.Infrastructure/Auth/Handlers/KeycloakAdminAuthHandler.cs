@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using Sentinel.Keycloak;
 
@@ -14,7 +15,11 @@ internal sealed class KeycloakAdminAuthHandler(KeycloakAdminTokenProvider tokenP
         var token = await tokenProvider.GetAccessTokenAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(token))
         {
-            throw new InvalidOperationException("Failed to acquire Keycloak admin token prior to HTTP dispatch.");
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                RequestMessage = request,
+                ReasonPhrase = "Identity Provider Admin Token Unavailable"
+            };
         }
 
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);

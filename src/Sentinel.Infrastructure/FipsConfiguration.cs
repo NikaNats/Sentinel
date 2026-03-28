@@ -4,14 +4,19 @@ public static class FipsConfiguration
 {
     private const string FipsProcPath = "/proc/sys/crypto/fips_enabled";
 
-    public static void Apply()
+    public static void Apply(ILogger logger)
     {
         AppContext.SetSwitch("Switch.System.Security.Cryptography.UseLegacyFipsThrow", false);
 
         if (IsFipsEnabled())
         {
-            Console.WriteLine("Sentinel API is running in FIPS-enabled mode.");
+            logger.LogInformation("security:fips_mode_enabled Sentinel API is running in FIPS-enabled mode.");
         }
+    }
+
+    public static void Apply()
+    {
+        Apply(Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
     }
 
     private static bool IsFipsEnabled() =>

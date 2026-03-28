@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using OpenTelemetry.Metrics;
@@ -12,20 +14,16 @@ using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Auth.Handlers;
 using Sentinel.Infrastructure.Auth.Services;
 using Sentinel.Infrastructure.Cryptography;
+using Sentinel.Infrastructure.Notifications;
 using Sentinel.Infrastructure.Persistence;
-using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Keycloak;
+using Sentinel.Security.Abstractions.DependencyInjection;
 using Sentinel.Security.Abstractions.Identity;
 using Sentinel.Security.Abstractions.Security;
+using Sentinel.Security.Diagnostics;
 using IAuthRevocationService = Sentinel.Application.Auth.Interfaces.IAuthRevocationService;
 
 namespace Sentinel.Infrastructure.DependencyInjection;
-
-// Temporary interface definition until real module exists
-public interface ISentinelSecurityBuilder
-{
-    IServiceCollection Services { get; }
-}
 
 // Temporary implementation until real builder exists
 public sealed class SentinelSecurityBuilder(IServiceCollection services) : ISentinelSecurityBuilder
@@ -148,18 +146,17 @@ public static class SentinelModuleBuilderExtensions
             .AddHttpMessageHandler<KeycloakAdminAuthHandler>();
         _ = builder.Services.AddHttpClient("keycloak-admin");
         _ = builder.Services.AddHttpClient<IAuthRevocationService, KeycloakAuthRevocationService>();
-        _ = builder.Services.AddHostedService<SocialFederationConfiguratorHostedService>();
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHostedService, SocialFederationConfiguratorHostedService>());
         return builder;
     }
 
     public static ISentinelSecurityBuilder AddNotificationsModule(this ISentinelSecurityBuilder builder,
         IConfiguration configuration)
     {
-        // TODO: Uncomment when Sentinel.Infrastructure.Notifications module is available
-        // _ = builder.Services
-        // Notifications module registration placeholder.
-        // When Sentinel.Infrastructure.Notifications module becomes available,
-        // add service registrations here.
+        _ = configuration;
+        builder.Services.TryAddSingleton<INotificationService, LoggingNotificationService>();
+        builder.Services.TryAddSingleton<IEmailService, LoggingEmailService>();
         return builder;
     }
 
