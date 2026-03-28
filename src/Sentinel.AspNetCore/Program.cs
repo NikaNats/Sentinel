@@ -8,7 +8,7 @@ namespace Sentinel.AspNetCore;
 /// Minimal program class required for WebApplicationFactory integration tests.
 /// ✅ FIX: Provides an entry point to satisfy the .NET Host Builder requirements.
 /// </summary>
-public partial class Program
+public static partial class Program
 {
     /// <summary>
     /// Entry point for the application. Required by .NET runtime for WebApplicationFactory.

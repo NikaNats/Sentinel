@@ -167,7 +167,7 @@ internal static class AuthEndpoints
         [FromServices] IPasswordStrengthValidator passwordStrengthValidator,
         [FromServices] IAuthRevocationService revocationService,
         [FromServices] ISessionBlacklistCache blacklistCache,
-        [FromServices] IOptions<SessionBlacklistOptions> options,
+        [FromServices] IOptions<KeycloakOptions> keycloakOptions,
         ClaimsPrincipal user,
         HttpContext context,
         CancellationToken ct)
@@ -211,11 +211,10 @@ internal static class AuthEndpoints
         _ = await revocationService.RevokeAllSessionsAsync(sub, ct);
 
         // Blacklist current session too
-        var keycloakOptions = options.Value;
         var sid = user.FindFirst("sid")?.Value;
         if (!string.IsNullOrWhiteSpace(sid))
         {
-            await blacklistCache.BlacklistSessionAsync(sid, keycloakOptions.ResolveSessionBlacklistTtl(), ct);
+            await blacklistCache.BlacklistSessionAsync(sid, keycloakOptions.Value.ResolveSessionBlacklistTtl(), ct);
         }
 
         return TypedResults.NoContent();
