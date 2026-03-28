@@ -50,7 +50,7 @@ internal sealed class KeycloakUserService(HttpClient httpClient, ILogger<Keycloa
             {
                 ["consent_date"] = [registration.Consent.AcceptedAtUtc.ToString("O")],
                 ["policy_version"] = [registration.Consent.PrivacyPolicyVersion],
-                ["consent_ip_hash"] = [registration.Consent.IpAddress]
+                ["consent_ip_hash"] = [registration.Consent.SourceIpHash]
             }
         };
 

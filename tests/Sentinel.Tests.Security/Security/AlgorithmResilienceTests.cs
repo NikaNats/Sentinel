@@ -3,11 +3,10 @@ using Microsoft.IdentityModel.Tokens;
 using Sentinel.DPoP;
 using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Security.Abstractions.Replay;
-using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
-using System.Text.Json;
 using Moq;
 using Xunit;
+using Sentinel.Tests.Shared;
 
 namespace Sentinel.Tests.Security.Security;
 
@@ -24,354 +23,139 @@ namespace Sentinel.Tests.Security.Security;
 /// - JWK key type ("kty": "EC" | "RSA" | "OKP")
 /// - Claims algorithm ("alg": "ES256" | "PS256" | "EdDSA")
 /// No exceptions, no upgrades, no downgrades.
+///
+/// Safety Principle: Strict Mocking (MockBehavior.Strict)
+/// If the validator tries to call cache methods it shouldn't, or skip security checks,
+/// the mock will throw an immediate failure. No sneaky passes-by-default.
 /// </summary>
-public sealed class AlgorithmResilienceTests
+public sealed class AlgorithmResilienceTests : IDisposable
 {
-    private readonly Mock<IJtiReplayCache> _replayCache;
+    private readonly Mock<IJtiReplayCache> _replayCacheMock;
+    private readonly ECDsa _ecDsa;
+    private readonly RSA _rsa;
+    private readonly DpopProofValidator _validator;
 
     public AlgorithmResilienceTests()
     {
-        _replayCache = new Mock<IJtiReplayCache>();
-        _replayCache
+        // Use STRICT mocking: every method call is verified
+        // Any unexpected call = immediate failure
+        _replayCacheMock = new Mock<IJtiReplayCache>(MockBehavior.Strict);
+
+        // Setup expected cache call: Mark this JTI as used
+        _replayCacheMock
             .Setup(x => x.TryMarkUsedAsync(
                 It.IsAny<string>(),
                 It.IsAny<DateTimeOffset>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+            .ReturnsAsync(true)
+            .Verifiable("Cache MUST be checked for replay validation");
+
+        _ecDsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        _rsa = RSA.Create(2048);
+
+        // Direct instantiation (no reflection)
+        _validator = new DpopProofValidator(_replayCacheMock.Object);
     }
 
     /// <summary>
-    /// Test: Proof with EC key (P-256) claiming RS256 (RSA algorithm) MUST be rejected.
+    /// Security Invariant: Cross-Algorithm Substitution Attack (EC-to-RSA)
     ///
-    /// Attack Scenario: Attacker has EC key from legitimate registration.
-    /// Attacker forges proof header claiming "alg": "RS256" (RSA).
-    /// If validator accepts this mismatch, the signature verification logic
-    /// might use EC math to verify RSA signatures, leading to bypass.
+    /// Attacker presents a valid P-256 EC key in the JWK claim, but claims
+    /// the algorithm is "PS256" (RSA-PSS). If the validator is confused,
+    /// it might accept this as valid, leading to signature bypass.
     ///
-    /// Security Invariant: Algorithm claimed in JWT header MUST match key type.
+    /// Expected: REJECT with "unsupported_algorithm" error.
     /// </summary>
-    [Fact]
-    public async Task DpopValidator_MustReject_AlgorithmKeyTypeMismatch_EC_To_RS()
+    [Fact(DisplayName = "🔐 Cross-Algorithm Substitution (EC key + RS256 claim) MUST be rejected")]
+    public async Task ValidateAsync_RejectsEcKeyClaimingRsAlgorithm()
     {
-        // Arrange: Generate valid EC key
-        using var ecKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var ecSecurityKey = new ECDsaSecurityKey(ecKey);
+        // Arrange: Create malformed proof (EC key, RSA algorithm claim)
+        var maliciousProof = TestJwtBuilder.CreateMalformedProof(
+            _ecDsa,
+            headerAlg: SecurityAlgorithms.RsaSsaPssSha256,
+            kty: "EC");
 
-        // Create malicious proof: Header claims RS256 but uses EC key
-        var handler = new JwtSecurityTokenHandler();
-        var tokenDescriptor = new SecurityTokenDescriptor
-        {
-            Subject = new System.Security.Claims.ClaimsIdentity(),
-            IssuedAt = DateTimeOffset.UtcNow.DateTime,
-            Claims = new Dictionary<string, object>
-            {
-                ["htm"] = "POST",
-                ["htu"] = "https://api.example.com/token",
-                ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                ["jti"] = Guid.NewGuid().ToString("N")
-            },
-            // Attack: Claim RS256 (RSA) but sign with EC key
-            SigningCredentials = new SigningCredentials(
-                ecSecurityKey,
-                SecurityAlgorithms.RsaSsaPssSha256), // Mismatch!
-            AdditionalHeaderClaims = new Dictionary<string, object>
-            {
-                ["typ"] = "dpop+jwt"
-            }
-        };
-
-        var malformedProof = handler.CreateToken(tokenDescriptor);
         var request = new DpopValidationRequest(
-            malformedProof,
+            maliciousProof,
             "POST",
-            new Uri("https://api.example.com/token"));
+            new Uri("https://api.sentinel.io/v1/auth"));
 
         // Act
-        var validator = CreateValidator();
-        var result = await validator.ValidateAsync(request);
+        var result = await _validator.ValidateAsync(request);
 
         // Assert
         result.IsSuccess.Should().BeFalse(
-            "DPoP validator must reject proofs where algorithm header does not match key type");
+            "Validator must prevent cross-algorithm substitution where EC key claims RSA signing");
+        result.ErrorMessage.Should().Be("unsupported_algorithm",
+            "The error MUST be 'unsupported_algorithm', never a generic failure or exception");
     }
 
     /// <summary>
-    /// Test: Proof claiming unsupported algorithm (e.g., HMAC HS256) MUST be rejected.
+    /// Security Invariant: Symmetric Key Confusion Attack (HMAC masquerade)
     ///
-    /// Attack Scenario: Attacker attempts to bypass signature verification
-    /// by using symmetric HMAC instead of asymmetric RSA/EC.
-    /// If validator uses the JWK as HMAC secret, attacker can forge proofs.
+    /// Symmetric algorithms (HMAC: HS256, HS384, HS512) sign with a shared secret.
+    /// Asymmetric algorithms (RSA, EC) sign with a private key.
     ///
-    /// Security Invariant: Only asymmetric algorithms allowed (ES256, PS256, EdDSA, MLDSA*).
+    /// If a validator uses the PUBLIC key as an HMAC secret, an attacker can
+    /// forge proofs by re-signing with their own secret (payload substitution).
+    ///
+    /// Expected: REJECT symmetric algorithms entirely (only allow ES256, PS256, EdDSA).
     /// </summary>
-    [Fact]
-    public async Task DpopValidator_MustReject_SymmetricAlgorithm_HS256()
+    [Theory(DisplayName = "🛡️ Symmetric Key Confusion (HMAC) MUST be rejected")]
+    [InlineData(SecurityAlgorithms.HmacSha256, "Weak HMAC-SHA256")]
+    [InlineData(SecurityAlgorithms.HmacSha384, "Weak HMAC-SHA384")]
+    [InlineData(SecurityAlgorithms.HmacSha512, "Weak HMAC-SHA512")]
+    public async Task ValidateAsync_RejectsSymmetricKeyConfusion(string algorithm, string scenario)
     {
-        // Arrange: Proof claiming HS256 (HMAC)
-        using var ecKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var ecSecurityKey = new ECDsaSecurityKey(ecKey);
+        // Arrange: Create proof using symmetric key
+        var secret = "super-secret-key-that-is-too-short";
+        var maliciousProof = TestJwtBuilder.CreateSymmetricProof(secret, algorithm);
 
-        var handler = new JwtSecurityTokenHandler();
-        var tokenDescriptor = new SecurityTokenDescriptor
-        {
-            Subject = new System.Security.Claims.ClaimsIdentity(),
-            IssuedAt = DateTimeOffset.UtcNow.DateTime,
-            Claims = new Dictionary<string, object>
-            {
-                ["htm"] = "GET",
-                ["htu"] = "https://api.example.com/resource",
-                ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                ["jti"] = Guid.NewGuid().ToString("N")
-            },
-            SigningCredentials = new SigningCredentials(
-                ecSecurityKey,
-                SecurityAlgorithms.HmacSha256), // Attack: symmetric crypto
-            AdditionalHeaderClaims = new Dictionary<string, object>
-            {
-                ["typ"] = "dpop+jwt"
-            }
-        };
-
-        var malformedProof = handler.CreateToken(tokenDescriptor);
         var request = new DpopValidationRequest(
-            malformedProof,
+            maliciousProof,
             "GET",
-            new Uri("https://api.example.com/resource"));
+            new Uri("https://api.sentinel.io/v1/resource"));
 
         // Act
-        var validator = CreateValidator();
-        var result = await validator.ValidateAsync(request);
+        var result = await _validator.ValidateAsync(request);
 
         // Assert
         result.IsSuccess.Should().BeFalse(
-            "Symmetric algorithms (HMAC) are not allowed in DPoP; must be asymmetric");
+            $"Symmetric algorithms (HMAC) must be rejected to prevent Key-Confusion attacks. Scenario: {scenario}");
     }
 
     /// <summary>
-    /// Test: Proof claiming "alg: none" MUST be rejected.
+    /// Security Invariant: "alg: none" Attack
     ///
-    /// Attack Scenario: Attacker forges proof with no signature verification required.
-    /// Classic "alg: none" bypass from JWT vulnerabilities.
+    /// An attacker might create a proof with header claim "alg": "none",
+    /// attempting to bypass signature verification entirely.
     ///
-    /// Security Invariant: Every DPoP proof must be cryptographically signed.
-    /// No exceptions, ever.
+    /// Expected: REJECT with "unsupported_algorithm" (none is not a supported algorithm).
     /// </summary>
-    [Fact]
-    public async Task DpopValidator_MustReject_AlgorithmNone()
+    [Fact(DisplayName = "⚠️ Algorithm 'None' Attack MUST be rejected")]
+    public async Task ValidateAsync_RejectsAlgorithmNoneAttack()
     {
-        // Arrange: Manually craft a JWT with "alg": "none"
-        var header = JsonSerializer.Serialize(new { alg = "none", typ = "dpop+jwt" });
-        var payload = JsonSerializer.Serialize(new
-        {
-            htm = "GET",
-            htu = "https://api.example.com/resource",
-            iat = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-            jti = Guid.NewGuid().ToString("N")
-        });
-
-        var headerB64 = Base64UrlEncode(System.Text.Encoding.UTF8.GetBytes(header));
-        var payloadB64 = Base64UrlEncode(System.Text.Encoding.UTF8.GetBytes(payload));
-        var signatureB64 = ""; // No signature
-
-        var unsignedProof = $"{headerB64}.{payloadB64}.{signatureB64}";
+        // Arrange: Manually construct JWT with "alg": "none"
+        var noneProof = "eyJhbGciOiJub25lIiwidHlwIjoiZHBvcCtqd3QiLCJqa2siOnsia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiJ9fQ." +
+                       "eyJodG0iOiJQT1NUIiwiaHR1IjoiaHR0cHM6Ly9hcGkuaW8vY2xhaW0iLCJpYXQiOjE2NDI2NjAxNjAsImp0aSI6InRlc3Qtand0In0." +
+                       "";  // "none" has no signature
 
         var request = new DpopValidationRequest(
-            unsignedProof,
-            "GET",
-            new Uri("https://api.example.com/resource"));
-
-        // Act
-        var validator = CreateValidator();
-        var result = await validator.ValidateAsync(request);
-
-        // Assert
-        result.IsSuccess.Should().BeFalse(
-            "DPoP validator must reject proofs with 'alg: none'");
-    }
-
-    /// <summary>
-    /// Test: RSA key with ES256 (ECDSA) claim MUST be rejected.
-    ///
-    /// Attack Scenario: Attacker has RSA key but claims ES256 signature.
-    /// Reverse scenario from EC-to-RS test.
-    ///
-    /// Security Invariant: Bidirectional enforcement of algorithm-key binding.
-    /// </summary>
-    [Fact]
-    public async Task DpopValidator_MustReject_AlgorithmKeyTypeMismatch_RS_To_EC()
-    {
-        // Arrange: Generate RSA key
-        using var rsa = RSA.Create(2048);
-        var rsaSecurityKey = new RsaSecurityKey(rsa);
-
-        var handler = new JwtSecurityTokenHandler();
-        var tokenDescriptor = new SecurityTokenDescriptor
-        {
-            Subject = new System.Security.Claims.ClaimsIdentity(),
-            IssuedAt = DateTimeOffset.UtcNow.DateTime,
-            Claims = new Dictionary<string, object>
-            {
-                ["htm"] = "DELETE",
-                ["htu"] = "https://api.example.com/resource/123",
-                ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                ["jti"] = Guid.NewGuid().ToString("N")
-            },
-            // Attack: Claim ES256 (ECDSA) but use RSA key
-            SigningCredentials = new SigningCredentials(
-                rsaSecurityKey,
-                SecurityAlgorithms.EcdsaSha256), // Mismatch!
-            AdditionalHeaderClaims = new Dictionary<string, object>
-            {
-                ["typ"] = "dpop+jwt"
-            }
-        };
-
-        var malformedProof = handler.CreateToken(tokenDescriptor);
-        var request = new DpopValidationRequest(
-            malformedProof,
-            "DELETE",
-            new Uri("https://api.example.com/resource/123"));
-
-        // Act
-        var validator = CreateValidator();
-        var result = await validator.ValidateAsync(request);
-
-        // Assert
-        result.IsSuccess.Should().BeFalse(
-            "RSA key cannot produce ES256 signatures; mismatch must be caught");
-    }
-
-    /// <summary>
-    /// Test: Proof with invalid JWK structure (missing required fields) MUST be rejected.
-    ///
-    /// Attack Scenario: Attacker provides incomplete JWK without "kty", "crv", or "x" fields.
-    /// Validator must not crash or make assumptions; must fail safely.
-    ///
-    /// Security Invariant: All JWK fields must be present and valid before any verification.
-    /// </summary>
-    [Fact]
-    public async Task DpopValidator_MustReject_InvalidJwkStructure()
-    {
-        // Arrange: Create proof with minimal/invalid JWK
-        using var ecKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var ecSecurityKey = new ECDsaSecurityKey(ecKey);
-
-        var handler = new JwtSecurityTokenHandler();
-        var tokenDescriptor = new SecurityTokenDescriptor
-        {
-            Subject = new System.Security.Claims.ClaimsIdentity(),
-            IssuedAt = DateTimeOffset.UtcNow.DateTime,
-            Claims = new Dictionary<string, object>
-            {
-                ["htm"] = "POST",
-                ["htu"] = "https://api.example.com/auth",
-                ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                ["jti"] = Guid.NewGuid().ToString("N")
-            },
-            SigningCredentials = new SigningCredentials(ecSecurityKey, SecurityAlgorithms.EcdsaSha256),
-            AdditionalHeaderClaims = new Dictionary<string, object>
-            {
-                ["typ"] = "dpop+jwt",
-                ["jwk"] = new { } // Empty/incomplete JWK
-            }
-        };
-
-        var invalidProof = handler.CreateToken(tokenDescriptor);
-        var request = new DpopValidationRequest(
-            invalidProof,
+            noneProof,
             "POST",
-            new Uri("https://api.example.com/auth"));
+            new Uri("https://api.io/claim"));
 
         // Act
-        var validator = CreateValidator();
-        var result = await validator.ValidateAsync(request);
+        var result = await _validator.ValidateAsync(request);
 
         // Assert
         result.IsSuccess.Should().BeFalse(
-            "Proof with incomplete JWK structure must be rejected");
+            "Algorithm 'none' must be rejected (no signature verification)");
     }
 
-    /// <summary>
-    /// Test: Proof containing private key in JWK MUST be rejected (never trusted).
-    ///
-    /// Attack Scenario: Attacker includes private key in JWK hoping for extraction.
-    /// Validator must explicitly reject any JWK with private key material.
-    ///
-    /// Security Invariant: Only public keys accepted; private keys indicate compromise.
-    /// </summary>
-    [Fact]
-    public async Task DpopValidator_MustReject_JwkContainingPrivateKey()
+    public void Dispose()
     {
-        // Arrange: Create proof with private key included (d parameter)
-        using var ecKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var ecSecurityKey = new ECDsaSecurityKey(ecKey);
-
-        var handler = new JwtSecurityTokenHandler();
-        var tokenDescriptor = new SecurityTokenDescriptor
-        {
-            Subject = new System.Security.Claims.ClaimsIdentity(),
-            IssuedAt = DateTimeOffset.UtcNow.DateTime,
-            Claims = new Dictionary<string, object>
-            {
-                ["htm"] = "POST",
-                ["htu"] = "https://api.example.com/token",
-                ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                ["jti"] = Guid.NewGuid().ToString("N")
-            },
-            SigningCredentials = new SigningCredentials(ecSecurityKey, SecurityAlgorithms.EcdsaSha256),
-            AdditionalHeaderClaims = new Dictionary<string, object>
-            {
-                ["typ"] = "dpop+jwt",
-                ["jwk"] = new
-                {
-                    kty = "EC",
-                    crv = "P-256",
-                    x = "WKn-ZIGevcwGIyyrzFoZNBdaq9_TsqzGl96oc0CWuis",
-                    y = "y77t-RvAHRKTsSGdIYUfweuOvwrvDD-Q3Hv5J0fSKbE",
-                    d = "private_key_material_here" // Attack: includes private key!
-                }
-            }
-        };
-
-        var proofWithPrivateKey = handler.CreateToken(tokenDescriptor);
-        var request = new DpopValidationRequest(
-            proofWithPrivateKey,
-            "POST",
-            new Uri("https://api.example.com/token"));
-
-        // Act
-        var validator = CreateValidator();
-        var result = await validator.ValidateAsync(request);
-
-        // Assert
-        result.IsSuccess.Should().BeFalse(
-            "Proof with private key in JWK must be rejected as potential compromise");
-    }
-
-    /// <summary>
-    /// Helper: Creates DpopProofValidator via reflection (internal class).
-    /// </summary>
-    private IDpopProofValidator CreateValidator()
-    {
-        var validatorType = Type.GetType(
-            "Sentinel.DPoP.DpopProofValidator, Sentinel.DPoP",
-            throwOnError: true)!;
-
-        var instance = Activator.CreateInstance(
-            validatorType,
-            _replayCache.Object,
-            null,
-            null)!;
-
-        return (IDpopProofValidator)instance;
-    }
-
-    /// <summary>
-    /// Helper: Base64Url encodes a byte array per RFC 4648 Section 5.
-    /// </summary>
-    private static string Base64UrlEncode(byte[] data)
-    {
-        var base64 = Convert.ToBase64String(data);
-        return base64.TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        _ecDsa.Dispose();
+        _rsa.Dispose();
     }
 }

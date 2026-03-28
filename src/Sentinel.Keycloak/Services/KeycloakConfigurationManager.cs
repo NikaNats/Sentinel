@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Net.Http.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -6,7 +7,7 @@ namespace Sentinel.Keycloak.Services;
 
 /// <summary>
 /// Manages Keycloak OpenID Connect configuration with thread-safe caching.
-/// ✅ FIX: Uses SemaphoreSlim for thread safety, stores immutable Dictionary<string, JsonElement>
+/// ✅ FIX: Uses SemaphoreSlim for thread safety, stores immutable Dictionary&lt;string, JsonElement&gt;
 /// instead of disposable JsonDocument, uses TimeProvider for testability.
 /// </summary>
 public sealed class KeycloakConfigurationManager : IDisposable

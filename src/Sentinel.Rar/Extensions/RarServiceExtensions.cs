@@ -56,7 +56,9 @@ public static class RarServiceExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        // ✅ FIX: Use explicit lambda for options configuration binding
+        // ✅ FIX: Use extension method call from IConfigurationSection
+        // The Bind extension is defined in Microsoft.Extensions.Configuration.Binder
+        // and does not require a using statement when called directly on the section
         services.Configure<RarValidationOptions>(opts =>
         {
             configuration.GetSection("Sentinel:Rar").Bind(opts);

@@ -61,5 +61,3 @@ public sealed class AcrAuthorizationHandler : AuthorizationHandler<AcrRequiremen
         return Task.CompletedTask;
     }
 }
-    }
-}

@@ -94,9 +94,12 @@ public static class SentinelModuleBuilderExtensions
         return new SentinelSecurityBuilder(services);
     }
 
-    public static ISentinelSecurityBuilder AddDPoP(this ISentinelSecurityBuilder builder)
+    public static ISentinelSecurityBuilder AddDPoP(this ISentinelSecurityBuilder builder, IConfiguration? configuration = null)
     {
-        _ = builder.Services.AddSentinelDPoP();
+        if (configuration != null)
+        {
+            _ = builder.Services.AddSentinelDPoP(configuration);
+        }
         return builder;
     }
 

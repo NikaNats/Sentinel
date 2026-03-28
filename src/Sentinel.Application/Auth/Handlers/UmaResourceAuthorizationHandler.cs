@@ -62,11 +62,12 @@ public sealed class UmaResourceAuthorizationHandler : AuthorizationHandler<UmaRe
         }
 
         // Check UMA permission
+        var cancellationToken = context.Resource is CancellationToken ct ? ct : CancellationToken.None;
         var hasAccess = await permissionService.HasAccessAsync(
             token,
             resourceId,
             requirement.RequiredScope,
-            context.Resource as CancellationToken ?? CancellationToken.None);
+            cancellationToken);
 
         if (hasAccess)
         {

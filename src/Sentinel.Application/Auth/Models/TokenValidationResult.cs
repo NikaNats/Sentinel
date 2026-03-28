@@ -11,7 +11,10 @@ public abstract record TokenValidationResult
     /// Token is valid, unexpired, unconsumed, and associated with an email.
     /// Safe to proceed with password reset flow.
     /// </summary>
-    public sealed record Success(string Email) : TokenValidationResult;
+    public sealed record Success : TokenValidationResult
+    {
+        public new required string Email { get; init; }
+    }
 
     /// <summary>
     /// Token has expired (DateTimeOffset.UtcNow > ExpiresAtUtc).

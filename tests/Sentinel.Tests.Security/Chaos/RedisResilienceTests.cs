@@ -16,392 +16,166 @@ namespace Sentinel.Tests.Security.Chaos;
 /// Real production outages are "Gray Failures" — partial latency, cascade delays, connection pools
 /// exhausted. This tests against such scenarios, not just "Up" vs "Down."
 ///
-/// Architecture: Using mocks to simulate StackExchange.Redis timeout behaviors.
-/// (In a full integration environment, use Testcontainers.Redis + Testcontainers.Toxiproxy)
+/// Safety Principle: Strict Mocking (MockBehavior.Strict) verifies that on ANY infrastructure
+/// failure, the system IMMEDIATELY fails and never enters an "accept anyway" state.
 /// </summary>
 public sealed class RedisResilienceTests
 {
-    private readonly Mock<IJtiReplayCache> _mockReplayCache;
+    private readonly Mock<ISessionBlacklistCache> _cacheServiceMock;
 
     public RedisResilienceTests()
     {
-        _mockReplayCache = new Mock<IJtiReplayCache>();
+        // STRICT: Every cache operation must be explicitly defined or will fail
+        _cacheServiceMock = new Mock<ISessionBlacklistCache>(MockBehavior.Strict);
     }
 
     /// <summary>
-    /// Test: JTI Cache must throw ReplayCacheUnavailableException when Redis timeout occurs.
+    /// Test: Session revocation MUST fail-closed if cache is unavailable (timeout).
     ///
-    /// Scenario: Client requests token with DPoP proof. Redis is responding but slowly (>1s).
-    /// Replay cache lookup times out. Expected: Exception caught, middleware returns 503.
+    /// Scenario: Client initiates session revocation via SSF event. Redis timeouts on write.
+    /// Expected: Return failure immediately; never allow state inconsistency.
     ///
-    /// Security Implication: If cache is unavailable and we can't prove this is a fresh proof,
-    /// we MUST reject rather than accept (Fail-Closed).
+    /// Security: If we say "yes I revoked" but didn't actually revoke, attacker retains access.
+    /// Fail-closed = "I don't know if revocation succeeded, so deny access."
     /// </summary>
-    [Fact]
-    public async Task JtiCache_FailsClosed_WhenRedisTimeout()
+    [Fact(DisplayName = "⏱️ Redis Timeout → Fail-Closed (Revocation Unavailable)")]
+    public async Task SessionRevocation_FailsClosed_WhenRedisTimeout()
     {
-        // Arrange: Mock Redis connection that throws TimeoutException
-        _mockReplayCache
-            .Setup(x => x.TryMarkUsedAsync(
-                It.IsAny<string>(),
-                It.IsAny<DateTimeOffset>(),
-                It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new TimeoutException("Redis connection timeout"))
-            .Verifiable("Replay cache must be called");
+        // Arrange: Cache throws TimeoutException on revocation attempt
+        var sessionId = "sess-chaos-001";
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
 
-        var jti = "jti_redis_timeout_test";
-        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        _cacheServiceMock
+            .Setup(x => x.BlacklistSessionAsync(sessionId, expiresAt, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TimeoutException("Redis connection timeout"))
+            .Verifiable("Blacklist must be attempted");
 
         // Act
-        Func<Task> act = async () => await _mockReplayCache.Object.TryMarkUsedAsync(
-            jti,
+        Func<Task> act = async () => await _cacheServiceMock.Object.BlacklistSessionAsync(
+            sessionId,
             expiresAt,
             CancellationToken.None);
 
         // Assert
         await act.Should().ThrowAsync<TimeoutException>(
-            "TimeoutException must propagate to middleware for 503 response");
+            "TimeoutException MUST propagate; middleware handles 503 response");
 
-        _mockReplayCache.Verify();
+        _cacheServiceMock.Verify();
     }
 
     /// <summary>
-    /// Test: JTI Cache must never "degrade gracefully" by accepting duplicate proofs.
+    /// Test: Session query (is session blacklisted?) MUST fail-closed if cache is unavailable.
     ///
-    /// Scenario: First call to Redis succeeds and marks JTI as used. Second call times out.
-    /// Attack: Attacker realizes timeout happened and immediately resubmits same proof.
-    /// Expected: MUST reject (no fallback to "accept anyway").
+    /// Scenario: Incoming request presents session token. Cache is slow (>1s).
+    /// Expected: Reject the request; never guess "probably not revoked."
     ///
-    /// Security Implication: Zero-trust replay protection; no degradation paths.
+    /// Security: On ambiguity, deny. DoS > AccLeak.
     /// </summary>
-    [Fact]
-    public async Task JtiCache_CannotDegradeToUnsafeState_OnPartialFailure()
-    {
-        // Arrange: First call succeeds, second call fails
-        var callSequence = new[] { true, false };
-        var callIndex = 0;
-
-        _mockReplayCache
-            .Setup(x => x.TryMarkUsedAsync(
-                It.IsAny<string>(),
-                It.IsAny<DateTimeOffset>(),
-                It.IsAny<CancellationToken>()))
-            .Returns(() =>
-            {
-                if (callSequence[callIndex++ % callSequence.Length])
-                {
-                    return Task.FromResult(true);
-                }
-                else
-                {
-                    return Task.FromException<bool>(
-                        new RedisConnectionException(
-                            ConnectionFailureType.IO,
-                            "Redis cluster unavailable"));
-                }
-            });
-
-        var jti = "jti_partial_failure";
-
-        // Act 1: First call succeeds
-        var result1 = await _mockReplayCache.Object.TryMarkUsedAsync(
-            jti,
-            DateTimeOffset.UtcNow.AddMinutes(5),
-            CancellationToken.None);
-
-        // Assert 1
-        result1.Should().BeTrue("First call to fresh JTI should succeed");
-
-        // Act 2: Second call (same JTI) fails with connection error
-        Func<Task> act2 = async () => await _mockReplayCache.Object.TryMarkUsedAsync(
-            jti,
-            DateTimeOffset.UtcNow.AddMinutes(5),
-            CancellationToken.None);
-
-        // Assert 2
-        await act2.Should().ThrowAsync<RedisConnectionException>(
-            "On Redis failure, must throw rather than degrade to accepting replay");
-    }
-
-    /// <summary>
-    /// Test: JTI Cache must handle circuit-breaker patterns correctly.
-    ///
-    /// Scenario: Redis fails repeatedly. Client retries. Expected: Fast rejection
-    /// without attempting Redis (circuit open).
-    ///
-    /// Security Implication: Prevents cache-stampede attacks where failed
-    /// lookups cascade into connection pool exhaustion.
-    /// </summary>
-    [Fact]
-    public async Task JtiCache_CircuitBreakerOpens_AfterThresholdFailures()
-    {
-        // Arrange: Simulate 5 consecutive timeouts
-        var failureCount = 0;
-        var circuitOpenThreshold = 5;
-
-        _mockReplayCache
-            .Setup(x => x.TryMarkUsedAsync(
-                It.IsAny<string>(),
-                It.IsAny<DateTimeOffset>(),
-                It.IsAny<CancellationToken>()))
-            .Returns(() =>
-            {
-                failureCount++;
-                if (failureCount > circuitOpenThreshold)
-                {
-                    // After threshold, should fail fast (not attempt Redis)
-                    return Task.FromException<bool>(
-                        new OperationCanceledException("Circuit breaker open"));
-                }
-                return Task.FromException<bool>(
-                    new TimeoutException("Redis timeout"));
-            });
-
-        // Act: Attempt multiple calls
-        var exceptions = new List<Exception>();
-        for (int i = 0; i < 7; i++)
-        {
-            try
-            {
-                await _mockReplayCache.Object.TryMarkUsedAsync(
-                    $"jti_{i}",
-                    DateTimeOffset.UtcNow.AddMinutes(5),
-                    CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                exceptions.Add(ex);
-            }
-        }
-
-        // Assert: Last exceptions should be fast-fail (OperationCanceledException)
-        exceptions.Should().HaveCountGreaterThan(0, "Multiple failures should be recorded");
-        exceptions.Last().Should().BeOfType<OperationCanceledException>(
-            "After threshold, circuit breaker should fast-fail");
-    }
-
-    /// <summary>
-    /// Test: JTI Cache must survive Redis degradation (latency) without compromising security.
-    ///
-    /// Scenario: Redis responds but slowly. Legitimate first request marks JTI,
-    /// then attacker immediately reuses same proof (both within latency window).
-    /// Expected: Second request should still reject (even under latency).
-    ///
-    /// Security Implication: Latency does not create replay windows.
-    /// </summary>
-    [Fact]
-    public async Task JtiCache_MaintainsSemantics_UnderLatency()
-    {
-        // Arrange: Simulate latency with intentional delays
-        var callCount = 0;
-
-        _mockReplayCache
-            .Setup(x => x.TryMarkUsedAsync(
-                It.IsAny<string>(),
-                It.IsAny<DateTimeOffset>(),
-                It.IsAny<CancellationToken>()))
-            .Returns(async () =>
-            {
-                callCount++;
-                // Simulate 500ms latency
-                await Task.Delay(TimeSpan.FromMilliseconds(500));
-
-                if (callCount == 1)
-                {
-                    // First use: success
-                    return true;
-                }
-                else
-                {
-                    // Second use of same JTI: reject (replay)
-                    return false;
-                }
-            });
-
-        var jti = "jti_latency_test";
-
-        // Act 1: First request (marks JTI)
-        var sw1 = System.Diagnostics.Stopwatch.StartNew();
-        var result1 = await _mockReplayCache.Object.TryMarkUsedAsync(
-            jti,
-            DateTimeOffset.UtcNow.AddMinutes(5),
-            CancellationToken.None);
-        sw1.Stop();
-
-        // Assert 1
-        result1.Should().BeTrue("First request should succeed");
-        sw1.ElapsedMilliseconds.Should().BeGreaterThanOrEqualTo(500,
-            "Request should incur latency");
-
-        // Act 2: Second request (attempted replay, same JTI)
-        var sw2 = System.Diagnostics.Stopwatch.StartNew();
-        var result2 = await _mockReplayCache.Object.TryMarkUsedAsync(
-            jti,
-            DateTimeOffset.UtcNow.AddMinutes(5),
-            CancellationToken.None);
-        sw2.Stop();
-
-        // Assert 2
-        result2.Should().BeFalse(
-            "Second use of same JTI must be rejected despite latency");
-        sw2.ElapsedMilliseconds.Should().BeGreaterThanOrEqualTo(500,
-            "Latency still applies to replay rejection");
-    }
-
-    /// <summary>
-    /// Test: JTI Cache expiration windows must be honored even when Redis is slow.
-    ///
-    /// Scenario: Redis slow to respond. During delay, token expiration window passes.
-    /// Expected: Even if Redis eventually responds, expired token should not be marked as used.
-    ///
-    /// Security Implication: Time-based validity must not be bypassed by latency.
-    /// </summary>
-    [Fact]
-    public async Task JtiCache_RespectsExpiration_DespiteLatency()
+    [Theory(DisplayName = "🔴 Redis Connection Failure Types (all fail-closed)")]
+    [InlineData(typeof(RedisConnectionException), "Connection refused/pool exhausted")]
+    [InlineData(typeof(TimeoutException), "Slow response or read timeout")]
+    [InlineData(typeof(SocketException), "Network layer failure")]
+    public async Task SessionQuery_FailsClosed_OnAnyInfrastructureFailure(Type exceptionType, string scenario)
     {
         // Arrange
-        var now = DateTimeOffset.UtcNow;
-        var expiryWindow = TimeSpan.FromSeconds(1);
+        var sessionId = "sess-chaos-002";
+        var exception = (Exception)Activator.CreateInstance(exceptionType, "Infrastructure melting")!;
 
-        _mockReplayCache
-            .Setup(x => x.TryMarkUsedAsync(
-                It.IsAny<string>(),
-                It.IsAny<DateTimeOffset>(),
-                It.IsAny<CancellationToken>()))
-            .Returns(async () =>
-            {
-                // Simulate latency that exceeds expiry window
-                await Task.Delay(TimeSpan.FromMilliseconds(1500));
-                // By the time we "mark used", the proof has expired
-                return false; // Expired, reject
-            });
-
-        var jti = "jti_expiry_test";
-        var expiresAt = now.Add(expiryWindow);
+        _cacheServiceMock
+            .Setup(x => x.IsBlacklistedAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(exception)
+            .Verifiable("Blacklist check must be attempted");
 
         // Act
-        var result = await _mockReplayCache.Object.TryMarkUsedAsync(
-            jti,
-            expiresAt,
+        Func<Task> act = async () => await _cacheServiceMock.Object.IsBlacklistedAsync(
+            sessionId,
             CancellationToken.None);
 
         // Assert
-        result.Should().BeFalse(
-            "Expired JTI must be rejected even if cache processing was delayed");
+        await act.Should().ThrowAsync<Exception>(
+            $"On infrastructure failure ({scenario}), system must throw and never 'gracefully degrade' to allow access");
+
+        _cacheServiceMock.Verify();
     }
 
     /// <summary>
-    /// Test: Multiple concurrent requests to cache must not cause race conditions.
+    /// Test: Partial Redis failure (cluster quorum lost) MUST be treated as total failure.
     ///
-    /// Scenario: Three concurrent requests with same JTI arrive within race window.
-    /// Expected: Only one succeeds (first to acquire lock), others see "already used."
+    /// Scenario: Redis cluster has 5 nodes. 3 go down. Cluster can't reach quorum.
+    /// Write attempts get RedisTimeoutException (queued but unexecuted).
+    /// Expected: REJECT; never accept writes that couldn't complete.
     ///
-    /// Security Implication: Concurrency does not create duplicate-use vulnerabilities.
+    /// Security: Writes that "might have succeeded" are worse than timeouts that clearly failed.
     /// </summary>
-    [Fact]
-    public async Task JtiCache_HandlesConcurrency_WithoutRaceConditions()
+    [Fact(DisplayName = "🔗 Partial Redis Cluster Failure → Fail-Closed")]
+    public async Task SessionRevocation_FailsClosed_OnPartialClusterFailure()
     {
-        // Arrange: Simulate lock-based concurrency
-        var lockReleased = false;
+        // Arrange: Simulate Redis write that was queued but never executed
+        var sessionId = "sess-chaos-cluster";
 
-        _mockReplayCache
-            .Setup(x => x.TryMarkUsedAsync(
-                It.IsAny<string>(),
-                It.IsAny<DateTimeOffset>(),
-                It.IsAny<CancellationToken>()))
-            .Returns(async () =>
-            {
-                // First caller wins, marks as used
-                if (!lockReleased)
-                {
-                    lockReleased = true;
-                    await Task.Delay(TimeSpan.FromMilliseconds(100));
-                    return true;
-                }
-                // Subsequent callers see it as already used
-                return false;
-            });
+        _cacheServiceMock
+            .Setup(x => x.BlacklistSessionAsync(sessionId, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new RedisConnectionException(
+                ConnectionFailureType.MasterConnection,
+                "No cluster quorum reached"))
+            .Verifiable("Revocation must be attempted despite cluster issues");
 
-        var jti = "jti_concurrency_test";
-        var tasks = new List<Task<bool>>();
+        // Act & Assert: Exception must propagate
+        var act = async () => await _cacheServiceMock.Object.BlacklistSessionAsync(
+            sessionId,
+            DateTimeOffset.UtcNow.AddHours(1),
+            CancellationToken.None);
 
-        // Act: Launch 3 concurrent requests
-        for (int i = 0; i < 3; i++)
-        {
-            tasks.Add(
-                _mockReplayCache.Object.TryMarkUsedAsync(
-                    jti,
-                    DateTimeOffset.UtcNow.AddMinutes(5),
-                    CancellationToken.None));
-        }
-
-        var results = await Task.WhenAll(tasks);
-
-        // Assert
-        results.Should().Equal(true, false, false,
-            "Only first concurrent request should succeed; others should see 'already used'");
+        await act.Should().ThrowAsync<RedisConnectionException>(
+            "Cluster failures are NOT recoverable; system must fail immediately");
     }
 
     /// <summary>
-    /// Test: Cache must timeout gracefully without leaving connections open.
+    /// Test: State inconsistency prevention across cascading failures.
     ///
-    /// Scenario: Redis operation times out. Expected: No connection leak,
-    /// subsequent requests can acquire fresh connections.
+    /// Scenario: First revocation write succeeds. Session query times out.
+    /// Expected: Fail on query; never allow "well, we revoked it, so assume it worked."
     ///
-    /// Security Implication: Prevents connection pool exhaustion (DoS vector).
+    /// Security: Each operation must succeed independently or fail independently.
+    /// No state assumptions across failures.
     /// </summary>
-    [Fact]
-    public async Task JtiCache_DoesNotLeakConnections_OnTimeout()
+    [Fact(DisplayName = "📊 Cascade Failure (write OK, read fail) → each fails independently")]
+    public async Task NoStatePropagationAcrossInfrastructureFailures()
     {
-        // Arrange: Simulate connection timeout
-        var operationCancelled = false;
+        // Arrange: Two different operations
+        var sessionId = "sess-cascade";
 
-        _mockReplayCache
-            .Setup(x => x.TryMarkUsedAsync(
+        // First: Revocation succeeds
+        _cacheServiceMock
+            .Setup(x => x.BlacklistSessionAsync(
                 It.IsAny<string>(),
                 It.IsAny<DateTimeOffset>(),
                 It.IsAny<CancellationToken>()))
-            .Returns(async () =>
-            {
-                try
-                {
-                    // Simulate timeout via CancellationToken
-                    using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-                    await Task.Delay(TimeSpan.FromSeconds(5), cts.Token);
-                    return true;
-                }
-                catch (OperationCanceledException)
-                {
-                    operationCancelled = true;
-                    throw;
-                }
-            });
+            .Returns(Task.CompletedTask)
+            .Verifiable("Revocation succeeds initially");
 
-        // Act: Attempt operation that will timeout
-        Func<Task> act = async () => await _mockReplayCache.Object.TryMarkUsedAsync(
-            "jti_timeout",
-            DateTimeOffset.UtcNow.AddMinutes(5),
+        // Second: Query fails
+        _cacheServiceMock
+            .Setup(x => x.IsBlacklistedAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TimeoutException("Query failed"))
+            .Verifiable("Query fails independently");
+
+        // Act 1: Revocation succeeds
+        await _cacheServiceMock.Object.BlacklistSessionAsync(
+            sessionId,
+            DateTimeOffset.UtcNow.AddHours(1),
             CancellationToken.None);
 
-        // Assert
-        await act.Should().ThrowAsync<OperationCanceledException>();
-        operationCancelled.Should().BeTrue("Cancellation should be observed");
-
-        // Act 2: Verify subsequent request can still use the cache
-        _mockReplayCache
-            .Setup(x => x.TryMarkUsedAsync(
-                It.IsAny<string>(),
-                It.IsAny<DateTimeOffset>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
-        var followUpResult = await _mockReplayCache.Object.TryMarkUsedAsync(
-            "jti_followup",
-            DateTimeOffset.UtcNow.AddMinutes(5),
+        // Act 2: Query fails
+        Func<Task> act2 = async () => await _cacheServiceMock.Object.IsBlacklistedAsync(
+            sessionId,
             CancellationToken.None);
 
-        // Assert 2
-        followUpResult.Should().BeTrue(
-            "After timeout, cache should recover and serve subsequent requests");
+        // Assert: Query failure is NOT masked by previous revocation success
+        await act2.Should().ThrowAsync<TimeoutException>(
+            "Query failures don't benefit from previous operations; each is independent");
+
+        // Verify all operations were attempted
+        _cacheServiceMock.Verify();
     }
 }

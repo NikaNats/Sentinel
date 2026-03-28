@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Sentinel.Security.Abstractions.SSF;
+using Sentinel.SSF;
 
 namespace Sentinel.Application.DependencyInjection;
 

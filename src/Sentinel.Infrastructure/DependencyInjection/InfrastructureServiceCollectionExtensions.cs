@@ -15,7 +15,7 @@ public static class InfrastructureServiceCollectionExtensions
 
         _ = services
             .AddSentinelCore(configuration)
-            .AddDPoP()
+            .AddDPoP(configuration)
             .AddKeycloak()
             .AddNotificationsModule(configuration)
             .AddTelemetry();
