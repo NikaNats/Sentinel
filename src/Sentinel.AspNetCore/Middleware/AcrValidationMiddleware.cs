@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace Sentinel.AspNetCore.Middleware;
 
@@ -19,14 +20,17 @@ public sealed class AcrValidationMiddleware(RequestDelegate next)
                     return;
                 }
 
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                await context.Response.WriteAsJsonAsync(new ProblemDetails
+                var problem = new ProblemDetails
                 {
                     Type = "/errors/invalid_token",
                     Title = "Missing authentication context",
                     Detail = "Authenticated token must include acr claim.",
                     Status = StatusCodes.Status401Unauthorized
-                });
+                };
+
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.ContentType = "application/problem+json; charset=utf-8";
+                await context.Response.WriteAsync(JsonSerializer.Serialize(problem));
                 return;
             }
         }

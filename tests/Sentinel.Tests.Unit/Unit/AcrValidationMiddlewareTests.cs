@@ -158,7 +158,7 @@ public sealed class AcrValidationMiddlewareTests
 
         // Assert
         context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
-        context.Response.ContentType.Should().Contain("application/json");
+        context.Response.ContentType.Should().Contain("application/problem+json");
     }
 
     [Fact]

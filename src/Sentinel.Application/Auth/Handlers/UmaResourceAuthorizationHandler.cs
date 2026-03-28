@@ -52,12 +52,18 @@ public sealed class UmaResourceAuthorizationHandler : AuthorizationHandler<UmaRe
         // Extract resource ID from route values
         if (!httpContext.Request.RouteValues.TryGetValue("id", out var resourceIdObj))
         {
+            context.Fail(new AuthorizationFailureReason(
+                this,
+                "UMA authorization requires route value 'id'."));
             return;
         }
 
         var resourceId = resourceIdObj?.ToString();
         if (string.IsNullOrWhiteSpace(resourceId))
         {
+            context.Fail(new AuthorizationFailureReason(
+                this,
+                "UMA authorization requires non-empty route value 'id'."));
             return;
         }
 
@@ -72,6 +78,12 @@ public sealed class UmaResourceAuthorizationHandler : AuthorizationHandler<UmaRe
         if (hasAccess)
         {
             context.Succeed(requirement);
+        }
+        else
+        {
+            context.Fail(new AuthorizationFailureReason(
+                this,
+                "UMA permission check denied access to the requested resource."));
         }
     }
 

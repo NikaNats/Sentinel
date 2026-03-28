@@ -49,7 +49,12 @@ public sealed class IdempotencyFilter : IEndpointFilter
         bool lockAcquired;
         try
         {
-            lockAcquired = await db.StringSetAsync(redisKey, "IN_PROGRESS", TimeSpan.FromMinutes(5), When.NotExists);
+            lockAcquired = await db.StringSetAsync(
+                redisKey,
+                "IN_PROGRESS",
+                TimeSpan.FromMinutes(5),
+                When.NotExists,
+                CommandFlags.None);
         }
         catch (RedisException ex)
         {
@@ -64,7 +69,7 @@ public sealed class IdempotencyFilter : IEndpointFilter
         {
             try
             {
-                var currentState = await db.StringGetAsync(redisKey);
+                var currentState = await db.StringGetAsync(redisKey, CommandFlags.None);
                 if (string.Equals(currentState.ToString(), "COMPLETED", StringComparison.Ordinal))
                 {
                     return TypedResults.NoContent();
@@ -94,7 +99,12 @@ public sealed class IdempotencyFilter : IEndpointFilter
             // If the endpoint succeeded (2xx), mark as COMPLETED
             if (IsSuccessfulResult(result))
             {
-                await db.StringSetAsync(redisKey, "COMPLETED", TimeSpan.FromHours(24), When.Always);
+                await db.StringSetAsync(
+                    redisKey,
+                    "COMPLETED",
+                    TimeSpan.FromHours(24),
+                    When.Always,
+                    CommandFlags.None);
             }
             else
             {

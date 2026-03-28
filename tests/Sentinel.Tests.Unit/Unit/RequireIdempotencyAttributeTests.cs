@@ -70,11 +70,13 @@ public sealed class RequireIdempotencyAttributeTests
         var filter = new IdempotencyFilter();
         var context = CreateContext(db =>
         {
-            db.Setup(x => x.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan?>(),
-                    When.NotExists, It.IsAny<CommandFlags>()))
-                .ReturnsAsync(true);
-            db.Setup(x => x.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan?>(),
-                    When.Always, It.IsAny<CommandFlags>()))
+            db.SetupSequence(x => x.StringSetAsync(
+                    It.IsAny<RedisKey>(),
+                    It.IsAny<RedisValue>(),
+                    It.IsAny<TimeSpan?>(),
+                    It.IsAny<When>(),
+                    It.IsAny<CommandFlags>()))
+                .ReturnsAsync(true)
                 .ReturnsAsync(true);
         });
         context.HttpContext.Request.Headers["Idempotency-Key"] = "13b33980-5b58-4974-b080-bb4ecff97327";
