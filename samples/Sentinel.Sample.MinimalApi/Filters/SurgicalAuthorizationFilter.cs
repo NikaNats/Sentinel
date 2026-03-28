@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Sentinel.Application.Auth.Rar;
@@ -19,6 +18,7 @@ namespace Sentinel.Sample.MinimalApi.Filters;
 public sealed class SurgicalAuthorizationFilter(ILogger<SurgicalAuthorizationFilter> logger) : IEndpointFilter
 {
     private const string FinanceTransferType = "urn:sentinel:finance:transfer";
+    private const decimal AmountEpsilon = 0.0001m;
 
     /// <summary>
     /// Invoked before the endpoint handler.
@@ -72,14 +72,12 @@ public sealed class SurgicalAuthorizationFilter(ILogger<SurgicalAuthorizationFil
                 statusCode: StatusCodes.Status403Forbidden);
         }
 
-        // Precision-safe decimal comparison: allow 0.01 cent tolerance
-        const decimal epsilon = 0.0001m;
-        bool amountMatches = Math.Abs(transferDetail.Amount.Value - request.Amount) < epsilon;
-        bool currencyMatches = string.Equals(
+        var amountMatches = Math.Abs(transferDetail.Amount.Value - request.Amount) < AmountEpsilon;
+        var currencyMatches = string.Equals(
             transferDetail.Currency,
             request.Currency,
             StringComparison.OrdinalIgnoreCase);
-        bool transactionIdMatches = string.Equals(
+        var transactionIdMatches = string.Equals(
             transferDetail.TransactionId,
             request.TransactionId,
             StringComparison.Ordinal);
@@ -87,18 +85,18 @@ public sealed class SurgicalAuthorizationFilter(ILogger<SurgicalAuthorizationFil
         if (!amountMatches || !currencyMatches || !transactionIdMatches)
         {
             logger.LogWarning(
-            "AUTHORIZATION_BOUNDS_EXCEEDED: Token bound to Txn: {ExpectedTxn}, Amount: {ExpectedAmount} {ExpectedCurrency}. Request attempted Txn: {ActualTxn}, Amount: {ActualAmount} {ActualCurrency}.",
-            transferDetail.TransactionId,
-            transferDetail.Amount,
-            transferDetail.Currency,
-            request.TransactionId,
-            request.Amount,
-            request.Currency);
+                "AUTHORIZATION_BOUNDS_EXCEEDED: Token bound to Txn: {ExpectedTxn}, Amount: {ExpectedAmount} {ExpectedCurrency}. Request attempted Txn: {ActualTxn}, Amount: {ActualAmount} {ActualCurrency}.",
+                transferDetail.TransactionId,
+                transferDetail.Amount,
+                transferDetail.Currency,
+                request.TransactionId,
+                request.Amount,
+                request.Currency);
 
             return TypedResults.Problem(
                 type: "/errors/authorization-bounds-exceeded",
                 title: "Authorization Bounds Exceeded",
-            detail: "The request payload violates the cryptographic authorization constraints signed into the token.",
+                detail: "The request payload violates the cryptographic authorization constraints signed into the token.",
                 statusCode: StatusCodes.Status403Forbidden);
         }
 

@@ -1,62 +1,82 @@
-/*
- * ULTIMATE MINIMAL API SAMPLE APPLICATION
- *
- * This demonstrates how a 2026 enterprise team consumed the Sentinel Framework:
- * - Zero MVC controllers (pure Minimal APIs)
- * - Envelope cryptography for data at rest
- * - DPoP, mTLS, RAR, and ACR Step-Up security pipelines
- * - Native AOT compatible (no reflection - no WithOpenApi calls)
- * - Microsecond startup times
- */
-
-using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.DependencyInjection;
+using Scalar.AspNetCore;
 using Sentinel.AspNetCore.Endpoints;
 using Sentinel.Application.DependencyInjection;
 using Sentinel.Infrastructure.DependencyInjection;
-using Sentinel.Infrastructure.Cryptography;
 using Sentinel.Keycloak.Extensions;
 using Sentinel.Sample.MinimalApi.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 1. REGISTER SENTINEL INFRASTRUCTURE LAYERS
-// ─────────────────────────────────────────────────────────────────────────────
+builder.Services.AddOpenApi();
 
-// Deep infrastructure: Redis, Keycloak, Cryptography, Telemetry
 builder.Services
     .AddApplicationLayer()
     .AddKeycloakIntegration(builder.Configuration.GetSection("Sentinel:Keycloak"))
     .AddInfrastructureLayer(builder.Configuration);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 2. APPLICATION-SPECIFIC SERVICES
-// ─────────────────────────────────────────────────────────────────────────────
-
 builder.Services.AddSingleton<DocumentRepository>();
 
 var app = builder.Build();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HTTP PIPELINE: Security middleware
-// ─────────────────────────────────────────────────────────────────────────────
+if (app.Environment.IsDevelopment())
+{
+    app.UseDeveloperExceptionPage();
+}
+else
+{
+    app.UseExceptionHandler(errorApp =>
+    {
+        errorApp.Run(async context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            context.Response.ContentType = "application/problem+json";
 
-app.UseDeveloperExceptionPage();
+            var traceId = context.TraceIdentifier.Replace("\"", "\\\"", StringComparison.Ordinal);
+            var payload =
+                $"{{\"type\":\"/errors/internal\",\"title\":\"Unexpected error\",\"detail\":\"An unexpected error occurred while processing the request.\",\"status\":500,\"traceId\":\"{traceId}\"}}";
+
+            await context.Response.WriteAsync(payload);
+        });
+    });
+}
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ROUTING: Domain-Driven Endpoint Mapping
-// ─────────────────────────────────────────────────────────────────────────────
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.MapScalarApiReference("/docs");
+}
 
-// A. Framework endpoints (Framework controls these implementations)
-//    Host application decides the routing prefix (not the framework)
-app.MapSentinelSecurity("api/system/security");
+const string securityPrefix = "api/system/security";
+const string documentsPrefix = "api/v1/documents";
+const string financePrefix = "api/v1/finance";
+const string showcasePrefix = "api/v1/showcase";
 
-// B. Business domains (Host application controls these)
-app.MapDocumentEndpoints("api/v1/documents");
-app.MapFinanceEndpoints("api/v1/finance");
+app.MapGet("/", () => TypedResults.Ok(
+    new SampleInfoResponse(
+        Service: "Sentinel.Sample.MinimalApi",
+        Docs: "/docs",
+        Endpoints: new EndpointMap(
+            Health: "/healthz",
+            Security: $"/{securityPrefix}",
+            Documents: $"/{documentsPrefix}",
+            Finance: $"/{financePrefix}",
+            Showcase: $"/{showcasePrefix}")))).AllowAnonymous();
+
+app.MapGet("/healthz", () => TypedResults.Ok(new HealthResponse("ok", DateTimeOffset.UtcNow)))
+    .AllowAnonymous();
+
+app.MapSentinelSecurity(securityPrefix);
+app.MapDocumentEndpoints(documentsPrefix);
+app.MapFinanceEndpoints(financePrefix);
+app.MapShowcaseEndpoints(showcasePrefix);
 
 app.Run();
+
+internal sealed record SampleInfoResponse(string Service, string Docs, EndpointMap Endpoints);
+
+internal sealed record EndpointMap(string Health, string Security, string Documents, string Finance, string Showcase);
+
+internal sealed record HealthResponse(string Status, DateTimeOffset Utc);

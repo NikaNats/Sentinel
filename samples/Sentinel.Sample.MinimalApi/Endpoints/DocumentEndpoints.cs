@@ -7,39 +7,33 @@ using Sentinel.AspNetCore.Endpoints;
 
 namespace Sentinel.Sample.MinimalApi.Endpoints;
 
-    /// <summary>
-    /// Document Management Endpoints
-    ///
-    /// Demonstrates:
-    /// - Envelope cryptography for data at rest (IEncryptionService)
-    /// - DPoP binding (required by default via middleware)
-    /// - Idempotency-Key enforcement for POST (prevents duplicate document creation)
-    /// - Authorization for destructive operations (DELETE requires valid token)
-    /// </summary>
-    internal static class DocumentEndpoints
+internal static class DocumentEndpoints
 {
     public static void MapDocumentEndpoints(this IEndpointRouteBuilder routes, string prefix)
     {
         var group = routes.MapGroup(prefix)
-            .RequireAuthorization() // Base: Requires valid JWT + DPoP proof
+            .RequireAuthorization()
             .WithTags("Documents");
 
-        // GET: List all documents for authenticated user
         group.MapGet("/", ListDocuments)
             .WithName("ListDocuments")
-            .Produces<IEnumerable<DocumentDto>>(StatusCodes.Status200OK)
+            .Produces<IEnumerable<DocumentSummaryDto>>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized);
 
-        // POST: Create new document (requires Idempotency-Key to prevent duplicates)
+        group.MapGet("/{id:guid}", GetDocument)
+            .WithName("GetDocument")
+            .Produces<DocumentDetailDto>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status404NotFound);
+
         group.MapPost("/", CreateDocument)
-            .RequireIdempotency() // Enforces RFC 9110 idempotent-request semantics
+            .RequireIdempotency()
             .WithName("CreateDocument")
             .Accepts<CreateDocumentRequest>("application/json")
-            .Produces<DocumentDto>(StatusCodes.Status201Created)
+            .Produces<DocumentSummaryDto>(StatusCodes.Status201Created)
             .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status409Conflict); // Idempotency conflict
+            .Produces(StatusCodes.Status409Conflict);
 
-        // DELETE: Remove document
         group.MapDelete("/{id:guid}", DeleteDocument)
             .WithName("DeleteDocument")
             .Produces(StatusCodes.Status204NoContent)
@@ -47,30 +41,50 @@ namespace Sentinel.Sample.MinimalApi.Endpoints;
             .Produces(StatusCodes.Status403Forbidden);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // HANDLER: List all documents
-    // ─────────────────────────────────────────────────────────────────────────────
     private static IResult ListDocuments(HttpContext context, DocumentRepository repo)
     {
         var sub = context.User.FindFirst("sub")?.Value;
-        if (sub == null)
+        if (string.IsNullOrWhiteSpace(sub))
+        {
             return TypedResults.Unauthorized();
+        }
 
         var documents = repo
             .GetByOwner(sub)
-            .Select(d => new DocumentDto(
+            .OrderByDescending(d => d.CreatedUtc)
+            .Select(d => new DocumentSummaryDto(
                 d.Id,
                 d.Title,
-                "Encrypted",
+                d.EncryptedContent.Length,
                 d.CreatedUtc))
             .ToList();
 
         return TypedResults.Ok(documents);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // HANDLER: Create new document with envelope encryption
-    // ─────────────────────────────────────────────────────────────────────────────
+    private static IResult GetDocument(Guid id, HttpContext context, DocumentRepository repo, IEncryptionService crypto)
+    {
+        var sub = context.User.FindFirst("sub")?.Value;
+        if (string.IsNullOrWhiteSpace(sub))
+        {
+            return TypedResults.Unauthorized();
+        }
+
+        if (!repo.TryGetByOwner(id, sub, out var document))
+        {
+            return TypedResults.NotFound();
+        }
+
+        var plainText = crypto.Decrypt(document.EncryptedContent);
+
+        return TypedResults.Ok(new DocumentDetailDto(
+            document.Id,
+            document.Title,
+            CreatePreview(plainText),
+            document.EncryptedContent.Length,
+            document.CreatedUtc));
+    }
+
     private static IResult CreateDocument(
         CreateDocumentRequest request,
         HttpContext context,
@@ -78,93 +92,130 @@ namespace Sentinel.Sample.MinimalApi.Endpoints;
         IEncryptionService crypto)
     {
         var sub = context.User.FindFirst("sub")?.Value;
-        if (sub == null)
+        if (string.IsNullOrWhiteSpace(sub))
+        {
             return TypedResults.Unauthorized();
+        }
 
-        if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Content))
-            return TypedResults.BadRequest(new { error = "Title and Content are required" });
+        var title = request.Title?.Trim();
+        var content = request.Content?.Trim();
 
-        // ✨ ENCRYPT DATA AT REST
-        // The framework handles:
-        // - V1 Envelope envelope prepending (algorithm, keyId, timestamp)
-        // - AES-256-GCM encryption with authenticated encryption
-        // - Key rotation metadata
-        byte[] encryptedContent = crypto.Encrypt(request.Content);
+        if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(content))
+        {
+            return TypedResults.Problem(
+                type: "/errors/invalid-request",
+                title: "Invalid request payload",
+                detail: "Title and content are required.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (title.Length > 120)
+        {
+            return TypedResults.Problem(
+                type: "/errors/invalid-request",
+                title: "Invalid request payload",
+                detail: "Title must be 120 characters or fewer.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var encryptedContent = crypto.Encrypt(content);
 
         var doc = new DocumentRecord(
             Guid.NewGuid(),
             sub,
-            request.Title,
+            title,
             encryptedContent,
-            DateTime.UtcNow);
+            DateTimeOffset.UtcNow);
 
         repo.Add(doc);
 
         return TypedResults.Created(
             $"/api/v1/documents/{doc.Id}",
-            new DocumentDto(doc.Id, doc.Title, "Encrypted", doc.CreatedUtc));
+            new DocumentSummaryDto(doc.Id, doc.Title, doc.EncryptedContent.Length, doc.CreatedUtc));
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // HANDLER: Delete document (mTLS binding required)
-    // ─────────────────────────────────────────────────────────────────────────────
     private static IResult DeleteDocument(Guid id, HttpContext context, DocumentRepository repo)
     {
         var sub = context.User.FindFirst("sub")?.Value;
-        if (sub == null)
+        if (string.IsNullOrWhiteSpace(sub))
+        {
             return TypedResults.Unauthorized();
+        }
 
         var success = repo.Delete(id, sub);
         return success
             ? TypedResults.NoContent()
-            : TypedResults.NotFound(new { error = "Document not found or unauthorized" });
+            : TypedResults.NotFound();
+    }
+
+    private static string CreatePreview(string content)
+    {
+        const int previewLength = 120;
+
+        if (content.Length <= previewLength)
+        {
+            return content;
+        }
+
+        return string.Concat(content.AsSpan(0, previewLength), "...");
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DTOs
-// ─────────────────────────────────────────────────────────────────────────────
-
 public sealed record CreateDocumentRequest(string Title, string Content);
 
-public sealed record DocumentDto(Guid Id, string Title, string Status, DateTime CreatedUtc);
+public sealed record DocumentSummaryDto(Guid Id, string Title, int EncryptedBytes, DateTimeOffset CreatedUtc);
+
+public sealed record DocumentDetailDto(
+    Guid Id,
+    string Title,
+    string ContentPreview,
+    int EncryptedBytes,
+    DateTimeOffset CreatedUtc);
 
 internal sealed record DocumentRecord(
     Guid Id,
     string OwnerSub,
     string Title,
     byte[] EncryptedContent,
-    DateTime CreatedUtc);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// IN-MEMORY REPOSITORY (Sample purposes only; use EF Core in production)
-// ─────────────────────────────────────────────────────────────────────────────
+    DateTimeOffset CreatedUtc);
 
 internal sealed class DocumentRepository
 {
     private readonly ConcurrentDictionary<Guid, DocumentRecord> _store = new();
 
-    /// <summary>Get all documents owned by a user.</summary>
     public IEnumerable<DocumentRecord> GetByOwner(string sub)
     {
         return _store.Values.Where(x => x.OwnerSub == sub);
     }
 
-    /// <summary>Add or update a document.</summary>
+    public bool TryGetByOwner(Guid id, string sub, out DocumentRecord document)
+    {
+        if (_store.TryGetValue(id, out var found) && found.OwnerSub == sub)
+        {
+            document = found;
+            return true;
+        }
+
+        document = default!;
+        return false;
+    }
+
     public void Add(DocumentRecord doc)
     {
         _store[doc.Id] = doc;
     }
 
-    /// <summary>Delete a document if owned by user.</summary>
     public bool Delete(Guid id, string sub)
     {
         if (!_store.TryGetValue(id, out var doc))
+        {
             return false;
+        }
 
-        // Verify ownership before deletion
         if (doc.OwnerSub != sub)
+        {
             return false;
+        }
 
         return _store.TryRemove(id, out _);
     }
