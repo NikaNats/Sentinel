@@ -11,6 +11,7 @@ using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.Telemetry;
 using Sentinel.Keycloak;
 using Sentinel.Security.Abstractions.Identity;
+using Sentinel.Security.Abstractions.Options;
 
 namespace Sentinel.AspNetCore.Endpoints;
 
