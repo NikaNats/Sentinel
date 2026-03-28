@@ -56,10 +56,11 @@ public static class RarServiceExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        // ✅ FIX: Standardized IOptions<T> registration
-        // Strictly bind options so IOptions{RarValidationOptions} is resolvable by the container
-        services.Configure<RarValidationOptions>(
-            configuration.GetSection("Sentinel:Rar"));
+        // ✅ FIX: Use explicit lambda for options configuration binding
+        services.Configure<RarValidationOptions>(opts =>
+        {
+            configuration.GetSection("Sentinel:Rar").Bind(opts);
+        });
 
         // ✅ FIX: Correct interface-to-implementation mapping
         services.AddTransient<IRarExtractor, RarExtractor>();

@@ -206,7 +206,8 @@ internal sealed class DpopProofValidator : IDpopProofValidator
     }
 
     /// <summary>
-    /// Validates the JWT signature using the extracted JWK as the signing key.
+    /// ✅ FIX: Static method since it only uses TokenHandler (static) and parameters.
+    /// Validates JWT signature using the provided keys and algorithm per RFC 7518.
     /// </summary>
     /// <remarks>
     /// ⚠️ ARCHITECTURE WARNING: ML-DSA Support
@@ -214,7 +215,7 @@ internal sealed class DpopProofValidator : IDpopProofValidator
     /// that implements the post-quantum cryptography math. If absent, ValidateTokenAsync returns IsValid=false silently.
     /// Consider logging if an ML-DSA request fails without a registered provider.
     /// </remarks>
-    private async Task<bool> ValidateDpopSignatureAsync(
+    private static async Task<bool> ValidateDpopSignatureAsync(
         string token,
         string jwkJson,
         string algorithm,

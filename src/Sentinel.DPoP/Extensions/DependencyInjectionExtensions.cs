@@ -24,8 +24,12 @@ public static class DependencyInjectionExtensions
     /// </remarks>
     public static IServiceCollection AddSentinelDPoP(this IServiceCollection services, IConfiguration configuration)
     {
-        // ✅ FIX: Bind configuration for magic-number removal (ProofLifetimeSeconds, AllowedClockSkewSeconds, etc.)
-        services.Configure<DPoPOptions>(configuration.GetSection(DPoPOptions.SectionName));
+        // ✅ FIX: Explicit Bind using Microsoft.Extensions.Configuration namespace
+        services.Configure<DPoPOptions>(opts =>
+        {
+            var section = configuration.GetSection(DPoPOptions.SectionName);
+            Microsoft.Extensions.Configuration.ConfigurationBinder.Bind(section, opts);
+        });
 
         // ✅ FIX: Use Transient to prevent Captive Dependencies if IJtiReplayCache is Scoped
         services.AddTransient<IDpopThumbprintComputer, DpopThumbprintComputer>();

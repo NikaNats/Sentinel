@@ -1,5 +1,7 @@
 namespace Sentinel.RAR;
 
+using Sentinel.Domain.Auth.Rar;
+
 /// <summary>
 /// Result of validating a payload against RAR authorization details.
 /// </summary>

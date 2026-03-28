@@ -33,10 +33,9 @@
     <!-- Enable NativeAOT trimming validation & AOT compilation -->
     <TrimMode>link</TrimMode>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <!-- ✅ FIX: Centralized Native AOT & Globalization Guarantees -->
-    <PublishAot>true</PublishAot>
-    <!-- ✅ FIX: Prevent structural reflection errors solution-wide -->
-    <IsAotCompatible>true</IsAotCompatible>
+    <!-- NOTE: PublishAot/IsAotCompatible must be set per-module since not all dependencies support AOT -->
+    <!-- EntityFrameworkCore, Configuration binding, and other libraries require dynamic code -->
+    <!-- Modules using only AOT-compatible libraries can opt-in locally -->
 
     <!-- Comprehensive NoWarn: Production + Test Rules -->
     <NoWarn>

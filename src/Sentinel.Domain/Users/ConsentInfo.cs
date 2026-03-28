@@ -77,7 +77,11 @@ public sealed record ConsentInfo
             var hash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(ipAddress));
             return Convert.ToBase64String(hash);
         }
-        catch
+        catch (System.ArgumentException)
+        {
+            return "[error]";
+        }
+        catch (System.FormatException)
         {
             return "[error]";
         }

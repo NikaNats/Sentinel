@@ -1,5 +1,7 @@
 namespace Sentinel.RAR;
 
+using Sentinel.Domain.Auth.Rar;
+
 /// <summary>
 /// Extracts and parses Rich Authorization Request (RAR) authorization details from a claims principal.
 /// </summary>

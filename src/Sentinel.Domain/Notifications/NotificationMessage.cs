@@ -16,7 +16,7 @@ public sealed record NotificationMessage<TData>(
 
 /// <summary>
 /// Non-generic base for backward compatibility and reflection-based scenarios.
-/// Use NotificationMessage<TData> for new code in Native AOT paths.
+/// Use NotificationMessage&lt;TData&gt; for new code in Native AOT paths.
 /// </summary>
 public sealed record NotificationMessage(
     NotificationRecipient To,
