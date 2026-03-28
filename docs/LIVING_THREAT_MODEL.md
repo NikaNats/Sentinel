@@ -1,161 +1,117 @@
 # Sentinel Living Threat Model
 
-**Last Updated:** 2026-03-21
-**Classification:** Internal
+Last Updated: 2026-03-29
+Classification: Internal
 
-## System Summary
+## 1. System Context
 
-Sentinel is a Zero Trust API front end for authentication, session control, profile access, documents, finance transfer authorization, and security-event ingestion.
+Sentinel protects API access using DPoP, replay defenses, session revocation controls, SSF event intake, and payload-bound authorization checks for high-risk operations.
 
-Current security features in code:
+Primary modules in scope:
 
-- JWT validation
-- DPoP sender-constrained access
-- Redis-backed replay detection
-- session blacklist enforcement
-- SD-JWT selective disclosure verification
-- SSF/CAE session revocation ingestion
-- payload-bound finance authorization
-- partial ML-DSA interoperability groundwork
+- Sentinel.DPoP
+- Sentinel.Session
+- Sentinel.SSF
+- Sentinel.Rar
+- Sentinel.Redis
+- Sentinel.AspNetCore
+- Sentinel.Infrastructure
 
-## High-Value Assets
+## 2. Protected Assets
 
-- access tokens
-- refresh tokens
-- DPoP private keys held by clients
-- SD-JWT disclosures containing sensitive claims
-- SSF security event tokens
-- Redis-backed replay and blacklist state
+1. Access and refresh tokens
+2. DPoP proof integrity and proof private-key binding semantics
+3. Session blacklist and replay-state records
+4. SSF event trust decisions
+5. Authorization detail constraints for high-risk transfers
+6. Security telemetry and incident correlation data
 
-## Primary Threats
+## 3. Trust Boundaries
 
-### Token Replay
+1. External clients -> API host
+2. API host -> cache/state backends
+3. API host -> identity provider discovery/JWKS
+4. Event sender -> SSF ingress endpoint
+5. Internal service boundaries between protocol and adapter modules
 
-Threat:
-- a captured JWT or DPoP proof is replayed
+## 4. Threat Inventory
 
-Controls:
-- JWT JTI replay cache
-- DPoP proof JTI replay cache
-- rotating nonce challenge
-- fail-closed behavior on cache dependency failure
+| Threat | Impact | Likelihood | Primary Mitigation |
+|---|---|---|---|
+| Access token replay | High | Medium | JTI replay checks with fail-closed behavior |
+| DPoP proof replay | High | Medium | Proof JTI replay state + nonce handling |
+| Nonce bypass/reuse | High | Medium | 401 use_dpop_nonce challenge flow |
+| Authorization payload tampering | High | Medium | RAR-style transfer bounds filter |
+| SSF forgery or stale event replay | High | Medium | Signature/issuer/timing checks + fixed-time auth token compare |
+| Composite auth downgrade attempts | Medium | Medium | Auth scheme routing + protocol-specific validation paths |
+| Discovery/JWKS dependency amplification | Medium | Medium | Shared metadata manager and cache-aware validation paths |
+| Telemetry privacy leakage via naive IP hashing | High | Low | HMAC-based SecurityContextHasher in diagnostics module |
+| Cache outage on security-critical checks | High | Medium | Fail-closed semantics for replay/session checks |
 
-### Nonce Bypass
+## 5. Key Mitigations in Code
 
-Threat:
-- clients reuse stale proofs or skip nonce rotation
+### 5.1 DPoP and Replay
 
-Controls:
-- `401 Unauthorized`
-- `WWW-Authenticate: DPoP error="use_dpop_nonce"`
-- `DPoP-Nonce` header issuance
+- DPoP proof validation in Sentinel.DPoP and ASP.NET middleware integration.
+- Nonce challenge semantics with explicit retry path.
+- Replay state checks for proof/token identifiers.
 
-### Composite Auth Downgrade
+### 5.2 Session and Revocation
 
-Threat:
-- a client attempts to bypass stronger verification by presenting one token type through another scheme
+- Session blacklist checks in request authorization paths.
+- Logout and SSF pathways converge on session invalidation.
 
-Controls:
-- policy scheme routes SD-JWT presentations by token shape
-- security tests cover downgrade and cross-scheme confusion paths
+### 5.3 SSF Integrity
 
-### SD-JWT Over-Disclosure
+- Event token parsing and validation in Sentinel.SSF + endpoint ingress checks.
+- Timing-safe static auth token comparison for shared token mode.
 
-Threat:
-- clients reveal claims that are not required or attempt forged disclosures
+### 5.4 Payload-Bound Authorization
 
-Controls:
-- disclosure digest must exist in issuer `_sd`
-- unsupported `_sd_alg` values are rejected
-- key-binding JWT freshness is enforced
+- Finance transfer guard compares request payload to signed authorization details.
+- External responses remain opaque; detailed mismatch data is logged internally.
 
-### SSF Forgery Or Replay
+### 5.5 Privacy-Hardened Diagnostics
 
-Threat:
-- an attacker sends a fake or stale SET to revoke sessions or poison security state
+- Canonical IP context hashing via HMAC in Sentinel.Security.Diagnostics/SecurityContextHasher.cs.
+- No plain SHA256(IP) logging in active paths.
 
-Controls:
-- signed SET validation
-- issuer validation
-- required `jti`, `iat`, and `events`
-- `exp` is intentionally not required for SET validation because SSF event tokens can
-  represent durable state change rather than short-lived access
-- stale/future event rejection
-- timing-safe static auth token comparison in the controller path
-- freshness enforced through bounded `iat` validation (`AllowedClockSkewSeconds` and
-  `MaxEventAgeSeconds`) as the compensating control against stale delivery and replay
+## 6. Fail-Closed Expectations
 
-### Payload Tampering On Sensitive Transactions
+The following are mandatory security behaviors:
 
-Threat:
-- a client changes amount, currency, or transaction identifier after authorization
+1. replay or blacklist state unavailable -> reject request
+2. invalid/stale/malformed DPoP proof -> reject request
+3. invalid SSF token -> reject event processing
+4. missing/invalid required nonce -> challenge, do not bypass
 
-Controls:
-- transaction-bound authorization filter on `/v1/finance/transfer`
-- ordinal-ignore-case currency comparison
-- exact transaction ID and amount checks
+## 7. Detection and Monitoring Priorities
 
-### Key Discovery Storms
+1. Replay detection spikes
+2. DPoP failure ratio increase
+3. use_dpop_nonce surge patterns
+4. SSF rejection trends
+5. Finance bounds exceeded events
+6. Cache dependency latency/error rates
 
-Threat:
-- per-request OIDC discovery/JWKS fetch creates latency and external dependency amplification
+## 8. Residual Risks
 
-Controls:
-- singleton `IConfigurationManager<OpenIdConnectConfiguration>` in DI
-- shared JWKS/discovery cache for SD-JWT and SSF validators
+1. Container packaging path is incomplete in repo (see CONTAINER_BUILD_READINESS.md).
+2. Identity provider outage can degrade trust-refresh operations.
+3. OpenAPI contract is manually maintained and can drift if not release-gated.
 
-### Timing Side Channels On Shared Secrets
+## 9. Review Cadence and Triggers
 
-Threat:
-- attacker infers SSF shared-secret bytes through variable-time string comparison
+Review this model:
 
-Controls:
-- `CryptographicOperations.FixedTimeEquals`
+- at each release
+- after any authentication pipeline modification
+- after introducing/changing endpoint filters
+- after cache/state model changes
+- after significant incident postmortems
 
-### PQC Transition Risk
+Required synchronized updates:
 
-Threat:
-- algorithm allow-listing and thumbprint handling drift from provider interoperability during ML-DSA rollout
-
-Controls:
-- explicit algorithm allow-list
-- dedicated thumbprint tests
-- treat ML-DSA as controlled rollout, not assumed universal interoperability
-
-## Trust Boundaries
-
-1. Client to API
-2. API to Redis
-3. API to Keycloak discovery/JWKS
-4. Keycloak to SSF receiver
-
-## Fail-Closed Expectations
-
-- replay cache unavailable -> reject request
-- invalid or stale SET -> reject event
-- invalid DPoP proof -> reject request
-- missing nonce -> challenge with `401`, not permissive fallback
-
-## Monitoring Priorities
-
-- JWT replay detections
-- DPoP validation failures
-- nonce challenge spikes
-- SSF validation failures
-- finance bounds rejection spikes
-- Redis latency and availability
-
-## Current Residual Risks
-
-- container/runtime baseline drift until Docker images are aligned with the application target framework
-- upstream Keycloak availability remains critical for discovery and trust refresh
-- ML-DSA interoperability remains a rollout concern until end-to-end validation is standardized in production
-
-## Review Trigger
-
-Update this document when:
-
-- auth pipeline ordering changes
-- new token types or auth schemes are introduced
-- replay/session storage semantics change
-- SSF event handling or finance authorization rules change
+1. ARCHITECTURE.md
+2. COMPLIANCE_AUDIT_MATRIX.md
+3. SRE_SOC_RUNBOOKS.md

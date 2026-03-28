@@ -1,145 +1,131 @@
 # Build Configuration Guide
 
-**Last Updated:** 2026-03-25
-**Status:** Native AOT-Ready with Zero-Reflection Architecture
+Last Updated: 2026-03-29
+Scope: Repository build, test, and release configuration
 
-## Overview
+## 1. Build Baseline
 
-This repository builds as a `net10.0` solution with a modular architecture:
+Current baseline settings:
 
-- `src/Sentinel.Domain` - Domain entities and value objects
-- `src/Sentinel.Application` - Use cases and business logic
-- `src/Sentinel.Infrastructure` - Redis, Keycloak, Cryptography, Telemetry
-- `src/Sentinel.AspNetCore` - **Minimal API endpoints, IEndpointFilter implementations**
-- `tests/Sentinel.Tests.Unit` - Unit tests with full RFC/security coverage
-- `samples/Sentinel.Sample.MinimalApi` - Reference implementation with AOT support
-
-## Native AOT Support
-
-**As of v1.1 (2026-03-25)**, Sentinel supports Native AOT compilation:
-
-```bash
-# Publish as self-contained AOT binary
-dotnet publish -c Release -r win-x64 -p:PublishAot=true
-
-# Output: Sentinel.Sample.MinimalApi.exe (fully compiled, no .NET runtime needed)
-```
-
-Key AOT enablements:
-
-- ✅ **Zero Reflection** - No `typeof()`, no dynamic IL generation
-- ✅ **Compiled Routing** - Minimal API route handlers compile to IL at build time
-- ✅ **Type-Safe DI** - Direct dependency resolution, no service locator
-- ✅ **IEndpointFilter** - Per-route security compiled, not interpreted
-- ✅ **No MVC Reflection** - Eliminated ASP.NET Core MVC body model binding
-
-AOT Compatibility verified: `Sentinel.Sample.MinimalApi.csproj` has `<PublishAot>true</PublishAot>`
-
-## Source Of Truth
-
-Build behavior is controlled from three places:
-
-1. `global.json`
-   - Pins the local SDK selection to `10.0.201`.
-2. Project files (`*.csproj`)
-   - Each application and test project explicitly targets `net10.0`.
-   - `Sentinel.Sample.MinimalApi.csproj` enables `<PublishAot>true</PublishAot>` and `<InvariantGlobalization>true</InvariantGlobalization>`
-3. `Directory.Build.props`
-   - Centralizes nullable context, implicit usings, analyzer mode, warnings-as-errors, and shared `NoWarn` entries.
-
-Best practice in this repo is to treat the individual project files as the authoritative target framework definition. If `Directory.Build.props` and a project file ever disagree, the project file value is the one release documentation should describe.
-
-## Current Build Baseline
-
-- SDK selection: `.NET SDK 10.0.201`
-- Target framework: `net10.0`
+- SDK pin: 10.0.201 (global.json)
+- Target framework: net10.0
 - Nullable: enabled
 - Implicit usings: enabled
-- Analyzer mode: `All`
-- Warnings as errors: enabled
-- XML docs: generated
+- Treat warnings as errors: enabled
+- Analyzer mode: All
+- Documentation generation: enabled
 
-## Analyzer Policy
+These values are enforced through:
 
-The repo is intentionally strict:
+1. global.json
+2. Directory.Build.props
+3. per-project csproj files
 
-- `TreatWarningsAsErrors=true`
-- Centralized `NoWarn` exists only for explicitly accepted exceptions
-- Tests inherit the same baseline but still use `IsTestProject=true` in each test project
+If values diverge, treat csproj + global.json as runtime truth and update docs in the same change.
 
-Best practice:
+## 2. Central Build Files
 
-- Prefer fixing analyzer findings over suppressing them.
-- If a suppression is required, document the reason at the narrowest possible scope.
-- Do not rely on global suppression lists to hide correctness or disposal problems.
+### global.json
 
-## Test Project Layout
+- Controls SDK selection for local and CI builds.
 
-The old monolithic test layout has been split by execution intent:
+### Directory.Build.props
 
-- `Sentinel.Tests.Unit`
-  - Fast logic tests with no containers
-- `Sentinel.Tests.Integration`
-  - Real flow tests with infrastructure dependencies
-- `Sentinel.Tests.Security`
-  - Abuse-path and downgrade tests
+- Centralizes common compiler and analyzer policies.
+- Enables strict quality posture by default.
 
-This separation is the expected CI shape and should be preserved.
+### Directory.Packages.props
 
-## Building with Native AOT
+- Central package version management.
+- Reduces drift across module package versions.
 
-To compile Sentinel.Sample.MinimalApi as a self-contained AOT binary:
+## 3. Standard Commands
+
+### 3.1 Fast Local Validation
 
 ```powershell
-# Build framework first
-dotnet build src/Sentinel.AspNetCore -c Release
-
-# Build sample with AOT
-dotnet build samples/Sentinel.Sample.MinimalApi -c Release
-
-# Publish as self-contained AOT binary
-dotnet publish samples/Sentinel.Sample.MinimalApi -c Release -r win-x64 -p:PublishAot=true
-
-# Output location
-# samples/Sentinel.Sample.MinimalApi/bin/Release/net10.0/win-x64/publish/Sentinel.Sample.MinimalApi.exe
+dotnet restore Sentinel.slnx --locked-mode
+dotnet build Sentinel.slnx -v minimal
 ```
 
-**Performance Characteristics** (AOT vs JIT):
-- Startup time: **45ms** (vs 250ms with MVC)
-- Memory usage: **32MB** (vs 180MB with MVC)
-- Cold start improvement: **5.5x faster**
-- Reflection calls: **0** (all compiled IL)
-
-Verify zero-reflection:
-- Check project files: `<PublishAot>true</PublishAot>`
-- Verify endpoint filters: All `IEndpointFilter` implementations
-- Confirm handlers: Static methods, no HTTP context reflection
-
-## Recommended Commands
+### 3.2 Full Test Validation
 
 ```powershell
-# Standard Release build
-dotnet restore Sentinel.slnx
-dotnet build Sentinel.slnx -c Release
-dotnet test tests/Sentinel.Tests.Unit -c Release
-
-# Sample with AOT support
-dotnet build samples/Sentinel.Sample.MinimalApi -c Release
-dotnet publish samples/Sentinel.Sample.MinimalApi -c Release -r win-x64 -p:PublishAot=true
-
-# Full test cycle
-dotnet test tests/Sentinel.Tests.Unit -c Release --logger "console;verbosity=minimal"
+dotnet test tests/Sentinel.Tests.Unit -v minimal
+dotnet test tests/Sentinel.Tests.Security -v minimal
+dotnet test tests/Sentinel.Tests.Integration -v minimal
 ```
 
-## Release Hygiene
+### 3.3 Convenience Targets
 
-Before shipping:
+The root Makefile includes:
 
-1. Build in `Release`.
-2. Run all three test projects separately.
-3. Keep `packages.lock.json` current.
-4. Keep `global.json`, project TFMs, and container runtime images aligned.
+- make build
+- make test
+- make lint
+- make sec-scan
 
-## Known Documentation Note
+## 4. Analyzer Policy
 
-The repo currently contains a mixed historical state where some packaging assets still reference `.NET 11` preview container images while the application projects target `net10.0`. That mismatch is documented in [CONTAINER_BUILD_READINESS.md](CONTAINER_BUILD_READINESS.md) and should be treated as an operational follow-up, not as the active application build baseline.
+Repository policy is intentionally strict:
+
+- warnings are errors by default
+- suppressions must be explicit and justified
+- test projects may add scoped suppressions where design analyzers conflict with test naming or fixture patterns
+
+Best practices:
+
+1. Fix the root cause before suppressing.
+2. Prefer file-level or project-level narrowly scoped suppression.
+3. Keep suppression rationale in code comments or PR description.
+
+## 5. Native AOT and Trimming Considerations
+
+The sample host is configured with PublishAot=true to validate AOT compatibility patterns.
+
+Guidance:
+
+1. Avoid reflection-based route handler construction.
+2. Prefer named DTOs instead of anonymous object payloads in Minimal API handlers.
+3. Avoid dynamic JSON serialization paths that trigger RequiresDynamicCode/RequiresUnreferencedCode warnings.
+4. Use explicit types and deterministic route signatures for RequestDelegate source generation.
+
+## 6. CI/CD Expectations
+
+Minimum release gate:
+
+1. locked restore succeeds
+2. full solution build succeeds
+3. unit + security + integration tests succeed
+4. no undocumented analyzer suppressions introduced
+5. docs and OpenAPI updated for external contract changes
+
+## 7. Dependency and Reproducibility Practices
+
+1. Commit lock files when changed by dependency updates.
+2. Use central package management in Directory.Packages.props.
+3. Avoid ad hoc package versions in individual projects unless strictly required.
+
+## 8. Known Build/Packaging Gaps
+
+Container packaging is not currently production-ready in this repository because an active app Dockerfile is not present, while docker-compose references one.
+
+See CONTAINER_BUILD_READINESS.md for remediation steps.
+
+## 9. Troubleshooting
+
+### Restore or SDK mismatch
+
+- Confirm dotnet --info includes SDK 10.0.201
+- Re-run restore with --locked-mode to surface drift explicitly
+
+### Analyzer failures in tests
+
+- Check project-level NoWarn in the specific test csproj
+- Ensure suppression is deliberate and scoped
+
+### AOT/source generation failures
+
+- Replace anonymous response types with named records
+- Remove reflection-based construction in route handlers/tests where possible
+- Keep route signatures simple and explicit

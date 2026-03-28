@@ -1,220 +1,166 @@
 # Sentinel Architecture
 
-**Last Updated:** 2026-03-25
-**Status:** Native AOT-Compatible Minimal APIs (Zero Reflection)
-**Breaking Change:** v1.1 Migrated from MVC Controllers to Minimal APIs (v1.0 supports both)
+Last Updated: 2026-03-29
+Runtime Baseline: net10.0
 
-## Overview
+## 1. Executive Summary
 
-Sentinel is a layered, zero-reflection security framework built around Keycloak-issued identity, sender-constrained access (DPoP), replay resistance, session invalidation, and payload-bound authorization.
+Sentinel is a modular security platform focused on high-assurance API protection and standards-aligned identity flows. The architecture separates security contracts, protocol engines, integration adapters, and host-specific API wiring.
 
-Architecture layers:
+Core properties:
 
-- `Sentinel.Domain` - Entity definitions, value objects, domain logic
-- `Sentinel.Application` - Use cases, orchestration, business rules
-- `Sentinel.Infrastructure` - Redis, Keycloak, Cryptography, Telemetry
-- `Sentinel.AspNetCore` - Minimal API endpoints, IEndpointFilter implementations, middleware
-- `Sentinel.Presentation` - **[DEPRECATED in v2.0]** Legacy MVC controllers (for backward compatibility)
+- Sender-constrained access via DPoP (RFC 9449)
+- Replay resistance for access tokens and DPoP proofs
+- Session invalidation and revocation propagation
+- Rich authorization constraints (RAR-style payload checks)
+- Shared security event ingestion (SSF/SET)
+- Minimal API host integration via explicit endpoint mapping
 
-### Key Architectural Decision: Minimal APIs
+## 2. Module Topology
 
-**ADR-2026-001**: Migrate from ASP.NET Core MVC to Minimal APIs for the following reasons:
+### 2.1 Core Packages
 
-1. **Native AOT Compatibility** - Zero reflection, compiles to IL at build time
-2. **Performance** - 5.5x faster startup (250ms → 45ms), 82% memory reduction (180MB → 32MB)
-3. **Explicit Security** - Filters are per-route, not global
-4. **Host Control** - Consumer decides routing prefix, not framework
-5. **Type Safety** - Compiled endpoint arguments, no model binding reflection
+- Sentinel.Security.Abstractions
+    - Cross-module interfaces and contracts (caches, validators, options, result types)
+- Sentinel.Domain
+    - Domain entities, value objects, and invariants
+- Sentinel.Application
+    - Application-level orchestration and cross-domain use cases
+- Sentinel.DPoP
+    - DPoP validation engine and thumbprint computation
+- Sentinel.Session
+    - Session lifecycle and revocation logic
+- Sentinel.SSF
+    - Security event token processing and revocation side-effects
+- Sentinel.SdJwt
+    - Selective disclosure validation components
+- Sentinel.Rar
+    - Authorization details extraction and rule validation
+- Sentinel.Security.Diagnostics
+    - Canonical telemetry and security diagnostics primitives
 
-**Migration Timeline**:
-- v1.0: MVC controllers only
-- v1.1: Minimal APIs available (backward compatible), MVC still functional ← **CURRENT**
-- v2.0: Minimal APIs only, MVC removed
+### 2.2 Integration Packages
 
-## Request Pipeline (Minimal APIs)
+- Sentinel.Redis
+    - Replay, nonce, and blacklist cache adapters
+- Sentinel.Keycloak
+    - Keycloak protocol integration and admin/token services
+- Sentinel.EntityFrameworkCore
+    - EF-backed security state implementations
+- Sentinel.Infrastructure
+    - Composition and operational services (DI, auth services, crypto, notifications)
 
-Security layers applied in order:
+### 2.3 Host Integration
 
-1. **Authentication** - JWT signature validation, DPoP nonce validation
-2. **Endpoint Filters** (per-route):
-   - `RequireIdempotency()` - RFC 9110 deduplication (Redis)
-   - `RequireAuthorization()` - Policy evaluation (claims validation)
-   - `RequireClaim("acr", ...)` - Step-up enforcement (NIST SP 800-63B)
-   - `AddEndpointFilter<T>()` - Custom validation (RAR bounds, business logic)
-3. **Handler Execution** - Type-safe endpoint handler with injected dependencies
-4. **Response** - RFC 7807 Problem Details or success response
+- Sentinel.AspNetCore
+    - Minimal API endpoint mapping extensions
+    - Filters/middleware for idempotency and ACR step-up
+    - Endpoint groups: auth, token exchange, SSF, backchannel logout
 
-Example endpoint with all layers:
+### 2.4 Reference Host
 
-```csharp
-app.MapPost("/finance/transfer", ExecuteTransfer)
-    .RequireAuthorization()                           // Layer 1: Token required
-    .RequireClaim("acr", "acr3")                      // Layer 2: Hardware MFA
-    .RequireIdempotency()                             // Layer 3: Deduplication
-    .AddEndpointFilter<SurgicalAuthorizationFilter>() // Layer 4: RAR validation
-```
+- samples/Sentinel.Sample.MinimalApi
+    - Demonstrates framework endpoint mapping and business endpoint hardening
+    - Shows encryption-at-rest, idempotency, ACR step-up, and RAR guardrail patterns
 
-When handler executes, all validations have passed:
-- ✅ Token signed and DPoP-bound
-- ✅ User has ACR3 (Hardware MFA, <5 min old)
-- ✅ Idempotency-Key is unique (lock acquired in Redis)
-- ✅ Request payload matches signed RAR bounds
+## 3. Request Flow (High-Level)
 
-## Authentication Modes
+For protected routes in a host using Sentinel.AspNetCore:
 
-### Standard JWT + DPoP
+1. Transport and host middleware execute (HTTPS, exception handling, auth/authorization middleware).
+2. Authentication validates token envelope and principal.
+3. DPoP checks bind proof to method/URL/time/JKT context.
+4. Endpoint filters enforce route-specific policies:
+     - RequireIdempotency()
+     - RequireAcrStepUp(...)
+     - custom domain filters (e.g., RAR bounds checks)
+5. Business handler executes only after policy and protocol checks pass.
+6. Response emits typed success or RFC7807 problem details.
 
-Used for most protected endpoints.
+## 4. Endpoint Mapping Model
 
-Expected request shape:
-
-```http
-Authorization: Bearer <access_token>
-DPoP: <proof_jwt>
-```
-
-If the request is missing a usable nonce, Sentinel responds with:
-
-```http
-401 Unauthorized
-WWW-Authenticate: DPoP error="use_dpop_nonce"
-DPoP-Nonce: <nonce>
-```
-
-### SD-JWT
-
-The composite authentication scheme routes to the SD-JWT handler when the authorization token has SD-JWT presentation shape.
-
-Security properties:
-
-- disclosure digests must be present in `_sd`
-- unsupported disclosure algorithms are rejected
-- key-binding JWT validation is required
-
-## Replay And Session Controls
-
-- JWT JTI replay protection
-- DPoP proof JTI replay protection
-- Redis-backed nonce state
-- Redis-backed session blacklist
-- logout and SSF event ingestion both feed session invalidation
-
-## SSF / CAE Receiver
-
-`POST /api/system/security/ssf/events` receives security event tokens from a trusted sender.
-
-Validation flow:
-
-1. timing-safe static auth token check if configured
-2. signed SET validation (RFC 8936)
-3. issuer and claim validation
-4. event processing into session and subject blacklist state
-
-The validator uses a shared singleton `ConfigurationManager<OpenIdConnectConfiguration>` so discovery and JWKS fetching are cached rather than recreated per request.
-
-Returns `202 Accepted` for asynchronous processing (RFC 8936 compliance).
-
-## Finance Authorization Bounds
-
-`POST /api/system/security/finance/transfer` uses a dedicated `IEndpointFilter` that checks the request payload against signed authorization details (RFC 9396 Rich Authorization Requests).
-
-Validated fields:
-
-- `transactionId` - Transaction UUID (case-sensitive)
-- `amount` - Decimal with precision-safe comparison (0.0001 tolerance)
-- `currency` - ISO 4217 code (case-insensitive)
-
-Endpoint security stack:
-
-- `RequireAuthorization()` - JWT token required
-- `RequireClaim("acr", "acr3")` - Hardware MFA enforcement
-- `RequireIdempotency()` - RFC 9110 deduplication
-- `SurgicalAuthorizationFilter` - Payload bounds validation
-
-## Endpoint Routing (Consumer-Controlled)
-
-The host application decides where to mount Sentinel endpoints:
+Sentinel core endpoints are mounted by host choice:
 
 ```csharp
-// Option A: Framework prefix (recommended)
 app.MapSentinelSecurity("api/system/security");
-// Routes: POST /api/system/security/auth/refresh, /ssf/events, etc.
-
-// Option B: Custom prefix
-app.MapSentinelSecurity("api/v1/identity");
-// Routes: POST /api/v1/identity/auth/refresh
-
-// Option C: Root-level (not recommended)
-app.MapSentinelSecurity("");
-// Routes: POST /auth/refresh
 ```
 
-This design enables:
-- Multiple isolated API versions (v1 vs v2)
-- Namespaced endpoint groups per domain
-- Progressive deprecation paths during versioning
+Mapped groups include:
 
-## Key Architectural Decisions
+- /auth/*
+- /ssf/events
+- /auth/token-exchange
+- /auth/backchannel-logout
 
-### ADR-001: DPoP as Primary Sender-Constraining Mechanism
+This enables:
 
-DPoP (Demonstration of Proof-of-Possession, RFC 9449) is the primary mechanism for binding access tokens to client context. All protected endpoints require valid DPoP proofs unless explicitly exempted.
+- host-controlled versioning and namespace boundaries
+- predictable integration in multi-service APIs
+- no hard-coded global route ownership by framework internals
 
-### ADR-002: Redis-Backed Atomic State for Replay Protection
+## 5. Security Control Architecture
 
-JWT JTI, DPoP proof JTI, and session state are stored in Redis with atomic CAS operations to prevent replay attacks. Nonce state is distributed across requests to eliminate single-point-of-failure.
+### 5.1 DPoP and Replay
 
-### ADR-003: Fail-Closed DPoP Nonce Challenge Semantics
+- Proof validation checks typ/alg/htm/htu/iat and JWK thumbprint semantics
+- Proof JTI replay is stateful and fail-closed when backing stores are unavailable
+- Nonce challenge flow uses 401 + WWW-Authenticate + DPoP-Nonce
 
-Nonce challenge semantics are fail-closed and use `401 Unauthorized` with `WWW-Authenticate: DPoP error="use_dpop_nonce"` and `DPoP-Nonce` response header.
+### 5.2 Session Controls
 
-### ADR-004: Minimal APIs with IEndpointFilter for Security
+- Session blacklist is used for local revocation enforcement
+- Auth logout and SSF events converge on session invalidation behavior
 
-Endpoints are implemented as static methods in `Sentinel.AspNetCore.Endpoints`, secured via `IEndpointFilter` implementations. This ensures:
-- **Zero Reflection** at runtime (compiled IL only)
-- **Per-Route Granularity** (filters only apply where needed)
-- **Type Safety** (endpoint arguments compiled, no model binding)
-- **Native AOT Compatibility** (`PublishAot=true` supported)
+### 5.3 Authorization Enforcement
 
-### ADR-005: Host-Controlled Endpoint Routing
+- ACR step-up support for high-assurance operations
+- Route-level idempotency requirements for state-changing operations
+- Domain-level payload-bound validation (RAR-style) for finance transfer safety
 
-The host application (consumer) decides where to mount Sentinel endpoints via `app.MapSentinelSecurity(prefix)`. This enables:
-- **Versioning** - Different prefixes for v1 vs v2
-- **Multi-API Composition** - Multiple isolated endpoint groups
-- **Progressive Deprecation** - Gradual client migration paths
+### 5.4 Security Diagnostics
 
-### ADR-006: Shared OIDC Discovery Cache
+- Telemetry and event emission are centralized in Sentinel.Security.Diagnostics
+- Canonical IP context hashing uses HMAC-based pseudonymization for privacy hardening
 
-SSF validation and SD-JWT verification share a singleton `ConfigurationManager<OpenIdConnectConfiguration>` to cache provider discovery and JWKS fetching across requests. This reduces latency and improves resilience.
+## 6. Design Decisions (Current)
 
-### ADR-2026-001: Native AOT Migration
+1. Abstractions-first composition
+     - Module contracts are defined in Sentinel.Security.Abstractions to avoid adapter lock-in.
+2. Fail-closed for security-critical state dependencies
+     - Replay and blacklist dependency failures are treated as security failures, not permissive bypasses.
+3. Endpoint filter-based policy composition
+     - High-risk checks are explicit per route; avoids opaque global behavior.
+4. Host-controlled routing
+     - Framework endpoints are namespaced by host, supporting phased migrations.
+5. Diagnostics centralization
+     - Security telemetry primitives are not duplicated across adapters.
 
-All endpoints must compile without reflection scanners or dynamic IL generation. This enables:
-- **Microsecond Startup Times** - 5.5x improvement over MVC
-- **82% Memory Reduction** - Smaller container images, more pods per node
-- **Self-Contained Binaries** - Deploy without .NET runtime
-- **Kubernetes-Friendly** - Rapid autoscaling, ephemeral containers
+## 7. Deployment and Operational Boundaries
 
-Implementation status: ✅ Complete (v1.1, backward compatible with MVC v1.0)
+Trust boundaries:
 
-### ADR-007
+1. Client to API host
+2. API host to cache/state stores
+3. API host to identity provider metadata/JWKS
+4. API host to security event senders (SSF)
 
-Shared-secret comparisons in security-sensitive controller paths must use constant-time comparison.
+Operationally sensitive dependencies:
 
-### ADR-008
+- Redis/cache state for replay/nonce/session protections
+- IdP discovery/JWKS availability
+- Accurate service time for bounded token/proof validity logic
 
-High-risk transaction endpoints can enforce payload-bound authorization rather than scope-only checks.
+## 8. Known Constraints
 
-### ADR-009
+- Container packaging is currently not fully production-ready in this repository because an active application Dockerfile is not present (see CONTAINER_BUILD_READINESS.md).
+- Sample and framework endpoint OpenAPI contracts are maintained manually and require release-time updates.
 
-Authorization handlers that depend on ASP.NET Core belong in the presentation boundary, while pure requirements and interfaces remain in application/domain-friendly layers.
+## 9. Change Management Guidance
 
-### ADR-010
+Any change in these areas requires architecture + compliance + threat model updates in the same pull request:
 
-Tests are split by intent into unit, integration, and security projects so container-backed suites do not slow down fast feedback loops.
-
-## Operational Notes
-
-- The application code targets `net10.0`.
-- The Dockerfile still needs baseline alignment with that runtime target.
-- Historical docs in this folder are preserved for audit lineage, but current engineering truth should come from this file, the README, and the OpenAPI contract.
+- auth pipeline order or semantics
+- endpoint path contracts
+- replay/nonce/session storage behavior
+- DPoP, SSF, or RAR validation rules
+- error behavior for fail-closed conditions

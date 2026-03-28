@@ -1,131 +1,126 @@
 # SDK-less Integration Guide
 
-**Last Updated:** 2026-03-21
+Last Updated: 2026-03-29
+Audience: API consumers integrating with plain HTTP clients
 
-This guide shows how to call Sentinel with plain HTTP clients and standard JWT/JOSE tooling.
+This guide shows how to integrate with Sentinel-protected APIs without a proprietary SDK.
 
-## Supported Authentication Modes
+## 1. Integration Model
 
-Sentinel currently supports two request shapes at the API edge:
+Sentinel endpoints are mounted by host-defined prefixes. In the reference sample:
 
-1. Standard JWT access token plus DPoP proof
-2. SD-JWT presentation routed through the composite authentication scheme
+- framework endpoints: /api/system/security/*
+- business endpoints: /api/v1/documents/* and /api/v1/finance/*
 
-## DPoP Basics
+Always verify actual prefix in host routing configuration.
 
-For protected endpoints, clients send:
+## 2. Authentication Modes
+
+### 2.1 Bearer + DPoP (primary)
+
+Headers for protected routes:
 
 ```http
 Authorization: Bearer <access_token>
 DPoP: <proof_jwt>
 ```
 
-The DPoP proof must bind:
+DPoP proof binds to:
 
-- `htm` to the HTTP method
-- `htu` to the request URI
-- `jti` to a unique proof identifier
-- `nonce` to the latest server-issued `DPoP-Nonce`
+1. htm (HTTP method)
+2. htu (absolute request URL)
+3. jti (unique per proof)
+4. iat (freshness window)
+5. nonce (when challenged)
 
-## First Request And Nonce Challenge
+### 2.2 SD-JWT presentation
 
-If the client has no usable nonce yet, Sentinel challenges with:
+Where enabled by host policy, SD-JWT tokens in bearer header are routed to SD-JWT validation paths.
+
+## 3. Nonce Challenge and Retry
+
+If nonce is missing/stale, expect:
 
 ```http
-HTTP/1.1 401 Unauthorized
+401 Unauthorized
 WWW-Authenticate: DPoP error="use_dpop_nonce"
-DPoP-Nonce: <server_nonce>
-Content-Type: application/problem+json
+DPoP-Nonce: <nonce>
 ```
 
-Best practice:
+Client retry algorithm:
 
-1. Capture the `DPoP-Nonce` header.
-2. Mint a fresh proof containing that nonce.
-3. Retry the same request once.
+1. capture DPoP-Nonce from response
+2. mint fresh proof with same request target + new nonce
+3. retry once
 
-## Standard Protected Request
+Do not infinitely loop retries.
 
-Example:
+## 4. Example Calls (Reference Sample)
 
-```http
-GET /v1/profile HTTP/1.1
-Host: api.sentinel.local
-Authorization: Bearer <access_token>
-DPoP: <proof_jwt>
+### 4.1 Refresh Token
+
+```bash
+curl -X POST https://localhost:5001/api/system/security/auth/refresh \
+  -H "Authorization: Bearer <token>" \
+  -H "DPoP: <proof>" \
+  -H "Content-Type: application/json" \
+  -d '{"refreshToken":"<refresh-token>"}'
 ```
 
-## SD-JWT Presentation
+### 4.2 Create Document (idempotent write)
 
-When using SD-JWT, the `Authorization` header carries the presentation string. The composite auth scheme routes requests to the SD-JWT handler when the token contains `~` separators.
-
-Example:
-
-```http
-Authorization: Bearer <issuer-signed-sd-jwt>~<disclosure>~<kb-jwt>
+```bash
+curl -X POST https://localhost:5001/api/v1/documents \
+  -H "Authorization: Bearer <token>" \
+  -H "DPoP: <proof>" \
+  -H "Idempotency-Key: 5c970c53-9c7e-40f0-9db0-e1eebd3206a7" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Quarterly Report","content":"Sensitive business content"}'
 ```
 
-Integration expectations:
+### 4.3 Execute Transfer (step-up + RAR-constrained)
 
-- hidden claims must remain undisclosed unless explicitly presented
-- invalid disclosures are ignored if their digest is not listed in `_sd`
-- stale or tampered key-binding JWTs are rejected
-
-## Finance Transfer With Payload Bounds
-
-`POST /v1/finance/transfer` uses payload-bound authorization checks in addition to baseline authentication.
-
-Send:
-
-```http
-POST /v1/finance/transfer HTTP/1.1
-Host: api.sentinel.local
-Authorization: Bearer <access_token>
-DPoP: <proof_jwt>
-Idempotency-Key: <uuid>
-Content-Type: application/json
+```bash
+curl -X POST https://localhost:5001/api/v1/finance/transfer \
+  -H "Authorization: Bearer <acr3-token>" \
+  -H "DPoP: <proof>" \
+  -H "Idempotency-Key: c8a7bc3d-9f36-4f3a-934d-ec56fe566807" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transactionId":"txn-2026-0001",
+    "amount":1500.00,
+    "currency":"USD",
+    "destinationAccount":"acct-99887"
+  }'
 ```
 
-```json
-{
-  "transactionId": "txn-1001",
-  "amount": 50.00,
-  "currency": "GEL",
-  "destinationAccount": "acct-42"
-}
-```
+## 5. Error Semantics
 
-The request succeeds only if the signed authorization details match the request payload bounds.
+| Status | Meaning | Typical Action |
+|---|---|---|
+| 400 | malformed request / missing required input | fix request payload/headers |
+| 401 | auth failure or DPoP nonce challenge | refresh auth context or perform one nonce retry |
+| 403 | policy/authorization-bounds failure | do not retry blindly; inspect claims/authorization_details |
+| 409 | idempotency conflict / in-flight duplicate | reuse previous operation tracking |
+| 503 | fail-closed dependency outage | retry with backoff after service recovery |
 
-## SSF Receiver
+## 6. Client Implementation Best Practices
 
-`POST /v1/ssf/events` is not a public user endpoint. It is intended for a trusted transmitter such as Keycloak.
+1. Mint a new DPoP proof per request.
+2. Keep nonce cache keyed by API audience/route context.
+3. Use deterministic UUID idempotency keys for retriable write commands.
+4. Never log bearer tokens, DPoP proofs, disclosures, or shared auth tokens.
+5. Separate retry logic by status class (401 challenge vs 503 outage vs 403 policy denial).
 
-Protection layers:
+## 7. Minimal Client Checklist
 
-- signed SET validation
-- issuer validation
-- timing-safe auth token comparison when `Ssf:AuthToken` is configured
+1. HTTP client with TLS verification enabled.
+2. JOSE/JWT support for DPoP proof creation.
+3. Clock synchronization (iat drift affects DPoP validity).
+4. Header preservation through proxies (DPoP, DPoP-Nonce, WWW-Authenticate).
 
-## Common Error Semantics
+## 8. References
 
-| Scenario | Status | Notes |
-|---|---:|---|
-| Missing or stale DPoP nonce | `401` | `WWW-Authenticate: DPoP error="use_dpop_nonce"` |
-| Invalid bearer token | `401` | standard auth failure |
-| Insufficient assurance or authorization bounds | `403` | policy or transaction-bound rejection |
-| Idempotency conflict | `409` | duplicate in-flight operation |
-| Replay cache or other fail-closed dependency outage | `503` | retry after server recovery |
-
-## Client Best Practices
-
-1. Generate a fresh DPoP proof for every request.
-2. Cache only the latest nonce, not old proofs.
-3. Do not log access tokens, DPoP proofs, SD-JWT disclosures, or SSF shared secrets.
-4. Treat `401 use_dpop_nonce` as a recoverable challenge, not a terminal failure.
-5. Treat `403` on finance transfer as a bounds or policy failure, not a nonce problem.
-
-## References
-
-- [OPENAPI_3_1.yaml](OPENAPI_3_1.yaml)
-- [ARCHITECTURE.md](ARCHITECTURE.md)
+- OPENAPI_3_1.yaml
+- ARCHITECTURE.md
+- runbooks/auth-token-issuance.md

@@ -1,559 +1,360 @@
 openapi: 3.1.0
 info:
-  title: Sentinel API
-  version: 2026-03-21
+  title: Sentinel API Contract (Framework + Reference Host)
+  version: 2026-03-29
   description: |-
-    Current OpenAPI reference for the Sentinel API surface.
+    OpenAPI contract for the current Sentinel reference host and mounted Sentinel.AspNetCore security endpoints.
 
-    Authentication modes:
-    - Standard JWT + DPoP for bearer-style protected endpoints.
-    - SD-JWT presentation routing when the authorization token contains `~` separators.
-    - SSF event ingestion via `POST /v1/ssf/events`.
+    Active route prefixes in the sample host:
+    - Security framework routes: /api/system/security/*
+    - Business routes: /api/v1/documents/*, /api/v1/finance/*, /api/v1/showcase/*
 
-    DPoP nonce behavior:
-    - Nonce challenge responses use `401 Unauthorized`.
-    - The response includes `WWW-Authenticate: DPoP error="use_dpop_nonce"` and `DPoP-Nonce` when the client must retry with a fresh nonce.
-
+    DPoP nonce challenge semantics:
+    - 401 responses can include:
+      WWW-Authenticate: DPoP error="use_dpop_nonce"
+      DPoP-Nonce: <value>
 servers:
+  - url: https://localhost:5001
+    description: Local development
   - url: https://api.sentinel.local
-    description: Production
-  - url: https://staging-api.sentinel.local
-    description: Staging
+    description: Example production host
 
 paths:
-  /v1/profile:
+  /:
     get:
-      summary: Get authenticated profile
-      security:
-        - BearerAuth: []
-          DpopProof: []
+      tags: [System]
+      summary: Get service metadata and endpoint map
+      operationId: getServiceInfo
       responses:
         '200':
-          description: Profile returned
-        '401':
-          description: Authentication failed or nonce challenge
-        '403':
-          description: Missing required scope or ACR
-    put:
-      summary: Update display name
-      security:
-        - BearerAuth: []
-          DpopProof: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                displayName:
-                  type: string
-              required: [displayName]
-      responses:
-        '200':
-          description: Profile updated
-        '400':
-          description: Invalid request
-        '401':
-          description: Authentication failed
+          description: Service information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SampleInfoResponse'
 
-  /v1/auth/refresh:
+  /healthz:
+    get:
+      tags: [System]
+      summary: Get service health
+      operationId: getHealth
+      responses:
+        '200':
+          description: Healthy response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/system/security/auth/refresh:
     post:
+      tags: [Authentication]
       summary: Refresh access token
-      security:
-        - BearerAuth: []
-          DpopProof: []
+      operationId: refreshToken
+      parameters:
+        - $ref: '#/components/parameters/DPoPHeader'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                refreshToken:
-                  type: string
-              required: [refreshToken]
+              $ref: '#/components/schemas/RefreshRequest'
       responses:
         '200':
-          description: Token refreshed
+          description: Token refresh successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
         '400':
-          description: Invalid request payload
+          $ref: '#/components/responses/Problem400'
         '401':
-          description: Refresh rejected
-        '503':
-          description: Replay cache unavailable
+          $ref: '#/components/responses/Problem401'
 
-  /v1/auth/change-password:
+  /api/system/security/auth/change-password:
     post:
-      summary: Change password
+      tags: [Authentication]
+      summary: Change current user password
+      operationId: changePassword
       security:
         - BearerAuth: []
-          DpopProof: []
+          DPoPProof: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                currentPassword:
-                  type: string
-                newPassword:
-                  type: string
-              required: [currentPassword, newPassword]
+              $ref: '#/components/schemas/ChangePasswordRequest'
       responses:
         '204':
-          description: Password updated
+          description: Password changed
         '400':
-          description: Validation failed
+          $ref: '#/components/responses/Problem400'
         '401':
-          description: Authentication failed
+          $ref: '#/components/responses/Problem401'
         '409':
-          description: Idempotency conflict
-
-  /v1/auth/logout:
-    post:
-      summary: Logout current session
-      security:
-        - BearerAuth: []
-          DpopProof: []
-      parameters:
-        - name: Idempotency-Key
-          in: header
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                refreshToken:
-                  type: string
-              required: [refreshToken]
-      responses:
-        '204':
-          description: Logout accepted
-        '400':
-          description: Invalid request
-        '401':
-          description: Authentication failed
-        '409':
-          description: Idempotency conflict
-
-  /v1/auth/logout-all:
-    post:
-      summary: Revoke all sessions for current subject
-      security:
-        - BearerAuth: []
-          DpopProof: []
-      parameters:
-        - name: Idempotency-Key
-          in: header
-          required: true
-          schema:
-            type: string
-      responses:
-        '204':
-          description: Global logout completed
-        '401':
-          description: Authentication failed
-        '409':
-          description: Idempotency conflict
+          $ref: '#/components/responses/Problem409'
         '500':
-          description: Revocation failure
+          $ref: '#/components/responses/Problem500'
+        '503':
+          $ref: '#/components/responses/Problem503'
 
-  /v1/auth/sessions:
-    get:
-      summary: List active sessions for current subject
+  /api/system/security/auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Logout current session
+      operationId: logout
       security:
         - BearerAuth: []
-          DpopProof: []
-      responses:
-        '200':
-          description: Sessions returned
-        '401':
-          description: Authentication failed
-
-  /v1/auth/sessions/{sessionId}:
-    delete:
-      summary: Revoke one session
-      security:
-        - BearerAuth: []
-          DpopProof: []
+          DPoPProof: []
       parameters:
-        - name: sessionId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: Idempotency-Key
-          in: header
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeRequest'
       responses:
         '204':
           description: Session revoked
         '400':
-          description: Invalid request
+          $ref: '#/components/responses/Problem400'
         '401':
-          description: Authentication failed
+          $ref: '#/components/responses/Problem401'
+        '409':
+          $ref: '#/components/responses/Problem409'
+        '503':
+          $ref: '#/components/responses/Problem503'
+
+  /api/system/security/auth/sessions:
+    get:
+      tags: [Authentication]
+      summary: List active sessions for authenticated subject
+      operationId: getActiveSessions
+      security:
+        - BearerAuth: []
+          DPoPProof: []
+      responses:
+        '200':
+          description: Active session list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Problem401'
+
+  /api/system/security/auth/sessions/{sessionId}:
+    delete:
+      tags: [Authentication]
+      summary: Revoke one session by id
+      operationId: revokeSession
+      security:
+        - BearerAuth: []
+          DPoPProof: []
+      parameters:
+        - $ref: '#/components/parameters/SessionIdPath'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      responses:
+        '204':
+          description: Session revoked
+        '400':
+          $ref: '#/components/responses/Problem400'
+        '401':
+          $ref: '#/components/responses/Problem401'
         '404':
           description: Session not found
         '409':
-          description: Idempotency conflict
+          $ref: '#/components/responses/Problem409'
+        '503':
+          $ref: '#/components/responses/Problem503'
 
-  /v1/auth/account:
-    delete:
-      summary: Delete current account
+  /api/system/security/auth/logout-all:
+    post:
+      tags: [Authentication]
+      summary: Revoke all sessions for current subject
+      operationId: globalLogout
       security:
         - BearerAuth: []
-          DpopProof: []
+          DPoPProof: []
       parameters:
-        - name: Idempotency-Key
-          in: header
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      responses:
+        '204':
+          description: All sessions revoked
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '409':
+          $ref: '#/components/responses/Problem409'
+        '500':
+          $ref: '#/components/responses/Problem500'
+        '503':
+          $ref: '#/components/responses/Problem503'
+
+  /api/system/security/auth/account:
+    delete:
+      tags: [Authentication]
+      summary: Delete current account
+      operationId: deleteAccount
+      security:
+        - BearerAuth: []
+          DPoPProof: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
       responses:
         '204':
           description: Account deleted
         '401':
-          description: Authentication failed
+          $ref: '#/components/responses/Problem401'
         '409':
-          description: Idempotency conflict
+          $ref: '#/components/responses/Problem409'
         '500':
-          description: Delete failure
+          $ref: '#/components/responses/Problem500'
+        '503':
+          $ref: '#/components/responses/Problem503'
 
-  /v1/auth/mfa/totp/setup:
+  /api/system/security/auth/mfa/totp/setup:
     post:
-      summary: Start TOTP setup
+      tags: [MFA]
+      summary: Reserved endpoint for TOTP setup (not implemented)
+      operationId: setupTotp
       security:
         - BearerAuth: []
-          DpopProof: []
+          DPoPProof: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                deviceName:
-                  type: string
-              required: [deviceName]
+              $ref: '#/components/schemas/TotpSetupRequest'
       responses:
         '401':
-          description: Authentication failed
+          $ref: '#/components/responses/Problem401'
         '501':
-          description: MFA management is not configured
+          description: MFA management not configured
 
-  /v1/auth/mfa/totp/verify:
+  /api/system/security/auth/mfa/totp/verify:
     post:
-      summary: Verify TOTP setup
+      tags: [MFA]
+      summary: Reserved endpoint for TOTP verification (not implemented)
+      operationId: verifyTotp
       security:
         - BearerAuth: []
-          DpopProof: []
+          DPoPProof: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
+              $ref: '#/components/schemas/TotpVerifyRequest'
       responses:
         '401':
-          description: Authentication failed
+          $ref: '#/components/responses/Problem401'
         '501':
-          description: MFA management is not configured
+          description: MFA management not configured
 
-  /v1/auth/mfa/totp:
+  /api/system/security/auth/mfa/totp:
     delete:
-      summary: Delete TOTP configuration
+      tags: [MFA]
+      summary: Reserved endpoint for TOTP deletion (not implemented)
+      operationId: deleteTotp
       security:
         - BearerAuth: []
-          DpopProof: []
+          DPoPProof: []
       responses:
         '401':
-          description: Authentication failed
+          $ref: '#/components/responses/Problem401'
         '501':
-          description: MFA management is not configured
+          description: MFA management not configured
 
-  /v1/auth/mfa/recovery-codes:
+  /api/system/security/auth/mfa/recovery-codes:
     get:
-      summary: Get recovery codes
+      tags: [MFA]
+      summary: Reserved endpoint for recovery code retrieval (not implemented)
+      operationId: getRecoveryCodes
       security:
         - BearerAuth: []
-          DpopProof: []
+          DPoPProof: []
       responses:
         '401':
-          description: Authentication failed
+          $ref: '#/components/responses/Problem401'
         '501':
-          description: MFA management is not configured
+          description: MFA management not configured
 
-  /v1/auth/mfa/recovery-codes/regenerate:
+  /api/system/security/auth/mfa/recovery-codes/regenerate:
     post:
-      summary: Regenerate recovery codes
+      tags: [MFA]
+      summary: Reserved endpoint for recovery code regeneration (not implemented)
+      operationId: regenerateRecoveryCodes
       security:
         - BearerAuth: []
-          DpopProof: []
+          DPoPProof: []
       responses:
         '401':
-          description: Authentication failed
+          $ref: '#/components/responses/Problem401'
         '501':
-          description: MFA management is not configured
+          description: MFA management not configured
 
-  /v1/auth/token-exchange:
+  /api/system/security/auth/token-exchange:
     post:
-      summary: Exchange external provider token
+      tags: [Token Exchange]
+      summary: Exchange external token for Sentinel token pair
+      operationId: exchangeExternalToken
+      parameters:
+        - $ref: '#/components/parameters/DPoPHeader'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                externalToken:
-                  type: string
-                providerName:
-                  type: string
-                codeVerifier:
-                  type: string
-              required: [externalToken, providerName, codeVerifier]
+              $ref: '#/components/schemas/TokenExchangeRequest'
       responses:
         '200':
           description: Exchange succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenExchangeResponse'
         '400':
-          description: Missing request data or DPoP proof
+          $ref: '#/components/responses/Problem400'
         '401':
-          description: Exchange rejected
+          $ref: '#/components/responses/Problem401'
 
-  /v1/auth/backchannel-logout:
+  /api/system/security/auth/backchannel-logout:
     post:
-      summary: Backchannel logout callback
+      tags: [OIDC Backchannel Logout]
+      summary: Receive OIDC backchannel logout token
+      operationId: backchannelLogout
       requestBody:
         required: true
         content:
           application/x-www-form-urlencoded:
             schema:
               type: object
+              required: [logout_token]
               properties:
                 logout_token:
                   type: string
-              required: [logout_token]
+                  description: Logout token JWT from identity provider
       responses:
         '200':
-          description: Session invalidated
+          description: Logout callback accepted (always returned for token-validation outcomes)
         '400':
-          description: Invalid logout token
+          description: Malformed request payload
 
-  /v1/users/register:
+  /api/system/security/ssf/events:
     post:
-      summary: Register a user
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-      responses:
-        '200':
-          description: Registration accepted
-        '400':
-          description: Validation failed
-
-  /v1/users/verify-email:
-    post:
-      summary: Verify email token
+      tags: [Security Event Token]
+      summary: Receive and process Security Event Token (SET)
+      operationId: receiveSsfEvent
       parameters:
-        - name: token
-          in: query
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Email verified
-        '400':
-          description: Invalid or expired token
-
-  /v1/users/forgot-password:
-    post:
-      summary: Request password reset
-      responses:
-        '202':
-          description: Request accepted
-
-  /v1/users/resend-verification:
-    post:
-      summary: Resend verification email
-      responses:
-        '202':
-          description: Request accepted
-
-  /v1/users/reset-password:
-    post:
-      summary: Reset password
-      responses:
-        '200':
-          description: Password reset completed
-        '400':
-          description: Invalid request
-        '500':
-          description: Reset failure
-
-  /v1/documents:
-    get:
-      summary: List documents for current subject
-      security:
-        - BearerAuth: []
-          DpopProof: []
-      responses:
-        '200':
-          description: Documents returned
-        '401':
-          description: Authentication failed
-        '403':
-          description: Missing required scope or ACR
-    post:
-      summary: Create document
-      security:
-        - BearerAuth: []
-          DpopProof: []
-      parameters:
-        - name: Idempotency-Key
-          in: header
-          required: true
-          schema:
-            type: string
-      responses:
-        '201':
-          description: Document created
-        '400':
-          description: Invalid request
-        '401':
-          description: Authentication failed
-        '403':
-          description: Missing required scope or ACR
-        '409':
-          description: Idempotency conflict
-
-  /v1/documents/{id}:
-    get:
-      summary: Get one document scoped by subject ownership
-      security:
-        - BearerAuth: []
-          DpopProof: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Document returned
-        '401':
-          description: Authentication failed
-        '403':
-          description: Missing required scope or ACR
-        '404':
-          description: Not found
-    put:
-      summary: Update document
-      security:
-        - BearerAuth: []
-          DpopProof: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: Idempotency-Key
-          in: header
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Document updated
-        '401':
-          description: Authentication failed
-        '403':
-          description: Missing scope, ACR, or mTLS binding
-        '404':
-          description: Not found
-        '409':
-          description: Idempotency conflict
-    delete:
-      summary: Delete document
-      security:
-        - BearerAuth: []
-          DpopProof: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '204':
-          description: Document deleted
-        '401':
-          description: Authentication failed
-        '403':
-          description: Missing scope, ACR, or mTLS binding
-        '404':
-          description: Not found
-
-  /v1/finance/transfer:
-    post:
-      summary: Execute transfer under RAR-like payload bounds
-      security:
-        - BearerAuth: []
-          DpopProof: []
-      parameters:
-        - name: Idempotency-Key
-          in: header
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                transactionId:
-                  type: string
-                amount:
-                  type: number
-                currency:
-                  type: string
-                destinationAccount:
-                  type: string
-              required: [transactionId, amount, currency, destinationAccount]
-      responses:
-        '200':
-          description: Transfer accepted
-        '400':
-          description: Invalid request
-        '401':
-          description: Authentication failed
-        '403':
-          description: Authorization bounds exceeded
-        '409':
-          description: Idempotency conflict
-
-  /v1/ssf/events:
-    post:
-      summary: Receive SSF security event token
+        - $ref: '#/components/parameters/SSFAuthTokenHeader'
       requestBody:
         required: true
         content:
@@ -562,22 +363,168 @@ paths:
               type: string
           application/json:
             schema:
-              type: object
-              properties:
-                set:
-                  type: string
-              required: [set]
+              $ref: '#/components/schemas/SsfEventJsonRequest'
       responses:
         '202':
-          description: Event accepted
+          description: Event accepted for processing
         '400':
-          description: Invalid SET payload
+          $ref: '#/components/responses/Problem400'
         '401':
-          description: Authentication or signature validation failed
-        '500':
-          description: Processing failed closed
+          $ref: '#/components/responses/Problem401'
+        '404':
+          description: SSF endpoint disabled
+
+  /api/v1/documents:
+    get:
+      tags: [Documents]
+      summary: List documents owned by current subject
+      operationId: listDocuments
+      security:
+        - BearerAuth: []
+          DPoPProof: []
+      responses:
+        '200':
+          description: Document list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DocumentSummaryDto'
+        '401':
+          $ref: '#/components/responses/Problem401'
+
+    post:
+      tags: [Documents]
+      summary: Create document
+      operationId: createDocument
+      security:
+        - BearerAuth: []
+          DPoPProof: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDocumentRequest'
+      responses:
+        '201':
+          description: Document created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentSummaryDto'
+        '204':
+          description: Duplicate idempotent request acknowledged
+        '400':
+          $ref: '#/components/responses/Problem400'
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '409':
+          $ref: '#/components/responses/Problem409'
         '503':
-          description: Downstream security state unavailable
+          $ref: '#/components/responses/Problem503'
+
+  /api/v1/documents/{id}:
+    get:
+      tags: [Documents]
+      summary: Get one document by id (owner scoped)
+      operationId: getDocument
+      security:
+        - BearerAuth: []
+          DPoPProof: []
+      parameters:
+        - $ref: '#/components/parameters/DocumentIdPath'
+      responses:
+        '200':
+          description: Document detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetailDto'
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '404':
+          description: Document not found
+
+    delete:
+      tags: [Documents]
+      summary: Delete one document by id (owner scoped)
+      operationId: deleteDocument
+      security:
+        - BearerAuth: []
+          DPoPProof: []
+      parameters:
+        - $ref: '#/components/parameters/DocumentIdPath'
+      responses:
+        '204':
+          description: Document deleted
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '403':
+          description: Forbidden by policy
+        '404':
+          description: Document not found
+
+  /api/v1/finance/transfer:
+    post:
+      tags: [Finance]
+      summary: Execute transfer under signed authorization bounds
+      operationId: executeTransfer
+      security:
+        - BearerAuth: []
+          DPoPProof: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferRequest'
+      responses:
+        '200':
+          description: Transfer accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+        '204':
+          description: Duplicate idempotent request acknowledged
+        '400':
+          $ref: '#/components/responses/Problem400'
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '403':
+          description: Authorization bounds exceeded
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          $ref: '#/components/responses/Problem409'
+        '503':
+          $ref: '#/components/responses/Problem503'
+
+  /api/v1/showcase/security-context:
+    get:
+      tags: [Showcase]
+      summary: Return diagnostic security context for current request
+      operationId: getSecurityContext
+      security:
+        - BearerAuth: []
+          DPoPProof: []
+      responses:
+        '200':
+          description: Security context
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityContextDto'
+        '401':
+          $ref: '#/components/responses/Problem401'
 
 components:
   securitySchemes:
@@ -585,9 +532,295 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: JWT access token or SD-JWT presentation in the Authorization header.
-    DpopProof:
+      description: JWT bearer access token.
+    DPoPProof:
       type: apiKey
       in: header
       name: DPoP
-      description: DPoP proof JWT used with standard bearer-style protected routes.
+      description: DPoP proof JWT for sender-constrained requests.
+
+  parameters:
+    DPoPHeader:
+      name: DPoP
+      in: header
+      required: true
+      schema:
+        type: string
+      description: DPoP proof JWT.
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Client-supplied idempotency key for safe retries.
+    SSFAuthTokenHeader:
+      name: SSF-Auth-Token
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Optional shared authentication token for SSF sender authentication.
+    SessionIdPath:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+    DocumentIdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    Problem400:
+      description: Bad request
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Problem401:
+      description: Unauthorized or authentication challenge
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Problem409:
+      description: Conflict
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Problem500:
+      description: Internal server error
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Problem503:
+      description: Dependency unavailable (fail-closed)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+  schemas:
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+      additionalProperties: true
+
+    SampleInfoResponse:
+      type: object
+      required: [service, docs, endpoints]
+      properties:
+        service:
+          type: string
+        docs:
+          type: string
+        endpoints:
+          $ref: '#/components/schemas/EndpointMap'
+
+    EndpointMap:
+      type: object
+      required: [health, security, documents, finance, showcase]
+      properties:
+        health:
+          type: string
+        security:
+          type: string
+        documents:
+          type: string
+        finance:
+          type: string
+        showcase:
+          type: string
+
+    HealthResponse:
+      type: object
+      required: [status, utc]
+      properties:
+        status:
+          type: string
+          example: ok
+        utc:
+          type: string
+          format: date-time
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    RefreshResponse:
+      type: object
+      required: [access_token, refresh_token]
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+
+    RevokeRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    ChangePasswordRequest:
+      type: object
+      required: [newPassword]
+      properties:
+        newPassword:
+          type: string
+
+    TotpSetupRequest:
+      type: object
+      required: [deviceName]
+      properties:
+        deviceName:
+          type: string
+
+    TotpVerifyRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+
+    TokenExchangeRequest:
+      type: object
+      required: [externalToken, providerName, codeVerifier]
+      properties:
+        externalToken:
+          type: string
+        providerName:
+          type: string
+        codeVerifier:
+          type: string
+
+    TokenExchangeResponse:
+      type: object
+      required: [access_token]
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        token_type:
+          type: string
+        expires_in:
+          type: integer
+        scope:
+          type: string
+
+    SsfEventJsonRequest:
+      type: object
+      required: [set]
+      properties:
+        set:
+          type: string
+          description: Security Event Token JWT string.
+
+    CreateDocumentRequest:
+      type: object
+      required: [title, content]
+      properties:
+        title:
+          type: string
+          maxLength: 120
+        content:
+          type: string
+
+    DocumentSummaryDto:
+      type: object
+      required: [id, title, encryptedBytes, createdUtc]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        encryptedBytes:
+          type: integer
+        createdUtc:
+          type: string
+          format: date-time
+
+    DocumentDetailDto:
+      type: object
+      required: [id, title, contentPreview, encryptedBytes, createdUtc]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        contentPreview:
+          type: string
+        encryptedBytes:
+          type: integer
+        createdUtc:
+          type: string
+          format: date-time
+
+    TransferRequest:
+      type: object
+      required: [transactionId, amount, currency, destinationAccount]
+      properties:
+        transactionId:
+          type: string
+        amount:
+          type: number
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        destinationAccount:
+          type: string
+
+    TransferResponse:
+      type: object
+      required: [status, transactionId, message, processedAtUtc]
+      properties:
+        status:
+          type: string
+        transactionId:
+          type: string
+        message:
+          type: string
+        processedAtUtc:
+          type: string
+          format: date-time
+
+    SecurityContextDto:
+      type: object
+      required: [subject, acr, dpopJkt, authorizationDetailsCount, traceId]
+      properties:
+        subject:
+          type: string
+        acr:
+          type: string
+        dpopJkt:
+          type: string
+        authorizationDetailsCount:
+          type: integer
+        traceId:
+          type: string

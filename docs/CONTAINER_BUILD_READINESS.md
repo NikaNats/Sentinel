@@ -1,65 +1,78 @@
 # Container Build Readiness
 
-**Last Updated:** 2026-03-21
-**Status:** ✅ READY FOR PRODUCTION
+Last Updated: 2026-03-29
+Status: Not Release-Ready
 
-## Current State
+## 1. Current Reality
 
-The application projects target `net10.0`, and the repo pins the SDK via `global.json` to `10.0.201`.
+The repository contains docker-compose.yml that references:
 
-The container recipe in [Dockerfile](../src/Sentinel.Presentation/Dockerfile) now correctly uses:
+- build context: .
+- dockerfile: src/Sentinel.AspNetCore/Dockerfile
 
-- `mcr.microsoft.com/dotnet/sdk:10.0` (build)
-- `mcr.microsoft.com/dotnet/aspnet:10.0-jammy-chiseled` (runtime with Zero Trust hardening)
+At this time, an active Dockerfile is not present at that location (or elsewhere in repository root tree via standard Dockerfile naming), so container image build cannot be considered production-ready.
 
-The container configuration is now fully aligned with the build baseline and supply chain requirements.
+## 2. Baseline Inputs
 
-## What Is Ready
+- Runtime target: net10.0
+- SDK pin: 10.0.201
+- Compose services: postgres, keycloak, redis, sentinel-api
 
-- Two-stage Docker build structure exists.
-- Runtime stage runs as non-root (`USER 1654`).
-- Diagnostics are disabled with `DOTNET_EnableDiagnostics=0`.
-- Publish step uses `--no-restore`.
-- App host generation is disabled with `UseAppHost=false`.
+## 3. Readiness Assessment
 
-## ✅ Fixed (Release Blockers Resolved)
+| Area | Status | Notes |
+|---|---|---|
+| Build specification exists in compose | Partial | Compose references a Dockerfile path |
+| Dockerfile exists at referenced path | Gap | Missing file prevents image build |
+| Runtime image hardening | Gap | Cannot validate until Dockerfile exists |
+| Multi-stage build flow | Gap | Cannot validate until Dockerfile exists |
+| Non-root execution | Gap | Cannot validate until Dockerfile exists |
+| Dependency lock/restore posture | Partial | repo uses locked restore in build commands |
 
-1. ✅ Docker base images aligned with .NET 10.0 stable runtime.
-2. ✅ Runtime baseline and container runtime now identical (net10.0 → aspnet:10.0-jammy-chiseled).
-3. ✅ Supply chain integrity: packages.lock.json now tracked in version control for SLSA Level 4 compliance.
-4. ✅ Image hardening: jammy-chiseled distroless runtime reduces CVE surface.
+## 4. Required Remediation
 
-## Recommended Near-Term Action
+1. Add Dockerfile at src/Sentinel.AspNetCore/Dockerfile (or update compose to correct path).
+2. Use explicit net10 SDK and ASP.NET runtime base images.
+3. Implement multi-stage build (restore/build/publish + minimal runtime stage).
+4. Run as non-root in final image.
+5. Disable diagnostics in production runtime image.
+6. Validate image with security scan and startup smoke test.
 
-Choose one release posture and document it consistently:
+## 5. Recommended Dockerfile Requirements
 
-- Option A: stay on `net10.0` and move Docker images to `.NET 10`
-- Option B: upgrade projects, docs, and tooling together to `.NET 11`
+Minimum checklist:
 
-Best practice is to avoid documenting or shipping a split baseline.
+1. Build stage:
+	- mcr.microsoft.com/dotnet/sdk:10.0
+	- dotnet restore --locked-mode
+	- dotnet publish -c Release
+2. Runtime stage:
+	- mcr.microsoft.com/dotnet/aspnet:10.0
+	- non-root user
+	- only published output copied
+3. Security posture:
+	- DOTNET_EnableDiagnostics=0
+	- no secrets baked into image
+	- minimal surface area runtime layer
 
-## Validation Checklist
+## 6. Validation Procedure
 
-- `dotnet build Sentinel.slnx -c Release`
-- `dotnet test` for all three test projects
-- `docker build -f src/Sentinel.Presentation/Dockerfile -t sentinel:latest .`
-- vulnerability scan on the produced image
-- runtime smoke test under non-root execution
+After Dockerfile remediation:
 
-## Security Checklist
+1. docker build -f src/Sentinel.AspNetCore/Dockerfile -t sentinel-api:local .
+2. docker run --rm -p 8080:8080 sentinel-api:local
+3. smoke test health endpoint
+4. trivy image --severity HIGH,CRITICAL sentinel-api:local
+5. docker-compose up --build to validate integrated stack
 
-- Non-root container user
-- read-only root filesystem support
-- no SDK in final image
-- diagnostics disabled
-- package restore done in locked mode
+## 7. Release Gate Criteria
 
-## Release Gate: PASSED ✅
+Container readiness can be marked Ready only when all are true:
 
-**Supply Chain Integrity Validation:**
-- Dockerfile fully aligned with `global.json` (10.0.201) and `Directory.Build.props` (net10.0)
-- packages.lock.json now enforced in CI via `--locked-mode` with hermetic build guarantee
-- Runtime image uses hardened jammy-chiseled/distroless substrate
-- SLSA Level 4 compliance achieved: lock files prevent transitive dependency injection attacks
+1. Referenced Dockerfile exists and builds reproducibly.
+2. Runtime image launch and health checks pass.
+3. Vulnerability scan findings are triaged and accepted.
+4. Non-root and minimal runtime controls are verified.
+5. Compose stack boots successfully with sentinel-api enabled.
 
-This document is the operational truth for packaging readiness. Satellite gate reports are historical audit records only.
+Until then, container release status remains Not Release-Ready.
