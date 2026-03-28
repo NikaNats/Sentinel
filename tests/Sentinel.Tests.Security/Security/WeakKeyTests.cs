@@ -4,6 +4,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Moq;
+using Sentinel.DPoP;
 using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Security.Abstractions.Options;
 using Sentinel.Security.Abstractions.Replay;
@@ -86,12 +87,9 @@ public sealed class WeakKeyTests
         result.IsSuccess.Should().BeTrue();
     }
 
-    private IDpopProofValidator CreateValidator()
+    private DpopProofValidator CreateValidator()
     {
-        var validatorType = Type.GetType("Sentinel.DPoP.DpopProofValidator, Sentinel.DPoP", true)!;
         var options = Options.Create(new DPoPOptions());
-        var instance =
-            Activator.CreateInstance(validatorType, _replayCacheMock.Object, options, null, TimeProvider.System)!;
-        return (IDpopProofValidator)instance;
+        return new DpopProofValidator(_replayCacheMock.Object, options, null, TimeProvider.System);
     }
 }

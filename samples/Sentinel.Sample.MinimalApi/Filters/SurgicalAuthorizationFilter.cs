@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Sentinel.Application.Auth.Rar;
 
 namespace Sentinel.Sample.MinimalApi.Filters;
@@ -15,7 +16,7 @@ namespace Sentinel.Sample.MinimalApi.Filters;
 /// but the request body says "$100,000" → DENIED. Mismatches are caught before
 /// the handler executes, preventing unauthorized transactions.
 /// </summary>
-public sealed class SurgicalAuthorizationFilter : IEndpointFilter
+public sealed class SurgicalAuthorizationFilter(ILogger<SurgicalAuthorizationFilter> logger) : IEndpointFilter
 {
     private const string FinanceTransferType = "urn:sentinel:finance:transfer";
 
@@ -85,12 +86,19 @@ public sealed class SurgicalAuthorizationFilter : IEndpointFilter
 
         if (!amountMatches || !currencyMatches || !transactionIdMatches)
         {
+            logger.LogWarning(
+            "AUTHORIZATION_BOUNDS_EXCEEDED: Token bound to Txn: {ExpectedTxn}, Amount: {ExpectedAmount} {ExpectedCurrency}. Request attempted Txn: {ActualTxn}, Amount: {ActualAmount} {ActualCurrency}.",
+            transferDetail.TransactionId,
+            transferDetail.Amount,
+            transferDetail.Currency,
+            request.TransactionId,
+            request.Amount,
+            request.Currency);
+
             return TypedResults.Problem(
                 type: "/errors/authorization-bounds-exceeded",
                 title: "Authorization Bounds Exceeded",
-                detail: "Request payload does not match token authorization bounds. " +
-                        $"Expected: {transferDetail.Amount} {transferDetail.Currency} (txn: {transferDetail.TransactionId}). " +
-                        $"Got: {request.Amount} {request.Currency} (txn: {request.TransactionId}).",
+            detail: "The request payload violates the cryptographic authorization constraints signed into the token.",
                 statusCode: StatusCodes.Status403Forbidden);
         }
 

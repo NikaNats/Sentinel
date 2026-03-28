@@ -3,6 +3,7 @@ using Sentinel.Security.Abstractions.Exceptions;
 using Sentinel.Security.Abstractions.Replay;
 using Sentinel.Security.Abstractions.Security;
 using Sentinel.Security.Abstractions.Session;
+using Sentinel.Security.Diagnostics;
 
 namespace Sentinel.Infrastructure.Auth;
 

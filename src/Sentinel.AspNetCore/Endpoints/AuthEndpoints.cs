@@ -5,9 +5,9 @@ using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.AspNetCore.Errors;
-using Sentinel.AspNetCore.Telemetry;
 using Sentinel.Keycloak;
 using Sentinel.Security.Abstractions.Identity;
+using Sentinel.Security.Diagnostics;
 
 namespace Sentinel.AspNetCore.Endpoints;
 

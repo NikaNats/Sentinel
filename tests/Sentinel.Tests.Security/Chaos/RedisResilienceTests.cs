@@ -64,14 +64,21 @@ public sealed class RedisResilienceTests
     ///     Security: On ambiguity, deny. DoS > AccLeak.
     /// </summary>
     [Theory(DisplayName = "🔴 Redis Connection Failure Types (all fail-closed)")]
-    [InlineData(typeof(RedisConnectionException), "Connection refused/pool exhausted")]
-    [InlineData(typeof(TimeoutException), "Slow response or read timeout")]
-    [InlineData(typeof(SocketException), "Network layer failure")]
-    public async Task SessionQuery_FailsClosed_OnAnyInfrastructureFailure(Type exceptionType, string scenario)
+    [InlineData("redis_connection", "Connection refused/pool exhausted")]
+    [InlineData("timeout", "Slow response or read timeout")]
+    [InlineData("socket", "Network layer failure")]
+    public async Task SessionQuery_FailsClosed_OnAnyInfrastructureFailure(string failureKind, string scenario)
     {
         // Arrange
         var sessionId = "sess-chaos-002";
-        var exception = (Exception)Activator.CreateInstance(exceptionType, "Infrastructure melting")!;
+        Exception exception = failureKind switch
+        {
+            "redis_connection" => new RedisConnectionException(ConnectionFailureType.UnableToConnect,
+                "Infrastructure melting"),
+            "timeout" => new TimeoutException("Infrastructure melting"),
+            "socket" => new SocketException((int)SocketError.NetworkUnreachable),
+            _ => new InvalidOperationException($"Unsupported failure kind: {failureKind}")
+        };
 
         _cacheServiceMock
             .Setup(x => x.IsBlacklistedAsync(sessionId, It.IsAny<CancellationToken>()))

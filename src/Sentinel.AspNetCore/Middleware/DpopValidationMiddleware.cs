@@ -5,7 +5,6 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
-using Sentinel.AspNetCore.Telemetry;
 using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Diagnostics;

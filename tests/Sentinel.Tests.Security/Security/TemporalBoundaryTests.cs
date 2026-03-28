@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using Microsoft.IdentityModel.Tokens;
 using Moq;
+using Sentinel.DPoP;
 using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Security.Abstractions.Options;
 using Sentinel.Security.Abstractions.Replay;
@@ -258,21 +259,13 @@ public sealed class TemporalBoundaryTests
     /// <summary>
     ///     Reflection-based helper: Creates DpopProofValidator with FakeTimeProvider.
     /// </summary>
-    private IDpopProofValidator CreateValidator()
+    private DpopProofValidator CreateValidator()
     {
-        // DpopProofValidator is internal, so we use reflection
-        var validatorType = Type.GetType(
-            "Sentinel.DPoP.DpopProofValidator, Sentinel.DPoP",
-            true)!;
-
-        var instance = Activator.CreateInstance(
-            validatorType,
+        return new DpopProofValidator(
             _replayCache.Object,
             Options.Create(new DPoPOptions()),
             null, // thumbprintComputer (use default)
-            _timeProvider)!;
-
-        return (IDpopProofValidator)instance;
+            _timeProvider);
     }
 
     /// <summary>
