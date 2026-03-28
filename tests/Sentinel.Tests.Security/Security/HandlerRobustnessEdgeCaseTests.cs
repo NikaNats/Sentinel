@@ -1,78 +1,40 @@
 using FluentAssertions;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
-using Sentinel.Application.Auth;
-using Sentinel.Application.Auth.Interfaces;
-using Sentinel.Application.Common.Abstractions;
-using Sentinel.Domain.Auth;
-using Sentinel.Security.Abstractions.Identity;
+using Sentinel.DPoP;
+using Sentinel.RAR;
+using Sentinel.Security.Abstractions.Options;
+using Sentinel.Security.Abstractions.Replay;
 
 namespace Sentinel.Tests.Security;
 
 public sealed class HandlerRobustnessEdgeCaseTests
 {
     [Fact]
-    public async Task RegisterUserHandler_WhenRequestIsNull_ThrowsArgumentFailure()
+    public void RarExtractor_WhenOptionsAreNull_ThrowsArgumentNullException()
     {
-        var sut = new RegisterUserHandler(
-            Mock.Of<ICaptchaService>(),
-            Mock.Of<IIdentityRegistry>(),
-            Mock.Of<IEmailService>(),
-            Mock.Of<IEmailVerificationTokenStore>(),
-            Mock.Of<IPasswordStrengthValidator>());
+        var act = () => new RarExtractor(null!, NullLogger<RarExtractor>.Instance);
 
-        Func<Task> act = async () => await sut.HandleAsync(null!, "ip", CancellationToken.None);
-
-        await act.Should().ThrowAsync<NullReferenceException>();
+        act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]
-    public async Task ForgotPasswordHandler_WhenRequestIsNull_ThrowsArgumentFailure()
+    public void FinancialAuthorizationMatcher_WhenLoggerIsNull_ThrowsArgumentNullException()
     {
-        var sut = new ForgotPasswordHandler(
-            Mock.Of<IIdentityProvider>(),
-            Mock.Of<IResetTokenProvider>(),
-            Mock.Of<IEmailService>(),
-            Mock.Of<ICaptchaService>(),
-            NullLogger<ForgotPasswordHandler>.Instance);
+        var options = Options.Create(new RarValidationOptions());
+        var act = () => new FinancialAuthorizationMatcher(options, null!);
 
-        var act = async () => await sut.HandleAsync(null!, CancellationToken.None);
-
-        await act.Should().ThrowAsync<NullReferenceException>();
+        act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]
-    public async Task ResetPasswordHandler_WhenRequestIsNull_ThrowsArgumentFailure()
+    public void DpopProofValidator_WhenOptionsAreNull_ThrowsArgumentNullException()
     {
-        var sut = new ResetPasswordHandler(
-            Mock.Of<IResetTokenProvider>(),
-            Mock.Of<IIdentityProvider>(),
-            Mock.Of<IJtiReplayCache>(),
-            Mock.Of<IAuthRevocationService>());
+        var replayCache = Mock.Of<IJtiReplayCache>();
 
-        Func<Task> act = async () => await sut.HandleAsync(null!, CancellationToken.None);
+        var act = () => new DpopProofValidator(replayCache, null!);
 
-        await act.Should().ThrowAsync<NullReferenceException>();
-    }
-
-    [Fact]
-    public async Task TokenExchangeController_WhenMalformedProviderOrToken_ReturnsBadRequest()
-    {
-        var controller = new TokenExchangeController(Mock.Of<ITokenExchangeService>())
-        {
-            ControllerContext = new ControllerContext
-            {
-                HttpContext = new DefaultHttpContext()
-            }
-        };
-        controller.Request.Headers["DPoP"] = "proof";
-
-        var response = await controller.ExchangeExternalToken(
-            new TokenExchangeController.TokenExchangeRequest(" ", " ", " "),
-            CancellationToken.None);
-
-        response.Should().BeOfType<BadRequestObjectResult>();
+        act.Should().Throw<ArgumentNullException>();
     }
 }

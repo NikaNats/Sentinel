@@ -18,9 +18,12 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
+using Sentinel.Tests.Shared;
 using Sentinel.Tests.Shared.Fixtures;
 using StackExchange.Redis;
 using Testcontainers.Redis;
+
+#pragma warning disable CA2213
 
 namespace Sentinel.Tests.Integration;
 
@@ -49,8 +52,8 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
         using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/profile");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", presentation);
 
-        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
-        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        var response = await client.SendAsync(request, CancellationToken.None);
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("Selective User", body, StringComparison.Ordinal);
@@ -181,7 +184,7 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
                 .Build();
         }
 
-        public async ValueTask InitializeAsync()
+        public async Task InitializeAsync()
         {
             await redisContainer.StartAsync();
             var redisHostPort = redisContainer.GetMappedPublicPort(6379);
@@ -191,7 +194,7 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
             _ = CreateClient();
         }
 
-        ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsyncCore());
+        Task IAsyncLifetime.DisposeAsync() => DisposeAsyncCore();
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {

@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Sentinel.Application;
 using Sentinel.Application.Auth.Models;
+using Sentinel.Domain.Auth.Rar;
 using Sentinel.RAR;
 using System.Text.Json;
 using Xunit;
@@ -78,9 +79,8 @@ public sealed class AotCompatibilityTests
     public void Verify_AuthorizationDetail_IsTrimSafe()
     {
         // Arrange: Create financial authorization detail
-        var instance = new AuthorizationDetail
+        var instance = new AuthorizationDetail("urn:openbanking:params:acr:value:financial")
         {
-            Type = "urn:openbanking:params:acr:value:financial",
             TransactionId = "txn_2026_001",
             Amount = 150.50m,
             Currency = "USD"
@@ -122,16 +122,14 @@ public sealed class AotCompatibilityTests
         // Arrange: Create array with multiple details
         var instances = new[]
         {
-            new AuthorizationDetail
+            new AuthorizationDetail("urn:openbanking:params:acr:value:financial")
             {
-                Type = "urn:openbanking:params:acr:value:financial",
                 TransactionId = "txn_first",
                 Amount = 100m,
                 Currency = "USD"
             },
-            new AuthorizationDetail
+            new AuthorizationDetail("urn:openbanking:params:acr:value:financial")
             {
-                Type = "urn:openbanking:params:acr:value:financial",
                 TransactionId = "txn_second",
                 Amount = 200m,
                 Currency = "EUR"
@@ -155,7 +153,7 @@ public sealed class AotCompatibilityTests
         deserialized.Should().BeOfType<AuthorizationDetail[]>();
 
         var details = (AuthorizationDetail[])deserialized!;
-        details.Should().HaveLength(2,
+        details.Should().HaveCount(2,
             "Array length must be preserved");
         details[0].TransactionId.Should().Be("txn_first");
         details[1].Amount.Should().Be(200m);
@@ -246,8 +244,8 @@ public sealed class AotCompatibilityTests
         var testInstances = new object[]
         {
             new TokenExchangeResult { AccessToken = "test", TokenType = "Bearer", ExpiresIn = 3600 },
-            new AuthorizationDetail { Type = "test", TransactionId = "txn", Amount = 1m, Currency = "USD" },
-            new[] { new AuthorizationDetail { Type = "test", TransactionId = "txn", Amount = 1m, Currency = "USD" } },
+            new AuthorizationDetail("test") { TransactionId = "txn", Amount = 1m, Currency = "USD" },
+            new[] { new AuthorizationDetail("test") { TransactionId = "txn", Amount = 1m, Currency = "USD" } },
             new Dictionary<string, object> { ["key"] = "value" }
         };
 
@@ -299,9 +297,8 @@ public sealed class AotCompatibilityTests
 
         var authDetails = new[]
         {
-            new AuthorizationDetail
+            new AuthorizationDetail("urn:openbanking:params:acr:value:financial")
             {
-                Type = "urn:openbanking:params:acr:value:financial",
                 TransactionId = "transactions_flow_123",
                 Amount = 50_000m,
                 Currency = "USD"
@@ -340,7 +337,7 @@ public sealed class AotCompatibilityTests
 
         token.AccessToken.Should().NotBeEmpty("Token must be present");
         token.TokenType.Should().Be("DPoP");
-        details.Should().HaveLength(1);
+        details.Should().HaveCount(1);
         details[0].Amount.Should().Be(50_000m, "Financial amount must survive round-trip");
     }
 }

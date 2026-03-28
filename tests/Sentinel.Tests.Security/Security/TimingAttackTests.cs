@@ -237,8 +237,15 @@ public sealed class TimingAttackTests
         var baselineTime = MeasureValidationPath("baseline", IterationCount);
 
         // Arrange: Create background CPU load
+        using var cts = new CancellationTokenSource();
         var loadTasks = Enumerable.Range(0, Environment.ProcessorCount)
-            .Select(_ => Task.Run(() => { while (true) { } }))
+            .Select(_ => Task.Run(() =>
+            {
+                while (!cts.Token.IsCancellationRequested)
+                {
+                    Thread.SpinWait(1000);
+                }
+            }, cts.Token))
             .ToList();
 
         try
@@ -253,16 +260,9 @@ public sealed class TimingAttackTests
         }
         finally
         {
-            // Cleanup: Kill background tasks (they're infinite loops)
-            foreach (var task in loadTasks)
-            {
-                try
-                {
-                    // Note: We can't actually kill these in a real scenario.
-                    // For testing purposes, we'd use CancellationToken.
-                }
-                catch { }
-            }
+            // Cleanup: request cancellation and allow workers to exit naturally.
+            cts.Cancel();
+            _ = loadTasks;
         }
     }
 

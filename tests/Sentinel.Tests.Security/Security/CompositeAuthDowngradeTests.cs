@@ -14,6 +14,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
+using Sentinel.Tests.Shared;
 using Sentinel.Tests.Shared.Fixtures;
 using StackExchange.Redis;
 using Testcontainers.Redis;
@@ -36,7 +37,7 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
         using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/test/protected");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+        var response = await client.SendAsync(request, CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Contains("invalid_dpop_proof", response.Headers.WwwAuthenticate.ToString(), StringComparison.Ordinal);
@@ -48,7 +49,7 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
         using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/test/protected");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "issuer~disclosure~forged-kb");
 
-        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+        var response = await client.SendAsync(request, CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }

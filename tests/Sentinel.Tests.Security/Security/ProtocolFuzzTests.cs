@@ -1,9 +1,12 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using Sentinel.Security.Abstractions.DPoP;
+using Sentinel.Security.Abstractions.Options;
 using Sentinel.Security.Abstractions.Replay;
 using Sentinel.DPoP;
+using System.Text;
 using Xunit;
 
 namespace Sentinel.Tests.Security;
@@ -44,7 +47,8 @@ public sealed class ProtocolFuzzTests
             .ReturnsAsync(true);
 
         // Direct instantiation
-        _dpopValidator = new DpopProofValidator(_replayCacheMock.Object);
+        var options = Options.Create(new DPoPOptions());
+        _dpopValidator = new DpopProofValidator(_replayCacheMock.Object, options);
     }
 
     /// <summary>
@@ -75,10 +79,8 @@ public sealed class ProtocolFuzzTests
         Func<Task> act = async () => await _dpopValidator.ValidateAsync(request, cts.Token);
 
         // Assert: Should not throw NullReferenceException or IndexOutOfRangeException
-        await act.Should()
-            .NotThrowAsync<NullReferenceException>("Validator must be null-safe")
-            .And
-            .NotThrowAsync<IndexOutOfRangeException>("Validator must be bounds-safe");
+        await act.Should().NotThrowAsync<NullReferenceException>("Validator must be null-safe");
+        await act.Should().NotThrowAsync<IndexOutOfRangeException>("Validator must be bounds-safe");
 
         // Additional: If it doesn't timeout, the result should be failure
         if (!cts.Token.IsCancellationRequested)
@@ -117,10 +119,8 @@ public sealed class ProtocolFuzzTests
         Func<Task> act = async () => await _dpopValidator.ValidateAsync(request, cts.Token);
 
         // Assert: Should NOT throw OutOfMemoryException or StackOverflowException
-        await act.Should()
-            .NotThrowAsync<OutOfMemoryException>("Large payload must not exhaust memory")
-            .And
-            .NotThrowAsync<StackOverflowException>("Deep nesting must not overflow stack");
+        await act.Should().NotThrowAsync<OutOfMemoryException>("Large payload must not exhaust memory");
+        await act.Should().NotThrowAsync<StackOverflowException>("Deep nesting must not overflow stack");
     }
 
     /// <summary>
@@ -147,10 +147,8 @@ public sealed class ProtocolFuzzTests
         Func<Task> act = async () => await _dpopValidator.ValidateAsync(request);
 
         // Assert: Must handle encoding gracefully
-        await act.Should()
-            .NotThrowAsync<DecoderFallbackException>("Encoder must not throw on bad UTF-8")
-            .And
-            .NotThrowAsync<System.Text.DecoderFallbackException>("Decoder must handle invalid sequences");
+        await act.Should().NotThrowAsync<DecoderFallbackException>("Encoder must not throw on bad UTF-8");
+        await act.Should().NotThrowAsync<System.Text.DecoderFallbackException>("Decoder must handle invalid sequences");
 
         // If it completes, result must be failure
         var result = await _dpopValidator.ValidateAsync(request);

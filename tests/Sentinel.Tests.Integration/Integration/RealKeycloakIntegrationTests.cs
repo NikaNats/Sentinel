@@ -22,7 +22,7 @@ public sealed class RealKeycloakIntegrationTests(RealKeycloakApiFactory factory)
 
         using var request = tokenClient.CreateApiRequest(HttpMethod.Get, new Uri(apiClient.BaseAddress!, "/v1/profile"),
             token.AccessToken);
-        using var response = await apiClient.SendAsync(request, TestContext.Current.CancellationToken);
+        using var response = await apiClient.SendAsync(request, CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Contains("invalid_dpop_proof", response.Headers.WwwAuthenticate.ToString());
@@ -43,7 +43,7 @@ public sealed class RealKeycloakIntegrationTests(RealKeycloakApiFactory factory)
         using var request = attackerKeyClient.CreateApiRequest(HttpMethod.Get,
             new Uri(apiClient.BaseAddress!, "/v1/profile"), token.AccessToken);
 
-        using var response = await apiClient.SendAsync(request, TestContext.Current.CancellationToken);
+        using var response = await apiClient.SendAsync(request, CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Contains("invalid_dpop_proof", response.Headers.WwwAuthenticate.ToString());
@@ -63,7 +63,7 @@ public sealed class RealKeycloakIntegrationTests(RealKeycloakApiFactory factory)
         using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/profile");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
 
-        using var response = await apiClient.SendAsync(request, TestContext.Current.CancellationToken);
+        using var response = await apiClient.SendAsync(request, CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Contains("invalid_dpop_proof", response.Headers.WwwAuthenticate.ToString());

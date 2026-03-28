@@ -1,4 +1,3 @@
-using Sentinel.Infrastructure.Auth;
 using Sentinel.Keycloak;
 
 namespace Sentinel.Tests.Unit;
@@ -12,8 +11,7 @@ public sealed class KeycloakOptionsExtensionsTests
         {
             Authority = "https://keycloak.example",
             Audience = "sentinel-api",
-            SsoSessionMaxLifespanSeconds = 7200,
-            SessionMaxLifespanSeconds = 3600
+            SsoSessionMaxLifespanSeconds = 7200
         };
 
         var ttl = options.ResolveSessionBlacklistTtl();
@@ -22,19 +20,18 @@ public sealed class KeycloakOptionsExtensionsTests
     }
 
     [Fact]
-    public void ResolveSessionBlacklistTtl_WhenSsoInvalid_UsesLegacySessionValue()
+    public void ResolveSessionBlacklistTtl_WhenSsoInvalid_UsesDefault()
     {
         var options = new KeycloakOptions
         {
             Authority = "https://keycloak.example",
             Audience = "sentinel-api",
-            SsoSessionMaxLifespanSeconds = 0,
-            SessionMaxLifespanSeconds = 1800
+            SsoSessionMaxLifespanSeconds = 0
         };
 
         var ttl = options.ResolveSessionBlacklistTtl();
 
-        Assert.Equal(TimeSpan.FromSeconds(1800), ttl);
+        Assert.Equal(TimeSpan.FromSeconds(28_800), ttl);
     }
 
     [Fact]
@@ -44,8 +41,7 @@ public sealed class KeycloakOptionsExtensionsTests
         {
             Authority = "https://keycloak.example",
             Audience = "sentinel-api",
-            SsoSessionMaxLifespanSeconds = -1,
-            SessionMaxLifespanSeconds = 0
+            SsoSessionMaxLifespanSeconds = -1
         };
 
         var ttl = options.ResolveSessionBlacklistTtl();

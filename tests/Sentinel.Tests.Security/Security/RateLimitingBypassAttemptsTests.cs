@@ -40,7 +40,7 @@ public sealed class RateLimitingBypassAttemptsTests(SentinelApiFactory factory)
             using var request = CreateSignedRequest(ecdsa, jwkObject, token, HttpMethod.Get, requestUrl);
             request.Headers.TryAddWithoutValidation("X-Forwarded-For", $"203.0.113.{i % 254 + 1}");
 
-            using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+            using var response = await client.SendAsync(request, CancellationToken.None);
             if (response.StatusCode == HttpStatusCode.OK)
             {
                 Interlocked.Increment(ref successCount);

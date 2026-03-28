@@ -17,7 +17,7 @@ public sealed class AuthFlowIntegrationTests(SentinelApiFactory factory)
     [Fact]
     public async Task ProtectedEndpoint_WithoutToken_Returns401()
     {
-        var response = await client.GetAsync("/v1/Profile", TestContext.Current.CancellationToken);
+        var response = await client.GetAsync("/v1/Profile", CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -69,7 +69,7 @@ public sealed class AuthFlowIntegrationTests(SentinelApiFactory factory)
         request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken);
         request.Headers.Add("DPoP", dpopProof);
 
-        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+        var response = await client.SendAsync(request, CancellationToken.None);
 
         response.EnsureSuccessStatusCode();
         Assert.True(response.Headers.Contains("DPoP-Nonce"));

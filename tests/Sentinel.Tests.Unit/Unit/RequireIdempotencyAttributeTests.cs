@@ -1,13 +1,9 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Abstractions;
-using Microsoft.AspNetCore.Mvc.Filters;
-using Microsoft.AspNetCore.Mvc.ModelBinding;
-using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
-using Sentinel.Middleware.Filters;
+using Sentinel.AspNetCore.Filters;
 using StackExchange.Redis;
 
 namespace Sentinel.Tests.Unit;
@@ -15,23 +11,23 @@ namespace Sentinel.Tests.Unit;
 public sealed class RequireIdempotencyAttributeTests
 {
     [Fact]
-    public async Task OnActionExecutionAsync_WhenHeaderMissing_ReturnsBadRequest()
+    public async Task InvokeAsync_WhenHeaderMissing_ReturnsBadRequest()
     {
-        var attribute = new RequireIdempotencyAttribute();
-        var context = CreateActionExecutingContext();
+        var filter = new IdempotencyFilter();
+        var context = CreateContext();
 
-        await attribute.OnActionExecutionAsync(context,
-            () => throw new InvalidOperationException("should not execute"));
+        var result = await filter.InvokeAsync(context,
+            _ => throw new InvalidOperationException("should not execute"));
 
-        var result = Assert.IsType<BadRequestObjectResult>(context.Result);
-        Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
+        var status = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
+        Assert.Equal(StatusCodes.Status400BadRequest, status.StatusCode);
     }
 
     [Fact]
-    public async Task OnActionExecutionAsync_WhenDuplicateKey_ReturnsConflict()
+    public async Task InvokeAsync_WhenDuplicateKey_ReturnsConflict()
     {
-        var attribute = new RequireIdempotencyAttribute();
-        var context = CreateActionExecutingContext(db =>
+        var filter = new IdempotencyFilter();
+        var context = CreateContext(db =>
         {
             db.Setup(x => x.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan?>(),
                     When.NotExists, It.IsAny<CommandFlags>()))
@@ -39,20 +35,20 @@ public sealed class RequireIdempotencyAttributeTests
             db.Setup(x => x.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
                 .ReturnsAsync("IN_PROGRESS");
         });
-        context.HttpContext.Request.Headers["Idempotency-Key"] = "dup-1";
+        context.HttpContext.Request.Headers["Idempotency-Key"] = "6f836f95-7f22-4eb9-b854-8e8be2df40e8";
 
-        await attribute.OnActionExecutionAsync(context,
-            () => throw new InvalidOperationException("should not execute"));
+        var result = await filter.InvokeAsync(context,
+            _ => throw new InvalidOperationException("should not execute"));
 
-        var result = Assert.IsType<ConflictObjectResult>(context.Result);
-        Assert.Equal(StatusCodes.Status409Conflict, result.StatusCode);
+        var status = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
+        Assert.Equal(StatusCodes.Status409Conflict, status.StatusCode);
     }
 
     [Fact]
-    public async Task OnActionExecutionAsync_WhenDuplicateCompletedRequest_ReturnsNoContent()
+    public async Task InvokeAsync_WhenDuplicateCompletedRequest_ReturnsNoContent()
     {
-        var attribute = new RequireIdempotencyAttribute();
-        var context = CreateActionExecutingContext(db =>
+        var filter = new IdempotencyFilter();
+        var context = CreateContext(db =>
         {
             db.Setup(x => x.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan?>(),
                     When.NotExists, It.IsAny<CommandFlags>()))
@@ -60,40 +56,38 @@ public sealed class RequireIdempotencyAttributeTests
             db.Setup(x => x.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
                 .ReturnsAsync("COMPLETED");
         });
-        context.HttpContext.Request.Headers["Idempotency-Key"] = "done-1";
+        context.HttpContext.Request.Headers["Idempotency-Key"] = "a8a67f6f-7f6f-4f71-b3a6-6bce6f04c6d2";
 
-        await attribute.OnActionExecutionAsync(context,
-            () => throw new InvalidOperationException("should not execute"));
+        var result = await filter.InvokeAsync(context,
+            _ => throw new InvalidOperationException("should not execute"));
 
-        var result = Assert.IsType<NoContentResult>(context.Result);
-        Assert.Equal(StatusCodes.Status204NoContent, result.StatusCode);
+        var status = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
+        Assert.Equal(StatusCodes.Status204NoContent, status.StatusCode);
     }
 
     [Fact]
-    public async Task OnActionExecutionAsync_WhenSuccessfulRequest_StoresIdempotencyKey()
+    public async Task InvokeAsync_WhenSuccessfulRequest_StoresIdempotencyKey()
     {
-        var attribute = new RequireIdempotencyAttribute();
-        var context = CreateActionExecutingContext(db => { db.SetReturnsDefault(Task.FromResult(true)); });
-        context.HttpContext.Request.Headers["Idempotency-Key"] = "ok-1";
-
-        await attribute.OnActionExecutionAsync(context, NextOk(context));
-
-        Assert.Null(context.Result);
-    }
-
-    private static ActionExecutionDelegate NextOk(ActionExecutingContext context)
-    {
-        return () =>
+        var filter = new IdempotencyFilter();
+        var context = CreateContext(db =>
         {
-            var executed = new ActionExecutedContext(context, context.Filters, context.Controller)
-            {
-                Result = new OkObjectResult(new { status = "ok" })
-            };
-            return Task.FromResult(executed);
-        };
+            db.Setup(x => x.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan?>(),
+                    When.NotExists, It.IsAny<CommandFlags>()))
+                .ReturnsAsync(true);
+            db.Setup(x => x.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan?>(),
+                    When.Always, It.IsAny<CommandFlags>()))
+                .ReturnsAsync(true);
+        });
+        context.HttpContext.Request.Headers["Idempotency-Key"] = "13b33980-5b58-4974-b080-bb4ecff97327";
+
+        var result = await filter.InvokeAsync(context,
+            _ => ValueTask.FromResult<object?>(TypedResults.Ok(new { status = "ok" })));
+
+        var status = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
+        Assert.Equal(StatusCodes.Status200OK, status.StatusCode);
     }
 
-    private static ActionExecutingContext CreateActionExecutingContext(Action<Mock<IDatabase>>? configureDb = null)
+    private static TestEndpointFilterInvocationContext CreateContext(Action<Mock<IDatabase>>? configureDb = null)
     {
         var dbMock = new Mock<IDatabase>();
         configureDb?.Invoke(dbMock);
@@ -112,8 +106,20 @@ public sealed class RequireIdempotencyAttributeTests
             User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test"))
         };
 
-        var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor(),
-            new ModelStateDictionary());
-        return new ActionExecutingContext(actionContext, [], new Dictionary<string, object?>(), new object());
+        return new TestEndpointFilterInvocationContext(httpContext);
+    }
+
+    private sealed class TestEndpointFilterInvocationContext(HttpContext httpContext) : EndpointFilterInvocationContext
+    {
+        private readonly object?[] _arguments = [];
+
+        public override HttpContext HttpContext { get; } = httpContext;
+
+        public override IList<object?> Arguments => _arguments;
+
+        public override T GetArgument<T>(int index)
+        {
+            return (T)_arguments[index]!;
+        }
     }
 }

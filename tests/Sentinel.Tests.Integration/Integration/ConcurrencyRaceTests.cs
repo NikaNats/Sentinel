@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Tests.Shared.Fixtures;

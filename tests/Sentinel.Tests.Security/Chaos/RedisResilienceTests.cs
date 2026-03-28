@@ -1,9 +1,11 @@
+using System.Net.Sockets;
 using FluentAssertions;
 using Moq;
 using StackExchange.Redis;
 using Xunit;
 using Sentinel.Infrastructure.Cache;
 using Sentinel.Security.Abstractions.Replay;
+using Sentinel.Security.Abstractions.Session;
 
 namespace Sentinel.Tests.Security.Chaos;
 
@@ -116,7 +118,7 @@ public sealed class RedisResilienceTests
         _cacheServiceMock
             .Setup(x => x.BlacklistSessionAsync(sessionId, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new RedisConnectionException(
-                ConnectionFailureType.MasterConnection,
+                ConnectionFailureType.UnableToConnect,
                 "No cluster quorum reached"))
             .Verifiable("Revocation must be attempted despite cluster issues");
 

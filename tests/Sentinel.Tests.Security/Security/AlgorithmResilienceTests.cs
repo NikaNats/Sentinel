@@ -1,7 +1,9 @@
 using FluentAssertions;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.DPoP;
 using Sentinel.Security.Abstractions.DPoP;
+using Sentinel.Security.Abstractions.Options;
 using Sentinel.Security.Abstractions.Replay;
 using System.Security.Cryptography;
 using Moq;
@@ -54,7 +56,8 @@ public sealed class AlgorithmResilienceTests : IDisposable
         _rsa = RSA.Create(2048);
 
         // Direct instantiation (no reflection)
-        _validator = new DpopProofValidator(_replayCacheMock.Object);
+        var options = Options.Create(new DPoPOptions());
+        _validator = new DpopProofValidator(_replayCacheMock.Object, options);
     }
 
     /// <summary>

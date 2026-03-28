@@ -21,9 +21,12 @@ using Microsoft.IdentityModel.Tokens;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Security.Abstractions.Options;
 using Sentinel.Security.Abstractions.SSF;
+using Sentinel.Tests.Shared;
 using Sentinel.Tests.Shared.Fixtures;
 using StackExchange.Redis;
 using Testcontainers.Redis;
+
+#pragma warning disable CA2213
 
 namespace Sentinel.Tests.Integration;
 
@@ -54,7 +57,7 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
         var preEventToken = TestTokenIssuer.MintAccessToken(jkt, sid: sid);
         using var preEventRequest = CreateDpopRequest(ecdsa, jwkObject, preEventToken,
             new Uri(client.BaseAddress!, "/v1/test/protected").ToString(), "/v1/test/protected");
-        var preEventResponse = await client.SendAsync(preEventRequest, TestContext.Current.CancellationToken);
+        var preEventResponse = await client.SendAsync(preEventRequest, CancellationToken.None);
         Assert.Equal(HttpStatusCode.OK, preEventResponse.StatusCode);
 
         var setToken = CreateSetToken(sid);
@@ -63,13 +66,13 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
             Content = new StringContent($$"""{"set":"{{setToken}}"}""", Encoding.UTF8, "application/json")
         };
 
-        var ssfResponse = await client.SendAsync(ssfRequest, TestContext.Current.CancellationToken);
+        var ssfResponse = await client.SendAsync(ssfRequest, CancellationToken.None);
         Assert.Equal(HttpStatusCode.Accepted, ssfResponse.StatusCode);
 
         var postEventToken = TestTokenIssuer.MintAccessToken(jkt, sid: sid);
         using var postEventRequest = CreateDpopRequest(ecdsa, jwkObject, postEventToken,
             new Uri(client.BaseAddress!, "/v1/test/protected").ToString(), "/v1/test/protected");
-        var postEventResponse = await client.SendAsync(postEventRequest, TestContext.Current.CancellationToken);
+        var postEventResponse = await client.SendAsync(postEventRequest, CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Unauthorized, postEventResponse.StatusCode);
     }
@@ -87,7 +90,7 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
             Content = new StringContent($$"""{"set":"{{setToken}}"}""", Encoding.UTF8, "application/json")
         };
 
-        var response = await localClient.SendAsync(request, TestContext.Current.CancellationToken);
+        var response = await localClient.SendAsync(request, CancellationToken.None);
 
         Assert.True(response.StatusCode is HttpStatusCode.InternalServerError or HttpStatusCode.ServiceUnavailable);
     }
@@ -191,7 +194,7 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
                 .Build();
         }
 
-        public async ValueTask InitializeAsync()
+        public async Task InitializeAsync()
         {
             await redisContainer.StartAsync();
             var redisHostPort = redisContainer.GetMappedPublicPort(6379);
@@ -201,11 +204,7 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
             _ = CreateClient();
         }
 
-        ValueTask IAsyncDisposable.DisposeAsync()
-        {
-            GC.SuppressFinalize(this);
-            return new ValueTask(DisposeAsyncCore());
-        }
+        Task IAsyncLifetime.DisposeAsync() => DisposeAsyncCore();
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {

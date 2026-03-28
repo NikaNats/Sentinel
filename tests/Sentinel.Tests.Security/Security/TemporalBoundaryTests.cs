@@ -1,9 +1,11 @@
 using FluentAssertions;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using Microsoft.IdentityModel.Tokens;
 using Moq;
 using Sentinel.DPoP;
 using Sentinel.Security.Abstractions.DPoP;
+using Sentinel.Security.Abstractions.Options;
 using Sentinel.Security.Abstractions.Replay;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
@@ -275,6 +277,7 @@ public sealed class TemporalBoundaryTests
         var instance = Activator.CreateInstance(
             validatorType,
             _replayCache.Object,
+            Options.Create(new DPoPOptions()),
             null, // thumbprintComputer (use default)
             _timeProvider)!;
 
@@ -317,6 +320,7 @@ public sealed class TemporalBoundaryTests
             }
         };
 
-        return handler.CreateToken(tokenDescriptor);
+        var token = handler.CreateToken(tokenDescriptor);
+        return handler.WriteToken(token);
     }
 }
