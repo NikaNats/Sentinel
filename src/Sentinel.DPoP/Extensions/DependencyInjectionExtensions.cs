@@ -1,5 +1,8 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Sentinel.Security.Abstractions.DPoP;
+using Sentinel.Security.Abstractions.Options;
+using Sentinel.Security.Abstractions.Replay;
 
 namespace Sentinel.DPoP.Extensions;
 
@@ -11,10 +14,23 @@ public static class DependencyInjectionExtensions
     /// <summary>
     /// Registers DPoP-related services in the dependency injection container.
     /// </summary>
-    public static IServiceCollection AddSentinelDPoP(this IServiceCollection services)
+    /// <remarks>
+    /// ✅ FIX: Transient registration prevents Captive Dependency.
+    /// If IJtiReplayCache is Scoped (e.g., EF Core DbContext), Singleton would capture it globally,
+    /// causing DbContext concurrency exceptions in production.
+    ///
+    /// IMPORTANT: The consumer MUST register an implementation of <see cref="IJtiReplayCache"/>
+    /// prior to calling this method. Failure to do so will result in a DI resolution exception at runtime.
+    /// </remarks>
+    public static IServiceCollection AddSentinelDPoP(this IServiceCollection services, IConfiguration configuration)
     {
-        _ = services.AddSingleton<IDpopThumbprintComputer, DpopThumbprintComputer>();
-        _ = services.AddSingleton<IDpopProofValidator, DpopProofValidator>();
+        // ✅ FIX: Bind configuration for magic-number removal (ProofLifetimeSeconds, AllowedClockSkewSeconds, etc.)
+        services.Configure<DPoPOptions>(configuration.GetSection(DPoPOptions.SectionName));
+
+        // ✅ FIX: Use Transient to prevent Captive Dependencies if IJtiReplayCache is Scoped
+        services.AddTransient<IDpopThumbprintComputer, DpopThumbprintComputer>();
+        services.AddTransient<IDpopProofValidator, DpopProofValidator>();
+
         return services;
     }
 }

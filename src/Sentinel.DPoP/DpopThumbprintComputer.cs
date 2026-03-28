@@ -1,3 +1,9 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using Microsoft.IdentityModel.Tokens;
+using Sentinel.Security.Abstractions.DPoP;
+
 namespace Sentinel.DPoP;
 
 /// <summary>
@@ -8,11 +14,15 @@ internal sealed class DpopThumbprintComputer : IDpopThumbprintComputer
     /// <summary>
     /// Computes the RFC 7638 thumbprint from a JsonElement representing a public key.
     /// </summary>
+    /// <remarks>
+    /// ✅ FIX: Uses source-generated context to guarantee Native AOT compliance.
+    /// Reflection-based serialization is blocked in trimmed environments.
+    /// </remarks>
     /// <param name="jwk">JsonElement containing a JWK (e.g., from a JWT header).</param>
     /// <returns>Base64url-encoded thumbprint string, or empty string if JWK is unsupported.</returns>
     public string Compute(JsonElement jwk)
     {
-        string canonical;
+        Dictionary<string, string> members;
 
         // EC (NIST curves): crv, kty, x, y
         if (jwk.TryGetProperty("kty", out var ktyElement)
@@ -21,13 +31,13 @@ internal sealed class DpopThumbprintComputer : IDpopThumbprintComputer
             && jwk.TryGetProperty("x", out var x)
             && jwk.TryGetProperty("y", out var y))
         {
-            canonical = JsonSerializer.Serialize(new Dictionary<string, string>
+            members = new Dictionary<string, string>
             {
                 ["crv"] = crv.GetString() ?? string.Empty,
                 ["kty"] = "EC",
                 ["x"] = x.GetString() ?? string.Empty,
                 ["y"] = y.GetString() ?? string.Empty
-            });
+            };
         }
         // RSA: e, kty, n
         else if (jwk.TryGetProperty("kty", out var rsaKty)
@@ -35,29 +45,32 @@ internal sealed class DpopThumbprintComputer : IDpopThumbprintComputer
                  && jwk.TryGetProperty("e", out var e)
                  && jwk.TryGetProperty("n", out var n))
         {
-            canonical = JsonSerializer.Serialize(new Dictionary<string, string>
+            members = new Dictionary<string, string>
             {
                 ["e"] = e.GetString() ?? string.Empty,
                 ["kty"] = "RSA",
                 ["n"] = n.GetString() ?? string.Empty
-            });
+            };
         }
         // ML-DSA (post-quantum): kty, x
         else if (jwk.TryGetProperty("kty", out var mlDsaKty)
                  && string.Equals(mlDsaKty.GetString(), "ML-DSA", StringComparison.Ordinal)
                  && jwk.TryGetProperty("x", out var mlDsaX))
         {
-            canonical = JsonSerializer.Serialize(new Dictionary<string, string>
+            members = new Dictionary<string, string>
             {
                 ["kty"] = "ML-DSA",
                 ["x"] = mlDsaX.GetString() ?? string.Empty
-            });
+            };
         }
         else
         {
             return string.Empty;
         }
 
+        // ✅ FIX: Use source-generated context (DpopJsonContext.Default.DictionaryStringString)
+        // This eliminates reflection and guarantees Native AOT compatibility
+        var canonical = JsonSerializer.Serialize(members, DpopJsonContext.Default.DictionaryStringString);
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
         return Base64UrlEncoder.Encode(hash);
     }

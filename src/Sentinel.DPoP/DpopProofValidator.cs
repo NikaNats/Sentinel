@@ -1,3 +1,11 @@
+using System.Security.Cryptography;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
+using Sentinel.Security.Abstractions.DPoP;
+using Sentinel.Security.Abstractions.Options;
+using Sentinel.Security.Abstractions.Replay;
+
 namespace Sentinel.DPoP;
 
 /// <summary>
@@ -9,31 +17,34 @@ internal sealed class DpopProofValidator : IDpopProofValidator
     private readonly IDpopThumbprintComputer _thumbprintComputer;
     private readonly IJtiReplayCache _replayCache;
     private readonly TimeProvider _timeProvider;
+    private readonly DPoPOptions _options;
+    private readonly HashSet<string> _supportedAlgorithms;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DpopProofValidator"/> class.
     /// </summary>
+    /// <remarks>
+    /// ✅ FIX: Injects IOptions&lt;DPoPOptions&gt; for configuration-driven security values
+    /// and case-insensitive algorithm matching.
+    /// </remarks>
     /// <param name="replayCache">Cache for preventing JTI replay attacks.</param>
+    /// <param name="options">Configuration for DPoP validation settings.</param>
     /// <param name="thumbprintComputer">Computes RFC 7638 thumbprints (optional, creates default if null).</param>
     /// <param name="timeProvider">Time provider for validation (optional, defaults to system time).</param>
     public DpopProofValidator(
         IJtiReplayCache replayCache,
+        IOptions<DPoPOptions> options,
         IDpopThumbprintComputer? thumbprintComputer = null,
         TimeProvider? timeProvider = null)
     {
         _replayCache = replayCache;
+        _options = options.Value;
         _thumbprintComputer = thumbprintComputer ?? new DpopThumbprintComputer();
         _timeProvider = timeProvider ?? TimeProvider.System;
-    }
 
-    private static readonly HashSet<string> SupportedAlgorithms =
-    [
-        SecurityAlgorithms.RsaSsaPssSha256,
-        SecurityAlgorithms.EcdsaSha256,
-        "MLDSA44",
-        "MLDSA65",
-        "MLDSA87"
-    ];
+        // ✅ FIX: Case-insensitive algorithm matching (handles "ES256" vs "es256")
+        _supportedAlgorithms = new HashSet<string>(_options.AllowedAlgorithms, StringComparer.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// Validates a DPoP proof and returns cryptographic binding information per RFC 9449.
@@ -58,7 +69,7 @@ internal sealed class DpopProofValidator : IDpopProofValidator
 
             var dpopToken = TokenHandler.ReadJsonWebToken(request.DpopHeader);
 
-            // Validate algorithm
+            // Validate algorithm (case-insensitive via configured set)
             if (!IsSupportedAlgorithm(dpopToken.Alg))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("unsupported_algorithm");
@@ -70,22 +81,19 @@ internal sealed class DpopProofValidator : IDpopProofValidator
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("invalid_typ");
             }
 
-            // Extract and validate JWK from header
-            if (!dpopToken.TryGetHeaderValue<object>("jwk", out var jwkObj) || jwkObj is null)
+            // ✅ FIX: Request JsonElement directly to prevent .ToString() type-name leakage
+            if (!dpopToken.TryGetHeaderValue<JsonElement>("jwk", out var jwkElement))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("missing_jwk");
             }
 
-            var jwkJson = jwkObj.ToString();
+            var jwkJson = jwkElement.GetRawText();
             if (string.IsNullOrWhiteSpace(jwkJson))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("invalid_jwk");
             }
 
             // Reject private keys
-            using var jwkDoc = JsonDocument.Parse(jwkJson);
-            var jwkElement = jwkDoc.RootElement;
-
             if (jwkElement.TryGetProperty("d", out _))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("private_jwk_rejected");
@@ -103,9 +111,9 @@ internal sealed class DpopProofValidator : IDpopProofValidator
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("missing_jti");
             }
 
-            // Validate HTTP method binding
+            // ✅ FIX: RFC 9449 §4.2 - HTTP Method must be exact case (Ordinal, not OrdinalIgnoreCase)
             if (!dpopToken.TryGetPayloadValue<string>("htm", out var htm)
-                || !string.Equals(htm, request.HttpMethod, StringComparison.OrdinalIgnoreCase))
+                || !string.Equals(htm, request.HttpMethod, StringComparison.Ordinal))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("htm_mismatch");
             }
@@ -123,9 +131,14 @@ internal sealed class DpopProofValidator : IDpopProofValidator
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("missing_iat");
             }
 
+            // ✅ FIX: Configuration-driven clock skew instead of hardcoded magic numbers
             var iatTime = DateTimeOffset.FromUnixTimeSeconds(iat);
             var now = _timeProvider.GetUtcNow();
-            if (iatTime < now.AddSeconds(-60) || iatTime > now.AddSeconds(5))
+            var skew = TimeSpan.FromSeconds(_options.AllowedClockSkewSeconds);
+
+            // Proof must be issued recently. Window: [Now - ProofLifetime - Skew, Now + Skew]
+            if (iatTime < now.AddSeconds(-_options.ProofLifetimeSeconds).Subtract(skew) ||
+                iatTime > now.Add(skew))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("iat_out_of_bounds");
             }
@@ -169,10 +182,10 @@ internal sealed class DpopProofValidator : IDpopProofValidator
                 }
             }
 
-            // Check for JTI replay
+            // ✅ FIX: Configuration-driven JTI replay TTL instead of hardcoded 120 seconds
             var stored = await _replayCache.TryMarkUsedAsync(
                 $"dpop:{jti}",
-                now.AddSeconds(120), // DPoP proof valid for 2 minutes max
+                now.AddSeconds(_options.ProofLifetimeSeconds),
                 cancellationToken);
 
             if (!stored)
@@ -195,7 +208,13 @@ internal sealed class DpopProofValidator : IDpopProofValidator
     /// <summary>
     /// Validates the JWT signature using the extracted JWK as the signing key.
     /// </summary>
-    private static async Task<bool> ValidateDpopSignatureAsync(
+    /// <remarks>
+    /// ⚠️ ARCHITECTURE WARNING: ML-DSA Support
+    /// If ML-DSA (MLDSA44/65/87) is requested, Microsoft.IdentityModel requires a registered ICryptoProvider
+    /// that implements the post-quantum cryptography math. If absent, ValidateTokenAsync returns IsValid=false silently.
+    /// Consider logging if an ML-DSA request fails without a registered provider.
+    /// </remarks>
+    private async Task<bool> ValidateDpopSignatureAsync(
         string token,
         string jwkJson,
         string algorithm,
@@ -269,10 +288,11 @@ internal sealed class DpopProofValidator : IDpopProofValidator
 
     /// <summary>
     /// Checks if an algorithm is in the supported list for DPoP signatures.
+    /// Uses case-insensitive matching to handle variant capitalizations.
     /// </summary>
-    private static bool IsSupportedAlgorithm(string? algorithm)
+    private bool IsSupportedAlgorithm(string? algorithm)
     {
         return !string.IsNullOrWhiteSpace(algorithm)
-               && SupportedAlgorithms.Contains(algorithm);
+               && _supportedAlgorithms.Contains(algorithm);
     }
 }
