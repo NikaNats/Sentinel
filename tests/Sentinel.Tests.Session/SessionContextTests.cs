@@ -1,108 +1,143 @@
 namespace Sentinel.Tests.Session;
 
 /// <summary>
-/// Tests for SessionContext value object initialization and expiration checks.
+/// High-Assurance Tests for SessionContext Value Object
+///
+/// MISSION: Verify security invariants as executable specifications:
+/// 1. Constructor Hardening: Cannot be "poisoned" with null or empty identifiers
+/// 2. Deterministic Expiration Boundaries: Exact nanosecond-level precision
+/// 3. DPoP Binding Integrity: Optional but immutable
+///
+/// These tests treat SessionContext as the boundary enforcer between untrusted input
+/// and the secure session lifecycle.
 /// </summary>
 public class SessionContextTests
 {
-    [Xunit.Fact]
-    public void Constructor_WithSessionId_StoresAndReturnsSessionId()
+    [Theory(DisplayName = "Constructor rejects invalid session identifiers (Null-Key Attack)")]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Constructor_WhenSessionIdIsInvalid_MustThrow(string? invalidId)
+    {
+        // Arrange & Act
+#pragma warning disable CA1806 // Do not ignore method results - call IS the test
+        Action act = () => _ = new SessionContext(invalidId!, DateTimeOffset.UtcNow);
+#pragma warning restore CA1806
+
+        // Assert: Constructor MUST enforce non-null, non-whitespace identifiers
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*cannot be null or whitespace*",
+                "Poisoned SessionContext with null/empty ID could bypass session revocation.");
+    }
+
+    [Fact]
+    public void Constructor_WithValidSessionId_StoresAndReturnsSessionId()
     {
         // Arrange
         var sessionId = "sid-123";
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
 
         // Act
-        var context = new SessionContext(sessionId);
+        var context = new SessionContext(sessionId, expiresAt);
 
         // Assert
         context.SessionId.Should().Be(sessionId);
     }
 
-    [Xunit.Fact]
-    public void Constructor_WithDpopThumbprint_StoresAndReturnsDpopThumbprint()
+    [Fact]
+    public void Constructor_WithDpopThumbprint_StoresAndReturnsThumbprint()
     {
         // Arrange
         var sessionId = "sid-123";
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
         var thumbprint = "base64url-thumbprint-value";
 
         // Act
-        var context = new SessionContext(sessionId, thumbprint);
+        var context = new SessionContext(sessionId, expiresAt, thumbprint);
 
         // Assert
         context.DpopThumbprint.Should().Be(thumbprint);
     }
 
-    [Xunit.Fact]
-    public void Constructor_WithoutDpopThumbprint_ReturnNull()
+    [Fact]
+    public void Constructor_WithoutDpopThumbprint_ReturnsNull()
     {
         // Arrange
         var sessionId = "sid-123";
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
 
         // Act
-        var context = new SessionContext(sessionId);
+        var context = new SessionContext(sessionId, expiresAt);
 
         // Assert
         context.DpopThumbprint.Should().BeNull();
     }
 
-    [Xunit.Fact]
-    public void Constructor_WithExpiresAt_StoresAndReturnsExpiresAt()
+    [Fact(DisplayName = "Expiration boundary test: Inclusive equality at exact expiry time")]
+    public void IsExpired_ExactlyAtExpiryTime_MustReturnTrue()
     {
-        // Arrange
-        var sessionId = "sid-123";
-        var expiresAt = DateTimeOffset.UtcNow.AddHours(4);
+        // Arrange: Create a session expiring at a specific time
+        var expiryTime = DateTimeOffset.UtcNow;
+        var sut = new SessionContext("sid", expiryTime);
 
-        // Act
-        var context = new SessionContext(sessionId, null, expiresAt);
+        // Act: Check expiration AT the exact boundary
+        var result = sut.IsExpired(expiryTime);
 
-        // Assert
-        context.ExpiresAt.Should().Be(expiresAt);
+        // Assert: SECURITY BOUNDARY MUST BE INCLUSIVE
+        // now >= expiresAt is the correct formula (not now > expiresAt)
+        // This prevents race conditions where now == expiresAt allows the session
+        result.Should().BeTrue(
+            "At the exact expiry instant, session MUST be considered expired to prevent use-after-expiry race conditions.");
     }
 
-    [Xunit.Fact]
-    public void Constructor_WithoutExpiresAt_DefaultsTo8Hours()
+    [Fact]
+    public void IsExpired_OneNanosecondBeforeExpiry_MustReturnFalse()
     {
-        // Arrange
-        var sessionId = "sid-123";
-        var beforeCreation = DateTimeOffset.UtcNow.AddHours(8);
+        // Arrange: Create a session expiring at a specific time
+        var expiryTime = DateTimeOffset.UtcNow.AddTicks(1);
+        var beforeExpiry = expiryTime.AddTicks(-1);
+        var sut = new SessionContext("sid", expiryTime);
 
-        // Act
-        var context = new SessionContext(sessionId);
-        var afterCreation = DateTimeOffset.UtcNow.AddHours(8).AddSeconds(1);
+        // Act: Check before the boundary
+        var result = sut.IsExpired(beforeExpiry);
 
-        // Assert
-        Assert.InRange(context.ExpiresAt, beforeCreation, afterCreation);
+        // Assert: Session should still be valid
+        result.Should().BeFalse("One nanosecond before expiry, session must still be valid.");
     }
 
-    [Xunit.Fact]
-    public void IsExpired_WithFutureTime_ReturnsFalse()
+    [Theory(DisplayName = "Deterministic boundary testing: relative to reference time")]
+    [InlineData(1, false)]   // 1 second in the future = NOT expired
+    [InlineData(0, true)]    // Exactly at expiry = expired
+    [InlineData(-1, true)]   // 1 second in the past = expired
+    public void IsExpired_RelativeToExpiryTime_MustReturnExpected(int secondsOffset, bool expectedExpired)
     {
         // Arrange
-        var context = new SessionContext(
-            "sid-123",
-            expiresAt: DateTimeOffset.UtcNow.AddHours(1));
-        var now = DateTimeOffset.UtcNow;
+        var referenceTime = DateTimeOffset.UtcNow;
+        var expiresAt = referenceTime;
+        var sut = new SessionContext("sid", expiresAt);
+        var testTime = expiresAt.AddSeconds(secondsOffset);
 
         // Act
-        var isExpired = context.IsExpired(now);
+        var result = sut.IsExpired(testTime);
 
         // Assert
-        isExpired.Should().BeFalse();
+        result.Should().Be(expectedExpired,
+            "Expiration boundary must be deterministic and inclusive at the exact moment.");
     }
 
-    [Xunit.Fact]
-    public void IsExpired_WithPastTime_ReturnsTrue()
+    [Fact]
+    public void DpopThumbprint_IsImmutable_CannotBeModified()
     {
         // Arrange
-        var context = new SessionContext(
-            "sid-123",
-            expiresAt: DateTimeOffset.UtcNow.AddHours(-1));
-        var now = DateTimeOffset.UtcNow;
+        var context = new SessionContext("sid", DateTimeOffset.UtcNow.AddHours(1), "initial-thumbprint");
 
-        // Act
-        var isExpired = context.IsExpired(now);
+        // Assert: DpopThumbprint is a property with only a getter (immutable)
+        var property = typeof(SessionContext)
+            .GetProperty(nameof(SessionContext.DpopThumbprint));
 
-        // Assert
-        isExpired.Should().BeTrue();
+        property.Should().NotBeNull("DPoP thumbprint property must exist");
+        property!.GetSetMethod()
+            .Should().BeNull("DPoP thumbprint must be immutable after binding.");
     }
 }
