@@ -2,7 +2,6 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
-using Sentinel.Middleware.Filters;
 
 namespace Sentinel.AspNetCore.Middleware;
 
@@ -10,9 +9,8 @@ public sealed class MtlsBindingMiddleware(RequestDelegate next, ILogger<MtlsBind
 {
     public async Task InvokeAsync(HttpContext context)
     {
-        var requiresMtlsBinding =
-            context.GetEndpoint()?.Metadata.GetMetadata<RequireMtlsBindingAttribute>() is not null;
-
+        // ✅ HARDENED: Always enforce mTLS binding for authenticated users (Zero Trust model)
+        // Do not check endpoint metadata - make binding mandatory, not optional
         if (context.User.Identity?.IsAuthenticated != true)
         {
             await next(context);
@@ -22,13 +20,7 @@ public sealed class MtlsBindingMiddleware(RequestDelegate next, ILogger<MtlsBind
         var cnfClaimValue = context.User.FindFirst("cnf")?.Value;
         if (string.IsNullOrWhiteSpace(cnfClaimValue))
         {
-            if (requiresMtlsBinding)
-            {
-                await Reject(context, "mTLS bound access token required for this endpoint.");
-                return;
-            }
-
-            await next(context);
+            await Reject(context, "Authenticated user must have mTLS binding (cnf claim).");
             return;
         }
 
@@ -38,13 +30,7 @@ public sealed class MtlsBindingMiddleware(RequestDelegate next, ILogger<MtlsBind
             using var doc = JsonDocument.Parse(cnfClaimValue);
             if (!doc.RootElement.TryGetProperty("x5t#S256", out var thumbprintElement))
             {
-                if (requiresMtlsBinding)
-                {
-                    await Reject(context, "Missing certificate thumbprint in cnf claim.");
-                    return;
-                }
-
-                await next(context);
+                await Reject(context, "Missing certificate thumbprint in cnf claim (x5t#S256).");
                 return;
             }
 
@@ -66,7 +52,7 @@ public sealed class MtlsBindingMiddleware(RequestDelegate next, ILogger<MtlsBind
         var clientCertificate = await context.Connection.GetClientCertificateAsync();
         if (clientCertificate is null)
         {
-            await Reject(context, "Missing required client certificate for mTLS bound token.");
+            await Reject(context, "Missing required client certificate for mTLS binding.");
             return;
         }
 

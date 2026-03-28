@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Sentinel.AspNetCore.Middleware;
-using Sentinel.Middleware.Filters;
 using Sentinel.Security.Abstractions.Options;
 
 namespace Sentinel.AspNetCore.Extensions;
@@ -24,6 +23,41 @@ public static class SentinelAspNetCoreExtensions
         ArgumentNullException.ThrowIfNull(services, nameof(services));
         return new SentinelAspNetCoreBuilder(services);
     }
+
+    /// <summary>
+    /// Enforces the strict cryptographic and security pipeline ordering.
+    /// MUST be called before UseAuthentication and UseAuthorization.
+    ///
+    /// This method ensures the following middleware order (non-negotiable):
+    /// 1. SecurityHeadersMiddleware - Hardening headers (must be first to catch early rejections)
+    /// 2. CorrelationIdMiddleware - Correlation and tracing context
+    /// 3. DpopValidationMiddleware - Sender-constraining cryptographic validation (RFC 9449)
+    /// 4. MtlsBindingMiddleware - Transport-layer identity binding
+    /// 5. AcrValidationMiddleware - Authentication Context Class Reference enforcement
+    /// </summary>
+    /// <param name="app">Application builder.</param>
+    /// <returns>Application builder for method chaining.</returns>
+    public static IApplicationBuilder UseSentinelSecurityPipeline(this IApplicationBuilder app)
+    {
+        ArgumentNullException.ThrowIfNull(app, nameof(app));
+
+        // 1. Hardening headers (must be first to catch early rejections)
+        app.UseMiddleware<SecurityHeadersMiddleware>();
+
+        // 2. Correlation and tracing context
+        app.UseMiddleware<CorrelationIdMiddleware>();
+
+        // 3. Sender-constraining cryptographic validation (RFC 9449)
+        app.UseMiddleware<DpopValidationMiddleware>();
+
+        // 4. Transport-layer identity binding
+        app.UseMiddleware<MtlsBindingMiddleware>();
+
+        // 5. Authentication Context Class Reference enforcement
+        app.UseMiddleware<AcrValidationMiddleware>();
+
+        return app;
+    }
 }
 
 /// <summary>
@@ -32,9 +66,9 @@ public static class SentinelAspNetCoreExtensions
 public sealed class SentinelAspNetCoreBuilder
 {
     private readonly IServiceCollection _services;
-    private bool _dpopValidationAdded;
-    private bool _idempotencyFiltersAdded;
-    private bool _mtlsBindingAdded;
+    private int _dpopValidationAdded;
+    private int _idempotencyFiltersAdded;
+    private int _mtlsBindingAdded;
 
     /// <summary>
     /// Initializes a new instance of <see cref="SentinelAspNetCoreBuilder"/>.
@@ -53,7 +87,8 @@ public sealed class SentinelAspNetCoreBuilder
     /// <returns>This builder for method chaining.</returns>
     public SentinelAspNetCoreBuilder AddDPoPValidation()
     {
-        if (_dpopValidationAdded)
+        // ✅ FIX: Thread-safe idempotent registration using Interlocked
+        if (Interlocked.Exchange(ref _dpopValidationAdded, 1) == 1)
         {
             return this;
         }
@@ -66,7 +101,6 @@ public sealed class SentinelAspNetCoreBuilder
         // NOTE: Do NOT register the middleware itself in DI (AddScoped<DpopValidationMiddleware>).
         // Middleware is instantiated by UseMiddleware<>() in the pipeline, not from DI.
         // Dependencies of the middleware will be resolved from DI when UseMiddleware() is called.
-        _dpopValidationAdded = true;
 
         return this;
     }
@@ -77,13 +111,14 @@ public sealed class SentinelAspNetCoreBuilder
     /// <returns>This builder for method chaining.</returns>
     public SentinelAspNetCoreBuilder AddIdempotencyFilters()
     {
-        if (_idempotencyFiltersAdded)
+        // ✅ FIX: Thread-safe idempotent registration using Interlocked
+        if (Interlocked.Exchange(ref _idempotencyFiltersAdded, 1) == 1)
         {
             return this;
         }
 
-        _ = _services.AddScoped<RequireIdempotencyAttribute>();
-        _idempotencyFiltersAdded = true;
+        // Do NOT register the old MVC RequireIdempotencyAttribute
+        // The new IEndpointFilter IdempotencyFilter in Sentinel.AspNetCore.Filters is the single source of truth for Minimal APIs
 
         return this;
     }
@@ -96,7 +131,8 @@ public sealed class SentinelAspNetCoreBuilder
     /// <returns>This builder for method chaining.</returns>
     public SentinelAspNetCoreBuilder AddMtlsBinding()
     {
-        if (_mtlsBindingAdded)
+        // ✅ FIX: Thread-safe idempotent registration using Interlocked
+        if (Interlocked.Exchange(ref _mtlsBindingAdded, 1) == 1)
         {
             return this;
         }
@@ -104,8 +140,6 @@ public sealed class SentinelAspNetCoreBuilder
         // NOTE: Do NOT register the middleware itself in DI (AddScoped<MtlsBindingMiddleware>).
         // Middleware is instantiated by UseMiddleware<>() in the pipeline, not from DI.
         // Dependencies of the middleware will be resolved from DI when UseMiddleware() is called.
-        _ = _services.AddScoped<RequireMtlsBindingAttribute>();
-        _mtlsBindingAdded = true;
 
         return this;
     }

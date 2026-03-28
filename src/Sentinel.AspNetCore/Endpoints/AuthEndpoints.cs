@@ -166,7 +166,7 @@ internal static class AuthEndpoints
         [FromServices] IPasswordStrengthValidator passwordStrengthValidator,
         [FromServices] IAuthRevocationService revocationService,
         [FromServices] ISessionBlacklistCache blacklistCache,
-        [FromServices] IOptions<KeycloakOptions> options,
+        [FromServices] IOptions<SessionBlacklistOptions> options,
         ClaimsPrincipal user,
         HttpContext context,
         CancellationToken ct)

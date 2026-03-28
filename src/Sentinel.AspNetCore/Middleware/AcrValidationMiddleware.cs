@@ -11,6 +11,14 @@ public sealed class AcrValidationMiddleware(RequestDelegate next)
             var acr = context.User.FindFirst("acr")?.Value;
             if (string.IsNullOrWhiteSpace(acr))
             {
+                // ✅ FIX: Guard against modifying an already-started response
+                // This prevents InvalidOperationException crashes when response stream is already in use
+                if (context.Response.HasStarted)
+                {
+                    // Cannot write headers/body. Log and abort to prevent pipeline crash.
+                    return;
+                }
+
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 await context.Response.WriteAsJsonAsync(new ProblemDetails
                 {

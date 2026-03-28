@@ -71,7 +71,7 @@ public sealed class DpopValidationMiddleware(
             expectedNonce = await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted);
         }
 
-        // Validate DPoP proof using new API
+        // ✅ FIX: Validate the proof and check expected nonce (but DO NOT consume it yet)
         var validationRequest = new DpopValidationRequest(dpopProof, context.Request.Method, new Uri(requestUrl), token, expectedNonce);
         var validationResult = await validator.ValidateAsync(validationRequest, context.RequestAborted);
 
@@ -106,37 +106,6 @@ public sealed class DpopValidationMiddleware(
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(thumbprint) && !string.IsNullOrWhiteSpace(result.NewNonce))
-        {
-            if (!string.IsNullOrWhiteSpace(expectedNonce))
-            {
-                var consumed =
-                    await nonceStore.ConsumeNonceIfMatchesAsync(thumbprint, expectedNonce, context.RequestAborted);
-                if (!consumed)
-                {
-                    var challengeNonce = GenerateNonce();
-                    var stored = await nonceStore.TryStoreNonceAsync(thumbprint, challengeNonce,
-                        TimeSpan.FromMinutes(5), context.RequestAborted);
-                    var effectiveNonce = stored
-                        ? challengeNonce
-                        : await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted) ?? challengeNonce;
-
-                    context.Response.Headers.Append("DPoP-Nonce", effectiveNonce);
-                    context.Response.Headers.Append("WWW-Authenticate",
-                        "DPoP error=\"use_dpop_nonce\", algs=\"PS256 ES256\"");
-                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                    return;
-                }
-            }
-
-            var storedNonce = await nonceStore.TryStoreNonceAsync(thumbprint, result.NewNonce, TimeSpan.FromMinutes(5),
-                context.RequestAborted);
-            var nextNonce = storedNonce
-                ? result.NewNonce
-                : await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted) ?? result.NewNonce;
-            context.Response.Headers.Append("DPoP-Nonce", nextNonce);
-        }
-
         // Propagate DPoP key info via Activity baggage for downstream security auditing and correlation
         if (!string.IsNullOrWhiteSpace(thumbprint))
         {
@@ -144,7 +113,29 @@ public sealed class DpopValidationMiddleware(
             context.Items["dpop.jkt"] = thumbprint; // Also store in context for middleware access
         }
 
+        // ✅ FIX: Execute downstream pipeline FIRST
         await next(context);
+
+        // ✅ FIX: Consume nonce ONLY if the request succeeded (2xx or 3xx)
+        // This ensures that legitimate retries of 5xx errors do not incur an extra 401 round-trip.
+        // Concurrent replay protection is strictly handled by the JtiReplayCache in TokenValidationService.
+        if (context.Response.StatusCode is >= 200 and < 400 &&
+            !string.IsNullOrWhiteSpace(thumbprint) &&
+            !string.IsNullOrWhiteSpace(expectedNonce))
+        {
+            _ = await nonceStore.ConsumeNonceIfMatchesAsync(thumbprint, expectedNonce, context.RequestAborted);
+        }
+
+        // Issue new nonce for next request (if available)
+        if (!string.IsNullOrWhiteSpace(thumbprint) && !string.IsNullOrWhiteSpace(result.NewNonce))
+        {
+            var storedNonce = await nonceStore.TryStoreNonceAsync(thumbprint, result.NewNonce, TimeSpan.FromMinutes(5),
+                context.RequestAborted);
+            var nextNonce = storedNonce
+                ? result.NewNonce
+                : await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted) ?? result.NewNonce;
+            context.Response.Headers.Append("DPoP-Nonce", nextNonce);
+        }
     }
 
     private static string? TryExtractProofThumbprint(string dpopHeader, IDpopThumbprintComputer thumbprintComputer)
@@ -155,12 +146,15 @@ public sealed class DpopValidationMiddleware(
         }
 
         var token = TokenHandler.ReadJsonWebToken(dpopHeader);
-        if (!token.TryGetHeaderValue<object>("jwk", out var jwkObj) || jwkObj is null)
+        // ✅ FIX: Strongly type the extraction to JsonElement.
+        if (!token.TryGetHeaderValue<JsonElement>("jwk", out var jwkElement))
         {
             return null;
         }
 
-        var jwkJson = jwkObj.ToString();
+        // ✅ FIX: Use GetRawText() to retrieve the actual JSON string, never .ToString()
+        // On modern .NET runtimes, .ToString() returns "System.Text.Json.JsonElement" instead of the actual JSON payload
+        var jwkJson = jwkElement.GetRawText();
         if (string.IsNullOrWhiteSpace(jwkJson))
         {
             return null;

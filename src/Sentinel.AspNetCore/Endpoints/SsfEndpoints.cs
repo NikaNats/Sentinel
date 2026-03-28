@@ -38,10 +38,9 @@ internal static class SsfEndpoints
         HttpRequest request,
         [FromServices] ISsfEventProcessor processor,
         [FromServices] IOptions<SsfOptions> options,
-        [FromServices] ILoggerFactory loggerFactory,
+        [FromServices] ILogger<ISsfEventProcessor> logger,
         CancellationToken ct)
     {
-        var logger = loggerFactory.CreateLogger(nameof(SsfEndpoints));
         var ssfOptions = options.Value;
 
         // SSF feature flag - return 404 if disabled (RFC 8936: clients should assume SSF not supported)
