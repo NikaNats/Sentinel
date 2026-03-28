@@ -15,6 +15,7 @@ internal sealed class RedisConnectionProvider : IRedisConnectionProvider
     private readonly ILogger<RedisConnectionProvider> _logger;
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private ConnectionMultiplexer? _multiplexer;
+    private bool _disposed; // ✅ FIX: Explicit disposal state to prevent race conditions
 
     public RedisConnectionProvider(RedisOptions redisOptions, ILogger<RedisConnectionProvider> logger)
     {
@@ -41,6 +42,9 @@ internal sealed class RedisConnectionProvider : IRedisConnectionProvider
 #pragma warning disable CA1508 // The second null check after lock is valid in double-check locking pattern
     public async ValueTask<IConnectionMultiplexer> GetConnectionAsync(CancellationToken cancellationToken = default)
     {
+        // ✅ FIX: Check disposal state to prevent zombie connections after disposal
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
         // Fast path: connection already exists
         if (_multiplexer != null)
         {
@@ -51,6 +55,8 @@ internal sealed class RedisConnectionProvider : IRedisConnectionProvider
         await _connectionLock.WaitAsync(cancellationToken);
         try
         {
+            // ✅ FIX: Re-check disposal state after acquiring lock
+            ObjectDisposedException.ThrowIf(_disposed, this);
             // Double-check locking pattern: another thread may have initialized while we waited
             if (_multiplexer != null)
             {
@@ -65,8 +71,18 @@ internal sealed class RedisConnectionProvider : IRedisConnectionProvider
             _multiplexer.ConnectionRestored += (sender, args) =>
                 _logger.LogInformation("Redis connection restored. Endpoint: {Endpoint}", args.EndPoint);
 
+            // ✅ FIX: Safely handle nullable Exception in event args
             _multiplexer.ConnectionFailed += (sender, args) =>
-                _logger.LogWarning(args.Exception, "Redis connection failed. Endpoint: {Endpoint}", args.EndPoint);
+            {
+                if (args.Exception is null)
+                {
+                    _logger.LogWarning("Redis connection failed. Endpoint: {Endpoint}", args.EndPoint);
+                }
+                else
+                {
+                    _logger.LogWarning(args.Exception, "Redis connection failed. Endpoint: {Endpoint}", args.EndPoint);
+                }
+            };
 
             return _multiplexer;
         }
@@ -79,13 +95,26 @@ internal sealed class RedisConnectionProvider : IRedisConnectionProvider
 
     /// <summary>
     /// Gracefully disposes the connection and internal synchronization primitive.
+    /// ✅ FIX: Acquire lock during disposal to safely block incoming GetConnectionAsync requests.
     /// </summary>
     public async ValueTask DisposeAsync()
     {
-        if (_multiplexer != null)
+        if (_disposed) return;
+
+        // ✅ FIX: Acquire the lock during disposal to safe block incoming GetConnectionAsync requests
+        await _connectionLock.WaitAsync();
+        try
         {
-            await _multiplexer.DisposeAsync();
+            _disposed = true;
+            if (_multiplexer != null)
+            {
+                await _multiplexer.DisposeAsync();
+            }
         }
-        _connectionLock.Dispose();
+        finally
+        {
+            _connectionLock.Release();
+            _connectionLock.Dispose();
+        }
     }
 }

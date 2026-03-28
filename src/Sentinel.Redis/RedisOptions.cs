@@ -1,5 +1,7 @@
 namespace Sentinel.Redis;
 
+using System.Text.Json.Serialization;
+
 /// <summary>
 /// Configuration options for Redis cache implementations.
 /// </summary>
@@ -17,7 +19,9 @@ public sealed record RedisOptions
 
     /// <summary>
     /// Redis password (basic auth).
+    /// ✅ FIX: Prevent serialization of plaintext credentials in health checks or diagnostic dumps.
     /// </summary>
+    [JsonIgnore]
     public string? Password { get; init; }
 
     /// <summary>

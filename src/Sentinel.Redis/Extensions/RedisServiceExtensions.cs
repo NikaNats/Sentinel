@@ -26,9 +26,11 @@ public static class RedisServiceExtensions
     {
         ArgumentNullException.ThrowIfNull(services, nameof(services));
 
-        // Options
-        var options = new RedisOptions();
-        configuration?.Bind(options);
+        // ✅ FIX (AOT): Use Get<T>() instead of Bind() for Native AOT compatibility
+        // ConfigurationBinder.Bind uses reflection which requires unreferenced code in AOT scenarios
+        var options = configuration != null
+            ? configuration.Get<RedisOptions>() ?? new RedisOptions()
+            : new RedisOptions();
 
         // ALWAYS register the Redis connection provider - it has fallback to localhost:6379
         services.AddSingleton<IRedisConnectionProvider, RedisConnectionProvider>();

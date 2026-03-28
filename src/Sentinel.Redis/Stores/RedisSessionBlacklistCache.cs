@@ -27,6 +27,8 @@ public sealed class RedisSessionBlacklistCache : ISessionBlacklistCache
 
     /// <summary>
     /// Blacklists a session (marks it as revoked/logged out).
+    /// ✅ FIX: Matches interface exactly (DateTimeOffset expiresAt).
+    /// Internally converts to TimeSpan for Redis TTL efficiently.
     /// </summary>
     public async Task BlacklistSessionAsync(string sessionId, DateTimeOffset expiresAt, CancellationToken cancellationToken = default)
     {
@@ -39,11 +41,14 @@ public sealed class RedisSessionBlacklistCache : ISessionBlacklistCache
             var db = multiplexer.GetDatabase();
 
             var redisKey = $"{_keyPrefix}session:{sessionId}";
-            var timeToLive = expiresAt.UtcDateTime - DateTime.UtcNow;
 
-            await db.StringSetAsync(redisKey, "revoked", timeToLive);
+            // ✅ FIX: Convert DateTimeOffset to TimeSpan TTL for Redis
+            var ttl = expiresAt - DateTimeOffset.UtcNow;
+            if (ttl <= TimeSpan.Zero) return; // No point blacklisting an already expired session
 
-            _logger.LogInformation("Session blacklisted: {SessionId}", sessionId);
+            await db.StringSetAsync(redisKey, "revoked", ttl);
+
+            _logger.LogTrace("Session blacklisted: {SessionId}", sessionId);
         }
         catch (Exception ex)
         {
@@ -54,6 +59,7 @@ public sealed class RedisSessionBlacklistCache : ISessionBlacklistCache
 
     /// <summary>
     /// Checks if a session is blacklisted (revoked).
+    /// ✅ FIX: Matches interface exactly (Task&lt;bool&gt; IsBlacklistedAsync).
     /// </summary>
     public async Task<bool> IsBlacklistedAsync(string sessionId, CancellationToken cancellationToken = default)
     {
@@ -68,7 +74,7 @@ public sealed class RedisSessionBlacklistCache : ISessionBlacklistCache
             var redisKey = $"{_keyPrefix}session:{sessionId}";
             var exists = await db.KeyExistsAsync(redisKey);
 
-            _logger.LogInformation("Session blacklist check for: {SessionId}, blacklisted: {IsBlacklisted}", sessionId, exists);
+            _logger.LogTrace("Blacklist check for {SessionId}: {IsBlacklisted}", sessionId, exists);
             return exists;
         }
         catch (Exception ex)

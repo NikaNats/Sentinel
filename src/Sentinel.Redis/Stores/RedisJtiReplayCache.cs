@@ -15,19 +15,23 @@ public sealed class RedisJtiReplayCache : IJtiReplayCache
     private readonly IRedisConnectionProvider _provider;
     private readonly string _keyPrefix;
     private readonly ILogger<RedisJtiReplayCache> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public RedisJtiReplayCache(
         IRedisConnectionProvider provider,
         RedisOptions options,
-        ILogger<RedisJtiReplayCache> logger)
+        ILogger<RedisJtiReplayCache> logger,
+        TimeProvider? timeProvider = null)
     {
         _provider = provider;
         _keyPrefix = options.KeyPrefix;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <summary>
     /// Marks a JWT ID as used and prevents any further use.
+    /// ✅ FIX: Safe TTL computation. Protect the clock-skew window with a 1-second minimum TTL to prevent negative TimeSpan exceptions.
     /// </summary>
     public async Task<bool> TryMarkUsedAsync(string jti, DateTimeOffset expiresAt, CancellationToken cancellationToken = default)
     {
@@ -40,12 +44,20 @@ public sealed class RedisJtiReplayCache : IJtiReplayCache
             var db = multiplexer.GetDatabase();
 
             var redisKey = $"{_keyPrefix}jti:{jti}";
-            var timeToLive = expiresAt.UtcDateTime - DateTime.UtcNow;
+
+            // ✅ FIX: Safe TTL computation. Protect the clock-skew window with a 1-second minimum TTL.
+            // If expiresAt is in the past (clock skew), set 1 second TTL instead of crashing on negative TimeSpan.
+            var timeToLive = expiresAt - _timeProvider.GetUtcNow();
+            if (timeToLive <= TimeSpan.Zero)
+            {
+                timeToLive = TimeSpan.FromSeconds(1);
+            }
 
             // SET key value NX EX timeout: Set if not exists, with expiration
             var result = await db.StringSetAsync(redisKey, "1", timeToLive, When.NotExists);
 
-            _logger.LogInformation("JTI replay cache operation succeeded for jti: {Jti}", jti);
+            // ✅ FIX: Downgraded from Information to Trace to prevent I/O logging saturation on hot path
+            _logger.LogTrace("JTI replay cache operation succeeded for jti: {Jti}", jti);
             return result;
         }
         catch (Exception ex)

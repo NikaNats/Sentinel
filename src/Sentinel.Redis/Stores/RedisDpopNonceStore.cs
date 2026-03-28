@@ -65,24 +65,35 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
 
     /// <summary>
     /// Stores a new nonce for a client, invalidating any prior nonce.
+    /// ✅ FIX: Respect the "Clear by Empty" protocol from the middleware.
+    /// When middleware passes string.Empty, delete the nonce instead of crashing.
     /// </summary>
     public async Task SetNonceAsync(string thumbprint, string nonce, DateTimeOffset expiresAt, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(thumbprint, nameof(thumbprint));
-        ArgumentException.ThrowIfNullOrWhiteSpace(nonce, nameof(nonce));
+        // ✅ FIX: Allow empty nonce strings for "Clear by Empty" protocol (middleware consumption signal)
 
         try
         {
             // Just-in-time asynchronous connection resolution
             var multiplexer = await _provider.GetConnectionAsync(cancellationToken);
             var db = multiplexer.GetDatabase();
-
             var redisKey = $"{_keyPrefix}nonce:{thumbprint}";
-            var timeToLive = expiresAt.UtcDateTime - DateTime.UtcNow;
+
+            // ✅ FIX: Respect the "Clear by Empty" protocol contract from the middleware
+            if (string.IsNullOrWhiteSpace(nonce))
+            {
+                await db.KeyDeleteAsync(redisKey);
+                _logger.LogTrace("DPoP nonce cleared for thumbprint: {Thumbprint}", thumbprint);
+                return;
+            }
+
+            // ✅ FIX: Safe TTL computation
+            var timeToLive = expiresAt - DateTimeOffset.UtcNow;
+            if (timeToLive <= TimeSpan.Zero) timeToLive = TimeSpan.FromMilliseconds(1);
 
             await db.StringSetAsync(redisKey, nonce, timeToLive);
-
-            _logger.LogInformation("DPoP nonce set for thumbprint: {Thumbprint}", thumbprint);
+            _logger.LogTrace("DPoP nonce set for thumbprint: {Thumbprint}", thumbprint);
         }
         catch (Exception ex)
         {
