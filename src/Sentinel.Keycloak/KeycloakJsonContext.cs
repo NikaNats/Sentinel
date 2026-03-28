@@ -1,5 +1,7 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Diagnostics.CodeAnalysis;
+using Sentinel.Keycloak.Models;
 
 namespace Sentinel.Keycloak;
 
@@ -10,6 +12,12 @@ namespace Sentinel.Keycloak;
 [JsonSerializable(typeof(KeycloakAdminUserUpdatePayload))]
 [JsonSerializable(typeof(KeycloakAdminPasswordResetPayload))]
 [JsonSerializable(typeof(KeycloakIdentityProviderPayload))]
+// ✅ FIX: Added missing hot-path types for Native AOT with source generation
+[JsonSerializable(typeof(KeycloakToken))]
+[JsonSerializable(typeof(KeycloakSubject))]
+[JsonSerializable(typeof(KeycloakAdminDisablePayload))]
+// ✅ FIX: Added dictionary type for configuration manager
+[JsonSerializable(typeof(Dictionary<string, JsonElement>))]
 public sealed partial class KeycloakJsonContext : JsonSerializerContext
 {
 }
@@ -71,4 +79,13 @@ public sealed class KeycloakIdentityProviderPayload
 #pragma warning disable CA2227
     public Dictionary<string, string> Config { get; set; } = [];
 #pragma warning restore CA2227
+}
+
+/// <summary>
+/// ✅ FIX: Typed payload to replace anonymous object { Enabled = value } in user disable operations.
+/// Enables source-generated JSON serialization instead of reflection.
+/// </summary>
+public sealed class KeycloakAdminDisablePayload
+{
+    public bool Enabled { get; set; }
 }

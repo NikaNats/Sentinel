@@ -61,7 +61,13 @@ public sealed class KeycloakAuthRevocationService(
 
     public async Task<bool> RevokeSessionAsync(string subjectId, string sessionId, CancellationToken ct)
     {
+        // ✅ FIX: Document the intentional discard to satisfy static analyzers and audit reviews.
+        // The IAuthRevocationService interface requires subjectId for broad compatibility,
+        // but Keycloak's specific admin API endpoint only requires the sessionId to delete it.
+#pragma warning disable IDE0060 // Remove unused parameter
         _ = subjectId;
+#pragma warning restore IDE0060
+
         var adminHttpClient = httpClientFactory.CreateClient("keycloak-admin");
         var adminContext = await TryResolveAdminContextAsync(ct);
         if (adminContext is null)
