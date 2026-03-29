@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -6,10 +6,11 @@
 
     <!-- NuGet Package Metadata -->
     <IsPackable>true</IsPackable>
+    <PackageId>NikaNats.Sentinel.Rar</PackageId>
     <Description>Resource Authorization Request (RAR) implementation for Sentinel OAuth 2.0 &amp; OpenID Connect. RFC 9396 compliant fine-grained authorization requests with resource indicators.</Description>
-    <PackageTags>rar;resource-authorization;oauth2;openid;authorization;fine-grained;</PackageTags>
+    <PackageTags>sentinel;rar;resource-authorization;oauth2;openid;authorization;fine-grained;</PackageTags>
 
-    <!-- ✅ FIX: Enforce nullability and FIPS/AOT-friendly globalization -->
+    <!-- FIX: Enforce nullability and FIPS/AOT-friendly globalization -->
     <Nullable>enable</Nullable>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>

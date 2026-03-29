@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -6,7 +6,7 @@
     <RootNamespace>Sentinel.Keycloak</RootNamespace>
     <LangVersion>latest</LangVersion>
 
-    <!-- ✅ FIX: Enforce Nullable and Invariant Globalization for production readiness and AOT optimization -->
+    <!-- FIX: Enforce nullable and invariant globalization for production readiness and AOT optimization -->
     <Nullable>enable</Nullable>
     <InvariantGlobalization>true</InvariantGlobalization>
 
@@ -14,8 +14,9 @@
 
     <!-- NuGet Package Metadata -->
     <IsPackable>true</IsPackable>
+    <PackageId>NikaNats.Sentinel.Keycloak</PackageId>
     <Description>Keycloak adapter and integration library for Sentinel OAuth 2.0 &amp; OpenID Connect identity provider interoperability and federation with Keycloak. RFC 9449 DPoP compliant with thread-safe configuration management and Native AOT support.</Description>
-    <PackageTags>keycloak;identity-provider;adapter;oauth2;openid;federation;sso;thread-safe;native-aot</PackageTags>
+    <PackageTags>sentinel;keycloak;identity-provider;adapter;oauth2;openid;federation;sso;thread-safe;native-aot</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

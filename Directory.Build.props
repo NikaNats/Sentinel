@@ -1,7 +1,4 @@
 <Project>
-  <!-- Nerdbank.GitVersioning: Version computation -->
-  <Import Project="build/Nerdbank.GitVersioning.props" Condition="Exists('build/Nerdbank.GitVersioning.props')" />
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -25,7 +22,7 @@
 
     <!-- NuGet 2025+ Metadata (for package discoverability) -->
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageIcon>icon.png</PackageIcon>
+    <PackageIcon Condition="Exists('icon.png')">icon.png</PackageIcon>
 
     <!-- Build Determinism (for reproducible builds in CI/CD) -->
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true' or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
@@ -50,6 +47,18 @@
     <IsPackable>true</IsPackable>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Nerdbank.GitVersioning" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)README.md"
+          Pack="true"
+          PackagePath="\"
+          Link="README.md"
+          Condition="Exists('$(MSBuildThisFileDirectory)README.md')" />
+  </ItemGroup>
 
   <!-- Conditional app defaults -->
   <PropertyGroup Condition="'$(IsApp)' == 'true'">

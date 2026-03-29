@@ -8,9 +8,10 @@
 
     <!-- NuGet Package Metadata -->
     <IsPackable>true</IsPackable>
+    <PackageId>NikaNats.Sentinel.Security.Abstractions</PackageId>
     <IsLibrary>true</IsLibrary>
     <Description>Zero-dependency abstractions and interfaces for Sentinel security infrastructure. Every other Sentinel package depends on this, and it has no external dependencies. Foundation library for OAuth 2.0, OpenID Connect, DPoP, SD-JWT, Sessions, and SSF implementations.</Description>
-    <PackageTags>security;abstractions;oauth2;openid;jwt;dpop;session;ssf;sdjwt;interfaces</PackageTags>
+    <PackageTags>sentinel;security;abstractions;oauth2;openid;jwt;dpop;session;ssf;sdjwt;interfaces</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

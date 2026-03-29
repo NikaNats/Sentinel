@@ -13,8 +13,9 @@
 
     <!-- NuGet Package Metadata -->
     <IsPackable>true</IsPackable>
+    <PackageId>NikaNats.Sentinel.EntityFrameworkCore</PackageId>
     <Description>Entity Framework Core persistence layer for Sentinel OAuth 2.0 &amp; OpenID Connect stores, entities, and migrations.</Description>
-    <PackageTags>entityframework;efcore;persistence;oauth2;openid;database;</PackageTags>
+    <PackageTags>sentinel;entityframework;efcore;persistence;oauth2;openid;database;</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

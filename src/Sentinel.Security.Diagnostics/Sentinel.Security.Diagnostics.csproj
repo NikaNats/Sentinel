@@ -4,14 +4,20 @@
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>latest</LangVersion>
 
-    <!-- ✅ FIX: Enforce AOT and Compiler Safety -->
+    <!-- FIX: Enforce AOT and compiler safety -->
     <Nullable>enable</Nullable>
     <InvariantGlobalization>true</InvariantGlobalization>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- NuGet Package Metadata -->
+    <IsPackable>true</IsPackable>
+    <PackageId>NikaNats.Sentinel.Security.Diagnostics</PackageId>
+    <Description>Security diagnostics and telemetry primitives for Sentinel OAuth 2.0 and OpenID Connect deployments, including event emission and privacy-preserving context hashing.</Description>
+    <PackageTags>sentinel;security;diagnostics;telemetry;observability;oauth2;openid</PackageTags>
   </PropertyGroup>
 
-  <!-- ✅ FIX: Correct MSBuild syntax for InternalsVisibleTo (must be ItemGroup, not PropertyGroup) -->
+  <!-- FIX: Correct MSBuild syntax for InternalsVisibleTo (must be ItemGroup, not PropertyGroup) -->
   <ItemGroup>
     <InternalsVisibleTo Include="Sentinel.AspNetCore" />
     <InternalsVisibleTo Include="Sentinel.Presentation" />

@@ -8,8 +8,9 @@
 
     <!-- NuGet Package Metadata -->
     <IsPackable>true</IsPackable>
+    <PackageId>NikaNats.Sentinel.AspNetCore</PackageId>
     <Description>ASP.NET Core middleware and extensions for integrating Sentinel OAuth 2.0 &amp; OpenID Connect authentication and authorization into web applications.</Description>
-    <PackageTags>aspnetcore;middleware;oauth2;openid;authentication;authorization;</PackageTags>
+    <PackageTags>sentinel;aspnetcore;middleware;oauth2;openid;authentication;authorization;</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

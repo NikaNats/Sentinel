@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -15,7 +14,6 @@ using Sentinel.Infrastructure.Auth.Handlers;
 using Sentinel.Infrastructure.Auth.Services;
 using Sentinel.Infrastructure.Cryptography;
 using Sentinel.Infrastructure.Notifications;
-using Sentinel.Infrastructure.Persistence;
 using Sentinel.Keycloak;
 using Sentinel.Security.Abstractions.DependencyInjection;
 using Sentinel.Security.Abstractions.Identity;
@@ -69,15 +67,6 @@ public static class SentinelModuleBuilderExtensions
         });
 
         _ = services.AddSingleton<IEncryptionService, AesGcmEncryptionService>();
-        var postgresConnectionString = configuration.GetConnectionString("Postgres");
-        if (!string.IsNullOrWhiteSpace(postgresConnectionString))
-        {
-            _ = services.AddDbContext<SentinelDbContext>(options =>
-            {
-                options.UseNpgsql(postgresConnectionString);
-                options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
-            });
-        }
 
         _ = services.AddSingleton<ILogoutTokenValidator, LogoutTokenValidator>();
         _ = services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();

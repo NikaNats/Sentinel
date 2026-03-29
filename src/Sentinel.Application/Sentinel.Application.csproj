@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -8,8 +8,9 @@
 
     <!-- NuGet Package Metadata -->
     <IsPackable>true</IsPackable>
+    <PackageId>NikaNats.Sentinel.Application</PackageId>
     <Description>Application service layer for Sentinel OAuth 2.0 &amp; OpenID Connect including business logic orchestration, command and query handlers, and domain services.</Description>
-    <PackageTags>application;services;oauth2;openid;business-logic;domain-services;</PackageTags>
+    <PackageTags>sentinel;application;services;oauth2;openid;business-logic;domain-services;</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

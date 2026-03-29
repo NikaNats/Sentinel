@@ -10,8 +10,9 @@
 
     <!-- NuGet Package Metadata -->
     <IsPackable>true</IsPackable>
+    <PackageId>NikaNats.Sentinel.SdJwt</PackageId>
     <Description>Selective Disclosure JSON Web Token (SD-JWT) implementation for Sentinel OAuth 2.0 &amp; OpenID Connect. RFC 9901 compliant privacy-preserving claims with cryptographic correctness (RFC 7638 JWK thumbprints, RFC 9901 selective disclosure, GDPR/CPRA PII protection).</Description>
-    <PackageTags>sdjwt;selective-disclosure;jwt;privacy;oauth2;openid;rfc9901;</PackageTags>
+    <PackageTags>sentinel;sdjwt;selective-disclosure;jwt;privacy;oauth2;openid;rfc9901;</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
