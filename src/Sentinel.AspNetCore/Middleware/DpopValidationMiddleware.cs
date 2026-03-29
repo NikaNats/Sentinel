@@ -19,6 +19,7 @@ public sealed class DpopValidationMiddleware(
     IDpopThumbprintComputer thumbprintComputer)
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
+    private static readonly TimeSpan NonceTtl = TimeSpan.FromMinutes(5);
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -114,34 +115,51 @@ public sealed class DpopValidationMiddleware(
 
         if (!string.IsNullOrWhiteSpace(thumbprint) && !string.IsNullOrWhiteSpace(result.NewNonce))
         {
-            var storedNonce = await nonceStore.TryStoreNonceAsync(thumbprint, result.NewNonce, TimeSpan.FromMinutes(5),
-                context.RequestAborted);
-            var nextNonce = storedNonce
-                ? result.NewNonce
-                : await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted) ?? result.NewNonce;
-
-            context.Response.OnStarting(static state =>
+            context.Response.OnStarting(static async state =>
             {
-                var (httpContext, nonce) = ((HttpContext HttpContext, string Nonce))state;
-                httpContext.Response.Headers["DPoP-Nonce"] = nonce;
-                return Task.CompletedTask;
-            }, (context, nextNonce));
+                var callbackState = (NonceRotationState)state;
+
+                // Commit nonce state changes only for successful responses.
+                if (callbackState.HttpContext.Response.StatusCode is < 200 or >= 400)
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(callbackState.ExpectedNonce))
+                {
+                    _ = await callbackState.NonceStore.ConsumeNonceIfMatchesAsync(
+                        callbackState.Thumbprint,
+                        callbackState.ExpectedNonce,
+                        callbackState.HttpContext.RequestAborted);
+                }
+
+                var stored = await callbackState.NonceStore.TryStoreNonceAsync(
+                    callbackState.Thumbprint,
+                    callbackState.NewNonce,
+                    NonceTtl,
+                    callbackState.HttpContext.RequestAborted);
+
+                var nonceToEmit = stored
+                    ? callbackState.NewNonce
+                    : await callbackState.NonceStore.GetNonceAsync(
+                        callbackState.Thumbprint,
+                        callbackState.HttpContext.RequestAborted) ?? callbackState.NewNonce;
+
+                callbackState.HttpContext.Response.Headers["DPoP-Nonce"] = nonceToEmit;
+            }, new NonceRotationState(context, nonceStore, thumbprint, expectedNonce, result.NewNonce));
         }
 
         // ✅ FIX: Execute downstream pipeline FIRST
         await next(context);
 
-        // ✅ FIX: Consume nonce ONLY if the request succeeded (2xx or 3xx)
-        // This ensures that legitimate retries of 5xx errors do not incur an extra 401 round-trip.
-        // Concurrent replay protection is strictly handled by the JtiReplayCache in TokenValidationService.
-        if (context.Response.StatusCode is >= 200 and < 400 &&
-            !string.IsNullOrWhiteSpace(thumbprint) &&
-            !string.IsNullOrWhiteSpace(expectedNonce))
-        {
-            _ = await nonceStore.ConsumeNonceIfMatchesAsync(thumbprint, expectedNonce, context.RequestAborted);
-        }
-
     }
+
+    private sealed record NonceRotationState(
+        HttpContext HttpContext,
+        IDpopNonceStore NonceStore,
+        string Thumbprint,
+        string? ExpectedNonce,
+        string NewNonce);
 
     private static string? TryExtractProofThumbprint(string dpopHeader, IDpopThumbprintComputer thumbprintComputer)
     {

@@ -173,6 +173,50 @@ public sealed class TokenValidationServiceTests
         _eventEmitterMock.VerifyNoOtherCalls();
     }
 
+    [Fact]
+    public async Task ValidateAsync_WhenRefreshPath_SkipsReplayConsumption()
+    {
+        var futureExp = _timeProvider.GetUtcNow().AddMinutes(5);
+        var principal = BuildPrincipal(
+            ("jti", "refresh-jti"),
+            ("sub", "user-refresh"),
+            ("exp", futureExp.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/v1/auth/refresh";
+
+        var result = await _sut.ValidateAsync(principal, context, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        _replayCacheMock.VerifyNoOtherCalls();
+        _sessionBlacklistMock.VerifyNoOtherCalls();
+        _eventEmitterMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenRefreshTokenUseClaim_SkipsReplayConsumption()
+    {
+        var futureExp = _timeProvider.GetUtcNow().AddMinutes(5);
+        const string sid = "sid-refresh";
+        var principal = BuildPrincipal(
+            ("jti", "refresh-jti-claim"),
+            ("sub", "user-refresh-claim"),
+            ("token_use", "refresh"),
+            ("sid", sid),
+            ("exp", futureExp.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
+
+        _sessionBlacklistMock
+            .Setup(x => x.IsBlacklistedAsync(sid, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _sut.ValidateAsync(principal, new DefaultHttpContext(), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        _replayCacheMock.VerifyNoOtherCalls();
+        _sessionBlacklistMock.Verify(x => x.IsBlacklistedAsync(sid, It.IsAny<CancellationToken>()), Times.Once);
+        _eventEmitterMock.VerifyNoOtherCalls();
+    }
+
     private static ClaimsPrincipal BuildPrincipal(params (string Type, string Value)[] claims)
     {
         return new ClaimsPrincipal(new ClaimsIdentity(claims.Select(x => new Claim(x.Type, x.Value)), "test"));

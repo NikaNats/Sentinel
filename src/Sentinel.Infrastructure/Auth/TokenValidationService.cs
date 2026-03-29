@@ -40,12 +40,15 @@ internal sealed class TokenValidationService(
                 return TokenValidationOutcome.Fail("Token is already expired.");
             }
 
-            var stored = await replayCache.TryMarkUsedAsync(jti, expTime, ct);
-            if (!stored)
+            if (!IsRefreshFlow(context, principal))
             {
-                eventEmitter.EmitTokenReplay(jti, principal.FindFirst("sub")?.Value, "sentinel-api-client",
-                    SecurityContextHasher.HashIp(context));
-                return TokenValidationOutcome.Fail("Token replay detected.");
+                var stored = await replayCache.TryMarkUsedAsync(jti, expTime, ct);
+                if (!stored)
+                {
+                    eventEmitter.EmitTokenReplay(jti, principal.FindFirst("sub")?.Value, "sentinel-api-client",
+                        SecurityContextHasher.HashIp(context));
+                    return TokenValidationOutcome.Fail("Token replay detected.");
+                }
             }
 
             var sid = principal.FindFirst("sid")?.Value;
@@ -70,6 +73,31 @@ internal sealed class TokenValidationService(
         {
             return TokenValidationOutcome.Fail(ex);
         }
+    }
+
+    private static bool IsRefreshFlow(HttpContext context, ClaimsPrincipal principal)
+    {
+        if (context.Request.Path.Value?.Contains("/auth/refresh", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return true;
+        }
+
+        var grantType = principal.FindFirst("grant_type")?.Value;
+        if (string.Equals(grantType, "refresh_token", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var tokenUse = principal.FindFirst("token_use")?.Value;
+        if (string.Equals(tokenUse, "refresh", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(tokenUse, "refresh_token", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var tokenType = principal.FindFirst("typ")?.Value ?? principal.FindFirst("token_type")?.Value;
+        return string.Equals(tokenType, "refresh", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(tokenType, "refresh_token", StringComparison.OrdinalIgnoreCase);
     }
 }
 
