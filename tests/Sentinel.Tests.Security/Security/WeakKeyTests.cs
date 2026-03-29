@@ -1,7 +1,7 @@
-using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Moq;
 using Sentinel.DPoP;
@@ -65,9 +65,9 @@ public sealed class WeakKeyTests
                 ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
             },
             SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.EcdsaSha256),
+            TokenType = "dpop+jwt",
             AdditionalHeaderClaims = new Dictionary<string, object>
             {
-                ["typ"] = "dpop+jwt",
                 ["jwk"] = new Dictionary<string, string>
                 {
                     ["kty"] = jwk.Kty!,
@@ -78,8 +78,8 @@ public sealed class WeakKeyTests
             }
         };
 
-        var handler = new JwtSecurityTokenHandler();
-        var proof = handler.WriteToken(handler.CreateToken(descriptor));
+        var handler = new JsonWebTokenHandler();
+        var proof = handler.CreateToken(descriptor);
         var request = new DpopValidationRequest(proof, "GET", new Uri("https://api.example.com/resource"));
 
         var result = await CreateValidator().ValidateAsync(request);

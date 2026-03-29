@@ -199,6 +199,13 @@ public sealed class TimingAttackTests
         var average = times.Average();
         var stdDev = Math.Sqrt(times.Average(t => Math.Pow(t - average, 2)));
 
+        if (average <= 0)
+        {
+            stdDev.Should().Be(0,
+                "When timer quantization reports 0ms average, variance must also be zero.");
+            return;
+        }
+
         stdDev.Should().BeLessThan(average * 0.3,
             $"Timing should be consistent across repeated requests. " +
             $"Average={average:F1}ms, StdDev={stdDev:F1}ms, CV={stdDev / average:F2}");
@@ -233,8 +240,10 @@ public sealed class TimingAttackTests
             // Act: Measure under load
             var underLoadTime = MeasureValidationPath("under_load", IterationCount);
 
+            var threshold = Math.Max(1, baselineTime * 2);
+
             // Assert: Should not increase more than 2x
-            underLoadTime.Should().BeLessThan(baselineTime * 2,
+            underLoadTime.Should().BeLessThan(threshold,
                 $"Validation timing under load should be stable: " +
                 $"baseline={baselineTime}ms, under_load={underLoadTime}ms");
         }

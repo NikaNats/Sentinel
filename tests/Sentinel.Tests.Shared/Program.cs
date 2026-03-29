@@ -149,7 +149,8 @@ public partial class Program
 
 		var testGroup = app.MapGroup("/v1/test");
 		testGroup.MapGet("/protected", GetProtected)
-			.RequireAuthorization();
+			.RequireAuthorization()
+			.RequireRateLimiting("profile");
 		testGroup.MapGet("/step-up", GetStepUp)
 			.RequireAuthorization(Policies.RequireAcr3);
 

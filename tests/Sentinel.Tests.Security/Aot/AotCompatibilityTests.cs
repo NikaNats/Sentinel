@@ -166,7 +166,10 @@ public sealed class AotCompatibilityTests
             ["token_type"] = "DPoP",
             ["expires_in"] = 3600,
             ["custom_claim"] = 12345,
-            ["nested"] = new { key = "value" }
+            ["nested"] = new Dictionary<string, object>
+            {
+                ["key"] = "value"
+            }
         };
 
         // Act: Serialize
@@ -188,8 +191,10 @@ public sealed class AotCompatibilityTests
         var dict = (Dictionary<string, object>)deserialized!;
         dict.Should().ContainKey("access_token",
             "Token field must survive serialization");
-        dict["token_type"].Should().Be("DPoP");
-        dict["expires_in"].Should().Be(3600);
+        dict["token_type"].Should().BeOfType<JsonElement>();
+        ((JsonElement)dict["token_type"]).GetString().Should().Be("DPoP");
+        dict["expires_in"].Should().BeOfType<JsonElement>();
+        ((JsonElement)dict["expires_in"]).GetInt32().Should().Be(3600);
     }
 
     /// <summary>

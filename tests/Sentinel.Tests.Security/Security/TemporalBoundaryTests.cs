@@ -1,9 +1,9 @@
 using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
 using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Moq;
 using Sentinel.DPoP;
@@ -152,8 +152,8 @@ public sealed class TemporalBoundaryTests
     [Fact]
     public async Task Iat_Boundary_AtPlus5_001Seconds_MustFail()
     {
-        // Arrange: Create proof issued 5.001 seconds in the future
-        var proofIssuedAt = _referenceTime.AddMilliseconds(5001);
+        // Arrange: iat is second-granularity, so use +6s to be strictly beyond +5s window
+        var proofIssuedAt = _referenceTime.AddSeconds(6);
         var proof = CreateDpopProof(
             "ES256",
             proofIssuedAt,
@@ -246,11 +246,20 @@ public sealed class TemporalBoundaryTests
             new DpopValidationRequest(oldProof, "GET", new Uri("https://api.example.com/old")));
         resultBefore.IsSuccess.Should().BeFalse("Proof from 120s ago should be rejected");
 
-        // Act 2: System clock regresses by 2 seconds
-        _timeProvider.SetUtcNow(_timeProvider.GetUtcNow().AddSeconds(-2));
+        // Act 2: Simulate a 2-second regressed clock with a fresh validator/time provider
+        var regressedTimeProvider = new FakeTimeProvider(_referenceTime.AddSeconds(-2));
+        var validatorAfterRegression = new DpopProofValidator(
+            _replayCache.Object,
+            Options.Create(new DPoPOptions
+            {
+                ProofLifetimeSeconds = 55,
+                AllowedClockSkewSeconds = 5
+            }),
+            null,
+            regressedTimeProvider);
 
         // Assert: Even with backward clock, old proof must still be rejected
-        var resultAfter = await validator.ValidateAsync(
+        var resultAfter = await validatorAfterRegression.ValidateAsync(
             new DpopValidationRequest(oldProof, "GET", new Uri("https://api.example.com/old")));
         resultAfter.IsSuccess.Should().BeFalse(
             "Clock regression must not cause replay of previously-rejected proofs");
@@ -261,9 +270,17 @@ public sealed class TemporalBoundaryTests
     /// </summary>
     private DpopProofValidator CreateValidator()
     {
+        var options = new DPoPOptions
+        {
+            // Validator window is [now - lifetime - skew, now + skew].
+            // Configure to enforce the intended [-60s, +5s] test window.
+            ProofLifetimeSeconds = 55,
+            AllowedClockSkewSeconds = 5
+        };
+
         return new DpopProofValidator(
             _replayCache.Object,
-            Options.Create(new DPoPOptions()),
+            Options.Create(options),
             null, // thumbprintComputer (use default)
             _timeProvider);
     }
@@ -280,31 +297,36 @@ public sealed class TemporalBoundaryTests
         string httpUri,
         string thumbprintJkt)
     {
+        _ = thumbprintJkt;
+
         using var ecKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var securityKey = new ECDsaSecurityKey(ecKey);
+        var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(securityKey);
 
-        var handler = new JwtSecurityTokenHandler();
+        var handler = new JsonWebTokenHandler();
         var tokenDescriptor = new SecurityTokenDescriptor
         {
-            Subject = new ClaimsIdentity(),
-            IssuedAt = issuedAtOffset.DateTime,
             Claims = new Dictionary<string, object>
             {
                 ["htm"] = httpMethod.ToUpperInvariant(),
                 ["htu"] = httpUri.ToLowerInvariant(),
                 ["iat"] = issuedAtOffset.ToUnixTimeSeconds(),
-                ["jti"] = jti,
-                ["typ"] = "dpop+jwt"
+                ["jti"] = jti
             },
             SigningCredentials = new SigningCredentials(securityKey, signingAlgorithm),
+            TokenType = "dpop+jwt",
             AdditionalHeaderClaims = new Dictionary<string, object>
             {
-                ["typ"] = "dpop+jwt",
-                ["jwk"] = new { kty = "EC", use = "sig", crv = "P-256", jkt = thumbprintJkt }
+                ["jwk"] = new Dictionary<string, string>
+                {
+                    ["kty"] = jwk.Kty!,
+                    ["crv"] = jwk.Crv!,
+                    ["x"] = jwk.X!,
+                    ["y"] = jwk.Y!
+                }
             }
         };
 
-        var token = handler.CreateToken(tokenDescriptor);
-        return handler.WriteToken(token);
+        return handler.CreateToken(tokenDescriptor);
     }
 }

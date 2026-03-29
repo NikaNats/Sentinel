@@ -32,8 +32,8 @@ internal sealed class DpopProofValidator : IDpopProofValidator
         IDpopThumbprintComputer? thumbprintComputer = null,
         TimeProvider? timeProvider = null)
     {
-        _replayCache = replayCache;
-        _options = options.Value;
+        _replayCache = replayCache ?? throw new ArgumentNullException(nameof(replayCache));
+        _options = (options ?? throw new ArgumentNullException(nameof(options))).Value;
         _thumbprintComputer = thumbprintComputer ?? new DpopThumbprintComputer();
         _timeProvider = timeProvider ?? TimeProvider.System;
 

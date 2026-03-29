@@ -84,47 +84,37 @@ public static class TestJwtBuilder
         string headerAlg,
         string kty)
     {
+        _ = ecDsa;
+
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
-        // Craft JWK that claims one key type but uses another for signing
-        var jwkDict = new Dictionary<string, object>
+        // Intentionally malformed proof for algorithm confusion tests:
+        // - header alg claims unsupported algorithm (e.g., PS256)
+        // - typ is valid DPoP so validator reaches algorithm check first
+        var header = new Dictionary<string, object>
         {
-            ["kty"] = kty, // Claimed type (e.g., "RSA")
-            ["crv"] = "P-256",
-            ["x"] = Base64UrlEncoder.Encode(new byte[32]),
-            ["y"] = Base64UrlEncoder.Encode(new byte[32])
+            ["alg"] = headerAlg,
+            ["typ"] = "dpop+jwt",
+            ["jwk"] = new Dictionary<string, string>
+            {
+                ["kty"] = kty,
+                ["crv"] = "P-256",
+                ["x"] = Base64UrlEncoder.Encode(new byte[32]),
+                ["y"] = Base64UrlEncoder.Encode(new byte[32])
+            }
         };
 
         var payload = new Dictionary<string, object>
         {
-            ["typ"] = "dpop+jwt",
-            ["alg"] = headerAlg, // Claims RSA but we're signing with EC
-            ["jwk"] = jwkDict,
             ["jti"] = Guid.NewGuid().ToString("N"),
             ["htm"] = "POST",
             ["htu"] = "https://api.sentinel.io/v1/auth",
             ["iat"] = now
         };
 
-        // Create with EC key despite RSA algorithm claim
-        var signingKey = new ECDsaSecurityKey(ecDsa);
-        var tokenDescriptor = new SecurityTokenDescriptor
-        {
-            Claims = payload,
-            SigningCredentials = new SigningCredentials(signingKey, SecurityAlgorithms.EcdsaSha256)
-        };
-
-        try
-        {
-            return TokenHandler.CreateToken(tokenDescriptor);
-        }
-        catch (NotSupportedException)
-        {
-            // Fallback: deliberately malformed token when EC key creation or signing fails
-            var headerJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(new { alg = headerAlg, kty }));
-            var payloadJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(payload));
-            return $"{headerJson}.{payloadJson}.malformed-signature";
-        }
+        var headerJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(header));
+        var payloadJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(payload));
+        return $"{headerJson}.{payloadJson}.malformed-signature";
     }
 
     /// <summary>
@@ -138,35 +128,29 @@ public static class TestJwtBuilder
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
+        // Intentionally uses unsupported HMAC algorithms while preserving valid DPoP shape.
+        var header = new Dictionary<string, object>
+        {
+            ["alg"] = algorithm,
+            ["typ"] = "dpop+jwt",
+            ["jwk"] = new Dictionary<string, string>
+            {
+                ["kty"] = "oct",
+                ["k"] = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(secret))
+            }
+        };
+
         var payload = new Dictionary<string, object>
         {
-            ["typ"] = "dpop+jwt",
-            ["alg"] = algorithm, // HS256 instead of ES256
-            ["jwk"] = new { kty = "oct", k = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(secret)) },
             ["jti"] = Guid.NewGuid().ToString("N"),
             ["htm"] = "GET",
             ["htu"] = "https://api.sentinel.io/v1/resource",
             ["iat"] = now
         };
 
-        var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
-        var tokenDescriptor = new SecurityTokenDescriptor
-        {
-            Claims = payload,
-            SigningCredentials = new SigningCredentials(signingKey, algorithm)
-        };
-
-        try
-        {
-            return TokenHandler.CreateToken(tokenDescriptor);
-        }
-        catch (NotSupportedException)
-        {
-            // Fallback: deliberately malformed token when symmetric key signing fails
-            var headerJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(new { alg = algorithm }));
-            var payloadJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(payload));
-            return $"{headerJson}.{payloadJson}.hmac-signature";
-        }
+        var headerJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(header));
+        var payloadJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(payload));
+        return $"{headerJson}.{payloadJson}.hmac-signature";
     }
 
     private static string NormalizeUri(string uri)
