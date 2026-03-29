@@ -1,10 +1,11 @@
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Security.Abstractions.Identity;
 
-namespace Sentinel.Infrastructure.Auth;
+namespace Sentinel.Keycloak;
 
-internal sealed class SocialFederationConfiguratorHostedService(
+public sealed class SocialFederationConfiguratorHostedService(
     IIdentityFederationProvider federationProvider,
     IOptions<SocialFederationOptions> options,
     ILogger<SocialFederationConfiguratorHostedService> logger) : IHostedService

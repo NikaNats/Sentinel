@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Sentinel.Keycloak.Extensions;
 using Sentinel.Redis.Extensions;
 
 namespace Sentinel.Infrastructure.DependencyInjection;
@@ -16,7 +17,7 @@ public static class InfrastructureServiceCollectionExtensions
         _ = services
             .AddSentinelCore(configuration)
             .AddDPoP(configuration)
-            .AddKeycloak()
+            .AddKeycloak(configuration)
             .AddNotificationsModule(configuration)
             .AddTelemetry();
 

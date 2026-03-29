@@ -1,9 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
-using Sentinel.Keycloak;
 using Sentinel.Security.Abstractions.Identity;
 
-namespace Sentinel.Infrastructure.Auth.Services;
+namespace Sentinel.Keycloak.Services;
 
 internal sealed class KeycloakFederationService(HttpClient httpClient) : IIdentityFederationProvider
 {

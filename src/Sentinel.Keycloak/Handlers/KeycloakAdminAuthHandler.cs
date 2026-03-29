@@ -1,8 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
-using Sentinel.Keycloak;
 
-namespace Sentinel.Infrastructure.Auth.Handlers;
+namespace Sentinel.Keycloak.Handlers;
 
 /// <summary>
 ///     Injects Keycloak admin bearer tokens into outgoing admin API requests.

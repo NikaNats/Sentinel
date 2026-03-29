@@ -1,15 +1,17 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using Sentinel.Application;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Domain.Auth.Rar;
+using Sentinel.RAR;
 
 namespace Sentinel.Tests.Security.Aot;
 
 /// <summary>
 ///     Native AOT Trim-Safety Compliance Tests
 ///     This test suite exercises every JSON-bound model used in the security pipeline
-///     with the ApplicationJsonContext. In a Native AOT environment with aggressive trimming,
+///     with their owning JSON source-gen contexts. In a Native AOT environment with aggressive trimming,
 ///     any model missing from the source-generated context will throw NotSupportedException
 ///     or InvalidOperationException at runtime.
 ///     Why This Matters:
@@ -64,7 +66,7 @@ public sealed class AotCompatibilityTests
     }
 
     /// <summary>
-    ///     Test: AuthorizationDetail (RAR) can round-trip through JSON.
+    ///     Test: AuthorizationDetail (RAR) can round-trip through JSON using RarJsonContext.
     ///     Security Impact: Rich Authorization Requests require deserialization of
     ///     AuthorizationDetail objects. AOT trimming must preserve this type.
     /// </summary>
@@ -79,17 +81,17 @@ public sealed class AotCompatibilityTests
             Currency = "USD"
         };
 
-        // Act: Serialize
+        // Act: Serialize with RAR-owned context
         var json = JsonSerializer.Serialize(
             instance,
             typeof(AuthorizationDetail),
-            ApplicationJsonContext.Default);
+            RarJsonContext.Default);
 
-        // Act: Deserialize
+        // Act: Deserialize with RAR-owned context
         var deserialized = JsonSerializer.Deserialize(
             json,
             typeof(AuthorizationDetail),
-            ApplicationJsonContext.Default);
+            RarJsonContext.Default);
 
         // Assert
         deserialized.Should().NotBeNull();
@@ -104,7 +106,7 @@ public sealed class AotCompatibilityTests
     }
 
     /// <summary>
-    ///     Test: Array of AuthorizationDetail can round-trip.
+    ///     Test: Array of AuthorizationDetail can round-trip using RarJsonContext.
     ///     Security Impact: Multiple authorization details in a single request.
     ///     If array type isn't in context, batch requests fail.
     /// </summary>
@@ -128,17 +130,17 @@ public sealed class AotCompatibilityTests
             }
         };
 
-        // Act: Serialize array
+        // Act: Serialize array with RAR-owned context
         var json = JsonSerializer.Serialize(
             instances,
             typeof(AuthorizationDetail[]),
-            ApplicationJsonContext.Default);
+            RarJsonContext.Default);
 
-        // Act: Deserialize array
+        // Act: Deserialize array with RAR-owned context
         var deserialized = JsonSerializer.Deserialize(
             json,
             typeof(AuthorizationDetail[]),
-            ApplicationJsonContext.Default);
+            RarJsonContext.Default);
 
         // Assert
         deserialized.Should().NotBeNull();
@@ -227,33 +229,42 @@ public sealed class AotCompatibilityTests
     public void Verify_NoNotSupportedExceptions_OnTrimSafeTypes()
     {
         // Arrange: Collection of types that MUST be trim-safe
-        var typesToVerify = new[]
+        var testCases = new (Type Type, object Instance, JsonSerializerContext Context)[]
         {
-            typeof(TokenExchangeResult),
-            typeof(AuthorizationDetail),
-            typeof(AuthorizationDetail[]),
-            typeof(Dictionary<string, object>)
-        };
-
-        var testInstances = new object[]
-        {
-            new TokenExchangeResult { AccessToken = "test", TokenType = "Bearer", ExpiresIn = 3600 },
-            new AuthorizationDetail("test") { TransactionId = "txn", Amount = 1m, Currency = "USD" },
-            new[] { new AuthorizationDetail("test") { TransactionId = "txn", Amount = 1m, Currency = "USD" } },
-            new Dictionary<string, object> { ["key"] = "value" }
+            (
+                typeof(TokenExchangeResult),
+                new TokenExchangeResult { AccessToken = "test", TokenType = "Bearer", ExpiresIn = 3600 },
+                ApplicationJsonContext.Default
+            ),
+            (
+                typeof(AuthorizationDetail),
+                new AuthorizationDetail("test") { TransactionId = "txn", Amount = 1m, Currency = "USD" },
+                RarJsonContext.Default
+            ),
+            (
+                typeof(AuthorizationDetail[]),
+                new[] { new AuthorizationDetail("test") { TransactionId = "txn", Amount = 1m, Currency = "USD" } },
+                RarJsonContext.Default
+            ),
+            (
+                typeof(Dictionary<string, object>),
+                new Dictionary<string, object> { ["key"] = "value" },
+                ApplicationJsonContext.Default
+            )
         };
 
         // Act & Assert: No NotSupportedException thrown
-        for (var i = 0; i < typesToVerify.Length; i++)
+        for (var i = 0; i < testCases.Length; i++)
         {
-            var type = typesToVerify[i];
-            var instance = testInstances[i];
+            var type = testCases[i].Type;
+            var instance = testCases[i].Instance;
+            var context = testCases[i].Context;
 
             // This should NOT throw NotSupportedException (trimmed type)
             var json = JsonSerializer.Serialize(
                 instance,
                 type,
-                ApplicationJsonContext.Default);
+                context);
 
             json.Should().NotBeNullOrWhiteSpace(
                 $"Type {type.Name} must serialize successfully in AOT");
@@ -262,7 +273,7 @@ public sealed class AotCompatibilityTests
             var deserialized = JsonSerializer.Deserialize(
                 json,
                 type,
-                ApplicationJsonContext.Default);
+                context);
 
             deserialized.Should().NotBeNull(
                 $"Type {type.Name} must deserialize successfully in AOT");
@@ -304,11 +315,11 @@ public sealed class AotCompatibilityTests
             typeof(TokenExchangeResult),
             ApplicationJsonContext.Default);
 
-        // Act 2: Serialize authorization details
+        // Act 2: Serialize authorization details with RAR-owned context
         var detailsJson = JsonSerializer.Serialize(
             authDetails,
             typeof(AuthorizationDetail[]),
-            ApplicationJsonContext.Default);
+            RarJsonContext.Default);
 
         // Act 3: Deserialize back
         var tokenDeserialized = JsonSerializer.Deserialize(
@@ -319,7 +330,7 @@ public sealed class AotCompatibilityTests
         var detailsDeserialized = JsonSerializer.Deserialize(
             detailsJson,
             typeof(AuthorizationDetail[]),
-            ApplicationJsonContext.Default);
+            RarJsonContext.Default);
 
         // Assert: Full flow works
         tokenDeserialized.Should().NotBeNull();

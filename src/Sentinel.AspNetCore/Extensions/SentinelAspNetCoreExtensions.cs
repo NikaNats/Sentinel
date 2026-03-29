@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Sentinel.AspNetCore.Middleware;
+using Sentinel.AspNetCore.Stores;
+using Sentinel.Security.Abstractions.Idempotency;
 using Sentinel.Security.Abstractions.Options;
 
 namespace Sentinel.AspNetCore.Extensions;
@@ -113,6 +116,10 @@ public sealed class SentinelAspNetCoreBuilder
         {
             return this;
         }
+
+        // Default to in-memory idempotency when no provider-specific implementation is registered.
+        // Infrastructure packages (e.g., Sentinel.Redis) can override this registration.
+        _services.TryAddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
 
         // Do NOT register the old MVC RequireIdempotencyAttribute
         // The new IEndpointFilter IdempotencyFilter in Sentinel.AspNetCore.Filters is the single source of truth for Minimal APIs

@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 
-namespace Sentinel.Infrastructure.Auth.Handlers;
+namespace Sentinel.Keycloak.Handlers;
 
 internal sealed class KeycloakAdminCircuitBreakerState(TimeProvider? timeProvider = null)
 {

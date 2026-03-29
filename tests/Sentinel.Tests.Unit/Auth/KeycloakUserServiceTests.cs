@@ -3,7 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Sentinel.Domain.Users;
-using Sentinel.Infrastructure.Auth.Services;
+using Sentinel.Keycloak.Services;
 using Sentinel.Security.Abstractions.Results;
 
 namespace Sentinel.Tests.Unit.Auth;

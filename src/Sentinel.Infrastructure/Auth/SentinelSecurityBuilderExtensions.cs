@@ -3,9 +3,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Infrastructure.DependencyInjection;
+using Sentinel.Keycloak;
 using Sentinel.Security.Abstractions.DependencyInjection;
-
-// using Sentinel.Infrastructure.Notifications;
 
 namespace Sentinel.Infrastructure.Auth;
 

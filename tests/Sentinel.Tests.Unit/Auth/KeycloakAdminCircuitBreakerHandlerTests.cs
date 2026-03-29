@@ -1,8 +1,8 @@
 using System.Net;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
-using Moq;
-using Sentinel.Infrastructure.Auth.Handlers;
+using Sentinel.Keycloak.Handlers;
 
 namespace Sentinel.Tests.Unit.Auth;
 
@@ -13,10 +13,10 @@ public sealed class KeycloakAdminCircuitBreakerHandlerTests
     {
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var state = new KeycloakAdminCircuitBreakerState(timeProvider);
-        var logger = new Mock<ILogger<KeycloakAdminCircuitBreakerHandler>>();
+        var logger = NullLogger<KeycloakAdminCircuitBreakerHandler>.Instance;
         using var innerHandler = new CountingHandler(_ =>
             new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
-        using var client = CreateClient(state, logger.Object, innerHandler);
+        using var client = CreateClient(state, logger, innerHandler);
 
         for (var i = 0; i < 5; i++)
         {
@@ -35,12 +35,12 @@ public sealed class KeycloakAdminCircuitBreakerHandlerTests
     {
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var state = new KeycloakAdminCircuitBreakerState(timeProvider);
-        var logger = new Mock<ILogger<KeycloakAdminCircuitBreakerHandler>>();
+        var logger = NullLogger<KeycloakAdminCircuitBreakerHandler>.Instance;
         using var innerHandler = new CountingHandler(callNumber =>
             callNumber <= 5
                 ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
                 : new HttpResponseMessage(HttpStatusCode.OK));
-        using var client = CreateClient(state, logger.Object, innerHandler);
+        using var client = CreateClient(state, logger, innerHandler);
 
         for (var i = 0; i < 5; i++)
         {

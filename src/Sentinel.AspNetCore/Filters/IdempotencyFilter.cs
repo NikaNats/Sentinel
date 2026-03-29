@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
-using StackExchange.Redis;
+using Sentinel.Security.Abstractions.Exceptions;
+using Sentinel.Security.Abstractions.Idempotency;
 
 namespace Sentinel.AspNetCore.Filters;
 
@@ -12,7 +12,9 @@ namespace Sentinel.AspNetCore.Filters;
 ///     2. Storing idempotency state in Redis with TTL
 ///     3. Returning 204 NoContent for duplicates (idempotent retry safety)
 /// </summary>
-public sealed class IdempotencyFilter : IEndpointFilter
+public sealed class IdempotencyFilter(
+    IIdempotencyStore idempotencyStore,
+    ILogger<IdempotencyFilter> logger) : IEndpointFilter
 {
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
@@ -40,56 +42,39 @@ public sealed class IdempotencyFilter : IEndpointFilter
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
-        var logger = httpContext.RequestServices.GetService<ILogger<IdempotencyFilter>>();
-        var redis = httpContext.RequestServices.GetRequiredService<IConnectionMultiplexer>();
-        var db = redis.GetDatabase();
         var sub = httpContext.User.FindFirst("sub")?.Value ?? "anonymous";
-        var redisKey = $"idempotency:{sub}:{idempotencyKey}";
+        var storeKey = $"idempotency:{sub}:{idempotencyKey}";
 
-        bool lockAcquired;
+        IdempotencyAcquireResult acquireResult;
         try
         {
-            lockAcquired = await db.StringSetAsync(
-                redisKey,
-                "IN_PROGRESS",
+            acquireResult = await idempotencyStore.TryAcquireAsync(
+                storeKey,
                 TimeSpan.FromMinutes(5),
-                When.NotExists,
-                CommandFlags.None);
+                httpContext.RequestAborted);
         }
-        catch (RedisException ex)
+        catch (IdempotencyStoreUnavailableException ex)
         {
-            logger?.LogCritical(ex, "Redis unavailable during idempotency check.");
+            logger.LogCritical(ex, "Idempotency store unavailable during idempotency check.");
             return TypedResults.Problem(
                 type: "/errors/idempotency-unavailable",
                 title: "Idempotency service unavailable",
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
-        if (!lockAcquired)
+        if (acquireResult == IdempotencyAcquireResult.Completed)
         {
-            try
-            {
-                var currentState = await db.StringGetAsync(redisKey, CommandFlags.None);
-                if (string.Equals(currentState.ToString(), "COMPLETED", StringComparison.Ordinal))
-                {
-                    return TypedResults.NoContent();
-                }
+            return TypedResults.NoContent();
+        }
 
-                return TypedResults.Conflict(new ProblemDetails
-                {
-                    Type = "/errors/idempotency-conflict",
-                    Title = "Request In Progress",
-                    Detail = "A request with this Idempotency-Key is currently running."
-                });
-            }
-            catch (RedisException ex)
+        if (acquireResult == IdempotencyAcquireResult.InProgress)
+        {
+            return TypedResults.Conflict(new ProblemDetails
             {
-                logger?.LogCritical(ex, "Redis unavailable during idempotency state read.");
-                return TypedResults.Problem(
-                    type: "/errors/idempotency-unavailable",
-                    title: "Idempotency service unavailable",
-                    statusCode: StatusCodes.Status503ServiceUnavailable);
-            }
+                Type = "/errors/idempotency-conflict",
+                Title = "Request In Progress",
+                Detail = "A request with this Idempotency-Key is currently running."
+            });
         }
 
         try
@@ -99,24 +84,31 @@ public sealed class IdempotencyFilter : IEndpointFilter
             // If the endpoint succeeded (2xx), mark as COMPLETED
             if (IsSuccessfulResult(result))
             {
-                await db.StringSetAsync(
-                    redisKey,
-                    "COMPLETED",
+                await idempotencyStore.MarkCompletedAsync(
+                    storeKey,
                     TimeSpan.FromHours(24),
-                    When.Always,
-                    CommandFlags.None);
+                    httpContext.RequestAborted);
             }
             else
             {
-                await db.KeyDeleteAsync(redisKey);
+                await idempotencyStore.ReleaseAsync(storeKey, httpContext.RequestAborted);
             }
 
             return result;
         }
         catch (Exception ex)
         {
-            logger?.LogError(ex, "Error during idempotent operation execution.");
-            await db.KeyDeleteAsync(redisKey);
+            logger.LogError(ex, "Error during idempotent operation execution.");
+            try
+            {
+                await idempotencyStore.ReleaseAsync(storeKey, httpContext.RequestAborted);
+            }
+            catch (IdempotencyStoreUnavailableException cleanupEx)
+            {
+                logger.LogWarning(cleanupEx,
+                    "Idempotency store unavailable while releasing key after request failure.");
+            }
+
             throw;
         }
     }

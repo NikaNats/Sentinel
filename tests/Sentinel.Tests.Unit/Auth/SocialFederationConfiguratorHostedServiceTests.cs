@@ -2,7 +2,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Sentinel.Application.Auth.Models;
-using Sentinel.Infrastructure.Auth;
+using Sentinel.Keycloak;
 using Sentinel.Security.Abstractions.Identity;
 
 namespace Sentinel.Tests.Unit.Auth;

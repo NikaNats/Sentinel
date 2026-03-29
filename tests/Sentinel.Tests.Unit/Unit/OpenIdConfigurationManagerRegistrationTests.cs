@@ -4,13 +4,14 @@ using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Sentinel.Infrastructure.DependencyInjection;
 using Sentinel.Infrastructure.Persistence;
+using Sentinel.Keycloak.Extensions;
 
 namespace Sentinel.Tests.Unit;
 
 public sealed class OpenIdConfigurationManagerRegistrationTests
 {
     [Fact]
-    public void AddSentinelCore_RegistersOpenIdConfigurationManagerAsSingleton()
+    public void AddSentinelCoreAndKeycloak_RegistersOpenIdConfigurationManagerAsSingleton()
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -26,7 +27,8 @@ public sealed class OpenIdConfigurationManagerRegistrationTests
 
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(configuration);
-        _ = services.AddSentinelCore(configuration);
+        _ = services.AddSentinelCore(configuration)
+            .AddKeycloak(configuration);
         using var provider = services.BuildServiceProvider();
 
         var first = provider.GetRequiredService<IConfigurationManager<OpenIdConnectConfiguration>>();

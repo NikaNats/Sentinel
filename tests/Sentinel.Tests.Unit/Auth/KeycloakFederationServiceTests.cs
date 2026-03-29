@@ -1,6 +1,6 @@
 using System.Net;
 using FluentAssertions;
-using Sentinel.Infrastructure.Auth.Services;
+using Sentinel.Keycloak.Services;
 
 namespace Sentinel.Tests.Unit.Auth;
 

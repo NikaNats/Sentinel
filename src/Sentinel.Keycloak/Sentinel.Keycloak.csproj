@@ -20,8 +20,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Sentinel.Tests.Unit" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../Sentinel.Security.Abstractions/Sentinel.Security.Abstractions.csproj" />
     <ProjectReference Include="../Sentinel.Application/Sentinel.Application.csproj" />
+    <ProjectReference Include="../Sentinel.Domain/Sentinel.Domain.csproj" />
+    <ProjectReference Include="../Sentinel.Security.Diagnostics/Sentinel.Security.Diagnostics.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -30,6 +36,9 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Configuration" />
     <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
   </ItemGroup>

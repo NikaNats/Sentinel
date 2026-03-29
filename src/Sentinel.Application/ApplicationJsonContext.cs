@@ -1,6 +1,5 @@
 using System.Text.Json.Serialization;
 using Sentinel.Application.Auth.Models;
-using Sentinel.Domain.Auth.Rar;
 
 namespace Sentinel.Application;
 
@@ -10,8 +9,6 @@ namespace Sentinel.Application;
 /// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(TokenExchangeResult))]
-[JsonSerializable(typeof(AuthorizationDetail))]
-[JsonSerializable(typeof(AuthorizationDetail[]))]
 [JsonSerializable(typeof(Dictionary<string, object>))]
 public sealed partial class ApplicationJsonContext : JsonSerializerContext
 {

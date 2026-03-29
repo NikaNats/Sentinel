@@ -3,11 +3,10 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using Sentinel.Domain.Users;
-using Sentinel.Keycloak;
 using Sentinel.Security.Abstractions.Identity;
 using Sentinel.Security.Abstractions.Results;
 
-namespace Sentinel.Infrastructure.Auth.Services;
+namespace Sentinel.Keycloak.Services;
 
 internal sealed class KeycloakUserService(HttpClient httpClient, ILogger<KeycloakUserService> logger)
     : IIdentityRegistry, IIdentityProvider

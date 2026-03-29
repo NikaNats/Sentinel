@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Sentinel.Redis.Stores;
+using Sentinel.Security.Abstractions.Idempotency;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Replay;
 using Sentinel.Security.Abstractions.Session;
@@ -39,6 +40,7 @@ public static class RedisServiceExtensions
         services.AddSingleton<IJtiReplayCache, RedisJtiReplayCache>();
         services.AddSingleton<IDpopNonceStore, RedisDpopNonceStore>();
         services.AddSingleton<ISessionBlacklistCache, RedisSessionBlacklistCache>();
+        services.AddSingleton<IIdempotencyStore, RedisIdempotencyStore>();
 
         return services;
     }
@@ -67,6 +69,7 @@ public static class RedisServiceExtensions
         services.AddSingleton<IJtiReplayCache, RedisJtiReplayCache>();
         services.AddSingleton<IDpopNonceStore, RedisDpopNonceStore>();
         services.AddSingleton<ISessionBlacklistCache, RedisSessionBlacklistCache>();
+        services.AddSingleton<IIdempotencyStore, RedisIdempotencyStore>();
 
         return services;
     }

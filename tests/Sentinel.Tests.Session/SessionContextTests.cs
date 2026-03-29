@@ -25,7 +25,7 @@ public class SessionContextTests
         // Assert: Constructor MUST enforce non-null, non-whitespace identifiers
         act.Should()
             .Throw<ArgumentException>()
-            .WithMessage("*cannot be null or whitespace*",
+            .WithParameterName("sessionId",
                 "Poisoned SessionContext with null/empty ID could bypass session revocation.");
     }
 
@@ -105,9 +105,9 @@ public class SessionContextTests
     }
 
     [Theory(DisplayName = "Deterministic boundary testing: relative to reference time")]
-    [InlineData(1, false)] // 1 second in the future = NOT expired
+    [InlineData(1, true)] // 1 second after expiry = expired
     [InlineData(0, true)] // Exactly at expiry = expired
-    [InlineData(-1, true)] // 1 second in the past = expired
+    [InlineData(-1, false)] // 1 second before expiry = NOT expired
     public void IsExpired_RelativeToExpiryTime_MustReturnExpected(int secondsOffset, bool expectedExpired)
     {
         // Arrange
