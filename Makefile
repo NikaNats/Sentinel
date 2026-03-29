@@ -1,4 +1,4 @@
-.PHONY: build test lint sec-scan up down all
+.PHONY: build test mutation lint sec-scan up down all
 
 build:
 	dotnet restore Sentinel.slnx --locked-mode
@@ -6,6 +6,10 @@ build:
 
 test:
 	dotnet test Sentinel.slnx --logger "console;verbosity=detailed"
+
+mutation:
+	dotnet tool restore
+	dotnet stryker --config-file stryker-config.json
 
 lint:
 	dotnet format Sentinel.slnx --verify-no-changes

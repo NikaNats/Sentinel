@@ -204,12 +204,27 @@ docker-compose down -v
 ```text
 make build      # locked restore + release build
 make test       # run all tests
+make mutation   # run mutation tests for DPoP-critical paths
 make lint       # dotnet format verification
 make sec-scan   # build image + trivy scan (critical/high)
 make up         # docker-compose up --build -d
 make down       # docker-compose down -v
 make all        # build + lint + test + sec-scan
 ```
+
+## Mutation Testing (Security Gate)
+
+Mutation testing is configured for DPoP-critical code paths via Stryker.NET:
+
+```powershell
+dotnet tool restore
+dotnet stryker --config-file stryker-config.json
+```
+
+Baseline gate thresholds:
+- break: 70
+- low: 70
+- high: 85
 
 ## Configuration Reference
 

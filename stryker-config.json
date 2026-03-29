@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-net/master/src/Stryker.CLI/Stryker.CLI/schema/stryker-config.schema.json",
+  "project": "src/Sentinel.DPoP/Sentinel.DPoP.csproj",
+  "test-projects": [
+    "tests/Sentinel.Tests.Security/Sentinel.Tests.Security.csproj",
+    "tests/Sentinel.Tests.DPoP/Sentinel.Tests.DPoP.csproj"
+  ],
+  "mutate": [
+    "src/Sentinel.DPoP/**/*.cs",
+    "src/Sentinel.AspNetCore/Middleware/DpopValidationMiddleware.cs"
+  ],
+  "reporters": [
+    "progress",
+    "html",
+    "json"
+  ],
+  "thresholds": {
+    "high": 85,
+    "low": 70,
+    "break": 70
+  }
+}

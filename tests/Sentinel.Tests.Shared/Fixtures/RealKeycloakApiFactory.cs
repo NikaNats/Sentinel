@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Text.Json;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -148,6 +149,19 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
                 new SessionBlacklistCacheAdapter(
                     sp.GetRequiredService<ISessionBlacklistCache>(),
                     sp.GetService<TimeProvider>()));
+
+            // Real-Keycloak tests should validate JWTs against live Keycloak signing keys.
+            services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+            {
+                options.RequireHttpsMetadata = false;
+                options.Authority = Authority;
+                options.MetadataAddress = $"{Authority}/.well-known/openid-configuration";
+
+                options.TokenValidationParameters.IssuerSigningKey = null;
+                options.TokenValidationParameters.IssuerSigningKeys = null;
+                options.TokenValidationParameters.ValidIssuer = Authority;
+                options.TokenValidationParameters.ValidAudience = ClientId;
+            });
         });
     }
 

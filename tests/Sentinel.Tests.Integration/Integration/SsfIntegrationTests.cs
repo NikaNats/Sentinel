@@ -275,23 +275,13 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<ISessionBlacklistCache>();
-                services.AddSingleton<ISessionBlacklistCache, ThrowingSessionBlacklistCache>();
                 services.RemoveAll<SecuritySessionBlacklistCache>();
                 services.AddSingleton<SecuritySessionBlacklistCache, ThrowingSecuritySessionBlacklistCache>();
+                services.AddSingleton<ISessionBlacklistCache>(sp =>
+                    new SessionBlacklistCacheAdapter(
+                        sp.GetRequiredService<SecuritySessionBlacklistCache>(),
+                        sp.GetService<TimeProvider>()));
             });
-        }
-    }
-
-    private sealed class ThrowingSessionBlacklistCache : ISessionBlacklistCache
-    {
-        public Task BlacklistSessionAsync(string sessionId, TimeSpan ttl, CancellationToken ct)
-        {
-            throw new InvalidOperationException("Simulated blacklist failure.");
-        }
-
-        public ValueTask<bool> IsSessionBlacklistedAsync(string sessionId, CancellationToken ct)
-        {
-            return ValueTask.FromResult(false);
         }
     }
 

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Options;
+using Sentinel.Tests.Shared;
 using Xunit;
 
 namespace Sentinel.Tests.DPoP;
