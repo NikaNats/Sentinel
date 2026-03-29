@@ -4,7 +4,7 @@
   "cloudBuild": {
     "setAllVariables": true,
     "buildNumber": {
-      "enabled": true
+      "enabled": false
     }
   },
   "assemblyVersion": {
