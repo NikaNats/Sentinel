@@ -112,6 +112,22 @@ public sealed class DpopValidationMiddleware(
             context.Items["dpop.jkt"] = thumbprint; // Also store in context for middleware access
         }
 
+        if (!string.IsNullOrWhiteSpace(thumbprint) && !string.IsNullOrWhiteSpace(result.NewNonce))
+        {
+            var storedNonce = await nonceStore.TryStoreNonceAsync(thumbprint, result.NewNonce, TimeSpan.FromMinutes(5),
+                context.RequestAborted);
+            var nextNonce = storedNonce
+                ? result.NewNonce
+                : await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted) ?? result.NewNonce;
+
+            context.Response.OnStarting(static state =>
+            {
+                var (httpContext, nonce) = ((HttpContext HttpContext, string Nonce))state;
+                httpContext.Response.Headers["DPoP-Nonce"] = nonce;
+                return Task.CompletedTask;
+            }, (context, nextNonce));
+        }
+
         // ✅ FIX: Execute downstream pipeline FIRST
         await next(context);
 
@@ -125,16 +141,6 @@ public sealed class DpopValidationMiddleware(
             _ = await nonceStore.ConsumeNonceIfMatchesAsync(thumbprint, expectedNonce, context.RequestAborted);
         }
 
-        // Issue new nonce for next request (if available)
-        if (!string.IsNullOrWhiteSpace(thumbprint) && !string.IsNullOrWhiteSpace(result.NewNonce))
-        {
-            var storedNonce = await nonceStore.TryStoreNonceAsync(thumbprint, result.NewNonce, TimeSpan.FromMinutes(5),
-                context.RequestAborted);
-            var nextNonce = storedNonce
-                ? result.NewNonce
-                : await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted) ?? result.NewNonce;
-            context.Response.Headers.Append("DPoP-Nonce", nextNonce);
-        }
     }
 
     private static string? TryExtractProofThumbprint(string dpopHeader, IDpopThumbprintComputer thumbprintComputer)

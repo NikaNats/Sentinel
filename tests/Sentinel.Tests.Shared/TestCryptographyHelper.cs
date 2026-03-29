@@ -11,7 +11,7 @@ public static class TestCryptographyHelper
     ///     Generates a valid test cryptography configuration that satisfies validation requirements.
     ///     Returns a dictionary with Cryptography:ActiveKeyId and Cryptography:KeyRing settings.
     /// </summary>
-    public static Dictionary<string, string> GenerateTestCryptographyConfig()
+    public static Dictionary<string, string?> GenerateTestCryptographyConfig()
     {
         // Generate a random 32-byte (256-bit) AES key
         var keyBytes = new byte[32];
@@ -25,7 +25,7 @@ public static class TestCryptographyHelper
 
         // The configuration must be in a format that can be parsed by IConfiguration
         // We'll return it as a Dictionary that can be added to IConfigurationRoot via AddInMemoryCollection
-        return new Dictionary<string, string>
+        return new Dictionary<string, string?>
         {
             { "Cryptography:ActiveKeyId", testKeyId },
             { $"Cryptography:KeyRing:{testKeyId}", testKeyBase64 }

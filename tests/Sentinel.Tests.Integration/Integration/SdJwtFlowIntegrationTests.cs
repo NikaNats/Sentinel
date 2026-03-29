@@ -18,6 +18,7 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
+using Sentinel.Redis;
 using Sentinel.Tests.Shared;
 using StackExchange.Redis;
 using Testcontainers.Redis;
@@ -205,6 +206,8 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
                     ["Keycloak:Audience"] = "sentinel-api",
                     ["Keycloak:RequireHttpsMetadata"] = "false",
                     ["ConnectionStrings:Redis"] = redisConnectionString,
+                    ["Sentinel:Redis:EndPoint"] = redisConnectionString,
+                    ["Sentinel:Redis:EnableInMemoryFallback"] = "true",
                     ["SdJwt:Enabled"] = "true",
                     ["SdJwt:RequireKeyBindingNonce"] = "false"
                 });
@@ -215,6 +218,12 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
                 services.RemoveAll<IDistributedCache>();
                 services.RemoveAll<IConnectionMultiplexer>();
                 services.RemoveAll<IConfigurationManager<OpenIdConnectConfiguration>>();
+                services.RemoveAll<RedisOptions>();
+
+                services.AddSingleton(new RedisOptions
+                {
+                    EndPoint = redisConnectionString
+                });
 
                 services.AddSingleton<IDistributedCache>(_ =>
                     new RedisCache(Options.Create(new RedisCacheOptions { Configuration = redisConnectionString })));

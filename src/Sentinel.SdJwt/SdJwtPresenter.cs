@@ -399,6 +399,20 @@ public sealed class SdJwtPresenter : ISdJwtPresenter
             return digests;
         }
 
+        if (payload.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var sdElement in payload.EnumerateArray())
+            {
+                var digest = sdElement.GetString();
+                if (!string.IsNullOrWhiteSpace(digest))
+                {
+                    digests.Add(digest);
+                }
+            }
+
+            return digests;
+        }
+
         // Start recursive extraction from token payload (typically an object)
         ExtractDigestsRecursive(payload, digests);
         return digests;

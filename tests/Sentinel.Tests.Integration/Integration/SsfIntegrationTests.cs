@@ -19,10 +19,12 @@ using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.Application.Common.Abstractions;
+using Sentinel.Redis;
 using Sentinel.Security.Abstractions.SSF;
 using Sentinel.Tests.Shared;
 using StackExchange.Redis;
 using Testcontainers.Redis;
+using SecuritySessionBlacklistCache = Sentinel.Security.Abstractions.Session.ISessionBlacklistCache;
 
 #pragma warning disable CA2213
 
@@ -214,6 +216,8 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
                     ["Keycloak:Audience"] = "sentinel-api",
                     ["Keycloak:RequireHttpsMetadata"] = "false",
                     ["ConnectionStrings:Redis"] = redisConnectionString,
+                    ["Sentinel:Redis:EndPoint"] = redisConnectionString,
+                    ["Sentinel:Redis:EnableInMemoryFallback"] = "true",
                     ["Ssf:Enabled"] = "true",
                     ["Ssf:RequireAuthToken"] = "false"
                 });
@@ -224,6 +228,12 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
                 services.RemoveAll<IDistributedCache>();
                 services.RemoveAll<IConnectionMultiplexer>();
                 services.RemoveAll<IConfigurationManager<OpenIdConnectConfiguration>>();
+                services.RemoveAll<RedisOptions>();
+
+                services.AddSingleton(new RedisOptions
+                {
+                    EndPoint = redisConnectionString
+                });
 
                 services.AddSingleton<IDistributedCache>(_ =>
                     new RedisCache(Options.Create(new RedisCacheOptions { Configuration = redisConnectionString })));
@@ -266,6 +276,8 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
             {
                 services.RemoveAll<ISessionBlacklistCache>();
                 services.AddSingleton<ISessionBlacklistCache, ThrowingSessionBlacklistCache>();
+                services.RemoveAll<SecuritySessionBlacklistCache>();
+                services.AddSingleton<SecuritySessionBlacklistCache, ThrowingSecuritySessionBlacklistCache>();
             });
         }
     }
@@ -280,6 +292,25 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
         public ValueTask<bool> IsSessionBlacklistedAsync(string sessionId, CancellationToken ct)
         {
             return ValueTask.FromResult(false);
+        }
+    }
+
+    private sealed class ThrowingSecuritySessionBlacklistCache : SecuritySessionBlacklistCache
+    {
+        public Task BlacklistSessionAsync(string sessionId, DateTimeOffset expiresAt,
+            CancellationToken cancellationToken = default)
+        {
+            throw new InvalidOperationException("Simulated blacklist failure.");
+        }
+
+        public Task<bool> IsBlacklistedAsync(string sessionId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(false);
+        }
+
+        public Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
         }
     }
 

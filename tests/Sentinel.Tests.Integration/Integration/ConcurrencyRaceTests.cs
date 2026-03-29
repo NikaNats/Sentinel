@@ -27,7 +27,7 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
 
     public Task InitializeAsync() => Task.CompletedTask;
 
-    public async Task DisposeAsync() => await _factory.DisposeAsync();
+    public Task DisposeAsync() => Task.CompletedTask;
 
     /// <summary>
     ///     Test: RaceCondition_100ConcurrentNonceConsumption_ExactlyOneSucceeds
