@@ -22,6 +22,17 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Ensure Full Git History For Versioning
+        run: |
+          if git rev-parse --is-shallow-repository | grep -q true; then
+            git fetch --prune --unshallow --tags
+          else
+            git fetch --prune --tags
+          fi
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5
@@ -64,6 +75,17 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Ensure Full Git History For Versioning
+        run: |
+          if git rev-parse --is-shallow-repository | grep -q true; then
+            git fetch --prune --unshallow --tags
+          else
+            git fetch --prune --tags
+          fi
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5
