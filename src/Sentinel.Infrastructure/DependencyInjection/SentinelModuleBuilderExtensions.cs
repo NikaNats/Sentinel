@@ -70,16 +70,14 @@ public static class SentinelModuleBuilderExtensions
 
         _ = services.AddSingleton<IEncryptionService, AesGcmEncryptionService>();
         var postgresConnectionString = configuration.GetConnectionString("Postgres");
-        if (string.IsNullOrWhiteSpace(postgresConnectionString))
+        if (!string.IsNullOrWhiteSpace(postgresConnectionString))
         {
-            throw new InvalidOperationException("Connection string 'Postgres' is required for database setup.");
+            _ = services.AddDbContext<SentinelDbContext>(options =>
+            {
+                options.UseNpgsql(postgresConnectionString);
+                options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
+            });
         }
-
-        _ = services.AddDbContext<SentinelDbContext>(options =>
-        {
-            options.UseNpgsql(postgresConnectionString);
-            options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
-        });
 
         _ = services.AddSingleton<ILogoutTokenValidator, LogoutTokenValidator>();
         _ = services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
@@ -101,7 +99,9 @@ public static class SentinelModuleBuilderExtensions
 
     public static ISentinelSecurityBuilder AddKeycloak(this ISentinelSecurityBuilder builder)
     {
+        builder.Services.TryAddSingleton<KeycloakAdminCircuitBreakerState>();
         _ = builder.Services.AddSingleton<KeycloakAdminTokenProvider>();
+        _ = builder.Services.AddTransient<KeycloakAdminCircuitBreakerHandler>();
         _ = builder.Services.AddTransient<KeycloakAdminAuthHandler>();
         _ = builder.Services.AddHttpClient<IUmaPermissionService, KeycloakUmaPermissionService>();
         _ = builder.Services.AddHttpClient<ITokenRefreshService, KeycloakTokenRefreshService>();
@@ -117,6 +117,7 @@ public static class SentinelModuleBuilderExtensions
 
                 client.BaseAddress = adminRealmEndpoint;
             })
+            .AddHttpMessageHandler<KeycloakAdminCircuitBreakerHandler>()
             .AddHttpMessageHandler<KeycloakAdminAuthHandler>();
         _ = builder.Services.AddScoped<IIdentityProvider>(sp =>
             (IIdentityProvider)sp.GetRequiredService<IIdentityRegistry>());
@@ -131,6 +132,7 @@ public static class SentinelModuleBuilderExtensions
 
                 client.BaseAddress = adminRealmEndpoint;
             })
+            .AddHttpMessageHandler<KeycloakAdminCircuitBreakerHandler>()
             .AddHttpMessageHandler<KeycloakAdminAuthHandler>();
         _ = builder.Services.AddHttpClient<IIdentityFederationProvider, KeycloakFederationService>((sp, client) =>
             {
@@ -143,8 +145,10 @@ public static class SentinelModuleBuilderExtensions
 
                 client.BaseAddress = adminRealmEndpoint;
             })
+            .AddHttpMessageHandler<KeycloakAdminCircuitBreakerHandler>()
             .AddHttpMessageHandler<KeycloakAdminAuthHandler>();
-        _ = builder.Services.AddHttpClient("keycloak-admin");
+        _ = builder.Services.AddHttpClient("keycloak-admin")
+            .AddHttpMessageHandler<KeycloakAdminCircuitBreakerHandler>();
         _ = builder.Services.AddHttpClient<IAuthRevocationService, KeycloakAuthRevocationService>();
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, SocialFederationConfiguratorHostedService>());

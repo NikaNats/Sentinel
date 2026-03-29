@@ -197,6 +197,34 @@ public sealed class DpopProofValidatorTests : IDisposable
         errorLower.Should().NotContain("timeout");
     }
 
+    [Fact(DisplayName = "🛑 Cancellation: OperationCanceledException MUST propagate")]
+    public async Task ValidateAsync_WhenCancellationRequested_ThrowsOperationCanceledException()
+    {
+        var proof = CreateSignedProof("GET", "https://api.io/t");
+
+        var options = Options.Create(new DPoPOptions
+        {
+            ProofLifetimeSeconds = 60,
+            AllowedClockSkewSeconds = 5
+        });
+        options.Value.AllowedAlgorithms.Clear();
+        options.Value.AllowedAlgorithms.Add(SecurityAlgorithms.EcdsaSha256);
+
+        var validator = new DpopProofValidator(
+            new CancellationAwareReplayCache(),
+            options,
+            _thumbprintComputer,
+            _timeProvider);
+
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var request = new DpopValidationRequest(proof, "GET", new Uri("https://api.io/t"));
+
+        var act = () => validator.ValidateAsync(request, cts.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     [Fact(DisplayName = "🎯 URI Binding: HTU (HTTP URI) mismatch MUST prevent cross-endpoint replay")]
     public async Task ValidateAsync_HtuMismatch_ReturnsFailure()
     {
@@ -410,5 +438,21 @@ public sealed class DpopProofValidatorTests : IDisposable
         }
 
         public void SetShouldFail() => _shouldFail = true;
+    }
+
+    private sealed class CancellationAwareReplayCache : IJtiReplayCache
+    {
+        public Task<bool> TryMarkUsedAsync(string jti, DateTimeOffset expiresAt,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(true);
+        }
+
+        public Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
     }
 }

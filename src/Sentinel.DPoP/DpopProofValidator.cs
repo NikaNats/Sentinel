@@ -194,9 +194,32 @@ internal sealed class DpopProofValidator : IDpopProofValidator
             var success = new DpopValidationSuccess(newNonce, thumbprint);
             return SecurityResultFactory.Create(success);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException)
         {
-            // Malformed JWT, JSON parsing error, etc. -> fail closed
+            throw;
+        }
+        catch (JsonException)
+        {
+            return SecurityResultFactory.Failure<DpopValidationSuccess>("validation_error");
+        }
+        catch (SecurityTokenException)
+        {
+            return SecurityResultFactory.Failure<DpopValidationSuccess>("validation_error");
+        }
+        catch (CryptographicException)
+        {
+            return SecurityResultFactory.Failure<DpopValidationSuccess>("validation_error");
+        }
+        catch (FormatException)
+        {
+            return SecurityResultFactory.Failure<DpopValidationSuccess>("validation_error");
+        }
+        catch (ArgumentException)
+        {
+            return SecurityResultFactory.Failure<DpopValidationSuccess>("validation_error");
+        }
+        catch (InvalidOperationException)
+        {
             return SecurityResultFactory.Failure<DpopValidationSuccess>("validation_error");
         }
     }

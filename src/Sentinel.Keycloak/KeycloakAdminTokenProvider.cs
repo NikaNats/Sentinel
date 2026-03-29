@@ -14,8 +14,7 @@ public sealed class KeycloakAdminTokenProvider(
     private readonly KeycloakOptions keycloakOptions = options.Value;
     private readonly SemaphoreSlim tokenLock = new(1, 1);
 
-    private string? cachedAccessToken;
-    private DateTimeOffset cachedAccessTokenExpiresAt;
+    private TokenSnapshot? cachedToken;
 
     public void Dispose()
     {
@@ -24,17 +23,17 @@ public sealed class KeycloakAdminTokenProvider(
 
     public async Task<string?> GetAccessTokenAsync(CancellationToken ct)
     {
-        if (HasUsableCachedToken())
+        if (TryGetUsableCachedToken(out var token))
         {
-            return cachedAccessToken;
+            return token;
         }
 
         await tokenLock.WaitAsync(ct);
         try
         {
-            if (HasUsableCachedToken())
+            if (TryGetUsableCachedToken(out token))
             {
-                return cachedAccessToken;
+                return token;
             }
 
             var authority = keycloakOptions.Authority.TrimEnd('/');
@@ -70,34 +69,63 @@ public sealed class KeycloakAdminTokenProvider(
             };
 
             var adminHttpClient = httpClientFactory.CreateClient("keycloak-admin");
-            using var response = await adminHttpClient.SendAsync(request, ct);
-            if (!response.IsSuccessStatusCode)
+            HttpResponseMessage response;
+
+            try
             {
-                logger.LogWarning("Failed to acquire Keycloak admin token. Status code: {StatusCode}",
-                    (int)response.StatusCode);
+                response = await adminHttpClient.SendAsync(request, ct);
+            }
+            catch (HttpRequestException ex)
+            {
+                logger.LogWarning(ex, "Failed to reach Keycloak token endpoint for admin token acquisition.");
+                return null;
+            }
+            catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+            {
+                logger.LogWarning(ex, "Timed out while acquiring Keycloak admin token.");
                 return null;
             }
 
-            await using var responseStream = await response.Content.ReadAsStreamAsync(ct);
-            using var jsonDocument = await JsonDocument.ParseAsync(responseStream, cancellationToken: ct);
-            var root = jsonDocument.RootElement;
-
-            if (!root.TryGetProperty("access_token", out var accessTokenElement)
-                || string.IsNullOrWhiteSpace(accessTokenElement.GetString()))
+            using (response)
             {
-                logger.LogWarning("Keycloak admin token response did not contain an access_token.");
-                return null;
+                if (!response.IsSuccessStatusCode)
+                {
+                    logger.LogWarning("Failed to acquire Keycloak admin token. Status code: {StatusCode}",
+                        (int)response.StatusCode);
+                    return null;
+                }
+
+                await using var responseStream = await response.Content.ReadAsStreamAsync(ct);
+                JsonElement root;
+                try
+                {
+                    using var jsonDocument = await JsonDocument.ParseAsync(responseStream, cancellationToken: ct);
+                    root = jsonDocument.RootElement.Clone();
+                }
+                catch (JsonException ex)
+                {
+                    logger.LogWarning(ex, "Keycloak admin token response body was not valid JSON.");
+                    return null;
+                }
+
+                if (!root.TryGetProperty("access_token", out var accessTokenElement)
+                    || string.IsNullOrWhiteSpace(accessTokenElement.GetString()))
+                {
+                    logger.LogWarning("Keycloak admin token response did not contain an access_token.");
+                    return null;
+                }
+
+                var expiresIn = root.TryGetProperty("expires_in", out var expiresInElement) &&
+                                expiresInElement.TryGetInt32(out var seconds)
+                    ? Math.Max(seconds, 1)
+                    : 60;
+
+                var snapshot = new TokenSnapshot(accessTokenElement.GetString()!,
+                    _timeProvider.GetUtcNow().AddSeconds(expiresIn));
+                Volatile.Write(ref cachedToken, snapshot);
+
+                return snapshot.AccessToken;
             }
-
-            var expiresIn = root.TryGetProperty("expires_in", out var expiresInElement) &&
-                            expiresInElement.TryGetInt32(out var seconds)
-                ? Math.Max(seconds, 1)
-                : 60;
-
-            cachedAccessToken = accessTokenElement.GetString();
-            cachedAccessTokenExpiresAt = _timeProvider.GetUtcNow().AddSeconds(expiresIn);
-
-            return cachedAccessToken;
         }
         finally
         {
@@ -105,9 +133,24 @@ public sealed class KeycloakAdminTokenProvider(
         }
     }
 
-    private bool HasUsableCachedToken()
+    private bool TryGetUsableCachedToken(out string? token)
     {
-        return !string.IsNullOrWhiteSpace(cachedAccessToken)
-               && cachedAccessTokenExpiresAt > _timeProvider.GetUtcNow().AddSeconds(30);
+        var snapshot = Volatile.Read(ref cachedToken);
+        if (snapshot is null)
+        {
+            token = null;
+            return false;
+        }
+
+        if (snapshot.ExpiresAtUtc <= _timeProvider.GetUtcNow().AddSeconds(30))
+        {
+            token = null;
+            return false;
+        }
+
+        token = snapshot.AccessToken;
+        return true;
     }
+
+    private sealed record TokenSnapshot(string AccessToken, DateTimeOffset ExpiresAtUtc);
 }

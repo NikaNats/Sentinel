@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Sentinel.Infrastructure.DependencyInjection;
+using Sentinel.Infrastructure.Persistence;
 
 namespace Sentinel.Tests.Unit;
 
@@ -32,5 +33,29 @@ public sealed class OpenIdConfigurationManagerRegistrationTests
         var second = provider.GetRequiredService<IConfigurationManager<OpenIdConnectConfiguration>>();
 
         Assert.Same(first, second);
+    }
+
+    [Fact]
+    public void AddSentinelCore_WhenPostgresConnectionMissing_DoesNotThrowAndSkipsDbContextRegistration()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Keycloak:Authority"] = "https://keycloak.example",
+                ["Keycloak:Audience"] = "sentinel-api",
+                ["Keycloak:Admin:ClientId"] = "admin-cli",
+                ["Keycloak:Admin:ClientSecret"] = "secret",
+                ["Cryptography:ActiveKeyId"] = "default",
+                ["Cryptography:KeyRing:default"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(configuration);
+
+        _ = services.AddSentinelCore(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        Assert.Null(provider.GetService<SentinelDbContext>());
     }
 }

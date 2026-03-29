@@ -42,12 +42,12 @@ internal sealed class SocialFederationConfiguratorHostedService(
                     cancellationToken);
             }
         }
-#pragma warning disable CA1031 // Intentional catch-all: startup federation configuration should not crash the host.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogError(ex, "Failed to configure social federation providers.");
+            logger.LogCritical(ex,
+                "Failed to configure social federation providers during startup. Aborting host startup.");
+            throw;
         }
-#pragma warning restore CA1031
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
