@@ -70,6 +70,8 @@ user-secrets.json
 *.pem
 *.key
 *.crt
+*.snk
+!Sentinel.public.snk
 
 # OS files
 .DS_Store

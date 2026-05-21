@@ -27,6 +27,15 @@
     <!-- Build Determinism (for reproducible builds in CI/CD) -->
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true' or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
 
+    <!-- Strong-Name Signing Configuration (Enterprise & FAPI 2.0 Compliance) -->
+    <SignAssembly>true</SignAssembly>
+    <!-- SOTA model: prefer private key if present, otherwise fall back to public key -->
+    <AssemblyOriginatorKeyFile Condition="Exists('$(MSBuildThisFileDirectory)Sentinel.snk')">$(MSBuildThisFileDirectory)Sentinel.snk</AssemblyOriginatorKeyFile>
+    <AssemblyOriginatorKeyFile Condition="!Exists('$(MSBuildThisFileDirectory)Sentinel.snk')">$(MSBuildThisFileDirectory)Sentinel.public.snk</AssemblyOriginatorKeyFile>
+    <DelaySign>false</DelaySign>
+    <!-- Enable PublicSign only when using the public key -->
+    <PublicSign Condition="!Exists('$(MSBuildThisFileDirectory)Sentinel.snk')">true</PublicSign>
+
     <!-- Enable NativeAOT trimming validation & AOT compilation -->
     <TrimMode>link</TrimMode>
     <InvariantGlobalization>true</InvariantGlobalization>
