@@ -12,16 +12,23 @@ using IDpopProofValidator = Sentinel.Security.Abstractions.DPoP.IDpopProofValida
 
 namespace Sentinel.AspNetCore.Middleware;
 
-public sealed class DpopValidationMiddleware(
-    RequestDelegate next,
-    IDpopProofValidator validator,
-    IDpopNonceStore nonceStore,
-    IDpopThumbprintComputer thumbprintComputer)
+public sealed class DpopValidationMiddleware
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
     private static readonly TimeSpan NonceTtl = TimeSpan.FromMinutes(5);
+    private readonly RequestDelegate _next;
+    private readonly IDpopThumbprintComputer _thumbprintComputer;
 
-    public async Task InvokeAsync(HttpContext context)
+    public DpopValidationMiddleware(RequestDelegate next, IDpopThumbprintComputer thumbprintComputer)
+    {
+        _next = next;
+        _thumbprintComputer = thumbprintComputer;
+    }
+
+    public async Task InvokeAsync(
+        HttpContext context,
+        IDpopProofValidator validator,
+        IDpopNonceStore nonceStore)
     {
         var ipHash = SecurityContextHasher.HashIp(context);
         var authHeader = context.Request.Headers.Authorization.ToString();
@@ -34,7 +41,7 @@ public sealed class DpopValidationMiddleware(
                 var bearerToken = authHeader["Bearer ".Length..].Trim();
                 if (bearerToken.Contains('~', StringComparison.Ordinal))
                 {
-                    await next(context);
+                    await _next(context);
                     return;
                 }
 
@@ -46,7 +53,7 @@ public sealed class DpopValidationMiddleware(
                 return;
             }
 
-            await next(context);
+            await _next(context);
             return;
         }
 
@@ -63,7 +70,7 @@ public sealed class DpopValidationMiddleware(
         // RFC 9449 section 4.2: htu excludes query string and fragment.
         var requestUrl = $"{context.Request.Scheme}://{context.Request.Host}{context.Request.Path}";
 
-        var thumbprint = TryExtractProofThumbprint(dpopProof, thumbprintComputer);
+        var thumbprint = TryExtractProofThumbprint(dpopProof, _thumbprintComputer);
         string? expectedNonce = null;
         if (!string.IsNullOrWhiteSpace(thumbprint))
         {
@@ -150,7 +157,7 @@ public sealed class DpopValidationMiddleware(
         }
 
         // ✅ FIX: Execute downstream pipeline FIRST
-        await next(context);
+        await _next(context);
 
     }
 

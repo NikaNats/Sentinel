@@ -31,13 +31,12 @@ public sealed class DpopValidationMiddlewareTests
         RequestDelegate next = _ => throw new InvalidOperationException("downstream-failure");
         var middleware = new DpopValidationMiddleware(
             next,
-            validatorMock.Object,
-            nonceStoreMock.Object,
             thumbprintComputerMock.Object);
 
         var context = CreateDpopContext();
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(context));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            middleware.InvokeAsync(context, validatorMock.Object, nonceStoreMock.Object));
 
         nonceStoreMock.Verify(x => x.GetNonceAsync(thumbprint, It.IsAny<CancellationToken>()), Times.Once);
         nonceStoreMock.Verify(
@@ -85,13 +84,11 @@ public sealed class DpopValidationMiddlewareTests
         RequestDelegate next = _ => Task.CompletedTask;
         var middleware = new DpopValidationMiddleware(
             next,
-            validatorMock.Object,
-            nonceStoreMock.Object,
             thumbprintComputerMock.Object);
 
         var context = CreateDpopContext();
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, validatorMock.Object, nonceStoreMock.Object);
 
         // In unit-test host, response commit hooks are not executed like Kestrel/TestServer.
         // This assertion verifies sequencing: nonce state is not mutated during request execution.
@@ -126,13 +123,11 @@ public sealed class DpopValidationMiddlewareTests
 
         var middleware = new DpopValidationMiddleware(
             next,
-            validatorMock.Object,
-            nonceStoreMock.Object,
             thumbprintComputerMock.Object);
 
         var context = CreateDpopContext();
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, validatorMock.Object, nonceStoreMock.Object);
         await context.Response.WriteAsync("error");
 
         nonceStoreMock.Verify(

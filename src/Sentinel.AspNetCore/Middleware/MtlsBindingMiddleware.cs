@@ -6,16 +6,24 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Sentinel.AspNetCore.Middleware;
 
-public sealed class MtlsBindingMiddleware(RequestDelegate next, ILogger<MtlsBindingMiddleware> logger)
+public sealed class MtlsBindingMiddleware
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
+    private readonly RequestDelegate _next;
+    private readonly ILogger<MtlsBindingMiddleware> _logger;
+
+    public MtlsBindingMiddleware(RequestDelegate next, ILogger<MtlsBindingMiddleware> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
 
     public async Task InvokeAsync(HttpContext context)
     {
-        var expectedThumbprint = TryResolveExpectedThumbprint(context, logger);
+        var expectedThumbprint = TryResolveExpectedThumbprint(context, _logger);
         if (string.IsNullOrWhiteSpace(expectedThumbprint))
         {
-            await next(context);
+            await _next(context);
             return;
         }
 
@@ -29,7 +37,7 @@ public sealed class MtlsBindingMiddleware(RequestDelegate next, ILogger<MtlsBind
         var actualThumbprint = Base64UrlEncoder.Encode(clientCertificate.GetCertHash(HashAlgorithmName.SHA256));
         if (!string.Equals(expectedThumbprint, actualThumbprint, StringComparison.Ordinal))
         {
-            logger.LogCritical(
+            _logger.LogCritical(
                 "mTLS binding mismatch for subject {Subject}. expected_x5t={Expected}, actual_x5t={Actual}",
                 context.User.FindFirst("sub")?.Value,
                 expectedThumbprint,
@@ -39,7 +47,7 @@ public sealed class MtlsBindingMiddleware(RequestDelegate next, ILogger<MtlsBind
             return;
         }
 
-        await next(context);
+        await _next(context);
     }
 
     private static string? TryResolveExpectedThumbprint(HttpContext context, ILogger logger)
