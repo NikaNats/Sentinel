@@ -3,6 +3,7 @@ using Sentinel.AspNetCore.Endpoints;
 using Sentinel.Application.DependencyInjection;
 using Sentinel.Infrastructure.DependencyInjection;
 using Sentinel.Keycloak.Extensions;
+using Sentinel.Redis.Extensions;
 using Sentinel.Sample.MinimalApi.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,6 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 
 builder.Services
+    .AddRedisSecurityCaches(builder.Configuration.GetSection("Sentinel:Redis"))
     .AddApplicationLayer()
     .AddKeycloakIntegration(builder.Configuration.GetSection("Sentinel:Keycloak"))
     .AddInfrastructureLayer(builder.Configuration);

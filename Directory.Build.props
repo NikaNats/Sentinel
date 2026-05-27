@@ -1,76 +1,84 @@
 <Project>
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
 
-    <!-- Security Enforcement -->
-    <AnalysisMode>All</AnalysisMode>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <!-- Security Enforcement -->
+        <AnalysisMode>All</AnalysisMode>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
 
-    <!-- Library Packaging Defaults -->
-    <Authors>Sentinel Team</Authors>
-    <RepositoryUrl>https://github.com/NikaNats/Sentinel</RepositoryUrl>
-    <RepositoryType>git</RepositoryType>
-    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/NikaNats/Sentinel</PackageProjectUrl>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
-    <PublishRepositoryUrl>true</PublishRepositoryUrl>
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <!-- Library Packaging Defaults -->
+        <Authors>Sentinel Team</Authors>
+        <RepositoryUrl>https://github.com/NikaNats/Sentinel</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+        <PackageProjectUrl>https://github.com/NikaNats/Sentinel</PackageProjectUrl>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
 
-    <!-- NuGet 2025+ Metadata (for package discoverability) -->
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageIcon Condition="Exists('icon.png')">icon.png</PackageIcon>
+        <!-- NuGet 2025+ Metadata (for package discoverability) -->
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageIcon Condition="Exists('icon.png')">icon.png</PackageIcon>
 
-    <!-- Build Determinism (for reproducible builds in CI/CD) -->
-    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true' or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+        <!-- Build Determinism (for reproducible builds in CI/CD) -->
+        <ContinuousIntegrationBuild Condition="'$(CI)' == 'true' or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
 
-    <!-- Strong-Name Signing Configuration (Enterprise & FAPI 2.0 Compliance) -->
-    <SignAssembly>true</SignAssembly>
-    <!-- SOTA model: prefer private key if present, otherwise fall back to public key -->
-    <AssemblyOriginatorKeyFile Condition="Exists('$(MSBuildThisFileDirectory)Sentinel.snk')">$(MSBuildThisFileDirectory)Sentinel.snk</AssemblyOriginatorKeyFile>
-    <AssemblyOriginatorKeyFile Condition="!Exists('$(MSBuildThisFileDirectory)Sentinel.snk')">$(MSBuildThisFileDirectory)Sentinel.public.snk</AssemblyOriginatorKeyFile>
-    <DelaySign>false</DelaySign>
-    <!-- Enable PublicSign only when using the public key -->
-    <PublicSign Condition="!Exists('$(MSBuildThisFileDirectory)Sentinel.snk')">true</PublicSign>
+        <!-- Strong-Name Signing Configuration (Enterprise & FAPI 2.0 Compliance) -->
+        <!-- 1. Check if any strong-name key exists on disk (prevents cold-clone build failures) -->
+        <HasSentinelKeys Condition="Exists('$(MSBuildThisFileDirectory)Sentinel.snk') or Exists('$(MSBuildThisFileDirectory)Sentinel.public.snk')">true</HasSentinelKeys>
 
-    <!-- Enable NativeAOT trimming validation & AOT compilation -->
-    <TrimMode>link</TrimMode>
-    <InvariantGlobalization>true</InvariantGlobalization>
-    <!-- NOTE: PublishAot/IsAotCompatible must be set per-module since not all dependencies support AOT -->
-    <!-- EntityFrameworkCore, Configuration binding, and other libraries require dynamic code -->
-    <!-- Modules using only AOT-compatible libraries can opt-in locally -->
+        <!-- 2. Enable signing only when at least one key is present on disk -->
+        <SignAssembly Condition="'$(HasSentinelKeys)' == 'true'">true</SignAssembly>
+        <SignAssembly Condition="'$(HasSentinelKeys)' != 'true'">false</SignAssembly>
 
-    <!-- Comprehensive NoWarn: Production + Test Rules -->
-    <NoWarn>
-      $(NoWarn);
-      CS1591;
-      CA1032;CA1034;CA1054;CA1062;CA1307;CA1515;CA1707;CA1711;CA1812;CA1819;CA1848;CA1861;CA1873;CA2201;CA2234;CA5398;CA5404;CA1850;IDE0005
-    </NoWarn>
-  </PropertyGroup>
+        <!-- 3. SOTA model: prefer private key if present, otherwise fall back to public key -->
+        <AssemblyOriginatorKeyFile Condition="Exists('$(MSBuildThisFileDirectory)Sentinel.snk')">$(MSBuildThisFileDirectory)Sentinel.snk</AssemblyOriginatorKeyFile>
+        <AssemblyOriginatorKeyFile Condition="!Exists('$(MSBuildThisFileDirectory)Sentinel.snk') and Exists('$(MSBuildThisFileDirectory)Sentinel.public.snk')">$(MSBuildThisFileDirectory)Sentinel.public.snk</AssemblyOriginatorKeyFile>
 
-  <!-- Conditional library defaults -->
-  <PropertyGroup Condition="'$(IsLibrary)' == 'true'">
-    <IsPackable>true</IsPackable>
-    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
-  </PropertyGroup>
+        <DelaySign>false</DelaySign>
 
-  <ItemGroup>
-    <PackageReference Include="Nerdbank.GitVersioning" PrivateAssets="all" />
-  </ItemGroup>
+        <!-- 4. Enable PublicSign only when using the public key and signing is active -->
+        <PublicSign Condition="'$(SignAssembly)' == 'true' and !Exists('$(MSBuildThisFileDirectory)Sentinel.snk')">true</PublicSign>
 
-  <ItemGroup>
-    <None Include="$(MSBuildThisFileDirectory)README.md"
-          Pack="true"
-          PackagePath="\"
-          Link="README.md"
-          Condition="Exists('$(MSBuildThisFileDirectory)README.md')" />
-  </ItemGroup>
+        <!-- Enable NativeAOT trimming validation & AOT compilation -->
+        <TrimMode>link</TrimMode>
+        <InvariantGlobalization>true</InvariantGlobalization>
+        <!-- NOTE: PublishAot/IsAotCompatible must be set per-module since not all dependencies support AOT -->
+        <!-- EntityFrameworkCore, Configuration binding, and other libraries require dynamic code -->
+        <!-- Modules using only AOT-compatible libraries can opt-in locally -->
 
-  <!-- Conditional app defaults -->
-  <PropertyGroup Condition="'$(IsApp)' == 'true'">
-    <IsPackable>false</IsPackable>
-  </PropertyGroup>
+        <!-- Comprehensive NoWarn: Production + Test Rules -->
+        <NoWarn>
+            $(NoWarn);
+            CS1591;
+            CA1032;CA1034;CA1054;CA1062;CA1307;CA1515;CA1707;CA1711;CA1812;CA1819;CA1848;CA1861;CA1873;CA2201;CA2234;CA5398;CA5404;CA1850;IDE0005
+        </NoWarn>
+    </PropertyGroup>
+
+    <!-- Conditional library defaults -->
+    <PropertyGroup Condition="'$(IsLibrary)' == 'true'">
+        <IsPackable>true</IsPackable>
+        <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Nerdbank.GitVersioning" PrivateAssets="all" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="$(MSBuildThisFileDirectory)README.md"
+              Pack="true"
+              PackagePath="\"
+              Link="README.md"
+              Condition="Exists('$(MSBuildThisFileDirectory)README.md')" />
+    </ItemGroup>
+
+    <!-- Conditional app defaults -->
+    <PropertyGroup Condition="'$(IsApp)' == 'true'">
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
 </Project>

@@ -19,7 +19,9 @@ using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.Redis;
+using Sentinel.Redis.Extensions;
 using Sentinel.Tests.Shared;
+using Sentinel.Tests.Shared.Fixtures;
 using StackExchange.Redis;
 using Testcontainers.Redis;
 
@@ -218,6 +220,9 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
                 services.RemoveAll<IDistributedCache>();
                 services.RemoveAll<IConnectionMultiplexer>();
                 services.RemoveAll<IConfigurationManager<OpenIdConnectConfiguration>>();
+                services.RemoveAll<Sentinel.Security.Abstractions.Replay.IJtiReplayCache>();
+                services.RemoveAll<Sentinel.Security.Abstractions.Nonce.IDpopNonceStore>();
+                services.RemoveAll<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>();
                 services.RemoveAll<RedisOptions>();
 
                 services.AddSingleton(new RedisOptions
@@ -234,6 +239,26 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
                     options.AbortOnConnectFail = false;
                     return ConnectionMultiplexer.Connect(options);
                 });
+
+                var redisConfig = new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["EndPoint"] = redisConnectionString,
+                        ["EnableInMemoryFallback"] = "true"
+                    })
+                    .Build();
+                services.AddRedisSecurityCaches(redisConfig);
+
+                // 🟢 მკაფიოდ გაწერილი ნეიმსფეისები ნებისმიერი კონფლიქტის ასაცილებლად
+                services.AddSingleton<Sentinel.Application.Common.Abstractions.IJtiReplayCache>(sp =>
+                    new JtiReplayCacheAdapter(
+                        sp.GetRequiredService<Sentinel.Security.Abstractions.Replay.IJtiReplayCache>(),
+                        sp.GetService<TimeProvider>()));
+
+                services.AddSingleton<Sentinel.Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
+                    new SessionBlacklistCacheAdapter(
+                        sp.GetRequiredService<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>(),
+                        sp.GetService<TimeProvider>()));
 
                 services.AddSingleton<IConfigurationManager<OpenIdConnectConfiguration>>(_ =>
                     new TestOpenIdConfigurationManager(TestTokenIssuer.AuthoritySecurityKey));

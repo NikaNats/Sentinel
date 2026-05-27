@@ -14,7 +14,13 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
+using Sentinel.Redis;
+using Sentinel.Redis.Extensions;
+using Sentinel.Security.Abstractions.Nonce;
+using Sentinel.Security.Abstractions.Replay;
+using Sentinel.Security.Abstractions.Session;
 using Sentinel.Tests.Shared;
+using Sentinel.Tests.Shared.Fixtures;
 using StackExchange.Redis;
 using Testcontainers.Redis;
 
@@ -120,6 +126,8 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
                     ["Keycloak:Audience"] = "sentinel-api",
                     ["Keycloak:RequireHttpsMetadata"] = "false",
                     ["ConnectionStrings:Redis"] = redisConnectionString,
+                    ["Sentinel:Redis:EndPoint"] = redisConnectionString,
+                    ["Sentinel:Redis:EnableInMemoryFallback"] = "true",
                     ["SdJwt:Enabled"] = "true",
                     ["SdJwt:RequireKeyBindingNonce"] = "false"
                 });
@@ -130,6 +138,10 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
                 services.RemoveAll<IDistributedCache>();
                 services.RemoveAll<IConnectionMultiplexer>();
                 services.RemoveAll<IConfigurationManager<OpenIdConnectConfiguration>>();
+                services.RemoveAll<IJtiReplayCache>();
+                services.RemoveAll<IDpopNonceStore>();
+                services.RemoveAll<ISessionBlacklistCache>();
+                services.RemoveAll<RedisOptions>();
 
                 services.AddSingleton<IDistributedCache>(_ =>
                     new RedisCache(Options.Create(new RedisCacheOptions { Configuration = redisConnectionString })));
@@ -140,6 +152,27 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
                     options.AbortOnConnectFail = false;
                     return ConnectionMultiplexer.Connect(options);
                 });
+
+                // 🟢 1. დავარეგისტრიროთ Redis-ის უსაფრთხოების ქეშები
+                var redisConfig = new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["EndPoint"] = redisConnectionString,
+                        ["EnableInMemoryFallback"] = "true"
+                    })
+                    .Build();
+                services.AddRedisSecurityCaches(redisConfig);
+
+                // 🟢 2. დავაკავშიროთ (Bridge) Application-ფენის ქეშის ინტერფეისები Security-ფენის იმპლემენტაციებთან
+                services.AddSingleton<Application.Common.Abstractions.IJtiReplayCache>(sp =>
+                    new JtiReplayCacheAdapter(
+                        sp.GetRequiredService<IJtiReplayCache>(),
+                        sp.GetService<TimeProvider>()));
+
+                services.AddSingleton<Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
+                    new SessionBlacklistCacheAdapter(
+                        sp.GetRequiredService<ISessionBlacklistCache>(),
+                        sp.GetService<TimeProvider>()));
 
                 services.AddSingleton<IConfigurationManager<OpenIdConnectConfiguration>>(_ =>
                     new TestOpenIdConfigurationManager(TestTokenIssuer.AuthoritySecurityKey));

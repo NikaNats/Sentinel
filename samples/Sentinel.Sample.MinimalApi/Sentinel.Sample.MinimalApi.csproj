@@ -15,6 +15,7 @@
     <!-- In the real world, these are PackageReferences to your private NuGet feed -->
     <ProjectReference Include="..\..\src\Sentinel.AspNetCore\Sentinel.AspNetCore.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Infrastructure\Sentinel.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.Redis\Sentinel.Redis.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Security.Abstractions\Sentinel.Security.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Application\Sentinel.Application.csproj" />
   </ItemGroup>

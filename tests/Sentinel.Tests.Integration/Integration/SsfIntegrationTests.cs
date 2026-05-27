@@ -18,13 +18,12 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
-using Sentinel.Application.Common.Abstractions;
 using Sentinel.Redis;
-using Sentinel.Security.Abstractions.SSF;
+using Sentinel.Redis.Extensions;
 using Sentinel.Tests.Shared;
+using Sentinel.Tests.Shared.Fixtures;
 using StackExchange.Redis;
 using Testcontainers.Redis;
-using SecuritySessionBlacklistCache = Sentinel.Security.Abstractions.Session.ISessionBlacklistCache;
 
 #pragma warning disable CA2213
 
@@ -132,7 +131,7 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
                 ["events"] = new Dictionary<string, JsonElement>
                 {
                     ["https://schemas.openid.net/secevent/caep/event-type/session-revoked"] =
-                        JsonSerializer.SerializeToElement(new SessionRevokedPayload(sid, "user-1"))
+                        JsonSerializer.SerializeToElement(new Sentinel.Security.Abstractions.SSF.SessionRevokedPayload(sid, "user-1"))
                 }
             },
             SigningCredentials =
@@ -228,6 +227,9 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
                 services.RemoveAll<IDistributedCache>();
                 services.RemoveAll<IConnectionMultiplexer>();
                 services.RemoveAll<IConfigurationManager<OpenIdConnectConfiguration>>();
+                services.RemoveAll<Sentinel.Security.Abstractions.Replay.IJtiReplayCache>();
+                services.RemoveAll<Sentinel.Security.Abstractions.Nonce.IDpopNonceStore>();
+                services.RemoveAll<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>();
                 services.RemoveAll<RedisOptions>();
 
                 services.AddSingleton(new RedisOptions
@@ -244,6 +246,25 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
                     options.AbortOnConnectFail = false;
                     return ConnectionMultiplexer.Connect(options);
                 });
+
+                var redisConfig = new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["EndPoint"] = redisConnectionString,
+                        ["EnableInMemoryFallback"] = "true"
+                    })
+                    .Build();
+                services.AddRedisSecurityCaches(redisConfig);
+
+                services.AddSingleton<Sentinel.Application.Common.Abstractions.IJtiReplayCache>(sp =>
+                    new JtiReplayCacheAdapter(
+                        sp.GetRequiredService<Sentinel.Security.Abstractions.Replay.IJtiReplayCache>(),
+                        sp.GetService<TimeProvider>()));
+
+                services.AddSingleton<Sentinel.Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
+                    new SessionBlacklistCacheAdapter(
+                        sp.GetRequiredService<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>(),
+                        sp.GetService<TimeProvider>()));
 
                 services.AddSingleton<IConfigurationManager<OpenIdConnectConfiguration>>(_ =>
                     new TestOpenIdConfigurationManager(TestTokenIssuer.AuthoritySecurityKey));
@@ -266,61 +287,67 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
             await base.DisposeAsync();
         }
     }
+}
 
-    private sealed class FailingSsfApiFactory : SsfApiFactory
+// 🟢 file-scoped კლასების გამოყენება, რაც სრულად გამორიცხავს ნებისმიერ კონფლიქტს სხვა ფაილებთან
+file sealed class FailingSsfApiFactory : SsfIntegrationTests.SsfApiFactory
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        base.ConfigureWebHost(builder);
+        builder.ConfigureTestServices(services =>
         {
-            base.ConfigureWebHost(builder);
-            builder.ConfigureTestServices(services =>
-            {
-                services.RemoveAll<ISessionBlacklistCache>();
-                services.RemoveAll<SecuritySessionBlacklistCache>();
-                services.AddSingleton<SecuritySessionBlacklistCache, ThrowingSecuritySessionBlacklistCache>();
-                services.AddSingleton<ISessionBlacklistCache>(sp =>
-                    new SessionBlacklistCacheAdapter(
-                        sp.GetRequiredService<SecuritySessionBlacklistCache>(),
-                        sp.GetService<TimeProvider>()));
-            });
-        }
+            services.RemoveAll<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>();
+
+            // 🟢 სწორი იმპლემენტაციის რეგისტრაცია აბსოლუტური ნეიმსფეისით
+            services.AddSingleton<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache, ThrowingSecuritySessionBlacklistCache>();
+
+            // 🟢 სწორი აპლიკაციის ფენის ადაპტერის რეგისტრაცია
+            services.AddSingleton<Sentinel.Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
+                new SessionBlacklistCacheAdapter(
+                    sp.GetRequiredService<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>(),
+                    sp.GetService<TimeProvider>()));
+        });
+    }
+}
+
+#pragma warning disable CA1822 
+file sealed class ThrowingSecuritySessionBlacklistCache : Sentinel.Security.Abstractions.Session.ISessionBlacklistCache
+{
+    public Task BlacklistSessionAsync(string sessionId, DateTimeOffset expiresAt,
+        CancellationToken cancellationToken = default)
+    {
+        throw new InvalidOperationException("Simulated blacklist failure.");
     }
 
-    private sealed class ThrowingSecuritySessionBlacklistCache : SecuritySessionBlacklistCache
+    public Task<bool> IsBlacklistedAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        public Task BlacklistSessionAsync(string sessionId, DateTimeOffset expiresAt,
-            CancellationToken cancellationToken = default)
-        {
-            throw new InvalidOperationException("Simulated blacklist failure.");
-        }
-
-        public Task<bool> IsBlacklistedAsync(string sessionId, CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(false);
-        }
-
-        public Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
+        return Task.FromResult(false);
     }
 
-    private sealed class TestOpenIdConfigurationManager(SecurityKey signingKey)
-        : IConfigurationManager<OpenIdConnectConfiguration>
+    public Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
     {
-        private readonly OpenIdConnectConfiguration configuration = new()
-        {
-            Issuer = "https://localhost:8443/realms/sentinel"
-        };
+        return Task.CompletedTask;
+    }
+}
+#pragma warning restore CA1822
 
-        public Task<OpenIdConnectConfiguration> GetConfigurationAsync(CancellationToken cancel)
-        {
-            configuration.SigningKeys.Clear();
-            configuration.SigningKeys.Add(signingKey);
-            return Task.FromResult(configuration);
-        }
+file sealed class TestOpenIdConfigurationManager(SecurityKey signingKey)
+    : IConfigurationManager<OpenIdConnectConfiguration>
+{
+    private readonly OpenIdConnectConfiguration configuration = new()
+    {
+        Issuer = "https://localhost:8443/realms/sentinel"
+    };
 
-        public void RequestRefresh()
-        {
-        }
+    public Task<OpenIdConnectConfiguration> GetConfigurationAsync(CancellationToken cancel)
+    {
+        configuration.SigningKeys.Clear();
+        configuration.SigningKeys.Add(signingKey);
+        return Task.FromResult(configuration);
+    }
+
+    public void RequestRefresh()
+    {
     }
 }

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -35,7 +35,6 @@
     <!-- <ProjectReference Include="..\Sentinel.Security.Tokens\Sentinel.Security.Tokens.csproj" /> -->
     <ProjectReference Include="..\Sentinel.DPoP\Sentinel.DPoP.csproj" />
     <ProjectReference Include="..\Sentinel.Keycloak\Sentinel.Keycloak.csproj" />
-    <ProjectReference Include="..\Sentinel.Redis\Sentinel.Redis.csproj" />
     <ProjectReference Include="..\Sentinel.Security.Diagnostics\Sentinel.Security.Diagnostics.csproj" />
   </ItemGroup>
 
