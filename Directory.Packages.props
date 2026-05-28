@@ -62,6 +62,8 @@
     <PackageVersion Include="xunit.v3.extensibility.core" Version="3.2.2" />
     <PackageVersion Include="FsCheck" Version="3.3.2" />
     <PackageVersion Include="FsCheck.Xunit" Version="3.3.2" />
+    <!-- Chaos Engineering & Proxy Tools -->
+    <PackageVersion Include="Testcontainers.Toxiproxy" Version="4.11.0" />
     <!-- API Compatibility & Source Generation -->
     <PackageVersion Include="System.ComponentModel.Annotations" Version="5.0.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
