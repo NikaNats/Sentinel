@@ -28,20 +28,21 @@
         <ContinuousIntegrationBuild Condition="'$(CI)' == 'true' or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
 
         <!-- Strong-Name Signing Configuration (Enterprise & FAPI 2.0 Compliance) -->
-        <!-- 1. Check if any strong-name key exists on disk (prevents cold-clone build failures) -->
+        <!-- 1.Enable signing ONLY during official release packaging to prevent InternalsVisibleTo conflicts during test runs -->
+        <SignSentinelRelease Condition="'$(SignSentinelRelease)' == ''">false</SignSentinelRelease>
+
         <HasSentinelKeys Condition="Exists('$(MSBuildThisFileDirectory)Sentinel.snk') or Exists('$(MSBuildThisFileDirectory)Sentinel.public.snk')">true</HasSentinelKeys>
 
-        <!-- 2. Enable signing only when at least one key is present on disk -->
-        <SignAssembly Condition="'$(HasSentinelKeys)' == 'true'">true</SignAssembly>
-        <SignAssembly Condition="'$(HasSentinelKeys)' != 'true'">false</SignAssembly>
+        <SignAssembly Condition="'$(SignSentinelRelease)' == 'true' and '$(HasSentinelKeys)' == 'true'">true</SignAssembly>
+        <SignAssembly Condition="'$(SignAssembly)' == ''">false</SignAssembly>
 
-        <!-- 3. SOTA model: prefer private key if present, otherwise fall back to public key -->
+        <!-- 2. Prefer private key if present, otherwise fall back to public key -->
         <AssemblyOriginatorKeyFile Condition="Exists('$(MSBuildThisFileDirectory)Sentinel.snk')">$(MSBuildThisFileDirectory)Sentinel.snk</AssemblyOriginatorKeyFile>
         <AssemblyOriginatorKeyFile Condition="!Exists('$(MSBuildThisFileDirectory)Sentinel.snk') and Exists('$(MSBuildThisFileDirectory)Sentinel.public.snk')">$(MSBuildThisFileDirectory)Sentinel.public.snk</AssemblyOriginatorKeyFile>
 
         <DelaySign>false</DelaySign>
 
-        <!-- 4. Enable PublicSign only when using the public key and signing is active -->
+        <!-- 3. Enable PublicSign only when using the public key and signing is active -->
         <PublicSign Condition="'$(SignAssembly)' == 'true' and !Exists('$(MSBuildThisFileDirectory)Sentinel.snk')">true</PublicSign>
 
         <!-- Enable NativeAOT trimming validation & AOT compilation -->
@@ -64,6 +65,16 @@
         <IsPackable>true</IsPackable>
         <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     </PropertyGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Sentinel.Tests" />
+        <InternalsVisibleTo Include="Sentinel.Tests.Unit" />
+        <InternalsVisibleTo Include="Sentinel.Tests.Integration" />
+        <InternalsVisibleTo Include="Sentinel.Tests.Security" />
+        <InternalsVisibleTo Include="Sentinel.Tests.DPoP" />
+        <InternalsVisibleTo Include="Sentinel.Tests.Session" />
+        <InternalsVisibleTo Include="Sentinel.Tests.SSF" />
+    </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="Nerdbank.GitVersioning" PrivateAssets="all" />
