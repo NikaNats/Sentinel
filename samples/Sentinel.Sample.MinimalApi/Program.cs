@@ -1,20 +1,56 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer; // 🟢 დაემატა ავთენტიფიკაციის ნეიმსფეისი
+using Microsoft.IdentityModel.Tokens; // 🟢 დაემატა კრიპტოგრაფიული ტოკენების ნეიმსფეისი
 using Scalar.AspNetCore;
 using Sentinel.AspNetCore.Endpoints;
+using Sentinel.AspNetCore.Extensions;
 using Sentinel.Application.DependencyInjection;
 using Sentinel.Infrastructure.DependencyInjection;
 using Sentinel.Keycloak.Extensions;
 using Sentinel.Redis.Extensions;
+using Sentinel.Sample.MinimalApi;
 using Sentinel.Sample.MinimalApi.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 
+// სერიალიზატორის პარამეტრები ლოკალური DTO-ებისთვის
+builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
+{
+    options.SerializerOptions.TypeInfoResolverChain.Insert(0, SampleJsonContext.Default);
+});
+
+// 🟢 ავთენტიფიკაციისა და JWT Bearer პროვაიდერის დინამიური კონფიგურაცია
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+
+        // დინამიურად წავიკითხოთ პარამეტრები appsettings.json-დან
+        var keycloakSection = builder.Configuration.GetSection("Keycloak");
+        options.Authority = keycloakSection["Authority"];
+        options.Audience = keycloakSection["Audience"];
+        options.RequireHttpsMetadata = keycloakSection.GetValue<bool>("RequireHttpsMetadata");
+
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.Zero // Zero clock skew FAPI 2.0 შესაბამისობისთვის
+        };
+    });
+
 builder.Services
     .AddRedisSecurityCaches(builder.Configuration.GetSection("Sentinel:Redis"))
     .AddApplicationLayer()
     .AddKeycloakIntegration(builder.Configuration.GetSection("Sentinel:Keycloak"))
     .AddInfrastructureLayer(builder.Configuration);
+
+// ფრეიმვორკის ASP.NET Core სერვისებისა და მიდლვერების დამოკიდებულებების რეგისტრაცია
+builder.Services.AddSentinelAspNetCore()
+    .AddAll()
+    .ConfigureAcrRanking();
 
 builder.Services.AddSingleton<DocumentRepository>();
 
@@ -42,6 +78,10 @@ else
     });
 }
 app.UseHttpsRedirection();
+
+// უსაფრთხოების მილსადენი (Security Pipeline) ავტორიზაციის წინ
+app.UseSentinelSecurityPipeline();
+
 app.UseAuthentication();
 app.UseAuthorization();
 

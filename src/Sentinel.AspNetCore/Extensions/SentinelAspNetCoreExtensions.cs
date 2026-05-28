@@ -22,6 +22,16 @@ public static class SentinelAspNetCoreExtensions
     public static SentinelAspNetCoreBuilder AddSentinelAspNetCore(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
+
+        services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
+        {
+            options.SerializerOptions.TypeInfoResolverChain.Insert(0, AspNetCoreJsonContext.Default);
+        });
+        services.Configure<Microsoft.AspNetCore.Mvc.JsonOptions>(options =>
+        {
+            options.JsonSerializerOptions.TypeInfoResolverChain.Insert(0, AspNetCoreJsonContext.Default);
+        });
+
         return new SentinelAspNetCoreBuilder(services);
     }
 
