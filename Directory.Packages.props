@@ -61,5 +61,6 @@
     <PackageVersion Include="FsCheck.Xunit" Version="3.3.2" />
     <!-- API Compatibility & Source Generation -->
     <PackageVersion Include="System.ComponentModel.Annotations" Version="5.0.0" />
+    <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
   </ItemGroup>
 </Project>

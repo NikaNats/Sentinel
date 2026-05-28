@@ -16,6 +16,7 @@
     <Project Path="src/Sentinel.Keycloak/Sentinel.Keycloak.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Sentinel.Benchmarks/Sentinel.Benchmarks.csproj" />
     <Project Path="tests/Sentinel.Tests.Shared/Sentinel.Tests.Shared.csproj" />
     <Project Path="tests/Sentinel.Tests.Unit/Sentinel.Tests.Unit.csproj" />
     <Project Path="tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj" />

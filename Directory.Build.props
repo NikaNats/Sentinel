@@ -68,6 +68,7 @@
 
     <ItemGroup>
         <InternalsVisibleTo Include="Sentinel.Tests" />
+        <InternalsVisibleTo Include="Sentinel.Benchmarks" />
         <InternalsVisibleTo Include="Sentinel.Tests.Unit" />
         <InternalsVisibleTo Include="Sentinel.Tests.Integration" />
         <InternalsVisibleTo Include="Sentinel.Tests.Security" />
