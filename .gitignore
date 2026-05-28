@@ -31,6 +31,8 @@ obj/
 .idea/
 *.sln.iml
 
+tests/Sentinel.FuzzTests/corpus/crashes/
+
 # Nuget personal repository
 nuget.config
 

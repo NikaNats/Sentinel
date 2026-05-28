@@ -46,6 +46,9 @@
     <PackageVersion Include="System.Diagnostics.DiagnosticSource" Version="10.0.5" />
     <!-- Testing -->
     <PackageVersion Include="coverlet.collector" Version="8.0.0" />
+    <!-- Security & Fuzzing Tools -->
+    <PackageVersion Include="SharpFuzz" Version="2.2.0" />
+    <PackageVersion Include="SharpFuzz.CommandLine" Version="2.2.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.1.0" />
     <PackageVersion Include="Moq" Version="4.20.72" />
