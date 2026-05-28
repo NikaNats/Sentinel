@@ -201,7 +201,9 @@ docker-compose down -v
 
 ## Strong-Name Signing (Hybrid Model)
 
-Sentinel enforces strong-name signing across all assemblies. Local development uses PublicSign when a private key is unavailable or when building on non-Windows systems, while CI/CD release builds perform full signing with a private key injected via secrets.
+Sentinel enforces strong-name signing across all assemblies. Local development uses `PublicSign` with `Sentinel.public.snk` (committed to source control) when the private key is unavailable or when building on non-Windows systems, while CI/CD release builds perform full signing with a private key injected via secrets.
+
+To prevent `InternalsVisibleTo` cryptographic conflicts with unsigned test projects during active local development, assembly signing is conditionally enabled **only during official release packaging**.
 
 ### Generate Strong-Name Keys (Local Security Administration)
 
@@ -215,14 +217,20 @@ sn -k Sentinel.snk
 sn -p Sentinel.snk Sentinel.public.snk
 ```
 
+### Compile and Package with Strong-Name Signing
+To build and package the production NuGet libraries with strong-name signing enabled, pass the SignSentinelRelease=true property:
+```powershell
+dotnet pack Sentinel.slnx -c Release -p:SignSentinelRelease=true -o ./artifacts
+```
+
 ### CI/CD Secure Signing (GitHub Actions)
 
-1. Store the base64-encoded `Sentinel.snk` in GitHub Secrets (for example `SENTINEL_SNK_BASE64`).
-2. In `.github/workflows/security-pipeline.yml`, decode the secret into the workspace before the build:
+1. Store the base64-encoded Sentinel.snk in GitHub Secrets (for example SENTINEL_SNK_BASE64).
+2. In .github/workflows/security-pipeline.yml, decode the secret into the workspace before the build:
 
 ```yaml
 - name: Restore strong-name key (Staging/Release Only)
-  if: env.SENTINEL_SNK_BASE64 != ''
+  if: ${{ secrets.SENTINEL_SNK_BASE64 != '' }}
   shell: bash
   run: echo "$SENTINEL_SNK_BASE64" | base64 -d > Sentinel.snk
   env:
