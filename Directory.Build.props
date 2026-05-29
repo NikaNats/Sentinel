@@ -67,6 +67,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <InternalsVisibleTo Include="Sentinel.Tests.Concurrency" />
         <InternalsVisibleTo Include="Sentinel.Tests" />
         <InternalsVisibleTo Include="Sentinel.Benchmarks" />
         <InternalsVisibleTo Include="Sentinel.FuzzTests" />

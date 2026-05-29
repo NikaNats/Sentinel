@@ -8,6 +8,12 @@
         "dotnet-stryker"
       ],
       "rollForward": false
+    },
+    "microsoft.coyote.cli": {
+      "version": "1.7.11",
+      "commands": [
+        "coyote"
+      ]
     }
   }
 }

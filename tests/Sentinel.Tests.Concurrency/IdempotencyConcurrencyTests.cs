@@ -1,0 +1,157 @@
+#pragma warning disable CA1859
+#pragma warning disable CA2000
+
+using System.Collections.Concurrent;
+using FluentAssertions;
+using Microsoft.Coyote;
+using Microsoft.Coyote.SystematicTesting;
+using Sentinel.AspNetCore.Stores;
+using Sentinel.Security.Abstractions.Idempotency;
+using Xunit;
+
+namespace Sentinel.Tests.Concurrency;
+
+public sealed class IdempotencyConcurrencyTests
+{
+    [Fact(DisplayName = "🌪️ Concurrency 1: Systematic exploration of parallel Idempotency acquisitions")]
+    public void RunCoyoteIdempotencyTest()
+    {
+        var config = Configuration.Create()
+            .WithTestingIterations(1000)
+            .WithMaxSchedulingSteps(200)
+            .WithPrioritizationStrategy(true);
+
+        using var engine = TestingEngine.Create(config, TestConcurrentIdempotencyAcquisition);
+        engine.Run();
+
+        var report = engine.TestReport;
+        Assert.True(report.NumOfFoundBugs == 0,
+            $"Coyote found {report.NumOfFoundBugs} concurrency bug(s). Traces saved in artifacts.");
+    }
+
+    private static async Task TestConcurrentIdempotencyAcquisition()
+    {
+        var store = new InMemoryIdempotencyStore();
+        const string idempotencyKey = "concurrency-lock-key-123";
+        var inProgressTtl = TimeSpan.FromSeconds(5);
+
+        var results = new ConcurrentBag<IdempotencyAcquireResult>();
+        var tasks = new List<Task>();
+
+        for (var i = 0; i < 5; i++)
+        {
+            tasks.Add(Task.Run(async () =>
+            {
+                var result = await store.TryAcquireAsync(idempotencyKey, inProgressTtl);
+                results.Add(result);
+            }));
+        }
+
+        await Task.WhenAll(tasks);
+
+        var acquiredCount = results.Count(r => r == IdempotencyAcquireResult.Acquired);
+        var inProgressCount = results.Count(r => r == IdempotencyAcquireResult.InProgress);
+
+        acquiredCount.Should().Be(1, "Exactly one task must win the race and acquire the lock.");
+        inProgressCount.Should().Be(4, "All other concurrent tasks must be blocked with InProgress status.");
+    }
+
+    [Fact(DisplayName = "🌪️ Concurrency 2: Systematic exploration of concurrent Acquire vs Release transitions")]
+    public void RunCoyoteAcquireVsReleaseTest()
+    {
+        var config = Configuration.Create()
+            .WithTestingIterations(1000)
+            .WithMaxSchedulingSteps(200)
+            .WithPrioritizationStrategy(true);
+
+        using var engine = TestingEngine.Create(config, TestConcurrentAcquireVsRelease);
+        engine.Run();
+
+        var report = engine.TestReport;
+        Assert.True(report.NumOfFoundBugs == 0,
+            $"Coyote found {report.NumOfFoundBugs} concurrency bug(s) during Release race.");
+    }
+
+    private static async Task TestConcurrentAcquireVsRelease()
+    {
+        var store = new InMemoryIdempotencyStore();
+        const string idempotencyKey = "release-race-key";
+        var inProgressTtl = TimeSpan.FromSeconds(5);
+
+        var initialAcquire = await store.TryAcquireAsync(idempotencyKey, inProgressTtl);
+        initialAcquire.Should().Be(IdempotencyAcquireResult.Acquired);
+
+        var results = new ConcurrentBag<IdempotencyAcquireResult>();
+        var tasks = new List<Task>();
+
+        tasks.Add(Task.Run(async () => { await store.ReleaseAsync(idempotencyKey); }));
+
+        for (var i = 0; i < 4; i++)
+        {
+            tasks.Add(Task.Run(async () =>
+            {
+                var result = await store.TryAcquireAsync(idempotencyKey, inProgressTtl);
+                results.Add(result);
+            }));
+        }
+
+        await Task.WhenAll(tasks);
+
+        var acquiredCount = results.Count(r => r == IdempotencyAcquireResult.Acquired);
+        acquiredCount.Should().BeLessThanOrEqualTo(1, "At most one new task can acquire the lock after release.");
+    }
+
+    [Fact(DisplayName = "🌪️ Concurrency 3: Systematic exploration of MarkCompleted vs concurrent Acquires")]
+    public void RunCoyoteMarkCompletedTest()
+    {
+        var config = Configuration.Create()
+            .WithTestingIterations(1000)
+            .WithMaxSchedulingSteps(200)
+            .WithPrioritizationStrategy(true);
+
+        using var engine = TestingEngine.Create(config, TestConcurrentMarkCompleted);
+        engine.Run();
+
+        var report = engine.TestReport;
+        Assert.True(report.NumOfFoundBugs == 0,
+            $"Coyote found {report.NumOfFoundBugs} concurrency bug(s) during MarkCompleted race.");
+    }
+
+    private static async Task TestConcurrentMarkCompleted()
+    {
+        var store = new InMemoryIdempotencyStore();
+        const string idempotencyKey = "completion-race-key";
+        var inProgressTtl = TimeSpan.FromSeconds(5);
+        var completedTtl = TimeSpan.FromHours(24);
+
+        var initialAcquire = await store.TryAcquireAsync(idempotencyKey, inProgressTtl);
+        initialAcquire.Should().Be(IdempotencyAcquireResult.Acquired);
+
+        var results = new ConcurrentBag<IdempotencyAcquireResult>();
+        var tasks = new List<Task>();
+
+        tasks.Add(Task.Run(async () => { await store.MarkCompletedAsync(idempotencyKey, completedTtl); }));
+
+        for (var i = 0; i < 4; i++)
+        {
+            tasks.Add(Task.Run(async () =>
+            {
+                var result = await store.TryAcquireAsync(idempotencyKey, inProgressTtl);
+                results.Add(result);
+            }));
+        }
+
+        await Task.WhenAll(tasks);
+
+        var acquiredCount = results.Count(r => r == IdempotencyAcquireResult.Acquired);
+        var inProgressCount = results.Count(r => r == IdempotencyAcquireResult.InProgress);
+        var completedCount = results.Count(r => r == IdempotencyAcquireResult.Completed);
+
+        acquiredCount.Should().Be(0,
+            "No new task can ever acquire the lock once it has been initialized by another thread.");
+        (inProgressCount + completedCount).Should().Be(4,
+            "All concurrent tasks must resolve to either InProgress or Completed states.");
+    }
+}
+#pragma warning restore CA1859
+#pragma warning restore CA2000

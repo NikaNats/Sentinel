@@ -25,5 +25,6 @@
     <Project Path="tests/Sentinel.Tests.DPoP/Sentinel.Tests.DPoP.csproj" />
     <Project Path="tests/Sentinel.Tests.Session/Sentinel.Tests.Session.csproj" />
     <Project Path="tests/Sentinel.Tests.SSF/Sentinel.Tests.SSF.csproj" />
+    <Project Path="tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj" />
   </Folder>
 </Solution>
