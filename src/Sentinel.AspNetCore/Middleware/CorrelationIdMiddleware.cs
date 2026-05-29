@@ -6,7 +6,7 @@ namespace Sentinel.AspNetCore.Middleware;
 ///     Propagates correlation ID and DPoP/security context via Activity baggage.
 ///     Enables downstream services (SQL auditing, messaging, etc.) to correlate security events.
 /// </summary>
-public sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
+internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
 {
     private const string HeaderName = "X-Correlation-ID";
 

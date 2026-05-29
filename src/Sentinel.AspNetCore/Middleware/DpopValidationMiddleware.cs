@@ -12,7 +12,7 @@ using IDpopProofValidator = Sentinel.Security.Abstractions.DPoP.IDpopProofValida
 
 namespace Sentinel.AspNetCore.Middleware;
 
-public sealed class DpopValidationMiddleware
+internal sealed class DpopValidationMiddleware
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
     private static readonly TimeSpan NonceTtl = TimeSpan.FromMinutes(5);

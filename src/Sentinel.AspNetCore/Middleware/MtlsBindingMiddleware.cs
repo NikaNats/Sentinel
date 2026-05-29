@@ -6,7 +6,7 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Sentinel.AspNetCore.Middleware;
 
-public sealed class MtlsBindingMiddleware
+internal sealed class MtlsBindingMiddleware
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
     private readonly RequestDelegate _next;

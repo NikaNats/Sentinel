@@ -5,7 +5,7 @@ using Sentinel.Application.Common.Abstractions;
 
 namespace Sentinel.Infrastructure.Auth;
 
-public sealed class LogoutTokenValidator(
+internal sealed class LogoutTokenValidator(
     IOptionsMonitor<JwtBearerOptions> jwtOptionsMonitor,
     ILogger<LogoutTokenValidator> logger) : ILogoutTokenValidator
 {

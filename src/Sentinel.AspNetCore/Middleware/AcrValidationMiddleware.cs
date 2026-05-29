@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace Sentinel.AspNetCore.Middleware;
 
-public sealed class AcrValidationMiddleware(RequestDelegate next)
+internal sealed class AcrValidationMiddleware(RequestDelegate next)
 {
     public async Task InvokeAsync(HttpContext context)
     {

@@ -1,6 +1,6 @@
 namespace Sentinel.AspNetCore.Middleware;
 
-public sealed class SecurityHeadersMiddleware(RequestDelegate next, IWebHostEnvironment env)
+internal sealed class SecurityHeadersMiddleware(RequestDelegate next, IWebHostEnvironment env)
 {
     // CSP for Scalar UI in development — permissive to support CDNs, fonts, and dev tools
     private const string ScalarCsp =
