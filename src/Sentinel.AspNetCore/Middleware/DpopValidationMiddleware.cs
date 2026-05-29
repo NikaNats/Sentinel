@@ -1,5 +1,3 @@
-// Sentinel Security API - FAPI 2.0 Compliant
-
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -14,12 +12,16 @@ namespace Sentinel.AspNetCore.Middleware;
 
 internal sealed class DpopValidationMiddleware
 {
+    private const long TargetFailureFloorMs = 1;
     private static readonly JsonWebTokenHandler TokenHandler = new();
     private static readonly TimeSpan NonceTtl = TimeSpan.FromMinutes(5);
+
     private readonly RequestDelegate _next;
     private readonly IDpopThumbprintComputer _thumbprintComputer;
 
-    public DpopValidationMiddleware(RequestDelegate next, IDpopThumbprintComputer thumbprintComputer)
+    public DpopValidationMiddleware(
+        RequestDelegate next,
+        IDpopThumbprintComputer thumbprintComputer)
     {
         _next = next;
         _thumbprintComputer = thumbprintComputer;
@@ -30,8 +32,11 @@ internal sealed class DpopValidationMiddleware
         IDpopProofValidator validator,
         IDpopNonceStore nonceStore)
     {
+        var sw = Stopwatch.StartNew();
+
         var ipHash = SecurityContextHasher.HashIp(context);
         var authHeader = context.Request.Headers.Authorization.ToString();
+
         if (string.IsNullOrWhiteSpace(authHeader) ||
             !authHeader.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase))
         {
@@ -49,7 +54,8 @@ internal sealed class DpopValidationMiddleware
                     new KeyValuePair<string, object?>("reason", "bearer_downgrade_attempt"));
                 context.Response.Headers.Append("WWW-Authenticate",
                     "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+
+                await EnforceConstantTimeFailureAsync(sw, context);
                 return;
             }
 
@@ -62,12 +68,12 @@ internal sealed class DpopValidationMiddleware
         {
             AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", "missing_dpop_proof"));
             context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"missing_dpop_proof\"");
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+
+            await EnforceConstantTimeFailureAsync(sw, context);
             return;
         }
 
         var token = authHeader["DPoP ".Length..].Trim();
-        // RFC 9449 section 4.2: htu excludes query string and fragment.
         var requestUrl = $"{context.Request.Scheme}://{context.Request.Host}{context.Request.Path}";
 
         var thumbprint = TryExtractProofThumbprint(dpopProof, _thumbprintComputer);
@@ -77,12 +83,9 @@ internal sealed class DpopValidationMiddleware
             expectedNonce = await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted);
         }
 
-        // ✅ FIX: Validate the proof and check expected nonce (but DO NOT consume it yet)
         var validationRequest = new DpopValidationRequest(dpopProof, context.Request.Method, new Uri(requestUrl), token,
             expectedNonce);
         var validationResult = await validator.ValidateAsync(validationRequest, context.RequestAborted);
-
-        // Convert domain result to HTTP response format
         var result = validationResult.ToHttpResult();
 
         if (!result.IsValid)
@@ -109,15 +112,14 @@ internal sealed class DpopValidationMiddleware
                     "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
             }
 
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await EnforceConstantTimeFailureAsync(sw, context);
             return;
         }
 
-        // Propagate DPoP key info via Activity baggage for downstream security auditing and correlation
         if (!string.IsNullOrWhiteSpace(thumbprint))
         {
             Activity.Current?.AddBaggage("dpop.jkt", thumbprint);
-            context.Items["dpop.jkt"] = thumbprint; // Also store in context for middleware access
+            context.Items["dpop.jkt"] = thumbprint;
         }
 
         if (!string.IsNullOrWhiteSpace(thumbprint) && !string.IsNullOrWhiteSpace(result.NewNonce))
@@ -126,7 +128,6 @@ internal sealed class DpopValidationMiddleware
             {
                 var callbackState = (NonceRotationState)state;
 
-                // Commit nonce state changes only for successful responses.
                 if (callbackState.HttpContext.Response.StatusCode is < 200 or >= 400)
                 {
                     return;
@@ -156,43 +157,54 @@ internal sealed class DpopValidationMiddleware
             }, new NonceRotationState(context, nonceStore, thumbprint, expectedNonce, result.NewNonce));
         }
 
-        // ✅ FIX: Execute downstream pipeline FIRST
         await _next(context);
-
     }
 
-    private sealed record NonceRotationState(
-        HttpContext HttpContext,
-        IDpopNonceStore NonceStore,
-        string Thumbprint,
-        string? ExpectedNonce,
-        string NewNonce);
+    private static async Task EnforceConstantTimeFailureAsync(Stopwatch sw, HttpContext context)
+    {
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        sw.Stop();
+        var elapsedMs = sw.ElapsedMilliseconds;
+        var paddingNeeded = TargetFailureFloorMs - elapsedMs;
+
+        var jitter = RandomNumberGenerator.GetInt32(0, 15);
+        var totalDelay = Math.Max(0, paddingNeeded) + jitter;
+
+        if (totalDelay > 0)
+        {
+            await Task.Delay((int)totalDelay, context.RequestAborted);
+        }
+    }
 
     private static string? TryExtractProofThumbprint(string dpopHeader, IDpopThumbprintComputer thumbprintComputer)
     {
-        if (!TokenHandler.CanReadToken(dpopHeader))
+        try
+        {
+            if (!TokenHandler.CanReadToken(dpopHeader))
+            {
+                return null;
+            }
+
+            var token = TokenHandler.ReadJsonWebToken(dpopHeader);
+            if (!token.TryGetHeaderValue<JsonElement>("jwk", out var jwkElement))
+            {
+                return null;
+            }
+
+            var jwkJson = jwkElement.GetRawText();
+            if (string.IsNullOrWhiteSpace(jwkJson))
+            {
+                return null;
+            }
+
+            using var jwkDoc = JsonDocument.Parse(jwkJson);
+            var thumbprint = thumbprintComputer.Compute(jwkDoc.RootElement);
+            return string.IsNullOrWhiteSpace(thumbprint) ? null : thumbprint;
+        }
+        catch (Exception ex) when (ex is ArgumentException || ex is SecurityTokenException || ex is JsonException)
         {
             return null;
         }
-
-        var token = TokenHandler.ReadJsonWebToken(dpopHeader);
-        // ✅ FIX: Strongly type the extraction to JsonElement.
-        if (!token.TryGetHeaderValue<JsonElement>("jwk", out var jwkElement))
-        {
-            return null;
-        }
-
-        // ✅ FIX: Use GetRawText() to retrieve the actual JSON string, never .ToString()
-        // On modern .NET runtimes, .ToString() returns "System.Text.Json.JsonElement" instead of the actual JSON payload
-        var jwkJson = jwkElement.GetRawText();
-        if (string.IsNullOrWhiteSpace(jwkJson))
-        {
-            return null;
-        }
-
-        using var jwkDoc = JsonDocument.Parse(jwkJson);
-        var thumbprint = thumbprintComputer.Compute(jwkDoc.RootElement);
-        return string.IsNullOrWhiteSpace(thumbprint) ? null : thumbprint;
     }
 
     private static string GenerateNonce()
@@ -201,4 +213,11 @@ internal sealed class DpopValidationMiddleware
         RandomNumberGenerator.Fill(bytes);
         return Base64UrlEncoder.Encode(bytes);
     }
+
+    private sealed record NonceRotationState(
+        HttpContext HttpContext,
+        IDpopNonceStore NonceStore,
+        string Thumbprint,
+        string? ExpectedNonce,
+        string NewNonce);
 }
