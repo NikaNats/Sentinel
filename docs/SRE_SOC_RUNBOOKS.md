@@ -1,145 +1,114 @@
 # SRE And SOC Runbooks
 
-Last Updated: 2026-03-29
-Scope: Sentinel security-path incident response and recovery
+> **Document ID**: OPS-0001  
+> **Last Updated**: 2026-05-30  
+> **Scope**: Incident response, continuous monitoring, and emergency recovery for Sentinel core security paths
 
-## 1. Monitoring Priorities
+---
 
-Track and alert on:
+## 1. Monitoring & Alerting Priorities (OpenTelemetry Metrics)
 
-1. replay detections (token/proof)
-2. DPoP validation failures
-3. nonce challenge rate (use_dpop_nonce)
-4. SSF rejection and processing failure rates
-5. finance authorization bounds exceeded events
-6. cache dependency latency/error budget breach
+The SOC and SRE teams must track and alert on the following security-critical metrics:
+
+| Metric Name | Type | Alerting Threshold | Severity |
+|---|---|---|---|
+| `auth.jti.replays_total` | Counter | > 5 replays / 1 minute | **Sev-1** (Possible active attack) |
+| `auth.dpop.failures` | Counter | > 50 failures / 5 minutes | **Sev-2** (Client config error / Downgrade attempt) |
+| `auth.token.validation.duration` | Histogram | p99 > 50 ms (Normal baseline: <15ms) | **Sev-2** (Redis cache degradation) |
+| `security:rate_limit_exceeded` | Event | > 100 events / 1 minute | **Sev-2** (DDoS / Automated scraping) |
+| `auth.redis.degraded_mode_activations` | Counter | > 1 activation | **Sev-1** (Loss of Redis cluster quorum) |
+
+---
 
 ## 2. Incident Severity Model
 
-| Severity | Criteria |
-|---|---|
-| Sev-1 | security bypass suspected, widespread auth outage, or confirmed replay abuse campaign |
-| Sev-2 | localized security-path degradation with user impact |
-| Sev-3 | elevated warnings without confirmed user-impacting failures |
+| Severity | Criteria | Trigger / Action |
+|---|---|---|
+| **Sev-1** | Security boundary breach suspected; Widespread authentication outage; Active replay campaign. | Trigger PagerDuty; Assemble Security Incident Response Team (SIRT) immediately. |
+| **Sev-2** | Localized degradation; Intermittent cache timeouts; Elevated rate-limiting blocks. | Notify On-Call Engineer; Resolve within 2 hours. |
+| **Sev-3** | Informational warnings; Minor clock drift (<5s); Transitive network jitter. | Create JIRA ticket; Review during next business hours. |
 
-## 3. Runbook: Replay Detection Spike
+---
 
-### Trigger
-
-- sudden increase in replay-related failures/alerts
-
-### Triage
-
-1. determine scope by route, client_id, subject, source network
-2. verify whether failures map to a single integration/client rollout
-3. check cache state health before concluding active abuse
-
-### Response
-
-1. keep fail-closed behavior enabled
-2. notify security engineering if replay pattern is distributed/coordinated
-3. collect trace IDs and correlated logs for forensic timeline
-
-### Recovery Verification
-
-1. replay rate returns to baseline
-2. no permissive bypass behavior observed
-
-## 4. Runbook: DPoP Nonce Challenge Storm
+## 3. Runbook: Replay Detection Spike (JTI Replay Alert)
 
 ### Trigger
+Alert `auth.jti.replays_total > 5/min` fires.
 
-- increase in 401 responses with use_dpop_nonce
+### Triage & Analysis
+1.  **Correlate via Trace ID:** Extract the W3C `traceId` from the log events in your SIEM.
+2.  **Identify the Source:** Group the alerts by `sub` (user ID), `clientId`, and `ipHash` (pseudonymized IP).
+3.  **Determine the Class:**
+    - Single Client, Single IP: Possible client-side retry regression (double-click bug).
+    - Multiple Clients, Distributed IPs: Active distributed token replay campaign (stolen tokens).
 
-### Common Causes
+### Emergency Response
+1.  **Keep Fail-Closed Active:** Under no circumstances should the JTI replay cache be bypassed.
+2.  **Identify Compromised Subject:** If a specific `sub` is identified, invoke Keycloak Admin API to revoke all active sessions for that subject immediately:
+    ```bash
+    # Revoke all sessions for compromised user
+    dotnet coyote ... # Or invoke Keycloak global logout API
+    ```
+3.  **Block Attacker IP:** If the attack is centralized, block the offending `ipHash` at the WAF / Ingress Gateway layer.
 
-1. client not persisting latest nonce
-2. intermediary stripping DPoP-Nonce or WWW-Authenticate headers
-3. nonce store/cache degradation
+---
 
-### Response
-
-1. verify challenge headers are emitted by API
-2. inspect edge/proxy header behavior
-3. validate cache health and latency
-4. work with affected clients on retry logic correctness (single retry with fresh nonce)
-
-## 5. Runbook: SSF Validation Failures
-
-### Trigger
-
-- repeated 401/400 outcomes on SSF event endpoint
-
-### Triage
-
-1. identify failure class: auth token mismatch, signature/issuer, payload timing/shape
-2. verify IdP discovery/JWKS reachability
-3. check auth token config parity between sender and receiver
-
-### Response
-
-1. rotate/update shared auth token if compromised or mismatched
-2. coordinate issuer key-rotation validation path
-3. isolate malformed sender batches to avoid event flood masking
-
-## 6. Runbook: Cache Dependency Degradation
+## 4. Runbook: Malformed Token Scans (Exception Shielding Logs)
 
 ### Trigger
+Surge in `DpopValidationMiddleware` warnings with message: `TryExtractProofThumbprint caught expected parsing exception...`
 
-- replay/nonce/session checks showing backend unavailability or timeouts
+### Triage & Analysis
+This warning indicates that Sentinel's **Exception Shielding** is successfully intercepting malformed, corrupted, or poisoned DPoP headers (preventing process-crashing DoS attacks) and safely returning `401 Unauthorized`.
+1.  Verify the HTTP response status code is indeed returning `401` (and NOT `500` - which would indicate a shielding bypass).
+2.  Extract the offending payload from the logs (safe as no PII is logged).
+3.  If the source IP is sending hundreds of malformed headers per minute, this is an automated fuzzing/vulnerability scan.
+
+### Emergency Response
+1.  Configure the rate-limiter to block the offending IP dynamically at the Ingress/WAF layer.
+2.  Do not disable the exception shielding; it is protecting the Kestrel process from memory corruption.
+
+---
+
+## 5. Runbook: Cache Dependency Timeout / Outage
+
+### Trigger
+Alert `auth.token.validation.duration p99 > 50ms` or Redis connection failures logged.
 
 ### Expected Behavior
+Sentinel is strictly **fail-closed**. All protected routes will reject requests with `503 Service Unavailable` or `500 Internal Error` (due to missing JTI/Nonce state validation).
 
-- requests on protected paths may fail closed (503/denials depending path)
+### Emergency Response
+1.  **Do NOT disable the security pipeline.** Bypassing the middlewares to restore uptime is a critical compliance violation that opens the system to replay attacks.
+2.  Check Redis Cluster health. Verify if the cluster lost quorum.
+3.  If memory is exhausted, perform a safe Redis memory eviction or restart the degraded nodes.
+4.  Once Redis is back online, verify connection restoration logs:
+    `Redis connection restored. Endpoint: 127.0.0.1:6379`
 
-### Response
+---
 
-1. restore cache availability first; do not disable replay or blacklist checks
-2. verify state writes and reads recover
-3. run synthetic auth checks (nonce challenge + valid retry + replay rejection)
+## 6. Post-Incident Validation Checklist
 
-## 7. Runbook: Finance Bounds Rejection Spike
+After any security incident or emergency infrastructure restoration, run the following automated verification suite to mathematically prove system integrity before declaring the incident closed:
 
-### Trigger
+- [ ] **Verify Cryptographic Consistency:** Confirm `dotnet test` unit suite passes cleanly.
+- [ ] **Verify Timing Side-Channel Resilience:** Run the high-precision Welch's T-Test timing tests to prove no timing oracle exists:
+  ```powershell
+  dotnet test tests/Sentinel.Tests.Security/Sentinel.Tests.Security.csproj --filter "FullyQualifiedName~Timing" -c Release
+  ```
+- [ ] **Verify Concurrency & Lock Safety:** Run the Microsoft Coyote systematic concurrency tests (1000 iterations) to prove there are no race conditions in the restored cluster:
+  ```powershell
+  dotnet coyote test Sentinel.Tests.Concurrency.dll -m Sentinel.Tests.Concurrency.IdempotencyConcurrencyTests.TestConcurrentIdempotencyAcquisition -i 1000 -ms 200 --portfolio-mode fair
+  ```
+- [ ] **Verify Network Chaos Resilience:** Run the Toxiproxy chaos tests to ensure the system degrades gracefully under remaining packet loss or latencies:
+  ```powershell
+  dotnet test tests/Sentinel.Tests.Security/Sentinel.Tests.Security.csproj --filter "FullyQualifiedName~Chaos" -c Release
+  ```
 
-- increased authorization-bounds-exceeded warnings and 403 responses on transfer route
+---
 
-### Triage
+## 7. Escalation & SIRT Contact
 
-1. compare expected signed bounds with submitted payload shapes
-2. detect client-side currency/amount normalization regressions
-3. assess for potential tampering/abuse signals
-
-### Response
-
-1. preserve opaque external 403 response semantics
-2. use internal structured logs for detailed delta analysis
-3. coordinate fix rollout with affected client teams
-
-## 8. Post-Incident Validation Checklist
-
-After mitigation:
-
-1. protected endpoints succeed for valid DPoP flows
-2. replay attempts are rejected
-3. nonce challenge volume normalizes
-4. SSF valid events are accepted and applied
-5. finance transfer policy denials match expected baseline
-
-## 9. Escalation Artifacts
-
-Always collect:
-
-1. incident time window
-2. impacted endpoints and prefixes
-3. trace IDs and correlation IDs
-4. dependency health snapshots
-5. mitigation actions and rollback conditions
-
-## 10. Change Control Requirement
-
-Any incident-driven config or policy change in auth/security paths must trigger updates to:
-
-1. LIVING_THREAT_MODEL.md
-2. COMPLIANCE_AUDIT_MATRIX.md
-3. OPENAPI_3_1.yaml (if contract behavior changed)
+If token forgery, signing key compromise, or persistent timing side-channel leaks are detected:
+1.  Capture the W3C trace history and Base64Url payloads.
+2.  Escalate immediately to the **Security Incident Response Team (SIRT)** at: `sirt@sentinel.security`.
