@@ -49,16 +49,16 @@
     <!-- Security & Fuzzing Tools -->
     <PackageVersion Include="SharpFuzz" Version="2.2.0" />
     <PackageVersion Include="SharpFuzz.CommandLine" Version="2.2.0" />
-    <PackageVersion Include="Microsoft.Coyote" Version="1.7.9" />
-    <PackageVersion Include="Microsoft.Coyote.Test" Version="1.7.9" />
+    <PackageVersion Include="Microsoft.Coyote" Version="1.7.11" />
+    <PackageVersion Include="Microsoft.Coyote.Test" Version="1.7.11" />
     <PackageVersion Include="Microsoft.Coyote.CLI" Version="1.7.9" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.1.0" />
     <PackageVersion Include="Moq" Version="4.20.72" />
     <PackageVersion Include="FluentAssertions" Version="7.2.0" />
-    <PackageVersion Include="Testcontainers.Keycloak" Version="4.11.0" />
-    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.11.0" />
-    <PackageVersion Include="Testcontainers.Redis" Version="4.11.0" />
+    <PackageVersion Include="Testcontainers.Keycloak" Version="4.12.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.12.0" />
+    <PackageVersion Include="Testcontainers.Redis" Version="4.12.0" />
     <PackageVersion Include="TngTech.ArchUnitNET.xUnit" Version="0.13.3" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
@@ -67,7 +67,7 @@
     <PackageVersion Include="FsCheck" Version="3.3.2" />
     <PackageVersion Include="FsCheck.Xunit" Version="3.3.2" />
     <!-- Chaos Engineering & Proxy Tools -->
-    <PackageVersion Include="Testcontainers.Toxiproxy" Version="4.11.0" />
+    <PackageVersion Include="Testcontainers.Toxiproxy" Version="4.12.0" />
     <!-- API Compatibility & Source Generation -->
     <PackageVersion Include="System.ComponentModel.Annotations" Version="5.0.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Time.Testing;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Moq;
@@ -8,7 +9,7 @@ using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Results;
 
-namespace Sentinel.Tests.Unit;
+namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class DpopValidationMiddlewareTests
 {
@@ -29,9 +30,11 @@ public sealed class DpopValidationMiddlewareTests
             .Returns(thumbprint);
 
         RequestDelegate next = _ => throw new InvalidOperationException("downstream-failure");
+        var fakeTimeProvider = new FakeTimeProvider();
         var middleware = new DpopValidationMiddleware(
             next,
-            thumbprintComputerMock.Object);
+            thumbprintComputerMock.Object,
+            fakeTimeProvider);
 
         var context = CreateDpopContext();
 
@@ -82,9 +85,11 @@ public sealed class DpopValidationMiddlewareTests
             .ReturnsAsync(SecurityResultFactory.Create(new DpopValidationSuccess(nextNonce, thumbprint)));
 
         RequestDelegate next = _ => Task.CompletedTask;
+        var fakeTimeProvider = new FakeTimeProvider();
         var middleware = new DpopValidationMiddleware(
             next,
-            thumbprintComputerMock.Object);
+            thumbprintComputerMock.Object,
+            fakeTimeProvider);
 
         var context = CreateDpopContext();
 
@@ -120,10 +125,11 @@ public sealed class DpopValidationMiddlewareTests
             ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
             return Task.CompletedTask;
         };
-
+        var fakeTimeProvider = new FakeTimeProvider();
         var middleware = new DpopValidationMiddleware(
             next,
-            thumbprintComputerMock.Object);
+            thumbprintComputerMock.Object,
+            fakeTimeProvider);
 
         var context = CreateDpopContext();
 
