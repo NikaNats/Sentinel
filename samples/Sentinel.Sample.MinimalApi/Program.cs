@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer; // 🟢 დაემატა ავთენტიფიკაციის ნეიმსფეისი
 using Microsoft.IdentityModel.Tokens; // 🟢 დაემატა კრიპტოგრაფიული ტოკენების ნეიმსფეისი
 using Scalar.AspNetCore;
+using Microsoft.AspNetCore.RateLimiting;
+using Sentinel.Application.Auth;
+using Sentinel.Application.Auth.Models;
 using Sentinel.AspNetCore.Endpoints;
 using Sentinel.AspNetCore.Extensions;
 using Sentinel.Application.DependencyInjection;
@@ -9,6 +12,8 @@ using Sentinel.Keycloak.Extensions;
 using Sentinel.Redis.Extensions;
 using Sentinel.Sample.MinimalApi;
 using Sentinel.Sample.MinimalApi.Endpoints;
+using Sentinel.SdJwt;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,6 +30,19 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         options.MapInboundClaims = false;
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var authHeader = context.Request.Headers.Authorization.ToString();
+                if (authHeader.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Token = authHeader["DPoP ".Length..].Trim();
+                }
+
+                return Task.CompletedTask;
+            }
+        };
 
         // დინამიურად წავიკითხოთ პარამეტრები appsettings.json-დან
         var keycloakSection = builder.Configuration.GetSection("Keycloak");
@@ -44,8 +62,40 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services
     .AddRedisSecurityCaches(builder.Configuration.GetSection("Sentinel:Redis"))
     .AddApplicationLayer()
+    .AddSsfProcessing(builder.Configuration)
     .AddKeycloakIntegration(builder.Configuration.GetSection("Sentinel:Keycloak"))
     .AddInfrastructureLayer(builder.Configuration);
+
+builder.Services.AddSingleton(new SdJwtVerificationOptions
+{
+    RequireKeyBindingNonce = false,
+    KeyBindingMaxAgeSeconds = 300,
+    AllowedClockSkewSeconds = 60,
+    AllowedDisclosureHashAlgorithms = ["sha-256"]
+});
+builder.Services.AddTransient<SdJwtPresenter>();
+
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("ScopeProfile", policy =>
+        policy.RequireAuthenticatedUser().AddRequirements(new ScopeRequirement("profile")))
+    .AddPolicy("ScopeDocumentsRead", policy =>
+        policy.RequireAuthenticatedUser().AddRequirements(new ScopeRequirement("documents:read")))
+    .AddPolicy("ScopeDocumentsWrite", policy =>
+        policy.RequireAuthenticatedUser().AddRequirements(new ScopeRequirement("documents:write")));
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("profile", _ =>
+        RateLimitPartition.GetConcurrencyLimiter(
+            "profile-global",
+            _ => new ConcurrencyLimiterOptions
+            {
+                PermitLimit = 1,
+                QueueLimit = 2,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            }));
+});
 
 // ფრეიმვორკის ASP.NET Core სერვისებისა და მიდლვერების დამოკიდებულებების რეგისტრაცია
 builder.Services.AddSentinelAspNetCore()
@@ -78,6 +128,7 @@ else
     });
 }
 app.UseHttpsRedirection();
+app.UseRateLimiter();
 
 // უსაფრთხოების მილსადენი (Security Pipeline) ავტორიზაციის წინ
 app.UseSentinelSecurityPipeline();
@@ -91,7 +142,7 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference("/docs");
 }
 
-const string securityPrefix = "api/system/security";
+const string securityPrefix = "v1";
 const string documentsPrefix = "api/v1/documents";
 const string financePrefix = "api/v1/finance";
 const string showcasePrefix = "api/v1/showcase";
@@ -114,6 +165,8 @@ app.MapSentinelSecurity(securityPrefix);
 app.MapDocumentEndpoints(documentsPrefix);
 app.MapFinanceEndpoints(financePrefix);
 app.MapShowcaseEndpoints(showcasePrefix);
+app.MapDocumentEndpoints("v1/documents");
+app.MapShowcaseEndpoints("v1");
 
 app.Run();
 

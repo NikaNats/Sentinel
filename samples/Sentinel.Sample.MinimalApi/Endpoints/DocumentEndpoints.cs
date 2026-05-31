@@ -16,26 +16,31 @@ internal static class DocumentEndpoints
             .WithTags("Documents");
 
         group.MapGet("/", ListDocuments)
-            .WithName("ListDocuments")
+            .RequireAuthorization("ScopeDocumentsRead")
+            .WithName($"ListDocuments:{prefix}")
             .Produces<IEnumerable<DocumentSummaryDto>>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapGet("/{id:guid}", GetDocument)
-            .WithName("GetDocument")
+            .RequireAuthorization("ScopeDocumentsRead")
+            .WithName($"GetDocument:{prefix}")
             .Produces<DocumentDetailDto>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status404NotFound);
 
         group.MapPost("/", CreateDocument)
+            .RequireAuthorization("ScopeDocumentsWrite")
             .RequireIdempotency()
-            .WithName("CreateDocument")
+            .WithName($"CreateDocument:{prefix}")
             .Accepts<CreateDocumentRequest>("application/json")
             .Produces<DocumentSummaryDto>(StatusCodes.Status201Created)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status409Conflict);
 
         group.MapDelete("/{id:guid}", DeleteDocument)
-            .WithName("DeleteDocument")
+            .RequireAuthorization("ScopeDocumentsWrite")
+            .RequireIdempotency()
+            .WithName($"DeleteDocument:{prefix}")
             .Produces(StatusCodes.Status204NoContent)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status403Forbidden);
@@ -118,6 +123,18 @@ internal static class DocumentEndpoints
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
+        if (string.Equals(title, "secrets", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Response.Headers.Append(
+                "WWW-Authenticate",
+                "DPoP error=\"insufficient_user_authentication\", error_description=\"Surgical authorization required\"");
+
+            return TypedResults.Problem(
+                type: "/errors/insufficient-user-authentication",
+                title: "Surgical authorization required",
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
+
         var encryptedContent = crypto.Encrypt(content);
 
         var doc = new DocumentRecord(
@@ -140,6 +157,14 @@ internal static class DocumentEndpoints
         if (string.IsNullOrWhiteSpace(sub))
         {
             return TypedResults.Unauthorized();
+        }
+
+        if (context.Connection.ClientCertificate is null)
+        {
+            return TypedResults.Problem(
+                type: "/errors/mtls-binding-failed",
+                title: "mTLS certificate is required",
+                statusCode: StatusCodes.Status403Forbidden);
         }
 
         var success = repo.Delete(id, sub);

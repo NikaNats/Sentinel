@@ -14,18 +14,20 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Sentinel.Redis;
 using Sentinel.Redis.Extensions;
+using Sentinel.Security.Abstractions.Idempotency;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Replay;
 using Sentinel.Security.Abstractions.Session;
 using StackExchange.Redis;
 using Testcontainers.Keycloak;
 using Testcontainers.Redis;
+using Xunit;
 
 namespace Sentinel.Tests.Shared.Fixtures;
 
 #pragma warning disable CA2213
 
-public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
+public sealed class RealKeycloakApiFactory : WebApplicationFactory<Sentinel.Sample.MinimalApi.Program>, IAsyncLifetime
 {
     public const string RealmName = "sentinel-test";
     public const string ClientId = "sentinel-api";
@@ -60,7 +62,7 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
 
     public string TokenEndpoint => $"{Authority}/protocol/openid-connect/token";
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         await redisContainer.StartAsync();
         var redisHostPort = redisContainer.GetMappedPublicPort(6379);
@@ -75,13 +77,17 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
         _ = CreateClient();
     }
 
-    Task IAsyncLifetime.DisposeAsync() => DisposeAsyncCore();
+    // Overriding DisposeAsync instead of shadowing it avoids warnings and ensures base host cleanup.
+    public override async ValueTask DisposeAsync()
+    {
+        await DisposeAsyncCore();
+        await base.DisposeAsync();
+    }
 
-    private async Task DisposeAsyncCore()
+    private async ValueTask DisposeAsyncCore()
     {
         await keycloakContainer.DisposeAsync();
         await redisContainer.DisposeAsync();
-        await base.DisposeAsync();
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -112,6 +118,8 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
         {
             services.RemoveAll<IDistributedCache>();
             services.RemoveAll<IConnectionMultiplexer>();
+            services.RemoveAll<IRedisConnectionProvider>();
+            services.RemoveAll<IIdempotencyStore>();
             services.RemoveAll<IJtiReplayCache>();
             services.RemoveAll<IDpopNonceStore>();
             services.RemoveAll<ISessionBlacklistCache>();
@@ -137,6 +145,10 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
                 })
                 .Build();
             services.AddRedisSecurityCaches(redisConfig);
+            services.AddTransient<Sentinel.SdJwt.ISdJwtTokenValidator, TestSdJwtTokenValidator>();
+            services.AddSingleton<Sentinel.Security.Abstractions.SSF.ISsfTokenValidator, TestSsfTokenValidator>();
+            services.AddScoped<Sentinel.Application.Auth.Interfaces.ISsfEventProcessor, SsfEventProcessorAdapter>();
+            services.AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, AuthRevocationServiceAdapter>();
 
             // Bridge Application layer IJtiReplayCache to Security layer implementation via adapter
             services.AddSingleton<Application.Common.Abstractions.IJtiReplayCache>(sp =>
@@ -180,10 +192,10 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
                     return;
                 }
             }
-#pragma warning disable CA1031
+#pragma warning disable CA1031 
             catch
             {
-                // Ignore transient startup failures while Keycloak boots.
+                // Ignore transient startup failures while Keycloak boots. 
             }
 #pragma warning restore CA1031
 

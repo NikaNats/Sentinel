@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <OutputType>Library</OutputType>
+    <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <Nullable>enable</Nullable>
@@ -14,7 +14,7 @@
     <PackageReference Include="Microsoft.Coyote.Test" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
-    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.v3" />
 
     <PackageReference Include="xunit.runner.visualstudio">
       <PrivateAssets>all</PrivateAssets>
@@ -27,7 +27,7 @@
     <ProjectReference Include="..\..\src\Sentinel.Security.Abstractions\Sentinel.Security.Abstractions.csproj" />
   </ItemGroup>
 
-  <Target Name="CoyoteRewrite" AfterTargets="AfterBuild">
+  <Target Name="CoyoteRewrite" AfterTargets="AfterBuild" Condition="'$(RunCoyoteRewrite)' == 'true'">
     <Message Text="Executing Microsoft Coyote Binary Rewriter on Sentinel assemblies..." Importance="High" />
     <Exec Command="dotnet coyote rewrite $(TargetDir)Sentinel.AspNetCore.dll" />
     <Exec Command="dotnet coyote rewrite $(TargetDir)$(TargetName).dll" />

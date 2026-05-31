@@ -181,7 +181,7 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
         throw new TimeoutException($"Redis readiness check timed out for {host}:{port}", lastError);
     }
 
-    public class SsfApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
+    public class SsfApiFactory : WebApplicationFactory<Sentinel.Sample.MinimalApi.Program>, IAsyncLifetime
     {
         private readonly RedisContainer redisContainer;
         private string redisConnectionString = string.Empty;
@@ -193,7 +193,7 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
                 .Build();
         }
 
-        public async Task InitializeAsync()
+        public async ValueTask InitializeAsync()
         {
             await redisContainer.StartAsync();
             var redisHostPort = redisContainer.GetMappedPublicPort(6379);
@@ -203,7 +203,14 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
             _ = CreateClient();
         }
 
-        Task IAsyncLifetime.DisposeAsync() => DisposeAsyncCore();
+        // Overriding the base DisposeAsync method cleans up warnings and integrates properly with the pipeline.
+        // Calling GC.SuppressFinalize(this) protects any derived types that introduce a native finalizer.
+        public override async ValueTask DisposeAsync()
+        {
+            await DisposeAsyncCore();
+            await base.DisposeAsync();
+            GC.SuppressFinalize(this);
+        }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -226,6 +233,8 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
             {
                 services.RemoveAll<IDistributedCache>();
                 services.RemoveAll<IConnectionMultiplexer>();
+                services.RemoveAll<IRedisConnectionProvider>();
+                services.RemoveAll<Sentinel.Security.Abstractions.Idempotency.IIdempotencyStore>();
                 services.RemoveAll<IConfigurationManager<OpenIdConnectConfiguration>>();
                 services.RemoveAll<Sentinel.Security.Abstractions.Replay.IJtiReplayCache>();
                 services.RemoveAll<Sentinel.Security.Abstractions.Nonce.IDpopNonceStore>();
@@ -255,6 +264,10 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
                     })
                     .Build();
                 services.AddRedisSecurityCaches(redisConfig);
+                services.AddTransient<Sentinel.SdJwt.ISdJwtTokenValidator, TestSdJwtTokenValidator>();
+                services.AddSingleton<Sentinel.Security.Abstractions.SSF.ISsfTokenValidator, TestSsfTokenValidator>();
+                services.AddScoped<Sentinel.Application.Auth.Interfaces.ISsfEventProcessor, SsfEventProcessorAdapter>();
+                services.AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, AuthRevocationServiceAdapter>();
 
                 services.AddSingleton<Sentinel.Application.Common.Abstractions.IJtiReplayCache>(sp =>
                     new JtiReplayCacheAdapter(
@@ -281,10 +294,9 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
             });
         }
 
-        private async Task DisposeAsyncCore()
+        private async ValueTask DisposeAsyncCore()
         {
             await redisContainer.DisposeAsync();
-            await base.DisposeAsync();
         }
     }
 }

@@ -32,6 +32,7 @@ public sealed class SsfEventProcessorTests
     private readonly SsfEventProcessor _sut;
 
     private readonly MockSsfTokenValidator _validator;
+    private static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;
 
     public SsfEventProcessorTests()
     {
@@ -73,11 +74,11 @@ public sealed class SsfEventProcessorTests
         _validator.CustomResult = SsfValidationResult.Success(CreateToken(events));
 
         // Act
-        var result = await _sut.ProcessAsync("valid-session-revoke-token");
+        var result = await _sut.ProcessAsync("valid-session-revoke-token", TestCancellationToken);
 
         // Assert
         result.IsSuccess.Should().BeTrue("Valid CAEP events must process successfully");
-        (await _cache.IsBlacklistedAsync(targetSid)).Should().BeTrue(
+        (await _cache.IsBlacklistedAsync(targetSid, TestCancellationToken)).Should().BeTrue(
             "The processor must add the specific session ID to the blacklist per CAEP spec");
     }
 
@@ -99,7 +100,7 @@ public sealed class SsfEventProcessorTests
         _validator.CustomResult = SsfValidationResult.Success(CreateToken(events, targetSub));
 
         // Act
-        var result = await _sut.ProcessAsync("subject-revoke-token");
+        var result = await _sut.ProcessAsync("subject-revoke-token", TestCancellationToken);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
@@ -128,7 +129,7 @@ public sealed class SsfEventProcessorTests
         _validator.CustomResult = SsfValidationResult.Success(token);
 
         // Act
-        var result = await _sut.ProcessAsync("temporal-boundary-token");
+        var result = await _sut.ProcessAsync("temporal-boundary-token", TestCancellationToken);
 
         // Assert - Stale and future-dated tokens must be rejected
         var shouldFail = secondsOffset < -300 || secondsOffset > 60;
@@ -172,7 +173,7 @@ public sealed class SsfEventProcessorTests
             TimeProvider.System);
 
         // Act
-        var result = await processorWithFailingCache.ProcessAsync("valid-but-infrastructure-fails");
+        var result = await processorWithFailingCache.ProcessAsync("valid-but-infrastructure-fails", TestCancellationToken);
 
         // Assert
         result.IsSuccess.Should().BeFalse(
@@ -197,7 +198,7 @@ public sealed class SsfEventProcessorTests
         _validator.CustomResult = SsfValidationResult.Success(CreateToken(events));
 
         // Act
-        var result = await _sut.ProcessAsync("malformed-event-token");
+        var result = await _sut.ProcessAsync("malformed-event-token", TestCancellationToken);
 
         // Assert
         result.IsSuccess.Should().BeFalse(
@@ -225,11 +226,11 @@ public sealed class SsfEventProcessorTests
         _validator.CustomResult = SsfValidationResult.Success(CreateToken(events, targetSub));
 
         // Act
-        var result = await _sut.ProcessAsync("multi-event-token");
+        var result = await _sut.ProcessAsync("multi-event-token", TestCancellationToken);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
-        (await _cache.IsBlacklistedAsync(targetSid)).Should().BeTrue("First event should be processed");
+        (await _cache.IsBlacklistedAsync(targetSid, TestCancellationToken)).Should().BeTrue("First event should be processed");
         _revocation.WasSubjectRevoked(targetSub).Should().BeTrue("Second event should be processed");
     }
 
@@ -244,7 +245,7 @@ public sealed class SsfEventProcessorTests
         _validator.CustomResult = SsfValidationResult.Success(CreateToken(new Dictionary<string, JsonElement>()));
 
         // Act
-        var result = await _sut.ProcessAsync("empty-events-token");
+        var result = await _sut.ProcessAsync("empty-events-token", TestCancellationToken);
 
         // Assert
         result.IsSuccess.Should().BeTrue("A token with no events is valid but represents a no-op");

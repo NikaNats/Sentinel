@@ -31,7 +31,7 @@ public sealed class WeakKeyTests
             "eyJhbGciOiJub25lIiwidHlwIjoiZHBvcCtqd3QifQ.eyJodG0iOiJQT1NUIiwiaHR1IjoiaHR0cHM6Ly9hcGkuZXhhbXBsZS5jb20vdG9rZW4iLCJpYXQiOjE3MDAwMDAwMDAsImp0aSI6InQifQ.";
         var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.example.com/token"));
 
-        var result = await CreateValidator().ValidateAsync(request);
+        var result = await CreateValidator().ValidateAsync(request, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
     }
@@ -43,7 +43,7 @@ public sealed class WeakKeyTests
         var proof = TestJwtBuilder.CreateMalformedProof(ec, SecurityAlgorithms.RsaSha256, "RSA");
         var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.example.com/token"));
 
-        var result = await CreateValidator().ValidateAsync(request);
+        var result = await CreateValidator().ValidateAsync(request, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
     }
@@ -82,7 +82,7 @@ public sealed class WeakKeyTests
         var proof = handler.CreateToken(descriptor);
         var request = new DpopValidationRequest(proof, "GET", new Uri("https://api.example.com/resource"));
 
-        var result = await CreateValidator().ValidateAsync(request);
+        var result = await CreateValidator().ValidateAsync(request, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
     }

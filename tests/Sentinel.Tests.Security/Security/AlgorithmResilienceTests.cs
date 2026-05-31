@@ -84,7 +84,7 @@ public sealed class AlgorithmResilienceTests : IDisposable
             new Uri("https://api.sentinel.io/v1/auth"));
 
         // Act
-        var result = await _validator.ValidateAsync(request);
+        var result = await _validator.ValidateAsync(request, CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeFalse(
@@ -117,7 +117,7 @@ public sealed class AlgorithmResilienceTests : IDisposable
             new Uri("https://api.sentinel.io/v1/resource"));
 
         // Act
-        var result = await _validator.ValidateAsync(request);
+        var result = await _validator.ValidateAsync(request,CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeFalse(
@@ -144,7 +144,7 @@ public sealed class AlgorithmResilienceTests : IDisposable
             new Uri("https://api.io/claim"));
 
         // Act
-        var result = await _validator.ValidateAsync(request);
+        var result = await _validator.ValidateAsync(request,CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeFalse(

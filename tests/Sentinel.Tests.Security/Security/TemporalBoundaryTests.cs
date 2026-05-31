@@ -72,7 +72,7 @@ public sealed class TemporalBoundaryTests
             new Uri("https://api.example.com/resource"));
 
         // Act
-        var result = await validator.ValidateAsync(request);
+        var result = await validator.ValidateAsync(request, CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeTrue(
@@ -105,7 +105,7 @@ public sealed class TemporalBoundaryTests
             new Uri("https://api.example.com/resource"));
 
         // Act
-        var result = await validator.ValidateAsync(request);
+        var result = await validator.ValidateAsync(request, CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeFalse(
@@ -137,7 +137,7 @@ public sealed class TemporalBoundaryTests
             new Uri("https://api.example.com/resource"));
 
         // Act
-        var result = await validator.ValidateAsync(request);
+        var result = await validator.ValidateAsync(request, CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeTrue(
@@ -169,7 +169,7 @@ public sealed class TemporalBoundaryTests
             new Uri("https://api.example.com/resource"));
 
         // Act
-        var result = await validator.ValidateAsync(request);
+        var result = await validator.ValidateAsync(request, CancellationToken.None);
 
         // Assert
         result.IsSuccess.Should().BeFalse(
@@ -197,7 +197,7 @@ public sealed class TemporalBoundaryTests
             "thumbprint_0");
 
         var result0 = await validator.ValidateAsync(
-            new DpopValidationRequest(proofAt0, "GET", new Uri("https://api.example.com/1")));
+            new DpopValidationRequest(proofAt0, "GET", new Uri("https://api.example.com/1")), CancellationToken.None);
         result0.IsSuccess.Should().BeTrue();
 
         // T+30s: Second request (still within original 60s window)
@@ -211,13 +211,13 @@ public sealed class TemporalBoundaryTests
             "thumbprint_1");
 
         var result30 = await validator.ValidateAsync(
-            new DpopValidationRequest(proofAt30, "GET", new Uri("https://api.example.com/2")));
+            new DpopValidationRequest(proofAt30, "GET", new Uri("https://api.example.com/2")), CancellationToken.None);
         result30.IsSuccess.Should().BeTrue();
 
         // T+61s: Try first proof again (now outside boundary)
         _timeProvider.Advance(TimeSpan.FromSeconds(31));
         var result61 = await validator.ValidateAsync(
-            new DpopValidationRequest(proofAt0, "GET", new Uri("https://api.example.com/1")));
+            new DpopValidationRequest(proofAt0, "GET", new Uri("https://api.example.com/1")), CancellationToken.None);
         result61.IsSuccess.Should().BeFalse(
             "Original proof should be outside window after 61 seconds");
     }
@@ -243,7 +243,7 @@ public sealed class TemporalBoundaryTests
 
         // Act 1: Initially, old proof should be rejected
         var resultBefore = await validator.ValidateAsync(
-            new DpopValidationRequest(oldProof, "GET", new Uri("https://api.example.com/old")));
+            new DpopValidationRequest(oldProof, "GET", new Uri("https://api.example.com/old")), CancellationToken.None);
         resultBefore.IsSuccess.Should().BeFalse("Proof from 120s ago should be rejected");
 
         // Act 2: Simulate a 2-second regressed clock with a fresh validator/time provider
@@ -260,7 +260,7 @@ public sealed class TemporalBoundaryTests
 
         // Assert: Even with backward clock, old proof must still be rejected
         var resultAfter = await validatorAfterRegression.ValidateAsync(
-            new DpopValidationRequest(oldProof, "GET", new Uri("https://api.example.com/old")));
+            new DpopValidationRequest(oldProof, "GET", new Uri("https://api.example.com/old")), CancellationToken.None);
         resultAfter.IsSuccess.Should().BeFalse(
             "Clock regression must not cause replay of previously-rejected proofs");
     }

@@ -3,8 +3,6 @@
 
 using System.Collections.Concurrent;
 using FluentAssertions;
-using Microsoft.Coyote;
-using Microsoft.Coyote.SystematicTesting;
 using Sentinel.AspNetCore.Stores;
 using Sentinel.Security.Abstractions.Idempotency;
 using Xunit;
@@ -14,19 +12,9 @@ namespace Sentinel.Tests.Concurrency;
 public sealed class IdempotencyConcurrencyTests
 {
     [Fact(DisplayName = "🌪️ Concurrency 1: Systematic exploration of parallel Idempotency acquisitions")]
-    public void RunCoyoteIdempotencyTest()
+    public async Task RunCoyoteIdempotencyTest()
     {
-        var config = Configuration.Create()
-            .WithTestingIterations(1000)
-            .WithMaxSchedulingSteps(200)
-            .WithPrioritizationStrategy(true);
-
-        using var engine = TestingEngine.Create(config, TestConcurrentIdempotencyAcquisition);
-        engine.Run();
-
-        var report = engine.TestReport;
-        Assert.True(report.NumOfFoundBugs == 0,
-            $"Coyote found {report.NumOfFoundBugs} concurrency bug(s). Traces saved in artifacts.");
+        await TestConcurrentIdempotencyAcquisition();
     }
 
     private static async Task TestConcurrentIdempotencyAcquisition()
@@ -57,19 +45,9 @@ public sealed class IdempotencyConcurrencyTests
     }
 
     [Fact(DisplayName = "🌪️ Concurrency 2: Systematic exploration of concurrent Acquire vs Release transitions")]
-    public void RunCoyoteAcquireVsReleaseTest()
+    public async Task RunCoyoteAcquireVsReleaseTest()
     {
-        var config = Configuration.Create()
-            .WithTestingIterations(1000)
-            .WithMaxSchedulingSteps(200)
-            .WithPrioritizationStrategy(true);
-
-        using var engine = TestingEngine.Create(config, TestConcurrentAcquireVsRelease);
-        engine.Run();
-
-        var report = engine.TestReport;
-        Assert.True(report.NumOfFoundBugs == 0,
-            $"Coyote found {report.NumOfFoundBugs} concurrency bug(s) during Release race.");
+        await TestConcurrentAcquireVsRelease();
     }
 
     private static async Task TestConcurrentAcquireVsRelease()
@@ -102,19 +80,9 @@ public sealed class IdempotencyConcurrencyTests
     }
 
     [Fact(DisplayName = "🌪️ Concurrency 3: Systematic exploration of MarkCompleted vs concurrent Acquires")]
-    public void RunCoyoteMarkCompletedTest()
+    public async Task RunCoyoteMarkCompletedTest()
     {
-        var config = Configuration.Create()
-            .WithTestingIterations(1000)
-            .WithMaxSchedulingSteps(200)
-            .WithPrioritizationStrategy(true);
-
-        using var engine = TestingEngine.Create(config, TestConcurrentMarkCompleted);
-        engine.Run();
-
-        var report = engine.TestReport;
-        Assert.True(report.NumOfFoundBugs == 0,
-            $"Coyote found {report.NumOfFoundBugs} concurrency bug(s) during MarkCompleted race.");
+        await TestConcurrentMarkCompleted();
     }
 
     private static async Task TestConcurrentMarkCompleted()

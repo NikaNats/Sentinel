@@ -14,18 +14,20 @@ using Npgsql;
 using Sentinel.Infrastructure.Persistence;
 using Sentinel.Redis;
 using Sentinel.Redis.Extensions;
+using Sentinel.Security.Abstractions.Idempotency;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Replay;
 using Sentinel.Security.Abstractions.Session;
 using StackExchange.Redis;
 using Testcontainers.PostgreSql;
 using Testcontainers.Redis;
+using Xunit;
 
 namespace Sentinel.Tests.Shared.Fixtures;
 
 #pragma warning disable CA2213
 
-public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
+public sealed class SentinelApiFactory : WebApplicationFactory<Sentinel.Sample.MinimalApi.Program>, IAsyncLifetime
 {
     private readonly PostgreSqlContainer postgresContainer;
     private readonly RedisContainer redisContainer;
@@ -46,7 +48,7 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
             .Build();
     }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         // 1. Start containers in parallel
         await Task.WhenAll(redisContainer.StartAsync(), postgresContainer.StartAsync());
@@ -71,7 +73,12 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
         await dbContext.Database.MigrateAsync();
     }
 
-    Task IAsyncLifetime.DisposeAsync() => DisposeAsyncCore();
+    // Overriding DisposeAsync instead of shadowing it with the 'new' keyword resolves warnings.
+    public override async ValueTask DisposeAsync()
+    {
+        await DisposeAsyncCore();
+        await base.DisposeAsync();
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -115,6 +122,8 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
             // Configure Redis with explicit container connection string
             services.RemoveAll<IDistributedCache>();
             services.RemoveAll<IConnectionMultiplexer>();
+            services.RemoveAll<IRedisConnectionProvider>();
+            services.RemoveAll<IIdempotencyStore>();
             services.RemoveAll<IJtiReplayCache>();
             services.RemoveAll<IDpopNonceStore>();
             services.RemoveAll<ISessionBlacklistCache>();
@@ -140,6 +149,10 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
                 })
                 .Build();
             services.AddRedisSecurityCaches(redisConfig);
+            services.AddTransient<Sentinel.SdJwt.ISdJwtTokenValidator, TestSdJwtTokenValidator>();
+            services.AddSingleton<Sentinel.Security.Abstractions.SSF.ISsfTokenValidator, TestSsfTokenValidator>();
+            services.AddScoped<Sentinel.Application.Auth.Interfaces.ISsfEventProcessor, SsfEventProcessorAdapter>();
+            services.AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, AuthRevocationServiceAdapter>();
 
             // Bridge Application layer IJtiReplayCache to Security layer implementation via adapter
             services.AddSingleton<Application.Common.Abstractions.IJtiReplayCache>(sp =>
@@ -166,12 +179,11 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
         });
     }
 
-    private async Task DisposeAsyncCore()
+    private async ValueTask DisposeAsyncCore()
     {
         await Task.WhenAll(
             redisContainer.DisposeAsync().AsTask(),
             postgresContainer.DisposeAsync().AsTask());
-        await base.DisposeAsync();
     }
 
     private static async Task WaitForRedisReadinessAsync(string host, int port, TimeSpan timeout)

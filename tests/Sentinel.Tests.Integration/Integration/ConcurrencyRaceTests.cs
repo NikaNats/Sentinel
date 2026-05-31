@@ -18,6 +18,7 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
 {
     private readonly SentinelApiFactory _factory;
     private readonly IDpopNonceStore _nonce_store;
+    private static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;
 
     public ConcurrencyRaceTests(SentinelApiFactory factory)
     {
@@ -25,9 +26,9 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
         _nonce_store = _factory.Services.GetRequiredService<IDpopNonceStore>();
     }
 
-    public Task InitializeAsync() => Task.CompletedTask;
+    public ValueTask InitializeAsync() => ValueTask.CompletedTask;
 
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     /// <summary>
     ///     Test: RaceCondition_100ConcurrentNonceConsumption_ExactlyOneSucceeds
@@ -47,16 +48,16 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
 
         // Pre-populate the nonce in Redis
-        await _nonce_store.SetNonceAsync(thumbprint, nonce, expiresAt);
+        await _nonce_store.SetNonceAsync(thumbprint, nonce, expiresAt, TestCancellationToken);
 
         // Verify nonce is initially present
-        var initialNonce = await _nonce_store.GetNonceAsync(thumbprint);
+        var initialNonce = await _nonce_store.GetNonceAsync(thumbprint, TestCancellationToken);
         initialNonce.Should().Be(nonce, "nonce must be set before race begins");
 
         // Act: Launch 100 concurrent tasks, each attempting to consume the SAME nonce
         var tasks = Enumerable
             .Range(0, 100)
-            .Select(taskIndex => _nonce_store.ConsumeNonceIfMatchesAsync(thumbprint, nonce))
+            .Select(taskIndex => _nonce_store.ConsumeNonceIfMatchesAsync(thumbprint, nonce, TestCancellationToken))
             .ToList();
 
         var results = await Task.WhenAll(tasks);
@@ -72,7 +73,7 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
             "Other 99 tasks should fail because the key is already deleted by the winner.");
 
         // Verify the nonce is now gone from Redis
-        var remainingNonce = await _nonce_store.GetNonceAsync(thumbprint);
+        var remainingNonce = await _nonce_store.GetNonceAsync(thumbprint, TestCancellationToken);
         remainingNonce.Should().BeNull(
             "After one successful consumption, nonce should be deleted and unavailable for replay attacks.");
     }
@@ -98,13 +99,13 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
             var nonce = $"unique_nonce_value_{i:D5}";
             var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
 
-            await _nonce_store.SetNonceAsync(thumbprint, nonce, expiresAt);
+            await _nonce_store.SetNonceAsync(thumbprint, nonce, expiresAt, TestCancellationToken);
             noncesByThumbprint[thumbprint] = nonce;
         }
 
         // Act: Launch 100 concurrent consumption tasks, each on a different key
         var tasks = noncesByThumbprint
-            .Select(kvp => _nonce_store.ConsumeNonceIfMatchesAsync(kvp.Key, kvp.Value))
+            .Select(kvp => _nonce_store.ConsumeNonceIfMatchesAsync(kvp.Key, kvp.Value, TestCancellationToken))
             .ToList();
 
         var results = await Task.WhenAll(tasks);
@@ -123,7 +124,7 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
         for (var i = 0; i < 100; i++)
         {
             var thumbprint = $"test_jwk_thumbprint_unique_{i:D3}";
-            var remainingNonce = await _nonce_store.GetNonceAsync(thumbprint);
+            var remainingNonce = await _nonce_store.GetNonceAsync(thumbprint, TestCancellationToken);
             remainingNonce.Should().BeNull(
                 $"Nonce for thumbprint {thumbprint} should be deleted after consumption.");
         }
@@ -148,18 +149,18 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
 
         // Pre-populate with original nonce
-        await _nonce_store.SetNonceAsync(thumbprint, originalNonce, expiresAt);
+        await _nonce_store.SetNonceAsync(thumbprint, originalNonce, expiresAt, TestCancellationToken);
 
         // Act: Race SetNonce (with new value) vs ConsumeNonce (with old value)
         // Both start "simultaneously" via Task.WhenAll
-        var setTask = _nonce_store.SetNonceAsync(thumbprint, newNonce, expiresAt);
-        var consumeTask = _nonce_store.ConsumeNonceIfMatchesAsync(thumbprint, originalNonce);
+        var setTask = _nonce_store.SetNonceAsync(thumbprint, newNonce, expiresAt, TestCancellationToken);
+        var consumeTask = _nonce_store.ConsumeNonceIfMatchesAsync(thumbprint, originalNonce, TestCancellationToken);
 
         await Task.WhenAll(setTask, consumeTask);
         var consumeSucceeded = await consumeTask;
 
         // Assert: Check final state
-        var finalNonce = await _nonce_store.GetNonceAsync(thumbprint);
+        var finalNonce = await _nonce_store.GetNonceAsync(thumbprint, TestCancellationToken);
 
         // Either:
         // Case 1: ConsumeNonce won first, deleted the key before SetNonce could find it
@@ -200,7 +201,7 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
 
         // Pre-populate
-        await _nonce_store.SetNonceAsync(thumbprint, nonce, expiresAt);
+        await _nonce_store.SetNonceAsync(thumbprint, nonce, expiresAt, TestCancellationToken);
 
         // Act: 50 concurrent consumption attempts (reduced from 100 for edge case)
         var tasks = Enumerable
@@ -220,7 +221,7 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
         failureCount.Should().Be(49);
 
         // Verify cleanup
-        var remainingNonce = await _nonce_store.GetNonceAsync(thumbprint);
+        var remainingNonce = await _nonce_store.GetNonceAsync(thumbprint, TestCancellationToken);
         remainingNonce.Should().BeNull("Nonce must be consumed and deleted.");
     }
 
@@ -245,7 +246,7 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
             var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
 
             // Pre-populate this round's nonce
-            await _nonce_store.SetNonceAsync(roundThumbprint, roundNonce, expiresAt);
+            await _nonce_store.SetNonceAsync(roundThumbprint, roundNonce, expiresAt, TestCancellationToken);
 
             // Act: Launch tasks for this round
             var tasks = Enumerable
@@ -261,7 +262,7 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
                 $"Round {round}: exactly one task must consume the nonce despite 50 concurrent attempts.");
 
             // Verify cleanup
-            var remainingNonce = await _nonce_store.GetNonceAsync(roundThumbprint);
+            var remainingNonce = await _nonce_store.GetNonceAsync(roundThumbprint, TestCancellationToken);
             remainingNonce.Should().BeNull(
                 $"Round {round}: nonce must be deleted and unavailable for replay.");
         }

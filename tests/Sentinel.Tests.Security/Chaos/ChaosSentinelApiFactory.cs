@@ -18,6 +18,7 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.Redis;
 using Sentinel.Redis.Extensions;
+using Sentinel.Security.Abstractions.Idempotency;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Replay;
 using Sentinel.Security.Abstractions.Session;
@@ -27,7 +28,7 @@ using Testcontainers.Redis;
 
 namespace Sentinel.Tests.Security.Chaos;
 
-public class ChaosSentinelApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
+public class ChaosSentinelApiFactory : WebApplicationFactory<Sentinel.Sample.MinimalApi.Program>, IAsyncLifetime
 {
     private readonly INetwork _network;
     private readonly RedisContainer _redisContainer;
@@ -54,7 +55,7 @@ public class ChaosSentinelApiFactory : WebApplicationFactory<Program>, IAsyncLif
     public string RedisProxyConnectionString { get; private set; } = string.Empty;
     public ToxiproxyDbClient? ChaosClient { get; private set; }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         await _network.CreateAsync();
         await Task.WhenAll(_redisContainer.StartAsync(), _toxiproxyContainer.StartAsync());
@@ -73,7 +74,14 @@ public class ChaosSentinelApiFactory : WebApplicationFactory<Program>, IAsyncLif
         _ = CreateClient();
     }
 
-    Task IAsyncLifetime.DisposeAsync() => DisposeAsyncCore();
+    // Overriding WebApplicationFactory's DisposeAsync cleanly satisfies IAsyncLifetime.DisposeAsync
+    // while also ensuring the base class host receives proper disposal.
+    public override async ValueTask DisposeAsync()
+    {
+        await DisposeAsyncCore();
+        await base.DisposeAsync();
+        GC.SuppressFinalize(this);
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -94,6 +102,8 @@ public class ChaosSentinelApiFactory : WebApplicationFactory<Program>, IAsyncLif
         {
             services.RemoveAll<IDistributedCache>();
             services.RemoveAll<IConnectionMultiplexer>();
+            services.RemoveAll<IRedisConnectionProvider>();
+            services.RemoveAll<IIdempotencyStore>();
             services.RemoveAll<IConfigurationManager<OpenIdConnectConfiguration>>();
             services.RemoveAll<IJtiReplayCache>();
             services.RemoveAll<IDpopNonceStore>();
@@ -118,6 +128,10 @@ public class ChaosSentinelApiFactory : WebApplicationFactory<Program>, IAsyncLif
                 })
                 .Build();
             services.AddRedisSecurityCaches(redisConfig);
+            services.AddTransient<Sentinel.SdJwt.ISdJwtTokenValidator, TestSdJwtTokenValidator>();
+            services.AddSingleton<Sentinel.Security.Abstractions.SSF.ISsfTokenValidator, TestSsfTokenValidator>();
+            services.AddScoped<Sentinel.Application.Auth.Interfaces.ISsfEventProcessor, SsfEventProcessorAdapter>();
+            services.AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, AuthRevocationServiceAdapter>();
 
             services.AddSingleton<Application.Common.Abstractions.IJtiReplayCache>(sp =>
                 new JtiReplayCacheAdapter(
@@ -144,7 +158,7 @@ public class ChaosSentinelApiFactory : WebApplicationFactory<Program>, IAsyncLif
         });
     }
 
-    public async Task DisposeAsyncCore()
+    private async ValueTask DisposeAsyncCore()
     {
         ChaosClient?.Dispose();
         await _toxiproxyContainer.DisposeAsync();

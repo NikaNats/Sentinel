@@ -28,6 +28,7 @@ public sealed class DpopProofValidatorTests : IDisposable
     private readonly DpopThumbprintComputer _thumbprintComputer;
     private readonly FakeTimeProvider _timeProvider;
     private readonly DpopProofValidator _validator;
+    private static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;
 
     public DpopProofValidatorTests()
     {
@@ -85,7 +86,7 @@ public sealed class DpopProofValidatorTests : IDisposable
         var request = new DpopValidationRequest(proof, "POST", new Uri(requestUri));
 
         // Act
-        var result = await _validator.ValidateAsync(request);
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
         // Assert
         result.IsSuccess.Should().BeTrue("A valid cryptographic proof is the primary token-binding requirement.");
@@ -115,7 +116,7 @@ public sealed class DpopProofValidatorTests : IDisposable
         _replayCache.ExpectNoCalls();
 
         // Act
-        var result = await _validator.ValidateAsync(request);
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
         // Assert
         result.IsSuccess.Should().BeFalse("Tampered signature must be rejected before any side effects.");
@@ -163,7 +164,7 @@ public sealed class DpopProofValidatorTests : IDisposable
         var request = new DpopValidationRequest(proof, "GET", new Uri("https://api.io/t"));
 
         // Act
-        var result = await _validator.ValidateAsync(request);
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
         // Assert - Temporal check must happen regardless of cache state
         result.IsSuccess.Should().Be(expectedSuccess, scenario);
@@ -181,7 +182,7 @@ public sealed class DpopProofValidatorTests : IDisposable
         var request = new DpopValidationRequest(proof, "GET", new Uri("https://api.io/t"));
 
         // Act
-        var result = await _validator.ValidateAsync(request);
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
         // Assert
         result.IsSuccess.Should().BeFalse(
@@ -239,7 +240,7 @@ public sealed class DpopProofValidatorTests : IDisposable
         _replayCache.ExpectNoCalls();
 
         // Act
-        var result = await _validator.ValidateAsync(request);
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
         // Assert - URI binding is enforced with ordinal comparison (no Unicode equivalence tricks)
         result.IsSuccess.Should().BeFalse(
@@ -278,7 +279,7 @@ public sealed class DpopProofValidatorTests : IDisposable
         _replayCache.ExpectNoCalls();
 
         // Act
-        var result = await _validator.ValidateAsync(request);
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
         // Assert
         result.IsSuccess.Should().BeFalse(
@@ -299,7 +300,7 @@ public sealed class DpopProofValidatorTests : IDisposable
         _replayCache.ExpectSuccess();
 
         // Act - First use
-        var firstResult = await _validator.ValidateAsync(request);
+        var firstResult = await _validator.ValidateAsync(request, TestCancellationToken);
         firstResult.IsSuccess.Should().BeTrue("First use of valid proof must pass");
 
         // Second use (replay): Reset cache expectations for second call - should reject
@@ -307,7 +308,7 @@ public sealed class DpopProofValidatorTests : IDisposable
         _replayCache.ExpectFalse();
 
         // Act - Second use (replay)
-        var replayResult = await _validator.ValidateAsync(request);
+        var replayResult = await _validator.ValidateAsync(request, TestCancellationToken);
 
         // Assert
         replayResult.IsSuccess.Should().BeFalse(

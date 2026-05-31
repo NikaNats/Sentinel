@@ -18,6 +18,8 @@
     <ProjectReference Include="..\..\src\Sentinel.Redis\Sentinel.Redis.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Security.Abstractions\Sentinel.Security.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Application\Sentinel.Application.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.SdJwt\Sentinel.SdJwt.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.SSF\Sentinel.SSF.csproj" />
   </ItemGroup>
 
   <ItemGroup>

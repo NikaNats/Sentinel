@@ -16,6 +16,7 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.Redis;
 using Sentinel.Redis.Extensions;
+using Sentinel.Security.Abstractions.Idempotency;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Replay;
 using Sentinel.Security.Abstractions.Session;
@@ -86,7 +87,7 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
         throw new TimeoutException($"Redis readiness check timed out for {host}:{port}", lastError);
     }
 
-    public sealed class CompositeAuthFactory : WebApplicationFactory<Program>, IAsyncLifetime
+    public sealed class CompositeAuthFactory : WebApplicationFactory<Sentinel.Sample.MinimalApi.Program>, IAsyncLifetime
     {
         private readonly RedisContainer redisContainer;
         private string redisConnectionString = string.Empty;
@@ -98,7 +99,7 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
                 .Build();
         }
 
-        public async Task InitializeAsync()
+        public async ValueTask InitializeAsync()
         {
             await redisContainer.StartAsync();
             var redisHostPort = redisContainer.GetMappedPublicPort(6379);
@@ -108,12 +109,17 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
             _ = CreateClient();
         }
 
-        Task IAsyncLifetime.DisposeAsync() => DisposeAsyncCore();
+        // Overriding the base WebApplicationFactory implementation resolves the shadowing warning 
+        // and cleanly fulfills the IAsyncLifetime requirement.
+        public override async ValueTask DisposeAsync()
+        {
+            await DisposeAsyncCore();
+            await base.DisposeAsync();
+        }
 
-        private async Task DisposeAsyncCore()
+        private async ValueTask DisposeAsyncCore()
         {
             await redisContainer.DisposeAsync();
-            await base.DisposeAsync();
         }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -137,6 +143,8 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
             {
                 services.RemoveAll<IDistributedCache>();
                 services.RemoveAll<IConnectionMultiplexer>();
+                services.RemoveAll<IRedisConnectionProvider>();
+                services.RemoveAll<IIdempotencyStore>();
                 services.RemoveAll<IConfigurationManager<OpenIdConnectConfiguration>>();
                 services.RemoveAll<IJtiReplayCache>();
                 services.RemoveAll<IDpopNonceStore>();
@@ -162,6 +170,10 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
                     })
                     .Build();
                 services.AddRedisSecurityCaches(redisConfig);
+                services.AddTransient<Sentinel.SdJwt.ISdJwtTokenValidator, TestSdJwtTokenValidator>();
+                services.AddSingleton<Sentinel.Security.Abstractions.SSF.ISsfTokenValidator, TestSsfTokenValidator>();
+                services.AddScoped<Sentinel.Application.Auth.Interfaces.ISsfEventProcessor, SsfEventProcessorAdapter>();
+                services.AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, AuthRevocationServiceAdapter>();
 
                 // 🟢 2. დავაკავშიროთ (Bridge) Application-ფენის ქეშის ინტერფეისები Security-ფენის იმპლემენტაციებთან
                 services.AddSingleton<Application.Common.Abstractions.IJtiReplayCache>(sp =>

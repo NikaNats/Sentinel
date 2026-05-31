@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using Xunit;
 
 namespace Sentinel.Tests.Security.Chaos;
 
@@ -14,6 +15,7 @@ public sealed class RedisResilienceChaosTests : IClassFixture<ChaosSentinelApiFa
 {
     private readonly HttpClient _client;
     private readonly ChaosSentinelApiFactory _factory;
+    private static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;
 
     public RedisResilienceChaosTests(ChaosSentinelApiFactory factory)
     {
@@ -21,9 +23,9 @@ public sealed class RedisResilienceChaosTests : IClassFixture<ChaosSentinelApiFa
         _client = _factory.CreateClient();
     }
 
-    public Task InitializeAsync() => Task.CompletedTask;
+    public ValueTask InitializeAsync() => ValueTask.CompletedTask;
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (_factory.ChaosClient != null)
         {
@@ -53,7 +55,7 @@ public sealed class RedisResilienceChaosTests : IClassFixture<ChaosSentinelApiFa
 
         using var request = CreateDpopRequest(token, ecdsa, securityKey, jwkObject, "GET", "/v1/profile");
 
-        var response = await _client.SendAsync(request);
+        var response = await _client.SendAsync(request, TestCancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "the system is resilient to network latency and must successfully complete the request within SLA");
@@ -82,7 +84,7 @@ public sealed class RedisResilienceChaosTests : IClassFixture<ChaosSentinelApiFa
 
         using var request = CreateDpopRequest(token, ecdsa, securityKey, jwkObject, "GET", "/v1/profile");
 
-        var response = await _client.SendAsync(request);
+        var response = await _client.SendAsync(request, TestCancellationToken);
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.ServiceUnavailable, HttpStatusCode.InternalServerError);
     }
@@ -110,7 +112,7 @@ public sealed class RedisResilienceChaosTests : IClassFixture<ChaosSentinelApiFa
 
         using var request = CreateDpopRequest(token, ecdsa, securityKey, jwkObject, "GET", "/v1/profile");
 
-        var response = await _client.SendAsync(request);
+        var response = await _client.SendAsync(request, TestCancellationToken);
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.ServiceUnavailable,
             HttpStatusCode.InternalServerError);

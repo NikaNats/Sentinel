@@ -19,6 +19,7 @@ public class SessionManagerTests
     private readonly MockSessionBlacklistCache _blacklist;
     private readonly SessionManager _manager;
     private readonly IOptions<SessionManagementOptions> _options;
+    private static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;
 
     public SessionManagerTests()
     {
@@ -34,7 +35,7 @@ public class SessionManagerTests
         _blacklist.ExceptionToThrow = new InvalidOperationException("Redis cluster unavailable");
 
         // Act
-        var result = await _manager.RevokeSessionAsync("sid_123", DateTimeOffset.UtcNow.AddHours(1));
+        var result = await _manager.RevokeSessionAsync("sid_123", DateTimeOffset.UtcNow.AddHours(1), TestCancellationToken);
 
         // Assert: SECURITY INVARIANT - Fail Closed
         result.IsSuccess.Should()
@@ -51,7 +52,7 @@ public class SessionManagerTests
         _blacklist.ExceptionToThrow = sensitiveError;
 
         // Act
-        var result = await _manager.RevokeSessionAsync("sid_123", DateTimeOffset.UtcNow.AddHours(1));
+        var result = await _manager.RevokeSessionAsync("sid_123", DateTimeOffset.UtcNow.AddHours(1), TestCancellationToken);
 
         // Assert: Error message must be SANITIZED (Fail-Closed + Secure)
         // The original exception details (IP, port, auth status) MUST NOT appear in the result
@@ -69,7 +70,7 @@ public class SessionManagerTests
         var expiresAt = DateTimeOffset.UtcNow.AddHours(8);
 
         // Act
-        var result = await _manager.RevokeSessionAsync(sessionId, expiresAt);
+        var result = await _manager.RevokeSessionAsync(sessionId, expiresAt, TestCancellationToken);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
@@ -83,7 +84,7 @@ public class SessionManagerTests
         _blacklist.ExceptionToThrow = new InvalidOperationException("Connection Reset by Peer");
 
         // Act
-        var result = await _manager.IsSessionRevokedAsync("sid_123");
+        var result = await _manager.IsSessionRevokedAsync("sid_123", TestCancellationToken);
 
         // Assert: SECURITY INVARIANT - Fail Closed
         result.IsSuccess.Should()
@@ -97,10 +98,10 @@ public class SessionManagerTests
     {
         // Arrange
         var sessionId = "sid-123";
-        await _manager.RevokeSessionAsync(sessionId, DateTimeOffset.UtcNow.AddHours(1));
+        await _manager.RevokeSessionAsync(sessionId, DateTimeOffset.UtcNow.AddHours(1), TestCancellationToken);
 
         // Act
-        var result = await _manager.IsSessionRevokedAsync(sessionId);
+        var result = await _manager.IsSessionRevokedAsync(sessionId, TestCancellationToken);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
@@ -114,7 +115,7 @@ public class SessionManagerTests
         var sessionId = "sid-123";
 
         // Act
-        var result = await _manager.IsSessionRevokedAsync(sessionId);
+        var result = await _manager.IsSessionRevokedAsync(sessionId, TestCancellationToken);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
@@ -131,14 +132,14 @@ public class SessionManagerTests
         // Act
         foreach (var sessionId in sessionIds)
         {
-            var result = await _manager.RevokeSessionAsync(sessionId, expiresAt);
+            var result = await _manager.RevokeSessionAsync(sessionId, expiresAt, TestCancellationToken);
             result.IsSuccess.Should().BeTrue();
         }
 
         // Assert
         foreach (var sessionId in sessionIds)
         {
-            var result = await _manager.IsSessionRevokedAsync(sessionId);
+            var result = await _manager.IsSessionRevokedAsync(sessionId, TestCancellationToken);
             result.IsSuccess.Should().BeTrue();
             result.Value.Should().BeTrue();
         }

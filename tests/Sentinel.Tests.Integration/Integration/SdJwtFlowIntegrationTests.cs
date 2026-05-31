@@ -174,7 +174,7 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
         throw new TimeoutException($"Redis readiness check timed out for {host}:{port}", lastError);
     }
 
-    public sealed class SdJwtApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
+    public sealed class SdJwtApiFactory : WebApplicationFactory<Sentinel.Sample.MinimalApi.Program>, IAsyncLifetime
     {
         private readonly RedisContainer redisContainer;
         private string redisConnectionString = string.Empty;
@@ -186,7 +186,7 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
                 .Build();
         }
 
-        public async Task InitializeAsync()
+        public async ValueTask InitializeAsync()
         {
             await redisContainer.StartAsync();
             var redisHostPort = redisContainer.GetMappedPublicPort(6379);
@@ -196,7 +196,11 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
             _ = CreateClient();
         }
 
-        Task IAsyncLifetime.DisposeAsync() => DisposeAsyncCore();
+        public override async ValueTask DisposeAsync()
+        {
+            await DisposeAsyncCore();
+            await base.DisposeAsync();
+        }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -219,6 +223,8 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
             {
                 services.RemoveAll<IDistributedCache>();
                 services.RemoveAll<IConnectionMultiplexer>();
+                services.RemoveAll<IRedisConnectionProvider>();
+                services.RemoveAll<Sentinel.Security.Abstractions.Idempotency.IIdempotencyStore>();
                 services.RemoveAll<IConfigurationManager<OpenIdConnectConfiguration>>();
                 services.RemoveAll<Sentinel.Security.Abstractions.Replay.IJtiReplayCache>();
                 services.RemoveAll<Sentinel.Security.Abstractions.Nonce.IDpopNonceStore>();
@@ -248,6 +254,10 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
                     })
                     .Build();
                 services.AddRedisSecurityCaches(redisConfig);
+                services.AddTransient<Sentinel.SdJwt.ISdJwtTokenValidator, TestSdJwtTokenValidator>();
+                services.AddSingleton<Sentinel.Security.Abstractions.SSF.ISsfTokenValidator, TestSsfTokenValidator>();
+                services.AddScoped<Sentinel.Application.Auth.Interfaces.ISsfEventProcessor, SsfEventProcessorAdapter>();
+                services.AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, AuthRevocationServiceAdapter>();
 
                 // 🟢 მკაფიოდ გაწერილი ნეიმსფეისები ნებისმიერი კონფლიქტის ასაცილებლად
                 services.AddSingleton<Sentinel.Application.Common.Abstractions.IJtiReplayCache>(sp =>
@@ -275,10 +285,9 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
             });
         }
 
-        private async Task DisposeAsyncCore()
+        private async ValueTask DisposeAsyncCore()
         {
             await redisContainer.DisposeAsync();
-            await base.DisposeAsync();
         }
     }
 

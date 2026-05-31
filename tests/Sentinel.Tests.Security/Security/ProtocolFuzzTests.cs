@@ -77,7 +77,7 @@ public sealed class ProtocolFuzzTests
         // Additional: If it doesn't timeout, the result should be failure
         if (!cts.Token.IsCancellationRequested)
         {
-            var result = await _dpopValidator.ValidateAsync(request);
+            var result = await _dpopValidator.ValidateAsync(request, CancellationToken.None);
             result.IsSuccess.Should().BeFalse("Poisoned payloads must never result in success");
         }
     }
@@ -139,7 +139,7 @@ public sealed class ProtocolFuzzTests
         await act.Should().NotThrowAsync<DecoderFallbackException>("Decoder must handle invalid sequences");
 
         // If it completes, result must be failure
-        var result = await _dpopValidator.ValidateAsync(request);
+        var result = await _dpopValidator.ValidateAsync(request, CancellationToken.None);
         result.IsSuccess.Should().BeFalse(scenario);
     }
 
@@ -176,7 +176,7 @@ public sealed class ProtocolFuzzTests
         // Should either timeout or fail quickly
         if (!limitedTime.Token.IsCancellationRequested)
         {
-            var result = await _dpopValidator.ValidateAsync(request);
+            var result = await _dpopValidator.ValidateAsync(request, CancellationToken.None);
             result.IsSuccess.Should().BeFalse("Malformed nested JSON must be rejected");
         }
     }
