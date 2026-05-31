@@ -176,7 +176,7 @@ public sealed class DpopTimingSideChannelTests : IClassFixture<TimingTestApiFact
     }
 }
 
-public class TimingTestApiFactory : WebApplicationFactory<Sentinel.Sample.MinimalApi.Program>
+public class TimingTestApiFactory : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {

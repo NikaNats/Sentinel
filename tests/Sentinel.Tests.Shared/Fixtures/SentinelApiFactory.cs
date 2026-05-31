@@ -27,7 +27,7 @@ namespace Sentinel.Tests.Shared.Fixtures;
 
 #pragma warning disable CA2213
 
-public sealed class SentinelApiFactory : WebApplicationFactory<Sentinel.Sample.MinimalApi.Program>, IAsyncLifetime
+public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private readonly PostgreSqlContainer postgresContainer;
     private readonly RedisContainer redisContainer;

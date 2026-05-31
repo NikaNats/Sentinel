@@ -174,7 +174,7 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
         throw new TimeoutException($"Redis readiness check timed out for {host}:{port}", lastError);
     }
 
-    public sealed class SdJwtApiFactory : WebApplicationFactory<Sentinel.Sample.MinimalApi.Program>, IAsyncLifetime
+    public sealed class SdJwtApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         private readonly RedisContainer redisContainer;
         private string redisConnectionString = string.Empty;

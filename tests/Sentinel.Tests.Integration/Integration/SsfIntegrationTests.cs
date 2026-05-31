@@ -181,7 +181,7 @@ public sealed class SsfIntegrationTests : IClassFixture<SsfIntegrationTests.SsfA
         throw new TimeoutException($"Redis readiness check timed out for {host}:{port}", lastError);
     }
 
-    public class SsfApiFactory : WebApplicationFactory<Sentinel.Sample.MinimalApi.Program>, IAsyncLifetime
+    public class SsfApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         private readonly RedisContainer redisContainer;
         private string redisConnectionString = string.Empty;

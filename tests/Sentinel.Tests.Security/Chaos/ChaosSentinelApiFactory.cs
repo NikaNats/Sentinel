@@ -28,7 +28,7 @@ using Testcontainers.Redis;
 
 namespace Sentinel.Tests.Security.Chaos;
 
-public class ChaosSentinelApiFactory : WebApplicationFactory<Sentinel.Sample.MinimalApi.Program>, IAsyncLifetime
+public class ChaosSentinelApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private readonly INetwork _network;
     private readonly RedisContainer _redisContainer;

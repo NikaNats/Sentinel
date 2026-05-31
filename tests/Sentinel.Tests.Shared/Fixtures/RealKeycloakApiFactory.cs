@@ -27,7 +27,7 @@ namespace Sentinel.Tests.Shared.Fixtures;
 
 #pragma warning disable CA2213
 
-public sealed class RealKeycloakApiFactory : WebApplicationFactory<Sentinel.Sample.MinimalApi.Program>, IAsyncLifetime
+public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     public const string RealmName = "sentinel-test";
     public const string ClientId = "sentinel-api";

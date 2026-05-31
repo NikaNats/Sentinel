@@ -87,7 +87,7 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
         throw new TimeoutException($"Redis readiness check timed out for {host}:{port}", lastError);
     }
 
-    public sealed class CompositeAuthFactory : WebApplicationFactory<Sentinel.Sample.MinimalApi.Program>, IAsyncLifetime
+    public sealed class CompositeAuthFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         private readonly RedisContainer redisContainer;
         private string redisConnectionString = string.Empty;
