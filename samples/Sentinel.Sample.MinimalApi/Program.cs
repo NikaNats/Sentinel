@@ -1,5 +1,5 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer; // 🟢 დაემატა ავთენტიფიკაციის ნეიმსფეისი
-using Microsoft.IdentityModel.Tokens; // 🟢 დაემატა კრიპტოგრაფიული ტოკენების ნეიმსფეისი
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 using Microsoft.AspNetCore.RateLimiting;
 using Sentinel.Application.Auth;
@@ -14,18 +14,40 @@ using Sentinel.Sample.MinimalApi;
 using Sentinel.Sample.MinimalApi.Endpoints;
 using Sentinel.SdJwt;
 using System.Threading.RateLimiting;
+using System.Net;
+using Microsoft.AspNetCore.Builder;
 
 var builder = WebApplication.CreateBuilder(args);
 
+if (builder.Environment.IsDevelopment())
+{
+    builder.WebHost.ConfigureKestrel(options =>
+    {
+        options.ConfigureHttpsDefaults(httpsOptions =>
+        {
+            httpsOptions.ClientCertificateMode = Microsoft.AspNetCore.Server.Kestrel.Https.ClientCertificateMode.DelayCertificate;
+        });
+    });
+}
+
 builder.Services.AddOpenApi();
 
-// სერიალიზატორის პარამეტრები ლოკალური DTO-ებისთვის
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
+                               | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+
+    options.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.Parse("10.0.0.0"), 8));
+});
+
 builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, SampleJsonContext.Default);
 });
 
-// 🟢 ავთენტიფიკაციისა და JWT Bearer პროვაიდერის დინამიური კონფიგურაცია
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -44,7 +66,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             }
         };
 
-        // დინამიურად წავიკითხოთ პარამეტრები appsettings.json-დან
         var keycloakSection = builder.Configuration.GetSection("Keycloak");
         options.Authority = keycloakSection["Authority"];
         options.Audience = keycloakSection["Audience"];
@@ -55,7 +76,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuer = true,
             ValidateAudience = true,
             ValidateLifetime = true,
-            ClockSkew = TimeSpan.Zero // Zero clock skew FAPI 2.0 შესაბამისობისთვის
+            ClockSkew = TimeSpan.Zero
         };
     });
 
@@ -97,7 +118,6 @@ builder.Services.AddRateLimiter(options =>
             }));
 });
 
-// ფრეიმვორკის ASP.NET Core სერვისებისა და მიდლვერების დამოკიდებულებების რეგისტრაცია
 builder.Services.AddSentinelAspNetCore()
     .AddAll()
     .ConfigureAcrRanking();
@@ -127,13 +147,14 @@ else
         });
     });
 }
+
+app.UseForwardedHeaders();
 app.UseHttpsRedirection();
 app.UseRateLimiter();
 
-// უსაფრთხოების მილსადენი (Security Pipeline) ავტორიზაციის წინ
+app.UseAuthentication();
 app.UseSentinelSecurityPipeline();
 
-app.UseAuthentication();
 app.UseAuthorization();
 
 if (app.Environment.IsDevelopment())

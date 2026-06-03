@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Sentinel.AspNetCore.Middleware;
+using Sentinel.AspNetCore.Options;
 using Sentinel.AspNetCore.Stores;
 using Sentinel.Security.Abstractions.Idempotency;
 using Sentinel.Security.Abstractions.Options;
@@ -145,15 +146,13 @@ public sealed class SentinelAspNetCoreBuilder
     /// <returns>This builder for method chaining.</returns>
     public SentinelAspNetCoreBuilder AddMtlsBinding()
     {
-        // ✅ FIX: Thread-safe idempotent registration using Interlocked
         if (Interlocked.Exchange(ref _mtlsBindingAdded, 1) == 1)
         {
             return this;
         }
 
-        // NOTE: Do NOT register the middleware itself in DI (AddScoped<MtlsBindingMiddleware>).
-        // Middleware is instantiated by UseMiddleware<>() in the pipeline, not from DI.
-        // Dependencies of the middleware will be resolved from DI when UseMiddleware() is called.
+        _services.AddOptions<MtlsBindingOptions>()
+            .BindConfiguration(MtlsBindingOptions.SectionName);
 
         return this;
     }

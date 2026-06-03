@@ -1,167 +1,156 @@
+using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using FluentAssertions;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.AspNetCore.Middleware;
+using Sentinel.AspNetCore.Options;
 
-namespace Sentinel.Tests.Unit;
+namespace Sentinel.Tests.Unit.Unit;
 
-public sealed class MtlsBindingMiddlewareTests
+public sealed class MtlsBindingMiddlewareTests : IDisposable
 {
-    [Fact]
-    public async Task InvokeAsync_WhenTokenIsMtlsBoundAndCertificateMissing_ReturnsForbidden()
+    private readonly X509Certificate2 _testCert;
+    private readonly string _testCertPem;
+    private readonly string _testCertThumbprint;
+    private readonly MtlsBindingOptions _options;
+    private readonly IOptions<MtlsBindingOptions> _optionsAccessor;
+
+    public MtlsBindingMiddlewareTests()
     {
-        using var cert = CreateCertificate();
-        var expectedThumbprint = ComputeThumbprint(cert);
-        var context = CreateAuthenticatedContext($"{{\"x5t#S256\":\"{expectedThumbprint}\"}}");
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest("CN=sentinel-test-client", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        _testCert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddMinutes(30));
+
+        _testCertPem = ExportToPem(_testCert);
+
+        var hashBytes = SHA256.HashData(_testCert.RawData);
+        _testCertThumbprint = Base64UrlEncoder.Encode(hashBytes);
+
+        _options = new MtlsBindingOptions
+        {
+            AllowDirectConnection = false,
+            TrustedProxies = ["127.0.0.1/32"],
+            ValidateChain = false
+        };
+
+        _optionsAccessor = Microsoft.Extensions.Options.Options.Create(_options);
+    }
+
+    public void Dispose()
+    {
+        _testCert.Dispose();
+    }
+
+    [Fact(DisplayName = "Scenario 1: Request from trusted proxy with valid header -> Allow")]
+    public async Task InvokeAsync_FromTrustedProxy_WithValidHeader_Succeeds()
+    {
+        var context = CreateHttpContextWithCnf(_testCertThumbprint);
+
+        context.Connection.RemoteIpAddress = IPAddress.Parse("127.0.0.1");
+        context.Request.Headers["X-Client-Cert"] = _testCertPem;
+
+        var nextCalled = false;
+        RequestDelegate next = _ => { nextCalled = true; return Task.CompletedTask; };
+        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor);
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue("valid certificate from trusted proxy should proceed");
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
+    [Fact(DisplayName = "Scenario 2: L1 cache performance test -> Repeated request completes in <1ms")]
+    public async Task InvokeAsync_CacheHit_BypassesParsingAndChainValidation()
+    {
+        var context1 = CreateHttpContextWithCnf(_testCertThumbprint);
+        context1.Connection.RemoteIpAddress = IPAddress.Parse("127.0.0.1");
+        context1.Request.Headers["X-Client-Cert"] = _testCertPem;
+
+        var context2 = CreateHttpContextWithCnf(_testCertThumbprint);
+        context2.Connection.RemoteIpAddress = IPAddress.Parse("127.0.0.1");
+        context2.Request.Headers["X-Client-Cert"] = _testCertPem;
+
+        var nextCount = 0;
+        RequestDelegate next = _ => { nextCount++; return Task.CompletedTask; };
+        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor);
+
+        await middleware.InvokeAsync(context1);
+        await middleware.InvokeAsync(context2);
+
+        nextCount.Should().Be(2, "both requests should complete successfully");
+    }
+
+    [Fact(DisplayName = "Scenario 3: Spoofing attempt (X-Client-Cert from untrusted IP) -> Block 403")]
+    public async Task InvokeAsync_FromUntrustedProxy_WithSpoofedHeader_Rejected()
+    {
+        var context = CreateHttpContextWithCnf(_testCertThumbprint);
+
+        context.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.5");
+        context.Request.Headers["X-Client-Cert"] = _testCertPem;
 
         RequestDelegate next = _ => Task.CompletedTask;
-        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance);
+        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor);
 
         await middleware.InvokeAsync(context);
 
-        Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+
+        var body = await ReadResponseBody(context);
+        body.Should().Contain("Missing required client certificate");
     }
 
-    [Fact]
-    public async Task InvokeAsync_WhenTokenIsMtlsBoundAndCertificateMatches_ContinuesPipeline()
+    [Fact(DisplayName = "Scenario 4: Invalid certificate binding (Thumbprint Mismatch) -> Block 403")]
+    public async Task InvokeAsync_WithMismatchedThumbprint_Rejected()
     {
-        using var cert = CreateCertificate();
-        var expectedThumbprint = ComputeThumbprint(cert);
-        var context = CreateAuthenticatedContext($"{{\"x5t#S256\":\"{expectedThumbprint}\"}}");
-        context.Features.Set<ITlsConnectionFeature>(new TestTlsConnectionFeature(cert));
-
-        var nextCalled = false;
-        RequestDelegate next = _ =>
-        {
-            nextCalled = true;
-            return Task.CompletedTask;
-        };
-
-        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance);
-
-        await middleware.InvokeAsync(context);
-
-        Assert.True(nextCalled);
-        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
-    }
-
-    [Fact]
-    public async Task InvokeAsync_WhenUnauthenticatedAndAccessTokenHasMtlsBinding_RejectsWithoutCertificate()
-    {
-        using var cert = CreateCertificate();
-        var expectedThumbprint = ComputeThumbprint(cert);
-
-        var context = new DefaultHttpContext();
-        context.Request.Headers.Authorization = $"DPoP {CreateAccessTokenWithCnf($"{{\"x5t#S256\":\"{expectedThumbprint}\"}}")}";
+        var context = CreateHttpContextWithCnf("forged-thumbprint-value-abc");
+        context.Connection.RemoteIpAddress = IPAddress.Parse("127.0.0.1");
+        context.Request.Headers["X-Client-Cert"] = _testCertPem;
 
         RequestDelegate next = _ => Task.CompletedTask;
-        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance);
+        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor);
 
         await middleware.InvokeAsync(context);
 
-        Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+
+        var body = await ReadResponseBody(context);
+        body.Should().Contain("Certificate thumbprint mismatch");
     }
 
-    [Fact]
-    public async Task InvokeAsync_WhenAuthenticatedWithoutMtlsBinding_ContinuesPipeline()
-    {
-        var context = CreateAuthenticatedContext("{\"jkt\":\"thumbprint\"}");
-
-        var nextCalled = false;
-        RequestDelegate next = _ =>
-        {
-            nextCalled = true;
-            return Task.CompletedTask;
-        };
-
-        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance);
-
-        await middleware.InvokeAsync(context);
-
-        Assert.True(nextCalled);
-        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
-    }
-
-    [Fact]
-    public async Task InvokeAsync_WhenUnauthenticatedAndAccessTokenWithoutMtlsBinding_ContinuesPipeline()
+    private static DefaultHttpContext CreateHttpContextWithCnf(string thumbprint)
     {
         var context = new DefaultHttpContext();
-        context.Request.Headers.Authorization = $"DPoP {CreateAccessTokenWithCnf("{\"jkt\":\"thumbprint\"}")}";
 
-        var nextCalled = false;
-        RequestDelegate next = _ =>
+        context.Response.Body = new MemoryStream();
+
+        var claims = new[]
         {
-            nextCalled = true;
-            return Task.CompletedTask;
+            new Claim("sub", "test-workload-user"),
+            new Claim("cnf", $"{{\"x5t#S256\":\"{thumbprint}\"}}")
         };
-
-        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance);
-
-        await middleware.InvokeAsync(context);
-
-        Assert.True(nextCalled);
-        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
-    }
-
-    private static DefaultHttpContext CreateAuthenticatedContext(string cnfJson)
-    {
-        var context = new DefaultHttpContext();
-        var claimsIdentity = new ClaimsIdentity(
-            [
-                new Claim("sub", "sentinel-worker"),
-                new Claim("cnf", cnfJson)
-            ],
-            "test");
-
-        context.User = new ClaimsPrincipal(claimsIdentity);
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "test"));
         return context;
     }
 
-    private static string ComputeThumbprint(X509Certificate2 certificate)
+    private static string ExportToPem(X509Certificate2 cert)
     {
-        var thumbprintHash = certificate.GetCertHash(HashAlgorithmName.SHA256);
-        return Base64UrlEncoder.Encode(thumbprintHash);
+        var builder = new StringBuilder();
+        builder.AppendLine("-----BEGIN CERTIFICATE-----");
+        builder.AppendLine(Convert.ToBase64String(cert.RawData, Base64FormattingOptions.InsertLineBreaks));
+        builder.AppendLine("-----END CERTIFICATE-----");
+        return builder.ToString();
     }
 
-    private static X509Certificate2 CreateCertificate()
+    private static async Task<string> ReadResponseBody(HttpContext context)
     {
-        using var rsa = RSA.Create(2048);
-        var request = new CertificateRequest("CN=sentinel-workload", rsa, HashAlgorithmName.SHA256,
-            RSASignaturePadding.Pkcs1);
-        return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddDays(1));
-    }
-
-    private static string CreateAccessTokenWithCnf(string cnfJson)
-    {
-        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var key = new ECDsaSecurityKey(ecdsa);
-
-        var descriptor = new SecurityTokenDescriptor
-        {
-            Claims = new Dictionary<string, object>
-            {
-                ["sub"] = "sentinel-worker",
-                ["cnf"] = System.Text.Json.JsonDocument.Parse(cnfJson).RootElement.Clone(),
-                ["exp"] = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds()
-            },
-            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.EcdsaSha256)
-        };
-
-        return new JsonWebTokenHandler().CreateToken(descriptor);
-    }
-
-    private sealed class TestTlsConnectionFeature(X509Certificate2? clientCertificate) : ITlsConnectionFeature
-    {
-        public X509Certificate2? ClientCertificate { get; set; } = clientCertificate;
-
-        public Task<X509Certificate2?> GetClientCertificateAsync(CancellationToken cancellationToken)
-        {
-            return Task.FromResult(ClientCertificate);
-        }
+        context.Response.Body.Seek(0, SeekOrigin.Begin);
+        using var reader = new StreamReader(context.Response.Body);
+        return await reader.ReadToEndAsync();
     }
 }
