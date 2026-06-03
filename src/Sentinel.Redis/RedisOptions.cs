@@ -19,7 +19,6 @@ public sealed record RedisOptions
 
     /// <summary>
     ///     Redis password (basic auth).
-    ///     ✅ FIX: Prevent serialization of plaintext credentials in health checks or diagnostic dumps.
     /// </summary>
     [JsonIgnore]
     public string? Password { get; init; }
@@ -33,4 +32,9 @@ public sealed record RedisOptions
     ///     Prefix for Redis keys (e.g., "sentinel_dev:").
     /// </summary>
     public string KeyPrefix { get; init; } = "sentinel:";
+
+    /// <summary>
+    ///     In-memory local fallback setting for enterprise security.
+    /// </summary>
+    public bool EnableInMemoryFallback { get; init; }
 }

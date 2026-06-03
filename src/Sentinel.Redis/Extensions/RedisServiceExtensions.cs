@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Sentinel.Redis.Stores;
+using Sentinel.Redis.Validators;
 using Sentinel.Security.Abstractions.Idempotency;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Replay;
@@ -14,29 +16,33 @@ namespace Sentinel.Redis.Extensions;
 public static class RedisServiceExtensions
 {
     /// <summary>
-    ///     Adds Redis-backed security caches (JTI replay, DPoP nonce, session blacklist) to DI.
-    ///     Falls back to in-memory implementations if Redis is unavailable.
+    ///     Adds Redis-backed security caches to DI.
+    ///     Enforces strict Fail-Closed &amp; Fail-Fast validation on startup.
     /// </summary>
-    /// <param name="services">Service collection.</param>
-    /// <param name="configuration">Configuration section (e.g., "Sentinel:Redis").</param>
-    /// <returns>Service collection for chaining.</returns>
     public static IServiceCollection AddRedisSecurityCaches(
         this IServiceCollection services,
         IConfiguration? configuration = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        // ✅ FIX (AOT): Use Get<T>() instead of Bind() for Native AOT compatibility
-        // ConfigurationBinder.Bind uses reflection which requires unreferenced code in AOT scenarios
+        // Load options using your original, secure, AOT-compatible approach
         var options = configuration != null
             ? configuration.Get<RedisOptions>() ?? new RedisOptions()
             : new RedisOptions();
 
-        // ALWAYS register the Redis connection provider - it has fallback to localhost:6379
+        // Register raw options for store constructors
+        services.AddSingleton(options);
+
+        // IOptions bridge using OptionsWrapper (no external .Bind() package required)
+        services.AddSingleton<IOptions<RedisOptions>>(new OptionsWrapper<RedisOptions>(options));
+
+        // Register validator in DI
+        services.AddSingleton<IValidateOptions<RedisOptions>, RedisOptionsValidator>();
+
+        // Redis connection provider
         services.AddSingleton<IRedisConnectionProvider, RedisConnectionProvider>();
 
-        // Register cache implementations
-        services.AddSingleton(options);
+        // Stores
         services.AddSingleton<IJtiReplayCache, RedisJtiReplayCache>();
         services.AddSingleton<IDpopNonceStore, RedisDpopNonceStore>();
         services.AddSingleton<ISessionBlacklistCache, RedisSessionBlacklistCache>();
@@ -48,9 +54,6 @@ public static class RedisServiceExtensions
     /// <summary>
     ///     Adds Redis-backed security caches with explicit options.
     /// </summary>
-    /// <param name="services">Service collection.</param>
-    /// <param name="configureOptions">Options configuration delegate.</param>
-    /// <returns>Service collection for chaining.</returns>
     public static IServiceCollection AddRedisSecurityCaches(
         this IServiceCollection services,
         Action<RedisOptions> configureOptions)
@@ -61,11 +64,13 @@ public static class RedisServiceExtensions
         var options = new RedisOptions();
         configureOptions(options);
 
-        // Register asynchronous Redis connection provider
-        services.AddSingleton<IRedisConnectionProvider, RedisConnectionProvider>();
-
-        // Register cache implementations
+        // Registration
         services.AddSingleton(options);
+        services.AddSingleton<IOptions<RedisOptions>>(new OptionsWrapper<RedisOptions>(options));
+        services.AddSingleton<IValidateOptions<RedisOptions>, RedisOptionsValidator>();
+
+        // Provider and stores
+        services.AddSingleton<IRedisConnectionProvider, RedisConnectionProvider>();
         services.AddSingleton<IJtiReplayCache, RedisJtiReplayCache>();
         services.AddSingleton<IDpopNonceStore, RedisDpopNonceStore>();
         services.AddSingleton<ISessionBlacklistCache, RedisSessionBlacklistCache>();
