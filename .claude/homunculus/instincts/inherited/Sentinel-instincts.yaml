@@ -1,0 +1,717 @@
+# Instincts generated from https://github.com/NikaNats/Sentinel
+# Generated: 2026-06-02T20:57:32.438Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: Sentinel-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/NikaNats/Sentinel
+---
+
+# Sentinel Commit Length
+
+## Action
+
+Write moderate-length commit messages (~95 characters)
+
+## Evidence
+
+- Average commit message length: 95 chars
+- Based on 200 commits
+
+---
+id: Sentinel-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/NikaNats/Sentinel
+---
+
+# Sentinel Naming Files
+
+## Action
+
+Use PascalCase naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: PascalCase
+
+---
+id: Sentinel-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/NikaNats/Sentinel
+---
+
+# Sentinel Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: Sentinel-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/NikaNats/Sentinel
+---
+
+# Sentinel Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: Sentinel-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/NikaNats/Sentinel
+---
+
+# Sentinel Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: Sentinel-test-naming
+trigger: "when creating a test file"
+confidence: 0.85
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/NikaNats/Sentinel
+---
+
+# Sentinel Test Naming
+
+## Action
+
+Name test files using the pattern: *Tests.cs
+
+## Evidence
+
+- File pattern: *Tests.cs
+- Consistent across test files
+
+---
+id: Sentinel-workflow-feature-development
+trigger: "when implementing a new feature"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/NikaNats/Sentinel
+---
+
+# Sentinel Workflow Feature Development
+
+## Action
+
+Follow the feature-development workflow:
+1. Add feature implementation
+2. Add tests for feature
+3. Update documentation
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~16x per month
+- Files: **/*.test.*, **/api/**
+
+---
+id: Sentinel-workflow-test-driven-development
+trigger: "when adding new functionality"
+confidence: 0.65
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/NikaNats/Sentinel
+---
+
+# Sentinel Workflow Test Driven Development
+
+## Action
+
+Follow the test-driven-development workflow:
+1. Write failing test
+2. Implement code to pass test
+3. Refactor if needed
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~3x per month
+- Files: **/*.test.*, **/*.spec.*, src/**/*
+
+---
+id: Sentinel-workflow-refactoring
+trigger: "when refactoring code"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/NikaNats/Sentinel
+---
+
+# Sentinel Workflow Refactoring
+
+## Action
+
+Follow the refactoring workflow:
+1. Ensure tests pass before refactor
+2. Refactor code structure
+3. Verify tests still pass
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~9x per month
+- Files: src/**/*
+
+---
+id: Sentinel-workflow-dependency-upgrade-central-management
+trigger: "when doing dependency upgrade central management"
+confidence: 0.65
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/NikaNats/Sentinel
+---
+
+# Sentinel Workflow Dependency Upgrade Central Management
+
+## Action
+
+Follow the dependency-upgrade-central-management workflow:
+1. Edit Directory.Packages.props to bump package versions.
+2. Optionally remove extra blank lines or clean up formatting.
+3. Commit with a message referencing the updated packages.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~3x per month
+- Files: Directory.Packages.props
+
+---
+id: Sentinel-workflow-middleware-or-core-refactor-with-test-update
+trigger: "when doing middleware or core refactor with test update"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/NikaNats/Sentinel
+---
+
+# Sentinel Workflow Middleware Or Core Refactor With Test Update
+
+## Action
+
+Follow the middleware-or-core-refactor-with-test-update workflow:
+1. Refactor middleware/component (e.g., DpopValidationMiddleware, MtlsBindingMiddleware).
+2. Update dependency injection or method signatures as needed.
+3. Update related unit tests to match new signatures and behaviors.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: src/Sentinel.AspNetCore/Middleware/*.cs, tests/Sentinel.Tests.Unit/Unit/*MiddlewareTests.cs
+
+---
+id: Sentinel-workflow-feature-addition-or-enhancement-with-tests
+trigger: "when doing feature addition or enhancement with tests"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/NikaNats/Sentinel
+---
+
+# Sentinel Workflow Feature Addition Or Enhancement With Tests
+
+## Action
+
+Follow the feature-addition-or-enhancement-with-tests workflow:
+1. Implement or enhance feature in src/ or samples/ (e.g., new endpoints, services, or filters).
+2. Update or add related test files in tests/ (unit, integration, or session).
+3. Update project references or dependency injection as needed.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: samples/Sentinel.Sample.MinimalApi/Endpoints/*.cs, src/Sentinel.*/*, tests/Sentinel.Tests.*/*
+
+---
+id: Sentinel-workflow-test-infrastructure-upgrade-or-migration
+trigger: "when doing test infrastructure upgrade or migration"
+confidence: 0.55
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/NikaNats/Sentinel
+---
+
+# Sentinel Workflow Test Infrastructure Upgrade Or Migration
+
+## Action
+
+Follow the test-infrastructure-upgrade-or-migration workflow:
+1. Upgrade test framework packages (e.g., xUnit v2 to v3) in central props.
+2. Update test project files (.csproj) and test code to match new framework requirements.
+3. Refactor or delete obsolete files (e.g., ProgramMarker.cs, dummy Program.cs).
+4. Test and ensure all test projects build and run.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~1x per month
+- Files: Directory.Packages.props, tests/Sentinel.Tests.*/*.csproj, tests/Sentinel.Tests.*/*
+
+---
+id: Sentinel-workflow-documentation-major-rewrite-or-expansion
+trigger: "when doing documentation major rewrite or expansion"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/NikaNats/Sentinel
+---
+
+# Sentinel Workflow Documentation Major Rewrite Or Expansion
+
+## Action
+
+Follow the documentation-major-rewrite-or-expansion workflow:
+1. Edit or rewrite one or more docs/*.md files for clarity, structure, or compliance.
+2. Add headers, checklists, diagrams, or new sections as needed.
+3. Commit with a message summarizing improvements.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: docs/*.md, README.md
+
+---
+id: Sentinel-workflow-add-or-enhance-test-suite
+trigger: "when doing add or enhance test suite"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/NikaNats/Sentinel
+---
+
+# Sentinel Workflow Add Or Enhance Test Suite
+
+## Action
+
+Follow the add-or-enhance-test-suite workflow:
+1. Create new test project directory and .csproj (e.g., Sentinel.FuzzTests, Sentinel.Benchmarks).
+2. Add new test files (e.g., fuzzing harness, benchmarks, chaos tests).
+3. Update solution and props files to include the new project.
+4. Optionally add supporting scripts or corpus files.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: tests/Sentinel.FuzzTests/*, tests/Sentinel.Benchmarks/*, tests/Sentinel.Tests.Concurrency/*
+
+---
+id: sentinel-coding-file-naming-pascalcase
+trigger: "When creating or renaming a file in the codebase"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Coding File Naming Pascalcase
+
+## Action
+
+Name the file using PascalCase (e.g., MyClass.cs)
+
+## Evidence
+
+- Pattern in src/Sentinel.*/*.cs
+- Pattern in tests/Sentinel.Tests.*/*.cs
+
+---
+id: sentinel-coding-class-naming-pascalcase
+trigger: "When defining a class"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Coding Class Naming Pascalcase
+
+## Action
+
+Name the class using PascalCase
+
+## Evidence
+
+- Pattern in src/Sentinel.*/*.cs
+- Pattern in tests/Sentinel.Tests.*/*.cs
+
+---
+id: sentinel-coding-function-naming-camelcase
+trigger: "When defining a function or method"
+confidence: 0.85
+domain: code-style
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Coding Function Naming Camelcase
+
+## Action
+
+Name the function using camelCase
+
+## Evidence
+
+- Pattern in src/Sentinel.*/*.cs
+- Pattern in tests/Sentinel.Tests.*/*.cs
+
+---
+id: sentinel-coding-constant-naming-screaming-snake-case
+trigger: "When defining a constant"
+confidence: 0.85
+domain: code-style
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Coding Constant Naming Screaming Snake Case
+
+## Action
+
+Name the constant using SCREAMING_SNAKE_CASE
+
+## Evidence
+
+- Pattern in src/Sentinel.*/*.cs
+
+---
+id: sentinel-coding-imports-relative
+trigger: "When importing code from another file/module"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Coding Imports Relative
+
+## Action
+
+Use relative import paths
+
+## Evidence
+
+- Pattern in src/Sentinel.*/*.cs
+
+---
+id: sentinel-coding-exports-named
+trigger: "When exporting classes, functions, or constants"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Coding Exports Named
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern in src/Sentinel.*/*.cs
+
+---
+id: sentinel-testing-file-pattern
+trigger: "When adding a new test file"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Testing File Pattern
+
+## Action
+
+Name the file with the *Tests.cs suffix
+
+## Evidence
+
+- Pattern in tests/Sentinel.Tests.*/*Tests.cs
+
+---
+id: sentinel-testing-unit-tests-location
+trigger: "When writing unit tests"
+confidence: 0.85
+domain: testing
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Testing Unit Tests Location
+
+## Action
+
+Place unit tests in the tests/Sentinel.Tests.Unit/ directory
+
+## Evidence
+
+- Pattern in tests/Sentinel.Tests.Unit/*
+
+---
+id: sentinel-testing-test-first-tdd
+trigger: "When following test-driven development"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Testing Test First Tdd
+
+## Action
+
+Write a failing test before implementing the feature
+
+## Evidence
+
+- Seen in commit 'test: add tests for user validation'
+- Workflow: test-driven-development
+
+---
+id: sentinel-testing-update-tests-after-refactor
+trigger: "When refactoring middleware or core components"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Testing Update Tests After Refactor
+
+## Action
+
+Update corresponding unit tests to match new signatures or behaviors
+
+## Evidence
+
+- Workflow: middleware-or-core-refactor-with-test-update
+- Seen in commit 'Refactor unit tests for idempotency, session management, and token validation'
+
+---
+id: sentinel-git-commit-prefix-enforced
+trigger: "When making a commit"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Git Commit Prefix Enforced
+
+## Action
+
+Start the commit message with a prefix such as feat, fix, refactor, test, or build
+
+## Evidence
+
+- Pattern in commit messages: 'feat', 'fix', 'refactor', 'test', 'build'
+- Examples: 'fix(test): resolve WebApplicationFactory entry point errors under xUnit v3'
+
+---
+id: sentinel-git-commit-scope-optional
+trigger: "When making a commit"
+confidence: 0.8
+domain: git
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Git Commit Scope Optional
+
+## Action
+
+Optionally include a scope in parentheses after the prefix (e.g., fix(test): ...)
+
+## Evidence
+
+- Pattern in commit messages: 'fix(test): ...', 'refactor(sec/test): ...'
+
+---
+id: sentinel-git-commit-length-guideline
+trigger: "When writing a commit message"
+confidence: 0.8
+domain: git
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Git Commit Length Guideline
+
+## Action
+
+Keep the commit message concise but descriptive (average ~95 characters)
+
+## Evidence
+
+- Pattern in commit messages: averageLength 95
+
+---
+id: sentinel-workflow-dependency-upgrade-central-management
+trigger: "When dependencies need to be updated for bug fixes, security, or compatibility"
+confidence: 0.98
+domain: workflow
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Workflow Dependency Upgrade Central Management
+
+## Action
+
+Edit Directory.Packages.props to bump package versions and commit with a message referencing the updated packages
+
+## Evidence
+
+- Workflow: dependency-upgrade-central-management
+- Seen in commits: 'Update NuGet package versions to latest patches'
+
+---
+id: sentinel-workflow-middleware-refactor-with-test-update
+trigger: "When refactoring middleware or core components"
+confidence: 0.92
+domain: workflow
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Workflow Middleware Refactor With Test Update
+
+## Action
+
+Update middleware/component code and corresponding unit tests to match new signatures or behaviors
+
+## Evidence
+
+- Workflow: middleware-or-core-refactor-with-test-update
+- Seen in commits: 'Refactor middleware/component (e.g., DpopValidationMiddleware, MtlsBindingMiddleware)'
+
+---
+id: sentinel-workflow-feature-addition-or-enhancement-with-tests
+trigger: "When adding or enhancing a feature"
+confidence: 0.88
+domain: workflow
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Workflow Feature Addition Or Enhancement With Tests
+
+## Action
+
+Implement or enhance the feature and add/update related unit/integration tests
+
+## Evidence
+
+- Workflow: feature-addition-or-enhancement-with-tests
+- Seen in commits: 'feat: Add Keycloak federation services and idempotency support'
+
+---
+id: sentinel-workflow-test-infrastructure-upgrade-or-migration
+trigger: "When upgrading or migrating test infrastructure"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Workflow Test Infrastructure Upgrade Or Migration
+
+## Action
+
+Upgrade test framework packages, update test projects, refactor obsolete files, and ensure all tests build and run
+
+## Evidence
+
+- Workflow: test-infrastructure-upgrade-or-migration
+- Seen in commits: 'fix(test): resolve WebApplicationFactory entry point errors under xUnit v3'
+
+---
+id: sentinel-workflow-documentation-major-rewrite-or-expansion
+trigger: "When documentation needs clarity, compliance, or technical depth"
+confidence: 0.95
+domain: workflow
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Workflow Documentation Major Rewrite Or Expansion
+
+## Action
+
+Edit or rewrite docs/*.md or README.md, adding structure, sections, diagrams as needed
+
+## Evidence
+
+- Workflow: documentation-major-rewrite-or-expansion
+- Seen in commits: 'Edit or rewrite one or more docs/*.md files for clarity, structure, or compliance.'
+
+---
+id: sentinel-workflow-add-or-enhance-test-suite
+trigger: "When introducing new types of automated testing or improving test coverage"
+confidence: 0.93
+domain: workflow
+source: repo-analysis
+source_repo: NikaNats/Sentinel
+---
+
+# Sentinel Workflow Add Or Enhance Test Suite
+
+## Action
+
+Create new test project directory, add test files, update solution and props files, and optionally add supporting scripts
+
+## Evidence
+
+- Workflow: add-or-enhance-test-suite
+- Seen in commits: 'Create new test project directory and .csproj (e.g., Sentinel.FuzzTests, Sentinel.Benchmarks)'
+
