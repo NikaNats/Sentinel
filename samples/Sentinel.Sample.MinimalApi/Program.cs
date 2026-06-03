@@ -39,8 +39,17 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 
     options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
+    options.ForwardLimit = 2;
+    var trustedProxies = builder.Configuration.GetSection("Sentinel:Mtls:TrustedProxies").Get<string[]>()
+                         ?? ["127.0.0.1/32", "::1/128"];
 
-    options.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.Parse("10.0.0.0"), 8));
+    foreach (var cidr in trustedProxies)
+    {
+        if (IPNetwork.TryParse(cidr, out var network))
+        {
+            options.KnownIPNetworks.Add(network);
+        }
+    }
 });
 
 builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
@@ -153,6 +162,7 @@ app.UseHttpsRedirection();
 app.UseRateLimiter();
 
 app.UseAuthentication();
+
 app.UseSentinelSecurityPipeline();
 
 app.UseAuthorization();

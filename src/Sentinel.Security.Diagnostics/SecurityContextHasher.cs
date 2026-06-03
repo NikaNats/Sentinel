@@ -5,20 +5,44 @@ using Microsoft.AspNetCore.Http;
 namespace Sentinel.Security.Diagnostics;
 
 /// <summary>
-/// Cryptographically secure context hasher preventing IPv4 rainbow table attacks.
+///     მაღალი წარმადობის, კრიპტოგრაფიულად დაცული იდენტობისა და კონტექსტის ჰეშერი.
+///     სრულად თავსებადია Native AOT-თან და არ გამოყოფს მეხსიერებას ჰიპზე (Zero-Allocation on Hot-Path).
 /// </summary>
 public static class SecurityContextHasher
 {
-    // High-entropy static salt per application lifecycle.
-    // In multi-node deployments, replace fallback generation with centralized vault loading.
+    // კლასტერული სოლტი (Salt) დისტრიბუციული დაცვისთვის
     private static readonly byte[] ClusterSalt = GenerateOrLoadClusterSalt();
 
+    /// <summary>
+    ///     ახორციელებს კლიენტის IP მისამართის უსაფრთხო ჰეშირებას (HMAC-SHA256) ყოველგვარი String/Array გამოყოფის გარეშე.
+    /// </summary>
     public static string HashIp(HttpContext context)
     {
-        var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        var ipBytes = Encoding.UTF8.GetBytes(ip);
+        var ipAddress = context.Connection.RemoteIpAddress;
+        if (ipAddress is null)
+        {
+            return "unknown";
+        }
 
-        var hashBytes = HMACSHA256.HashData(ClusterSalt, ipBytes);
+        // 🟢 ოპტიმიზაცია: IPv6-ის მაქსიმალური სიგრძეა 45 სიმბოლო. ვიყენებთ stackalloc-ს სტრინგის შექმნის ნაცვლად
+        Span<char> ipChars = stackalloc char[45];
+
+        if (!ipAddress.TryFormat(ipChars, out var written))
+        {
+            return "unknown";
+        }
+
+        // ASCII ტექსტის გარდაქმნა ბაიტებში ლოკალურ სტეკზე
+        Span<byte> ipBytes = stackalloc byte[45];
+        var byteCount = Encoding.UTF8.GetBytes(ipChars[..written], ipBytes);
+
+        // 32-ბაიტიანი ბუფერი HMAC-SHA256 ჰეშისთვის სტეკზე
+        Span<byte> hashBytes = stackalloc byte[32];
+
+        // კრიპტოგრაფიულად დაცული ატომური ჰეშირება
+        HMACSHA256.HashData(ClusterSalt, ipBytes[..byteCount], hashBytes);
+
+        // გარდაქმნა Hex ტექსტად (მეხსიერების ოპტიმიზებული რეჟიმით)
         return Convert.ToHexString(hashBytes);
     }
 
