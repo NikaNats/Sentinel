@@ -24,6 +24,14 @@ ENV ASPNETCORE_URLS=http://+:8080
 ENV DOTNET_EnableDiagnostics=0
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 
+USER root
+
+COPY infra/certs/ca.crt /usr/local/share/ca-certificates/sentinel-ca.crt
+
+RUN apt-get update && apt-get install -y ca-certificates \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN addgroup --system sentinel \
     && adduser --system --ingroup sentinel sentinel
 

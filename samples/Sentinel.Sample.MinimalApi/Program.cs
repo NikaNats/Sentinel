@@ -3,19 +3,26 @@ using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 using Microsoft.AspNetCore.RateLimiting;
 using Sentinel.Application.Auth;
+using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.AspNetCore.Endpoints;
 using Sentinel.AspNetCore.Extensions;
 using Sentinel.Application.DependencyInjection;
 using Sentinel.Infrastructure.DependencyInjection;
 using Sentinel.Keycloak.Extensions;
+using Sentinel.Keycloak.Services;
 using Sentinel.Redis.Extensions;
 using Sentinel.Sample.MinimalApi;
 using Sentinel.Sample.MinimalApi.Endpoints;
 using Sentinel.SdJwt;
 using System.Threading.RateLimiting;
 using System.Net;
+using System.Net.Http;
+using System.Net.Security;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Builder;
+using Sentinel.Security.Abstractions.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -57,6 +64,16 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, SampleJsonContext.Default);
 });
 
+var tls13HandlerFactory = () => new SocketsHttpHandler
+{
+    SslOptions = new SslClientAuthenticationOptions
+    {
+        EnabledSslProtocols = SslProtocols.Tls13,
+        CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
+        RemoteCertificateValidationCallback = null
+    }
+};
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -78,7 +95,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         var keycloakSection = builder.Configuration.GetSection("Keycloak");
         options.Authority = keycloakSection["Authority"];
         options.Audience = keycloakSection["Audience"];
-        options.RequireHttpsMetadata = keycloakSection.GetValue<bool>("RequireHttpsMetadata");
+        options.RequireHttpsMetadata = true;
+        options.Backchannel = new HttpClient(tls13HandlerFactory());
 
         options.TokenValidationParameters = new TokenValidationParameters
         {
@@ -95,6 +113,26 @@ builder.Services
     .AddSsfProcessing(builder.Configuration)
     .AddKeycloakIntegration(builder.Configuration.GetSection("Sentinel:Keycloak"))
     .AddInfrastructureLayer(builder.Configuration);
+
+_ = builder.Services.AddHttpClient("keycloak-admin")
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+
+_ = builder.Services.AddHttpClient(typeof(IUmaPermissionService).FullName!)
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(ITokenRefreshService).FullName!)
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(ITokenExchangeService).FullName!)
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IIdentityRegistry).FullName!)
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IUserProfileManager).FullName!)
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IIdentityFederationProvider).FullName!)
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IAuthRevocationService).FullName!)
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(KeycloakConfigurationManager).FullName!)
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
 
 builder.Services.AddSingleton(new SdJwtVerificationOptions
 {

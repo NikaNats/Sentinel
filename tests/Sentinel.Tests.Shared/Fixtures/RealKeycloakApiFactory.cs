@@ -1,6 +1,11 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Net.Sockets;
+using System.Net.Security;
+using System.Security.Authentication;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
@@ -33,21 +38,41 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
     public const string ClientId = "sentinel-api";
     public const string ClientSecret = "sentinel-test-secret";
 
+    private const ushort KeycloakHttpsPort = 8443;
+    private const string KeycloakCertContainerPath = "/etc/x509/https/tls.crt";
+    private const string KeycloakKeyContainerPath = "/etc/x509/https/tls.key";
+
     private const string AdminUsername = "admin";
     private const string AdminPassword = "admin";
     private readonly KeycloakContainer keycloakContainer;
 
     private readonly RedisContainer redisContainer;
     private string redisConnectionString = string.Empty;
+    private readonly string keycloakCertDirectory;
+    private readonly string keycloakCertPath;
+    private readonly string keycloakKeyPath;
+    private readonly X509Certificate2 keycloakCertificate;
+    private string keycloakBaseAddress = string.Empty;
 
     public RealKeycloakApiFactory()
     {
         redisContainer = new RedisBuilder("redis:7.4-alpine")
             .WithPortBinding(6379, true)
             .Build();
+        keycloakCertDirectory = Path.Combine(Path.GetTempPath(), $"sentinel-keycloak-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(keycloakCertDirectory);
+        (keycloakCertPath, keycloakKeyPath, keycloakCertificate) = GenerateKeycloakCertificate(keycloakCertDirectory);
         keycloakContainer = new KeycloakBuilder("quay.io/keycloak/keycloak:26.1")
             .WithUsername(AdminUsername)
             .WithPassword(AdminPassword)
+            .WithEnvironment("KC_HTTP_ENABLED", "false")
+            .WithEnvironment("KC_HTTPS_PORT", KeycloakHttpsPort.ToString())
+            .WithEnvironment("KC_HTTPS_PROTOCOLS", "TLSv1.3")
+            .WithEnvironment("KC_HTTPS_CERTIFICATE_FILE", KeycloakCertContainerPath)
+            .WithEnvironment("KC_HTTPS_CERTIFICATE_KEY_FILE", KeycloakKeyContainerPath)
+            .WithBindMount(keycloakCertPath, KeycloakCertContainerPath)
+            .WithBindMount(keycloakKeyPath, KeycloakKeyContainerPath)
+            .WithPortBinding(KeycloakHttpsPort, true)
             .Build();
     }
 
@@ -55,8 +80,12 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
     {
         get
         {
-            var baseAddress = keycloakContainer.GetBaseAddress().TrimEnd('/');
-            return $"{baseAddress}/realms/{RealmName}";
+            if (string.IsNullOrWhiteSpace(keycloakBaseAddress))
+            {
+                throw new InvalidOperationException("Keycloak base address is not available before container startup.");
+            }
+
+            return $"{keycloakBaseAddress}/realms/{RealmName}";
         }
     }
 
@@ -70,7 +99,8 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
             $"localhost:{redisHostPort},abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000";
         await WaitForRedisReadinessAsync("127.0.0.1", redisHostPort, TimeSpan.FromSeconds(30));
         await keycloakContainer.StartAsync();
-        var masterAuthority = $"{keycloakContainer.GetBaseAddress().TrimEnd('/')}/realms/master";
+        keycloakBaseAddress = BuildKeycloakBaseAddress();
+        var masterAuthority = $"{keycloakBaseAddress}/realms/master";
         await WaitForDiscoveryDocumentAsync(masterAuthority);
         await EnsureRealmProvisionedAsync();
         await WaitForDiscoveryDocumentAsync(Authority);
@@ -88,6 +118,7 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
     {
         await keycloakContainer.DisposeAsync();
         await redisContainer.DisposeAsync();
+        keycloakCertificate.Dispose();
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -98,7 +129,7 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
             {
                 ["Keycloak:Authority"] = Authority,
                 ["Keycloak:Audience"] = ClientId,
-                ["Keycloak:RequireHttpsMetadata"] = "false",
+                ["Keycloak:RequireHttpsMetadata"] = "true",
                 ["Sentinel:Redis:EndPoint"] = redisConnectionString,
                 ["Sentinel:Redis:EnableInMemoryFallback"] = "true",
                 ["FeatureFlags:Auth:DpopFlow"] = "true"
@@ -165,9 +196,10 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
             // Real-Keycloak tests should validate JWTs against live Keycloak signing keys.
             services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
             {
-                options.RequireHttpsMetadata = false;
+                options.RequireHttpsMetadata = true;
                 options.Authority = Authority;
                 options.MetadataAddress = $"{Authority}/.well-known/openid-configuration";
+                options.Backchannel = CreateKeycloakHttpClient();
 
                 options.TokenValidationParameters.IssuerSigningKey = null;
                 options.TokenValidationParameters.IssuerSigningKeys = null;
@@ -177,9 +209,82 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
         });
     }
 
-    private static async Task WaitForDiscoveryDocumentAsync(string authority)
+    public HttpClient CreateKeycloakHttpClient()
     {
-        using var http = new HttpClient();
+        return CreateKeycloakHttpClient(SslProtocols.Tls13);
+    }
+
+    public HttpClient CreateKeycloakHttpClient(SslProtocols protocols)
+    {
+#pragma warning disable CA2000
+        return new HttpClient(
+            new HttpClientHandler
+            {
+                SslProtocols = protocols,
+                ServerCertificateCustomValidationCallback = ValidateKeycloakCertificate
+            },
+            disposeHandler: true);
+#pragma warning restore CA2000
+    }
+
+    private bool ValidateKeycloakCertificate(HttpRequestMessage _, X509Certificate2? certificate, X509Chain? __,
+        SslPolicyErrors ___)
+    {
+        if (certificate is null)
+        {
+            return false;
+        }
+
+        return string.Equals(certificate.Thumbprint, keycloakCertificate.Thumbprint, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string BuildKeycloakBaseAddress()
+    {
+        var baseAddress = new Uri(keycloakContainer.GetBaseAddress());
+        var port = keycloakContainer.GetMappedPublicPort(KeycloakHttpsPort);
+        return new UriBuilder(Uri.UriSchemeHttps, baseAddress.Host, port).ToString().TrimEnd('/');
+    }
+
+    private static (string CertPath, string KeyPath, X509Certificate2 Certificate) GenerateKeycloakCertificate(
+        string directory)
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=localhost",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, false));
+        request.CertificateExtensions.Add(new X509KeyUsageExtension(
+            X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment,
+            false));
+        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
+            new OidCollection { new("1.3.6.1.5.5.7.3.1") }, false));
+
+        var sanBuilder = new SubjectAlternativeNameBuilder();
+        sanBuilder.AddDnsName("localhost");
+        sanBuilder.AddDnsName("keycloak");
+        sanBuilder.AddIpAddress(IPAddress.Loopback);
+        request.CertificateExtensions.Add(sanBuilder.Build());
+
+        using var certificate = request.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(5));
+
+        var certPath = Path.Combine(directory, "keycloak.crt");
+        var keyPath = Path.Combine(directory, "keycloak.key");
+
+        File.WriteAllText(certPath, certificate.ExportCertificatePem());
+        File.WriteAllText(keyPath, rsa.ExportPkcs8PrivateKeyPem());
+
+        var keycloakCertificate = new X509Certificate2(certificate.Export(X509ContentType.Cert));
+        return (certPath, keyPath, keycloakCertificate);
+    }
+
+    private async Task WaitForDiscoveryDocumentAsync(string authority)
+    {
+        using var http = CreateKeycloakHttpClient();
         var metadataEndpoint = $"{authority}/.well-known/openid-configuration";
 
         for (var attempt = 0; attempt < 20; attempt++)
@@ -207,17 +312,17 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
 
     private async Task EnsureRealmProvisionedAsync()
     {
-        using var http = new HttpClient();
+        using var http = CreateKeycloakHttpClient();
         var adminToken = await GetAdminAccessTokenAsync(http);
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
 
-        var realmResponse = await http.GetAsync($"{keycloakContainer.GetBaseAddress()}admin/realms/{RealmName}");
+        var realmResponse = await http.GetAsync($"{keycloakBaseAddress}/admin/realms/{RealmName}");
         if (realmResponse.IsSuccessStatusCode)
         {
             return;
         }
 
-        var createRealm = await http.PostAsJsonAsync($"{keycloakContainer.GetBaseAddress()}admin/realms", new
+        var createRealm = await http.PostAsJsonAsync($"{keycloakBaseAddress}/admin/realms", new
         {
             realm = RealmName,
             enabled = true,
@@ -226,7 +331,7 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
         createRealm.EnsureSuccessStatusCode();
 
         var createClient = await http.PostAsJsonAsync(
-            $"{keycloakContainer.GetBaseAddress()}admin/realms/{RealmName}/clients", new
+            $"{keycloakBaseAddress}/admin/realms/{RealmName}/clients", new
             {
                 clientId = ClientId,
                 protocol = "openid-connect",
@@ -279,7 +384,7 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
 
     private async Task<string> GetAdminAccessTokenAsync(HttpClient http)
     {
-        var tokenEndpoint = $"{keycloakContainer.GetBaseAddress()}realms/master/protocol/openid-connect/token";
+        var tokenEndpoint = $"{keycloakBaseAddress}/realms/master/protocol/openid-connect/token";
         using var request = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint)
         {
             Content = new FormUrlEncodedContent(

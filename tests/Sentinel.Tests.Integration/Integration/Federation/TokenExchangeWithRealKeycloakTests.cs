@@ -49,7 +49,7 @@ public sealed class TokenExchangeWithRealKeycloakTests(RealKeycloakApiFactory fa
         var realmName = authority.Split('/', StringSplitOptions.RemoveEmptyEntries).Last();
         var host = authority[..authority.IndexOf("/realms/", StringComparison.OrdinalIgnoreCase)];
 
-        using var adminClient = new HttpClient();
+        using var adminClient = factory.CreateKeycloakHttpClient();
         adminClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
 
         var payload = new
@@ -92,7 +92,7 @@ public sealed class TokenExchangeWithRealKeycloakTests(RealKeycloakApiFactory fa
         var host = authority[..authority.IndexOf("/realms/", StringComparison.OrdinalIgnoreCase)];
         var tokenEndpoint = $"{host}/realms/master/protocol/openid-connect/token";
 
-        using var client = new HttpClient();
+        using var client = factory.CreateKeycloakHttpClient();
         using var request = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint)
         {
             Content = new FormUrlEncodedContent(

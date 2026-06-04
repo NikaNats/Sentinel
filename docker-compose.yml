@@ -27,16 +27,22 @@ services:
       KC_FEATURES: dpop,par,fips:preview
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
+      KC_HTTP_ENABLED: "false"
+      KC_HTTPS_PORT: 8443
+      KC_HTTPS_PROTOCOLS: TLSv1.3
+      KC_HTTPS_CERTIFICATE_FILE: /etc/x509/https/tls.crt
+      KC_HTTPS_CERTIFICATE_KEY_FILE: /etc/x509/https/tls.key
     ports:
       - "8443:8443"
-      - "8080:8080"
     volumes:
       - ./infra/keycloak/realms:/opt/keycloak/data/import:ro
+      - ./infra/certs/keycloak.crt:/etc/x509/https/tls.crt:ro
+      - ./infra/certs/keycloak.key:/etc/x509/https/tls.key:ro
     command:
       - start-dev
       - --import-realm
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/health/ready"]
+      test: ["CMD-SHELL", "curl -k -s -f https://localhost:8443/health/ready || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -68,12 +74,12 @@ services:
     ports:
       - "5260:8080"
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Redis: redis:6379
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=sentinel_dev;Username=postgres;Password=postgres
-      Keycloak__Authority: http://keycloak:8080/realms/sentinel
+      Keycloak__Authority: https://keycloak:8443/realms/sentinel
       Keycloak__Audience: sentinel-api
-      Keycloak__RequireHttpsMetadata: "false"
+      Keycloak__RequireHttpsMetadata: "true"
 
 volumes:
   sentinel-postgres-data:

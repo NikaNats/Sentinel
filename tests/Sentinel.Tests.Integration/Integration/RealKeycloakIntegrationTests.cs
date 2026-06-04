@@ -12,7 +12,7 @@ public sealed class RealKeycloakIntegrationTests(RealKeycloakApiFactory factory)
     [Fact]
     public async Task LiveKeycloakToken_WithDpopProof_IssuesBoundAccessToken()
     {
-        using var keycloakHttp = new HttpClient();
+        using var keycloakHttp = factory.CreateKeycloakHttpClient();
         var tokenClient = new KeycloakDpopTokenClient(factory.TokenEndpoint);
 
         var token = await tokenClient.RequestClientCredentialsGrantAsync(
@@ -31,7 +31,7 @@ public sealed class RealKeycloakIntegrationTests(RealKeycloakApiFactory factory)
     [Fact]
     public async Task LiveKeycloakToken_WithoutValidBinding_IsRejectedFailClosed()
     {
-        using var keycloakHttp = new HttpClient();
+        using var keycloakHttp = factory.CreateKeycloakHttpClient();
         var tokenClient = new KeycloakDpopTokenClient(factory.TokenEndpoint);
 
         var token = await tokenClient.RequestClientCredentialsGrantAsync(
@@ -50,7 +50,7 @@ public sealed class RealKeycloakIntegrationTests(RealKeycloakApiFactory factory)
     [Fact]
     public async Task LiveKeycloakToken_WithDifferentDpopKey_IsRejected()
     {
-        using var keycloakHttp = new HttpClient();
+        using var keycloakHttp = factory.CreateKeycloakHttpClient();
         var issuerKeyClient = new KeycloakDpopTokenClient(factory.TokenEndpoint);
         var attackerKeyClient = new KeycloakDpopTokenClient(factory.TokenEndpoint);
 
@@ -71,7 +71,7 @@ public sealed class RealKeycloakIntegrationTests(RealKeycloakApiFactory factory)
     [Fact]
     public async Task LiveKeycloakBearerDowngrade_IsRejected()
     {
-        using var keycloakHttp = new HttpClient();
+        using var keycloakHttp = factory.CreateKeycloakHttpClient();
         var tokenClient = new KeycloakDpopTokenClient(factory.TokenEndpoint);
 
         var token = await tokenClient.RequestClientCredentialsGrantAsync(

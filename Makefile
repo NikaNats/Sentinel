@@ -1,4 +1,4 @@
-.PHONY: build test mutation lint sec-scan up down all
+.PHONY: build test mutation lint sec-scan up down infra-audit all
 
 build:
 	dotnet restore Sentinel.slnx --locked-mode
@@ -25,4 +25,9 @@ up:
 down:
 	docker-compose down -v
 
-all: build lint test sec-scan
+infra-audit: up
+	@echo "Waiting for containers to become healthy..."
+	sleep 15
+	bash tests/infrastructure-tls-audit.sh
+
+all: build lint test sec-scan infra-audit
