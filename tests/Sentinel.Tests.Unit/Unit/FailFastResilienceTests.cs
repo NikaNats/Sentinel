@@ -48,8 +48,8 @@ public sealed class FailFastResilienceTests
                          && ex.Message.Contains("InMemoryIdempotencyStore"));
     }
 
-    [Fact(DisplayName = "🔴 Fail-Fast 2: EnableInMemoryFallback = true in production blocks startup")]
-    public void StartupFilter_WhenRedisFallbackEnabledInProduction_MustThrowInvalidOperationException()
+    [Fact(DisplayName = "🔴 Fail-Fast 2: Missing Redis endpoint in production blocks startup")]
+    public void StartupFilter_WhenRedisEndpointMissingInProduction_MustThrowInvalidOperationException()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -58,12 +58,12 @@ public sealed class FailFastResilienceTests
         envMock.SetupGet(x => x.EnvironmentName).Returns(Environments.Production);
         services.AddSingleton(envMock.Object);
         services.AddSingleton<IHostEnvironment>(envMock.Object);
+        services.AddLogging();
 
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["EndPoint"] = "localhost:6379",
-                ["EnableInMemoryFallback"] = "true"
+                ["KeyPrefix"] = "sentinel_test:"
             })
             .Build();
 
@@ -80,14 +80,13 @@ public sealed class FailFastResilienceTests
             action(appBuilderMock.Object);
         };
 
-        // Assert: startup must be blocked by options validator
+        // Assert: startup must be blocked by strict Redis options validation
         act.Should().Throw<Exception>()
-            .Where(ex => ex.Message.Contains("CRITICAL SECURITY VIOLATION")
-                         && ex.Message.Contains("EnableInMemoryFallback"));
+            .Where(ex => ex.Message.Contains("Redis Connection EndPoint must be configured."));
     }
 
-    [Fact(DisplayName = "✓ Sandbox: Unsafe fallbacks are allowed in development environment")]
-    public void StartupFilter_InDevelopmentEnvironment_DoesNotThrow()
+    [Fact(DisplayName = "✓ Sandbox: Strict Redis registration is allowed in development environment")]
+    public void StartupFilter_WithStrictRedisRegistrationInDevelopmentEnvironment_DoesNotThrow()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -96,12 +95,13 @@ public sealed class FailFastResilienceTests
         envMock.SetupGet(x => x.EnvironmentName).Returns(Environments.Development);
         services.AddSingleton(envMock.Object);
         services.AddSingleton<IHostEnvironment>(envMock.Object);
+        services.AddLogging();
 
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["EndPoint"] = "localhost:6379",
-                ["EnableInMemoryFallback"] = "true"
+                ["KeyPrefix"] = "sentinel_test:"
             })
             .Build();
 

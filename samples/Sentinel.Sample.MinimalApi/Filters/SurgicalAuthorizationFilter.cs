@@ -1,54 +1,30 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Sentinel.Application.Auth.Rar;
+using Sentinel.RAR;
+using Sentinel.Sample.MinimalApi.Endpoints;
 
 namespace Sentinel.Sample.MinimalApi.Filters;
 
 /// <summary>
-/// Domain-Specific Rich Authorization Request (RAR) Validation Filter
-///
-/// RFC 9396 Rich Authorization Requests enable cryptographically signed delegation
-/// of specific transaction details. This filter compares the HTTP request body
-/// against the signed authorization_details claims in the JWT token.
-///
-/// Use case: Financial transfers where the token says "transfer up to $50,000"
-/// but the request body says "$100,000" → DENIED. Mismatches are caught before
-/// the handler executes, preventing unauthorized transactions.
+/// Domain-specific Rich Authorization Request validation filter for financial transfers.
 /// </summary>
-public sealed class SurgicalAuthorizationFilter(ILogger<SurgicalAuthorizationFilter> logger) : IEndpointFilter
+public sealed class SurgicalAuthorizationFilter(
+    IRarValidator rarValidator,
+    ILogger<SurgicalAuthorizationFilter> logger) : IEndpointFilter
 {
     private const string FinanceTransferType = "urn:sentinel:finance:transfer";
-    private const decimal AmountEpsilon = 0.0001m;
 
-    /// <summary>
-    /// Invoked before the endpoint handler.
-    /// Extracts signed authorization_details from token and validates request body
-    /// matches the bounds.
-    /// </summary>
     public async ValueTask<object?> InvokeAsync(
         EndpointFilterInvocationContext context,
         EndpointFilterDelegate next)
     {
-        // Step 1: Extract RAR claims from JWT
-        var details = context.HttpContext.User.GetAuthorizationDetails();
-        var transferDetail = details.FirstOrDefault(x =>
-            string.Equals(x.Type, FinanceTransferType, StringComparison.Ordinal));
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(next);
 
-        if (transferDetail is null)
-        {
-            return TypedResults.Problem(
-                type: "/errors/missing-authorization-detail",
-                title: "Surgical Authorization Required",
-                detail: $"This endpoint requires a '{FinanceTransferType}' authorization_detail signed in the token.",
-                statusCode: StatusCodes.Status403Forbidden);
-        }
-
-        // Step 2: Extract TransferRequest from endpoint arguments
-        var request = context.Arguments
-            .OfType<Endpoints.TransferRequest>()
-            .FirstOrDefault();
-
-        if (request is null)
+        if (!TryGetTransferRequest(context, out var request))
         {
             return TypedResults.Problem(
                 type: "/errors/invalid-request",
@@ -57,50 +33,41 @@ public sealed class SurgicalAuthorizationFilter(ILogger<SurgicalAuthorizationFil
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
-        // Step 3: Validate request body matches signed bounds
-        // All three fields must match exactly:
-        // - Amount (with precision-safe decimal comparison)
-        // - Currency (case-insensitive)
-        // - TransactionId (case-sensitive UUID)
+        var details = context.HttpContext.User.GetAuthorizationDetails();
+        var payloadJson = JsonSerializer.Serialize(request, SampleJsonContext.Default.TransferRequest);
+        var validationResult = rarValidator.ValidateByType(details, FinanceTransferType, payloadJson);
 
-        if (transferDetail.Amount == null)
+        if (validationResult.IsValid)
         {
-            return TypedResults.Problem(
-                type: "/errors/authorization-detail-malformed",
-                title: "Missing Amount in Authorization Detail",
-                detail: "The authorization_details claim does not contain an 'amount' field.",
-                statusCode: StatusCodes.Status403Forbidden);
+            return await next(context);
         }
 
-        var amountMatches = Math.Abs(transferDetail.Amount.Value - request.Amount) < AmountEpsilon;
-        var currencyMatches = string.Equals(
-            transferDetail.Currency,
-            request.Currency,
-            StringComparison.OrdinalIgnoreCase);
-        var transactionIdMatches = string.Equals(
-            transferDetail.TransactionId,
-            request.TransactionId,
-            StringComparison.Ordinal);
+        logger.LogWarning(
+            "RAR_VALIDATION_FAILED: Type {AuthorizationDetailType}. Error: {Error}",
+            FinanceTransferType,
+            validationResult.Error);
 
-        if (!amountMatches || !currencyMatches || !transactionIdMatches)
+        return TypedResults.Problem(
+            type: "/errors/authorization-bounds-exceeded",
+            title: "Authorization Bounds Exceeded",
+            detail: validationResult.Error ?? "The request payload violates signed authorization constraints.",
+            statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    private static bool TryGetTransferRequest(
+        EndpointFilterInvocationContext context,
+        [NotNullWhen(true)] out TransferRequest? request)
+    {
+        for (var i = 0; i < context.Arguments.Count; i++)
         {
-            logger.LogWarning(
-                "AUTHORIZATION_BOUNDS_EXCEEDED: Token bound to Txn: {ExpectedTxn}, Amount: {ExpectedAmount} {ExpectedCurrency}. Request attempted Txn: {ActualTxn}, Amount: {ActualAmount} {ActualCurrency}.",
-                transferDetail.TransactionId,
-                transferDetail.Amount,
-                transferDetail.Currency,
-                request.TransactionId,
-                request.Amount,
-                request.Currency);
-
-            return TypedResults.Problem(
-                type: "/errors/authorization-bounds-exceeded",
-                title: "Authorization Bounds Exceeded",
-                detail: "The request payload violates the cryptographic authorization constraints signed into the token.",
-                statusCode: StatusCodes.Status403Forbidden);
+            if (context.Arguments[i] is TransferRequest candidate)
+            {
+                request = candidate;
+                return true;
+            }
         }
 
-        // Step 4: If we reach here, all bounds match → allow handler to execute
-        return await next(context);
+        request = null;
+        return false;
     }
 }

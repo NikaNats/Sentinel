@@ -32,6 +32,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\samples\Sentinel.Sample.MinimalApi\Sentinel.Sample.MinimalApi.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Application\Sentinel.Application.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Infrastructure\Sentinel.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.AspNetCore\Sentinel.AspNetCore.csproj" />

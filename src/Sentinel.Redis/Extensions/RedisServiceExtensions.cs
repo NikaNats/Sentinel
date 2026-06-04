@@ -11,13 +11,12 @@ using Sentinel.Security.Abstractions.Session;
 namespace Sentinel.Redis.Extensions;
 
 /// <summary>
-///     Dependency injection extensions for Redis cache implementations.
+///     Dependency injection extensions for strict Redis-backed security cache implementations.
 /// </summary>
 public static class RedisServiceExtensions
 {
     /// <summary>
-    ///     Adds Redis-backed security caches to DI.
-    ///     Enforces strict Fail-Closed &amp; Fail-Fast validation on startup.
+    ///     Adds Redis-backed security caches to DI in fail-closed mode.
     /// </summary>
     public static IServiceCollection AddRedisSecurityCaches(
         this IServiceCollection services,
@@ -25,30 +24,8 @@ public static class RedisServiceExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        // Load options using your original, secure, AOT-compatible approach
-        var options = configuration != null
-            ? configuration.Get<RedisOptions>() ?? new RedisOptions()
-            : new RedisOptions();
-
-        // Register raw options for store constructors
-        services.AddSingleton(options);
-
-        // IOptions bridge using OptionsWrapper (no external .Bind() package required)
-        services.AddSingleton<IOptions<RedisOptions>>(new OptionsWrapper<RedisOptions>(options));
-
-        // Register validator in DI
-        services.AddSingleton<IValidateOptions<RedisOptions>, RedisOptionsValidator>();
-
-        // Redis connection provider
-        services.AddSingleton<IRedisConnectionProvider, RedisConnectionProvider>();
-
-        // Stores
-        services.AddSingleton<IJtiReplayCache, RedisJtiReplayCache>();
-        services.AddSingleton<IDpopNonceStore, RedisDpopNonceStore>();
-        services.AddSingleton<ISessionBlacklistCache, RedisSessionBlacklistCache>();
-        services.AddSingleton<IIdempotencyStore, RedisIdempotencyStore>();
-
-        return services;
+        var options = CreateOptions(configuration);
+        return services.AddRedisSecurityCaches(options);
     }
 
     /// <summary>
@@ -64,12 +41,17 @@ public static class RedisServiceExtensions
         var options = new RedisOptions();
         configureOptions(options);
 
-        // Registration
+        return services.AddRedisSecurityCaches(options);
+    }
+
+    private static IServiceCollection AddRedisSecurityCaches(
+        this IServiceCollection services,
+        RedisOptions options)
+    {
         services.AddSingleton(options);
         services.AddSingleton<IOptions<RedisOptions>>(new OptionsWrapper<RedisOptions>(options));
         services.AddSingleton<IValidateOptions<RedisOptions>, RedisOptionsValidator>();
 
-        // Provider and stores
         services.AddSingleton<IRedisConnectionProvider, RedisConnectionProvider>();
         services.AddSingleton<IJtiReplayCache, RedisJtiReplayCache>();
         services.AddSingleton<IDpopNonceStore, RedisDpopNonceStore>();
@@ -77,5 +59,38 @@ public static class RedisServiceExtensions
         services.AddSingleton<IIdempotencyStore, RedisIdempotencyStore>();
 
         return services;
+    }
+
+    private static RedisOptions CreateOptions(IConfiguration? configuration)
+    {
+        if (configuration is null)
+        {
+            return new RedisOptions();
+        }
+
+        var syncTimeout = TryReadPositiveInt32(configuration["SyncTimeout"], out var configuredSyncTimeout)
+            ? configuredSyncTimeout
+            : 5000;
+
+        return new RedisOptions
+        {
+            EndPoint = configuration["EndPoint"],
+            UseSsl = TryReadBoolean(configuration["UseSsl"], out var useSsl) && useSsl,
+            Password = configuration["Password"],
+            SyncTimeout = syncTimeout,
+            KeyPrefix = string.IsNullOrWhiteSpace(configuration["KeyPrefix"])
+                ? "sentinel:"
+                : configuration["KeyPrefix"]!
+        };
+    }
+
+    private static bool TryReadBoolean(string? value, out bool result)
+    {
+        return bool.TryParse(value, out result);
+    }
+
+    private static bool TryReadPositiveInt32(string? value, out int result)
+    {
+        return int.TryParse(value, out result) && result > 0;
     }
 }

@@ -8,33 +8,28 @@ namespace Sentinel.Redis;
 public sealed record RedisOptions
 {
     /// <summary>
-    ///     Redis connection endpoint (e.g., "localhost:6379").
+    ///     Redis connection endpoint (e.g., "redis-master.redis.svc.cluster.local:6379").
     /// </summary>
-    public string? EndPoint { get; init; }
+    public string? EndPoint { get; set; }
 
     /// <summary>
     ///     Whether to use SSL for Redis connection.
     /// </summary>
-    public bool UseSsl { get; init; }
+    public bool UseSsl { get; set; }
 
     /// <summary>
     ///     Redis password (basic auth).
     /// </summary>
     [JsonIgnore]
-    public string? Password { get; init; }
+    public string? Password { get; set; }
 
     /// <summary>
     ///     Timeout for Redis operations (milliseconds).
     /// </summary>
-    public int SyncTimeout { get; init; } = 5000;
+    public int SyncTimeout { get; set; } = 5000;
 
     /// <summary>
-    ///     Prefix for Redis keys (e.g., "sentinel_dev:").
+    ///     Prefix for Redis keys (e.g., "sentinel_prod:").
     /// </summary>
-    public string KeyPrefix { get; init; } = "sentinel:";
-
-    /// <summary>
-    ///     In-memory local fallback setting for enterprise security.
-    /// </summary>
-    public bool EnableInMemoryFallback { get; init; }
+    public string KeyPrefix { get; set; } = "sentinel:";
 }
