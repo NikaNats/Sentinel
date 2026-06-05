@@ -1,21 +1,35 @@
-﻿using System.Net;
+using System.Net;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using Sentinel.Security.Diagnostics;
 
 namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class SecurityContextHasherTests
 {
+    private static void ConfigureServices(HttpContext context)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IPrivacyKeyManager>(new FakePrivacyKeyManager(new byte[32]));
+        services.AddSingleton<IPrivacyPreservingHasher, PrivacyPreservingHasher>();
+        context.RequestServices = services.BuildServiceProvider();
+    }
+
+    private sealed class FakePrivacyKeyManager(byte[] pepper) : IPrivacyKeyManager
+    {
+        public ReadOnlySpan<byte> GetMasterPepper() => pepper;
+    }
+
     [Fact(DisplayName =
         "⚡ Performance guarantee: IP hashing does not allocate a single byte on the heap (0 Bytes Allocated)")]
     public void HashIp_ZeroAllocations_EnforcesHeapHygiene()
     {
         // Arrange
         var context = new DefaultHttpContext();
-
-        // Using a long IPv6 address to test maximum load
         context.Connection.RemoteIpAddress = IPAddress.Parse("2001:db8:85a3:8d3:1319:8a2e:370:7348");
+        ConfigureServices(context);
 
         // First run to cover JIT compilation overhead (Warm-up)
         _ = SecurityContextHasher.HashIp(context);
@@ -42,6 +56,7 @@ public sealed class SecurityContextHasherTests
         // Arrange
         var context = new DefaultHttpContext();
         context.Connection.RemoteIpAddress = IPAddress.Parse(ipAddress);
+        ConfigureServices(context);
 
         // Act
         var hash = SecurityContextHasher.HashIp(context);

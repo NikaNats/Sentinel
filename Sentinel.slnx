@@ -17,6 +17,7 @@
     <Project Path="src/Sentinel.Redis/Sentinel.Redis.csproj" />
     <Project Path="src/Sentinel.EntityFrameworkCore/Sentinel.EntityFrameworkCore.csproj" />
     <Project Path="src/Sentinel.Keycloak/Sentinel.Keycloak.csproj" />
+    <Project Path="src/Sentinel.Providers.Vault/Sentinel.Providers.Vault.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Sentinel.FuzzTests/Sentinel.FuzzTests.csproj" />
