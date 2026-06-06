@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
-using Microsoft.Extensions.Primitives;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.Security.Abstractions.DPoP;
@@ -16,7 +15,7 @@ internal sealed class DpopValidationMiddleware(
     IDpopThumbprintComputer thumbprintComputer,
     TimeProvider timeProvider)
 {
-    private const long TargetFailureFloorMs = 1;
+    private const long TargetFailureFloorMs = 100;
     private static readonly JsonWebTokenHandler TokenHandler = new();
     private static readonly TimeSpan NonceTtl = TimeSpan.FromMinutes(5);
 
@@ -43,8 +42,10 @@ internal sealed class DpopValidationMiddleware(
                     return;
                 }
 
-                AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", "bearer_downgrade_attempt"));
-                context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
+                AuthTelemetry.DpopFailures.Add(1,
+                    new KeyValuePair<string, object?>("reason", "bearer_downgrade_attempt"));
+                context.Response.Headers.Append("WWW-Authenticate",
+                    "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
 
                 await EnforceConstantTimeFailureAsync(startTimestamp, context);
                 return;
@@ -54,7 +55,9 @@ internal sealed class DpopValidationMiddleware(
             return;
         }
 
-        var dpopProofString = context.Request.Headers.TryGetValue("DPoP", out var dpopVal) ? dpopVal.ToString() : string.Empty;
+        var dpopProofString = context.Request.Headers.TryGetValue("DPoP", out var dpopVal)
+            ? dpopVal.ToString()
+            : string.Empty;
 
         if (string.IsNullOrWhiteSpace(dpopProofString))
         {
@@ -76,7 +79,8 @@ internal sealed class DpopValidationMiddleware(
             expectedNonce = await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted);
         }
 
-        var validationRequest = new DpopValidationRequest(dpopProofString, context.Request.Method, new Uri(requestUrl), token, expectedNonce);
+        var validationRequest = new DpopValidationRequest(dpopProofString, context.Request.Method, new Uri(requestUrl),
+            token, expectedNonce);
         var validationResult = await validator.ValidateAsync(validationRequest, context.RequestAborted);
         var result = validationResult.ToHttpResult();
 
@@ -88,17 +92,20 @@ internal sealed class DpopValidationMiddleware(
                 !string.IsNullOrWhiteSpace(thumbprint))
             {
                 var challengeNonce = GenerateNonce();
-                var stored = await nonceStore.TryStoreNonceAsync(thumbprint, challengeNonce, NonceTtl, context.RequestAborted);
+                var stored =
+                    await nonceStore.TryStoreNonceAsync(thumbprint, challengeNonce, NonceTtl, context.RequestAborted);
                 var effectiveNonce = stored
                     ? challengeNonce
                     : await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted) ?? challengeNonce;
 
                 context.Response.Headers.Append("DPoP-Nonce", effectiveNonce);
-                context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"use_dpop_nonce\", algs=\"PS256 ES256\"");
+                context.Response.Headers.Append("WWW-Authenticate",
+                    "DPoP error=\"use_dpop_nonce\", algs=\"PS256 ES256\"");
             }
             else
             {
-                context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
+                context.Response.Headers.Append("WWW-Authenticate",
+                    "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
             }
 
             await EnforceConstantTimeFailureAsync(startTimestamp, context);
@@ -154,26 +161,20 @@ internal sealed class DpopValidationMiddleware(
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
 
         var jitterMs = RandomNumberGenerator.GetInt32(0, 16);
-        var targetTimeSpan = TimeSpan.FromMilliseconds(TargetFailureFloorMs + jitterMs);
+        var targetDuration = TimeSpan.FromMilliseconds(TargetFailureFloorMs + jitterMs);
 
-        try
+        var elapsed = timeProvider.GetElapsedTime(startTimestamp);
+        var remaining = targetDuration - elapsed;
+
+        if (remaining > TimeSpan.Zero)
         {
-            var elapsed = timeProvider.GetElapsedTime(startTimestamp);
-            var remaining = targetTimeSpan - elapsed;
-
-            if (remaining <= TimeSpan.Zero) return;
-
-            if (remaining.TotalMilliseconds > 2)
+            try
             {
-                var delayTime = remaining - TimeSpan.FromMilliseconds(2);
-                await Task.Delay(delayTime, timeProvider, context.RequestAborted).ConfigureAwait(false);
+                await Task.Delay(remaining, timeProvider, context.RequestAborted).ConfigureAwait(false);
             }
-
-
-            SpinWait.SpinUntil(() => timeProvider.GetElapsedTime(startTimestamp) >= targetTimeSpan);
-        }
-        catch (OperationCanceledException)
-        {
+            catch (OperationCanceledException)
+            {
+            }
         }
     }
 
