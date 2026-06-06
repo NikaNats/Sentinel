@@ -1,10 +1,11 @@
-using System.Net.Security;
+﻿using System.Net.Security;
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
@@ -35,6 +36,27 @@ if (builder.Environment.IsDevelopment())
         });
     });
 }
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    if (builder.Environment.IsDevelopment())
+    {
+        options.ConfigureHttpsDefaults(httpsOptions =>
+        {
+            httpsOptions.ClientCertificateMode = ClientCertificateMode.DelayCertificate;
+        });
+    }
+
+    options.Limits.MaxConcurrentConnections = 10000;
+    options.Limits.MaxConcurrentUpgradedConnections = 10000;
+
+    options.Limits.MaxRequestBodySize = 10 * 1024; // 10 KB
+
+    options.Limits.MinRequestBodyDataRate = new MinDataRate(100, TimeSpan.FromSeconds(10));
+    options.Limits.MinResponseDataRate = new MinDataRate(100, TimeSpan.FromSeconds(10));
+
+    options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
+});
 
 builder.Services.AddOpenApi();
 

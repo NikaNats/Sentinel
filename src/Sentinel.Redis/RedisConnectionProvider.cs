@@ -7,13 +7,14 @@ namespace Sentinel.Redis;
 ///     - No thundering herd of concurrent connection attempts during startup
 ///     - Graceful background reconnection (AbortOnConnectFail = false)
 ///     - Clean async/await semantics (no blocking thread pool threads)
+///     - SocketManager pooling to prevent thread starvation under extreme load
 /// </summary>
 internal sealed class RedisConnectionProvider : IRedisConnectionProvider
 {
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private readonly ILogger<RedisConnectionProvider> _logger;
     private readonly ConfigurationOptions _options;
-    private bool _disposed; // ✅ FIX: Explicit disposal state to prevent race conditions
+    private bool _disposed;
     private ConnectionMultiplexer? _multiplexer;
 
     public RedisConnectionProvider(RedisOptions redisOptions, ILogger<RedisConnectionProvider> logger)
@@ -24,12 +25,15 @@ internal sealed class RedisConnectionProvider : IRedisConnectionProvider
         _options.Ssl = redisOptions.UseSsl;
         _options.Password = redisOptions.Password;
 
-        // CRITICAL: Prevents the multiplexer from throwing on transient network partitions.
-        // With this set to false, StackExchange.Redis manages background reconnections natively.
         _options.AbortOnConnectFail = false;
         _options.ConnectRetry = 5;
         _options.ConnectTimeout = redisOptions.SyncTimeout;
-        _options.AsyncTimeout = redisOptions.SyncTimeout; // Align async timeout
+        _options.AsyncTimeout = redisOptions.SyncTimeout;
+
+        _options.SocketManager = new SocketManager(nameof(RedisConnectionProvider), Environment.ProcessorCount * 2);
+        _options.ChannelPrefix = RedisChannel.Literal("sentinel");
+        _options.SyncTimeout = 2000;
+        _options.AsyncTimeout = 2000;
     }
 
     /// <summary>

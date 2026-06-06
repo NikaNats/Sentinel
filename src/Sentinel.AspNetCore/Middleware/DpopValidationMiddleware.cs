@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using Sentinel.AspNetCore.Stores;
 using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Diagnostics;
@@ -13,7 +14,8 @@ namespace Sentinel.AspNetCore.Middleware;
 internal sealed class DpopValidationMiddleware(
     RequestDelegate next,
     IDpopThumbprintComputer thumbprintComputer,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    L1AntiFloodCache l1AntiFloodCache)
 {
     private const long TargetFailureFloorMs = 100;
     private static readonly JsonWebTokenHandler TokenHandler = new();
@@ -76,6 +78,15 @@ internal sealed class DpopValidationMiddleware(
 
         if (!string.IsNullOrWhiteSpace(thumbprint))
         {
+            if (l1AntiFloodCache.IsTemporarilyBlacklisted(thumbprint))
+            {
+                AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", "l1_anti_flood_blocked"));
+                context.Response.Headers.Append("WWW-Authenticate",
+                    "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
+                await EnforceConstantTimeFailureAsync(startTimestamp, context);
+                return;
+            }
+
             expectedNonce = await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted);
         }
 
@@ -87,6 +98,11 @@ internal sealed class DpopValidationMiddleware(
         if (!result.IsValid)
         {
             AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", "invalid_dpop_proof"));
+
+            if (!string.IsNullOrWhiteSpace(thumbprint))
+            {
+                l1AntiFloodCache.RecordFailedAttempt(thumbprint);
+            }
 
             if (string.Equals(result.Error, "use_dpop_nonce", StringComparison.Ordinal) &&
                 !string.IsNullOrWhiteSpace(thumbprint))

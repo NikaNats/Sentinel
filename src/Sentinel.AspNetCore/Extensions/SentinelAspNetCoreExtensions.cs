@@ -65,6 +65,13 @@ public sealed class SentinelAspNetCoreBuilder
             .BindConfiguration(DPoPOptions.SectionName)
             .ValidateDataAnnotations();
 
+        _services.AddSingleton(TimeProvider.System);
+        _services.AddSingleton(sp =>
+        {
+            var timeProvider = sp.GetRequiredService<TimeProvider>();
+            return new L1AntiFloodCache(timeProvider, TimeSpan.FromSeconds(3));
+        });
+
         return this;
     }
 
@@ -93,12 +100,10 @@ public sealed class SentinelAspNetCoreBuilder
         return this;
     }
 
-    public SentinelAspNetCoreBuilder AddAll()
-    {
-        return AddDPoPValidation()
+    public SentinelAspNetCoreBuilder AddAll() =>
+        AddDPoPValidation()
             .AddMtlsBinding()
             .AddIdempotencyFilters();
-    }
 
     public SentinelAspNetCoreBuilder ConfigureAcrRanking(Action<AcrRankingOptions>? configure = null)
     {

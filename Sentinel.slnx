@@ -30,5 +30,6 @@
     <Project Path="tests/Sentinel.Tests.Session/Sentinel.Tests.Session.csproj" />
     <Project Path="tests/Sentinel.Tests.SSF/Sentinel.Tests.SSF.csproj" />
     <Project Path="tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj" />
+    <Project Path="tests/Sentinel.Tests.Load/AdversarialTestHost.csproj" />
   </Folder>
 </Solution>

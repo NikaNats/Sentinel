@@ -6,15 +6,19 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>true</InvariantGlobalization>
     <IsPackable>false</IsPackable>
+
     <PublishAot>true</PublishAot>
     <OptimizationPreference>Speed</OptimizationPreference>
     <ServerGarbageCollection>true</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
-    <GCLargeObjectHeapCompactionMode>CompactOnce</GCLargeObjectHeapCompactionMode>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- In the real world, these are PackageReferences to your private NuGet feed -->
+    <PackageReference Include="Scalar.AspNetCore" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Sentinel.AspNetCore\Sentinel.AspNetCore.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Infrastructure\Sentinel.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Redis\Sentinel.Redis.csproj" />
@@ -25,8 +29,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Scalar.AspNetCore" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <RuntimeHostConfigurationOption Include="System.GC.LOHCompactionOnSection" Value="1" />
   </ItemGroup>
 
 </Project>
