@@ -18,27 +18,25 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.AspNetCore.Stores;
 using Sentinel.Redis;
+using Sentinel.SdJwt;
 using Sentinel.Security.Abstractions.Idempotency;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Replay;
+using Sentinel.Security.Abstractions.Security;
 using Sentinel.Security.Abstractions.Session;
-using Sentinel.Tests.Shared;
+using Sentinel.Security.Abstractions.SSF;
 using StackExchange.Redis;
+using ISsfEventProcessor = Sentinel.Application.Auth.Interfaces.ISsfEventProcessor;
 
 namespace Sentinel.Tests.Security.Security;
 
 [Collection("Sentinel Timing Tests")]
-public sealed class DpopTimingSideChannelTests : IClassFixture<TimingTestApiFactory>
+public sealed class DpopTimingSideChannelTests(TimingTestApiFactory factory) : IClassFixture<TimingTestApiFactory>
 {
     private const int SampleSize = 500;
-    private readonly HttpClient _client;
+    private readonly HttpClient _client = factory.CreateClient();
 
-    public DpopTimingSideChannelTests(TimingTestApiFactory factory)
-    {
-        _client = factory.CreateClient();
-    }
-
-    [Fact(DisplayName = "🔐 მათემატიკური დაზღვევა: Welch's T-Test ამტკიცებს timing-oracle-ის არარსებობას")]
+    [Fact(DisplayName = "🔐 Mathematical Assurance: Welch's T-Test Proves the Absence of a timing-oracle")]
     public async Task Validate_DpopRejectionPaths_MustHaveStatisticallyIndistinguishableTiming()
     {
         var earlyRejectTimes = new double[SampleSize];
@@ -62,7 +60,7 @@ public sealed class DpopTimingSideChannelTests : IClassFixture<TimingTestApiFact
         {
             using var reqEarly = new HttpRequestMessage(HttpMethod.Get, "/v1/profile");
             reqEarly.Headers.Authorization = new AuthenticationHeaderValue("DPoP", token);
-            reqEarly.Headers.Add("DPoP", "invalid.dpop.token"); // სინტაქსური ჩავარდნა
+            reqEarly.Headers.Add("DPoP", "invalid.dpop.token");
 
             var swEarly = Stopwatch.StartNew();
             using var resEarly = await _client.SendAsync(reqEarly, CancellationToken.None);
@@ -209,10 +207,10 @@ public class TimingTestApiFactory : WebApplicationFactory<Program>
             services.AddSingleton<IDpopNonceStore, FastLocalInMemoryNonceStore>();
             services.AddSingleton<ISessionBlacklistCache, FastLocalInMemorySessionBlacklist>();
             services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
-            services.AddTransient<Sentinel.SdJwt.ISdJwtTokenValidator, TestSdJwtTokenValidator>();
-            services.AddSingleton<Sentinel.Security.Abstractions.SSF.ISsfTokenValidator, TestSsfTokenValidator>();
-            services.AddScoped<Sentinel.Application.Auth.Interfaces.ISsfEventProcessor, SsfEventProcessorAdapter>();
-            services.AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, AuthRevocationServiceAdapter>();
+            services.AddTransient<ISdJwtTokenValidator, TestSdJwtTokenValidator>();
+            services.AddSingleton<ISsfTokenValidator, TestSsfTokenValidator>();
+            services.AddScoped<ISsfEventProcessor, SsfEventProcessorAdapter>();
+            services.AddScoped<IAuthRevocationService, AuthRevocationServiceAdapter>();
 
             services.AddSingleton<Application.Common.Abstractions.IJtiReplayCache>(sp =>
                 new JtiReplayCacheAdapter(
@@ -291,16 +289,16 @@ public class TimingTestApiFactory : WebApplicationFactory<Program>
 file sealed class TestOpenIdConfigurationManager(SecurityKey signingKey)
     : IConfigurationManager<OpenIdConnectConfiguration>
 {
-    private readonly OpenIdConnectConfiguration configuration = new()
+    private readonly OpenIdConnectConfiguration _configuration = new()
     {
         Issuer = "https://localhost:8443/realms/sentinel"
     };
 
     public Task<OpenIdConnectConfiguration> GetConfigurationAsync(CancellationToken cancel)
     {
-        configuration.SigningKeys.Clear();
-        configuration.SigningKeys.Add(signingKey);
-        return Task.FromResult(configuration);
+        _configuration.SigningKeys.Clear();
+        _configuration.SigningKeys.Add(signingKey);
+        return Task.FromResult(_configuration);
     }
 
     public void RequestRefresh()

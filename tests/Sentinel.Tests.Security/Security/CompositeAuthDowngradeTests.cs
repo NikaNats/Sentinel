@@ -16,25 +16,23 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.Redis;
 using Sentinel.Redis.Extensions;
+using Sentinel.SdJwt;
 using Sentinel.Security.Abstractions.Idempotency;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Replay;
+using Sentinel.Security.Abstractions.Security;
 using Sentinel.Security.Abstractions.Session;
-using Sentinel.Tests.Shared;
-using Sentinel.Tests.Shared.Fixtures;
+using Sentinel.Security.Abstractions.SSF;
 using StackExchange.Redis;
 using Testcontainers.Redis;
+using ISsfEventProcessor = Sentinel.Application.Auth.Interfaces.ISsfEventProcessor;
 
-namespace Sentinel.Tests.Security;
+namespace Sentinel.Tests.Security.Security;
 
-public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDowngradeTests.CompositeAuthFactory>
+public sealed class CompositeAuthDowngradeTests(CompositeAuthDowngradeTests.CompositeAuthFactory factory)
+    : IClassFixture<CompositeAuthDowngradeTests.CompositeAuthFactory>
 {
-    private readonly HttpClient client;
-
-    public CompositeAuthDowngradeTests(CompositeAuthFactory factory)
-    {
-        client = factory.CreateClient();
-    }
+    private readonly HttpClient _client = factory.CreateClient();
 
     [Fact]
     public async Task BearerTokenWithoutSdJwtFormat_IsRejectedAsDowngrade()
@@ -43,7 +41,7 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
         using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/test/protected");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        var response = await client.SendAsync(request, CancellationToken.None);
+        var response = await _client.SendAsync(request, CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Contains("invalid_dpop_proof", response.Headers.WwwAuthenticate.ToString(), StringComparison.Ordinal);
@@ -55,7 +53,7 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
         using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/test/protected");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "issuer~disclosure~forged-kb");
 
-        var response = await client.SendAsync(request, CancellationToken.None);
+        var response = await _client.SendAsync(request, CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -89,38 +87,29 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
 
     public sealed class CompositeAuthFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
-        private readonly RedisContainer redisContainer;
-        private string redisConnectionString = string.Empty;
+        private readonly RedisContainer _redisContainer = new RedisBuilder("redis:7.4-alpine")
+            .WithPortBinding(6379, true)
+            .Build();
 
-        public CompositeAuthFactory()
-        {
-            redisContainer = new RedisBuilder("redis:7.4-alpine")
-                .WithPortBinding(6379, true)
-                .Build();
-        }
+        private string _redisConnectionString = string.Empty;
 
         public async ValueTask InitializeAsync()
         {
-            await redisContainer.StartAsync();
-            var redisHostPort = redisContainer.GetMappedPublicPort(6379);
-            redisConnectionString =
+            await _redisContainer.StartAsync();
+            var redisHostPort = _redisContainer.GetMappedPublicPort(6379);
+            _redisConnectionString =
                 $"localhost:{redisHostPort},abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000";
             await WaitForRedisReadinessAsync("127.0.0.1", redisHostPort, TimeSpan.FromSeconds(30));
             _ = CreateClient();
         }
 
-        // Overriding the base WebApplicationFactory implementation resolves the shadowing warning 
-        // and cleanly fulfills the IAsyncLifetime requirement.
         public override async ValueTask DisposeAsync()
         {
             await DisposeAsyncCore();
             await base.DisposeAsync();
         }
 
-        private async ValueTask DisposeAsyncCore()
-        {
-            await redisContainer.DisposeAsync();
-        }
+        private async ValueTask DisposeAsyncCore() => await _redisContainer.DisposeAsync();
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -131,8 +120,8 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
                     ["Keycloak:Authority"] = "https://localhost:8443/realms/sentinel",
                     ["Keycloak:Audience"] = "sentinel-api",
                     ["Keycloak:RequireHttpsMetadata"] = "false",
-                    ["ConnectionStrings:Redis"] = redisConnectionString,
-                    ["Sentinel:Redis:EndPoint"] = redisConnectionString,
+                    ["ConnectionStrings:Redis"] = _redisConnectionString,
+                    ["Sentinel:Redis:EndPoint"] = _redisConnectionString,
                     ["Sentinel:Redis:EnableInMemoryFallback"] = "true",
                     ["SdJwt:Enabled"] = "true",
                     ["SdJwt:RequireKeyBindingNonce"] = "false"
@@ -152,30 +141,28 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
                 services.RemoveAll<RedisOptions>();
 
                 services.AddSingleton<IDistributedCache>(_ =>
-                    new RedisCache(Options.Create(new RedisCacheOptions { Configuration = redisConnectionString })));
+                    new RedisCache(Options.Create(new RedisCacheOptions { Configuration = _redisConnectionString })));
 
                 services.AddSingleton<IConnectionMultiplexer>(_ =>
                 {
-                    var options = ConfigurationOptions.Parse(redisConnectionString);
+                    var options = ConfigurationOptions.Parse(_redisConnectionString);
                     options.AbortOnConnectFail = false;
                     return ConnectionMultiplexer.Connect(options);
                 });
 
-                // 🟢 1. დავარეგისტრიროთ Redis-ის უსაფრთხოების ქეშები
                 var redisConfig = new ConfigurationBuilder()
                     .AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["EndPoint"] = redisConnectionString,
+                        ["EndPoint"] = _redisConnectionString,
                         ["EnableInMemoryFallback"] = "true"
                     })
                     .Build();
                 services.AddRedisSecurityCaches(redisConfig);
-                services.AddTransient<Sentinel.SdJwt.ISdJwtTokenValidator, TestSdJwtTokenValidator>();
-                services.AddSingleton<Sentinel.Security.Abstractions.SSF.ISsfTokenValidator, TestSsfTokenValidator>();
-                services.AddScoped<Sentinel.Application.Auth.Interfaces.ISsfEventProcessor, SsfEventProcessorAdapter>();
-                services.AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, AuthRevocationServiceAdapter>();
+                services.AddTransient<ISdJwtTokenValidator, TestSdJwtTokenValidator>();
+                services.AddSingleton<ISsfTokenValidator, TestSsfTokenValidator>();
+                services.AddScoped<ISsfEventProcessor, SsfEventProcessorAdapter>();
+                services.AddScoped<IAuthRevocationService, AuthRevocationServiceAdapter>();
 
-                // 🟢 2. დავაკავშიროთ (Bridge) Application-ფენის ქეშის ინტერფეისები Security-ფენის იმპლემენტაციებთან
                 services.AddSingleton<Application.Common.Abstractions.IJtiReplayCache>(sp =>
                     new JtiReplayCacheAdapter(
                         sp.GetRequiredService<IJtiReplayCache>(),
@@ -205,16 +192,16 @@ public sealed class CompositeAuthDowngradeTests : IClassFixture<CompositeAuthDow
     private sealed class TestOpenIdConfigurationManager(SecurityKey signingKey)
         : IConfigurationManager<OpenIdConnectConfiguration>
     {
-        private readonly OpenIdConnectConfiguration configuration = new()
+        private readonly OpenIdConnectConfiguration _configuration = new()
         {
             Issuer = "https://localhost:8443/realms/sentinel"
         };
 
         public Task<OpenIdConnectConfiguration> GetConfigurationAsync(CancellationToken cancel)
         {
-            configuration.SigningKeys.Clear();
-            configuration.SigningKeys.Add(signingKey);
-            return Task.FromResult(configuration);
+            _configuration.SigningKeys.Clear();
+            _configuration.SigningKeys.Add(signingKey);
+            return Task.FromResult(_configuration);
         }
 
         public void RequestRefresh()
