@@ -335,8 +335,8 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         Assert.Contains("insufficient_user_authentication", response.Headers.WwwAuthenticate.ToString());
     }
 
-    [Fact]
-    public async Task S18_DocumentsCreate_WithSameIdempotencyKey_Returns204OnRetry()
+    [Fact(DisplayName = "S18: Documents Create with same Idempotency-Key replays the original 201 Created response")]
+    public async Task S18_DocumentsCreate_WithSameIdempotencyKey_ReplaysCreatedResponse()
     {
         var requestUrl = new Uri(client.BaseAddress!, "/v1/documents").ToString();
         const string subject = "documents-user-4";
@@ -365,6 +365,8 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
 
         var response1 = await client.SendAsync(request1, CancellationToken.None);
         Assert.Equal(HttpStatusCode.Created, response1.StatusCode);
+        var originalResponseBody = await response1.Content.ReadAsStringAsync(CancellationToken.None);
+
         Assert.True(response1.Headers.TryGetValues("DPoP-Nonce", out var nonceValues));
         var nonce = nonceValues!.First();
 
@@ -380,7 +382,12 @@ public sealed class SecurityScenarioTests(SentinelApiFactory factory)
         request2.Headers.Add("Idempotency-Key", idempotencyKey);
 
         var response2 = await client.SendAsync(request2, CancellationToken.None);
-        Assert.Equal(HttpStatusCode.NoContent, response2.StatusCode);
+
+        Assert.Equal(HttpStatusCode.Created, response2.StatusCode);
+
+        var replayedResponseBody = await response2.Content.ReadAsStringAsync(CancellationToken.None);
+
+        Assert.Equal(originalResponseBody, replayedResponseBody);
     }
 
     [Fact]

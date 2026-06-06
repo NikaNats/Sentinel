@@ -6,7 +6,7 @@ using Moq;
 using Sentinel.AspNetCore.Filters;
 using Sentinel.Security.Abstractions.Idempotency;
 
-namespace Sentinel.Tests.Unit;
+namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class RequireIdempotencyAttributeTests
 {
@@ -28,11 +28,12 @@ public sealed class RequireIdempotencyAttributeTests
     public async Task InvokeAsync_WhenDuplicateKey_ReturnsConflict()
     {
         var store = new Mock<IIdempotencyStore>();
+
         store.Setup(x => x.TryAcquireAsync(
                 It.IsAny<string>(),
                 It.IsAny<TimeSpan>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(IdempotencyAcquireResult.InProgress);
+            .ReturnsAsync((IdempotencyAcquireResult.InProgress, (CachedHttpResponse?)null));
 
         var filter = CreateFilter(store);
         var context = CreateContext();
@@ -45,28 +46,35 @@ public sealed class RequireIdempotencyAttributeTests
         Assert.Equal(StatusCodes.Status409Conflict, status.StatusCode);
     }
 
-    [Fact]
-    public async Task InvokeAsync_WhenDuplicateCompletedRequest_ReturnsNoContent()
+    [Fact(DisplayName = "✓ Stripe-Style: Replays exact cached response instead of returning empty 204")]
+    public async Task InvokeAsync_WhenDuplicateCompletedRequest_ReplaysCachedResponse()
     {
         var store = new Mock<IIdempotencyStore>();
+        var cachedResponse = new CachedHttpResponse(201, "application/json", "{\"id\":\"doc-123\"}"u8.ToArray());
+
         store.Setup(x => x.TryAcquireAsync(
                 It.IsAny<string>(),
                 It.IsAny<TimeSpan>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(IdempotencyAcquireResult.Completed);
+            .ReturnsAsync((IdempotencyAcquireResult.Completed, cachedResponse));
 
         var filter = CreateFilter(store);
         var context = CreateContext();
         context.HttpContext.Request.Headers["Idempotency-Key"] = "a8a67f6f-7f6f-4f71-b3a6-6bce6f04c6d2";
 
+        context.HttpContext.Response.Body = new MemoryStream();
+
         var result = await filter.InvokeAsync(context,
             _ => throw new InvalidOperationException("should not execute"));
 
-        var status = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
-        Assert.Equal(StatusCodes.Status204NoContent, status.StatusCode);
+        var replayResult = Assert.IsType<IdempotencyReplayResult>(result);
+        await replayResult.ExecuteAsync(context.HttpContext);
+
+        Assert.Equal(StatusCodes.Status201Created, context.HttpContext.Response.StatusCode);
+        Assert.Equal("application/json", context.HttpContext.Response.ContentType);
     }
 
-    [Fact]
+    [Fact(DisplayName = "✓ Captures stream successfully and marks completed in the store")]
     public async Task InvokeAsync_WhenSuccessfulRequest_StoresIdempotencyKey()
     {
         var store = new Mock<IIdempotencyStore>();
@@ -74,9 +82,11 @@ public sealed class RequireIdempotencyAttributeTests
                 It.IsAny<string>(),
                 It.IsAny<TimeSpan>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(IdempotencyAcquireResult.Acquired);
+            .ReturnsAsync((IdempotencyAcquireResult.Acquired, (CachedHttpResponse?)null));
+
         store.Setup(x => x.MarkCompletedAsync(
                 It.IsAny<string>(),
+                It.IsAny<CachedHttpResponse>(),
                 It.IsAny<TimeSpan>(),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -85,13 +95,17 @@ public sealed class RequireIdempotencyAttributeTests
         var context = CreateContext();
         context.HttpContext.Request.Headers["Idempotency-Key"] = "13b33980-5b58-4974-b080-bb4ecff97327";
 
-        var result = await filter.InvokeAsync(context,
-            _ => ValueTask.FromResult<object?>(TypedResults.Ok(new { status = "ok" })));
+        var okResult = TypedResults.Ok(new { status = "ok" });
 
-        var status = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
-        Assert.Equal(StatusCodes.Status200OK, status.StatusCode);
+        var result = await filter.InvokeAsync(context,
+            _ => ValueTask.FromResult<object?>(okResult));
+
+        var saveResult = Assert.IsType<IdempotencySaveResult>(result);
+        await saveResult.ExecuteAsync(context.HttpContext);
+
         store.Verify(x => x.MarkCompletedAsync(
                 It.IsAny<string>(),
+                It.IsAny<CachedHttpResponse>(),
                 It.IsAny<TimeSpan>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
@@ -103,6 +117,8 @@ public sealed class RequireIdempotencyAttributeTests
     private static TestEndpointFilterInvocationContext CreateContext()
     {
         var services = new ServiceCollection();
+
+        services.AddLogging();
 
         var httpContext = new DefaultHttpContext
         {
@@ -121,9 +137,6 @@ public sealed class RequireIdempotencyAttributeTests
 
         public override IList<object?> Arguments => _arguments;
 
-        public override T GetArgument<T>(int index)
-        {
-            return (T)_arguments[index]!;
-        }
+        public override T GetArgument<T>(int index) => (T)_arguments[index]!;
     }
 }

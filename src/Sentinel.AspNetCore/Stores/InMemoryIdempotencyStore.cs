@@ -11,7 +11,7 @@ internal sealed class InMemoryIdempotencyStore(TimeProvider? timeProvider = null
     private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
-    public Task<IdempotencyAcquireResult> TryAcquireAsync(
+    public async Task<(IdempotencyAcquireResult State, CachedHttpResponse? Response)> TryAcquireAsync(
         string key,
         TimeSpan inProgressTtl,
         CancellationToken cancellationToken = default)
@@ -22,33 +22,40 @@ internal sealed class InMemoryIdempotencyStore(TimeProvider? timeProvider = null
         var now = _timeProvider.GetUtcNow();
         PruneIfExpired(key, now);
 
-        var added = _entries.TryAdd(key, new Entry(IdempotencyAcquireResult.InProgress, now + inProgressTtl));
+        if (_entries.TryGetValue(key, out var existing) && existing.State == IdempotencyAcquireResult.Completed)
+        {
+            return (IdempotencyAcquireResult.Completed, existing.Response);
+        }
+
+        var added = _entries.TryAdd(key, new Entry(IdempotencyAcquireResult.InProgress, null, now + inProgressTtl));
         if (added)
         {
-            return Task.FromResult(IdempotencyAcquireResult.Acquired);
+            return (IdempotencyAcquireResult.Acquired, null);
         }
 
-        if (_entries.TryGetValue(key, out var existing))
+        if (_entries.TryGetValue(key, out existing) && existing.State == IdempotencyAcquireResult.Completed)
         {
-            return Task.FromResult(existing.State == IdempotencyAcquireResult.Completed
-                ? IdempotencyAcquireResult.Completed
-                : IdempotencyAcquireResult.InProgress);
+            return (IdempotencyAcquireResult.Completed, existing.Response);
         }
 
-        // Rare race where key was removed between add/check attempts.
-        var reacquired = _entries.TryAdd(key, new Entry(IdempotencyAcquireResult.InProgress, now + inProgressTtl));
-        return Task.FromResult(reacquired
-            ? IdempotencyAcquireResult.Acquired
-            : IdempotencyAcquireResult.InProgress);
+        var reacquired =
+            _entries.TryAdd(key, new Entry(IdempotencyAcquireResult.InProgress, null, now + inProgressTtl));
+        return reacquired
+            ? (IdempotencyAcquireResult.Acquired, null)
+            : (IdempotencyAcquireResult.InProgress, null);
     }
 
-    public Task MarkCompletedAsync(string key, TimeSpan completedTtl, CancellationToken cancellationToken = default)
+    public Task MarkCompletedAsync(
+        string key,
+        CachedHttpResponse response,
+        TimeSpan completedTtl,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         _ = cancellationToken;
 
         var now = _timeProvider.GetUtcNow();
-        _entries[key] = new Entry(IdempotencyAcquireResult.Completed, now + completedTtl);
+        _entries[key] = new Entry(IdempotencyAcquireResult.Completed, response, now + completedTtl);
         return Task.CompletedTask;
     }
 
@@ -69,5 +76,5 @@ internal sealed class InMemoryIdempotencyStore(TimeProvider? timeProvider = null
         }
     }
 
-    private sealed record Entry(IdempotencyAcquireResult State, DateTimeOffset ExpiresAt);
+    private sealed record Entry(IdempotencyAcquireResult State, CachedHttpResponse? Response, DateTimeOffset ExpiresAt);
 }

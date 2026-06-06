@@ -6,11 +6,7 @@ namespace Sentinel.AspNetCore.Filters;
 
 /// <summary>
 ///     Native AOT-compatible Endpoint Filter for Redis-backed idempotency.
-///     RFC 9110 Section 9.2.2 specifies idempotent requests should not produce
-///     multiple side effects. This filter enforces exactly-once semantics by:
-///     1. Using Idempotency-Key header to deduplicate requests
-///     2. Storing idempotency state in Redis with TTL
-///     3. Returning 204 NoContent for duplicates (idempotent retry safety)
+///     Caches the exact HTTP response bytes to ensure Stripe-style REST semantics.
 /// </summary>
 public sealed class IdempotencyFilter(
     IIdempotencyStore idempotencyStore,
@@ -31,101 +27,131 @@ public sealed class IdempotencyFilter(
         }
 
         var idempotencyKey = keyValues.ToString();
-
-        // Validate idempotency key format (must be UUID or similar)
-        if (!IsValidIdempotencyKey(idempotencyKey))
+        if (!Guid.TryParse(idempotencyKey, out _))
         {
             return TypedResults.Problem(
                 type: "/errors/invalid-idempotency-key",
                 title: "Invalid Idempotency Key",
-                detail: "Idempotency key must be a valid UUID.",
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
         var sub = httpContext.User.FindFirst("sub")?.Value ?? "anonymous";
         var storeKey = $"idempotency:{sub}:{idempotencyKey}";
 
-        IdempotencyAcquireResult acquireResult;
         try
         {
-            acquireResult = await idempotencyStore.TryAcquireAsync(
+            var (state, cachedResponse) = await idempotencyStore.TryAcquireAsync(
                 storeKey,
                 TimeSpan.FromMinutes(5),
                 httpContext.RequestAborted);
+
+            if (state == IdempotencyAcquireResult.Completed)
+            {
+                if (cachedResponse is not null)
+                {
+                    return new IdempotencyReplayResult(cachedResponse);
+                }
+
+                return TypedResults.NoContent();
+            }
+
+            if (state == IdempotencyAcquireResult.InProgress)
+            {
+                return TypedResults.Conflict(new ProblemDetails
+                {
+                    Type = "/errors/idempotency-conflict",
+                    Title = "Request In Progress",
+                    Detail = "A request with this Idempotency-Key is currently running."
+                });
+            }
+
+            var result = await next(context);
+
+            if (result is IResult iresult)
+            {
+                return new IdempotencySaveResult(iresult, idempotencyStore, storeKey, TimeSpan.FromHours(24), logger);
+            }
+
+            await idempotencyStore.ReleaseAsync(storeKey, httpContext.RequestAborted);
+            return result;
         }
         catch (IdempotencyStoreUnavailableException ex)
         {
-            logger.LogCritical(ex, "Idempotency store unavailable during idempotency check.");
+            logger.LogCritical(ex, "Idempotency store unavailable.");
             return TypedResults.Problem(
                 type: "/errors/idempotency-unavailable",
                 title: "Idempotency service unavailable",
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
+    }
+}
 
-        if (acquireResult == IdempotencyAcquireResult.Completed)
+internal sealed class IdempotencyReplayResult(CachedHttpResponse cachedResponse) : IResult
+{
+    public async Task ExecuteAsync(HttpContext httpContext)
+    {
+        httpContext.Response.StatusCode = cachedResponse.StatusCode;
+        if (!string.IsNullOrEmpty(cachedResponse.ContentType))
         {
-            return TypedResults.NoContent();
+            httpContext.Response.ContentType = cachedResponse.ContentType;
         }
 
-        if (acquireResult == IdempotencyAcquireResult.InProgress)
-        {
-            return TypedResults.Conflict(new ProblemDetails
-            {
-                Type = "/errors/idempotency-conflict",
-                Title = "Request In Progress",
-                Detail = "A request with this Idempotency-Key is currently running."
-            });
-        }
+        await httpContext.Response.Body.WriteAsync(cachedResponse.Body, httpContext.RequestAborted);
+    }
+}
+
+internal sealed class IdempotencySaveResult(
+    IResult innerResult,
+    IIdempotencyStore store,
+    string storeKey,
+    TimeSpan ttl,
+    ILogger logger) : IResult
+{
+    public async Task ExecuteAsync(HttpContext httpContext)
+    {
+        var originalBodyStream = httpContext.Response.Body;
+        using var memoryStream = new MemoryStream();
+        httpContext.Response.Body = memoryStream;
 
         try
         {
-            var result = await next(context);
+            await innerResult.ExecuteAsync(httpContext);
 
-            // If the endpoint succeeded (2xx), mark as COMPLETED
-            if (IsSuccessfulResult(result))
+            var statusCode = httpContext.Response.StatusCode;
+
+            if (statusCode is >= 200 and < 300)
             {
-                await idempotencyStore.MarkCompletedAsync(
-                    storeKey,
-                    TimeSpan.FromHours(24),
-                    httpContext.RequestAborted);
+                memoryStream.Seek(0, SeekOrigin.Begin);
+                var bodyBytes = memoryStream.ToArray();
+                var contentType = httpContext.Response.ContentType ?? "application/json";
+
+                var cachedResponse = new CachedHttpResponse(statusCode, contentType, bodyBytes);
+
+                await store.MarkCompletedAsync(storeKey, cachedResponse, ttl, httpContext.RequestAborted);
             }
             else
             {
-                await idempotencyStore.ReleaseAsync(storeKey, httpContext.RequestAborted);
+                await store.ReleaseAsync(storeKey, httpContext.RequestAborted);
             }
-
-            return result;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error during idempotent operation execution.");
+            logger.LogError(ex, "Error executing idempotent result");
             try
             {
-                await idempotencyStore.ReleaseAsync(storeKey, httpContext.RequestAborted);
+                await store.ReleaseAsync(storeKey, httpContext.RequestAborted);
             }
-            catch (IdempotencyStoreUnavailableException cleanupEx)
+            catch (IdempotencyStoreUnavailableException)
             {
-                logger.LogWarning(cleanupEx,
-                    "Idempotency store unavailable while releasing key after request failure.");
             }
 
             throw;
         }
-    }
-
-    private static bool IsValidIdempotencyKey(string key)
-    {
-        // UUID validation (must be valid UUID4 format)
-        return Guid.TryParse(key, out _);
-    }
-
-    private static bool IsSuccessfulResult(object? result)
-    {
-        if (result is IStatusCodeHttpResult statusCodeResult)
+        finally
         {
-            return statusCodeResult.StatusCode is >= 200 and < 300;
+            httpContext.Response.Body = originalBodyStream;
+            memoryStream.Seek(0, SeekOrigin.Begin);
+            await memoryStream.CopyToAsync(originalBodyStream, httpContext.RequestAborted);
         }
-
-        return result is not null;
     }
 }

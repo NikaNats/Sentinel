@@ -12,10 +12,7 @@ namespace Sentinel.Tests.Concurrency;
 public sealed class IdempotencyConcurrencyTests
 {
     [Fact(DisplayName = "🌪️ Concurrency 1: Systematic exploration of parallel Idempotency acquisitions")]
-    public async Task RunCoyoteIdempotencyTest()
-    {
-        await TestConcurrentIdempotencyAcquisition();
-    }
+    public async Task RunCoyoteIdempotencyTest() => await TestConcurrentIdempotencyAcquisition();
 
     private static async Task TestConcurrentIdempotencyAcquisition()
     {
@@ -30,8 +27,8 @@ public sealed class IdempotencyConcurrencyTests
         {
             tasks.Add(Task.Run(async () =>
             {
-                var result = await store.TryAcquireAsync(idempotencyKey, inProgressTtl);
-                results.Add(result);
+                var (state, _) = await store.TryAcquireAsync(idempotencyKey, inProgressTtl);
+                results.Add(state);
             }));
         }
 
@@ -45,10 +42,7 @@ public sealed class IdempotencyConcurrencyTests
     }
 
     [Fact(DisplayName = "🌪️ Concurrency 2: Systematic exploration of concurrent Acquire vs Release transitions")]
-    public async Task RunCoyoteAcquireVsReleaseTest()
-    {
-        await TestConcurrentAcquireVsRelease();
-    }
+    public async Task RunCoyoteAcquireVsReleaseTest() => await TestConcurrentAcquireVsRelease();
 
     private static async Task TestConcurrentAcquireVsRelease()
     {
@@ -56,8 +50,8 @@ public sealed class IdempotencyConcurrencyTests
         const string idempotencyKey = "release-race-key";
         var inProgressTtl = TimeSpan.FromSeconds(5);
 
-        var initialAcquire = await store.TryAcquireAsync(idempotencyKey, inProgressTtl);
-        initialAcquire.Should().Be(IdempotencyAcquireResult.Acquired);
+        var (initialState, _) = await store.TryAcquireAsync(idempotencyKey, inProgressTtl);
+        initialState.Should().Be(IdempotencyAcquireResult.Acquired);
 
         var results = new ConcurrentBag<IdempotencyAcquireResult>();
         var tasks = new List<Task>();
@@ -68,8 +62,8 @@ public sealed class IdempotencyConcurrencyTests
         {
             tasks.Add(Task.Run(async () =>
             {
-                var result = await store.TryAcquireAsync(idempotencyKey, inProgressTtl);
-                results.Add(result);
+                var (state, _) = await store.TryAcquireAsync(idempotencyKey, inProgressTtl);
+                results.Add(state);
             }));
         }
 
@@ -80,10 +74,7 @@ public sealed class IdempotencyConcurrencyTests
     }
 
     [Fact(DisplayName = "🌪️ Concurrency 3: Systematic exploration of MarkCompleted vs concurrent Acquires")]
-    public async Task RunCoyoteMarkCompletedTest()
-    {
-        await TestConcurrentMarkCompleted();
-    }
+    public async Task RunCoyoteMarkCompletedTest() => await TestConcurrentMarkCompleted();
 
     private static async Task TestConcurrentMarkCompleted()
     {
@@ -92,20 +83,24 @@ public sealed class IdempotencyConcurrencyTests
         var inProgressTtl = TimeSpan.FromSeconds(5);
         var completedTtl = TimeSpan.FromHours(24);
 
-        var initialAcquire = await store.TryAcquireAsync(idempotencyKey, inProgressTtl);
-        initialAcquire.Should().Be(IdempotencyAcquireResult.Acquired);
+        var (initialState, _) = await store.TryAcquireAsync(idempotencyKey, inProgressTtl);
+        initialState.Should().Be(IdempotencyAcquireResult.Acquired);
 
         var results = new ConcurrentBag<IdempotencyAcquireResult>();
         var tasks = new List<Task>();
 
-        tasks.Add(Task.Run(async () => { await store.MarkCompletedAsync(idempotencyKey, completedTtl); }));
+        var dummyResponse = new CachedHttpResponse(200, "application/json", "{\"status\":\"ok\"}"u8.ToArray());
+        tasks.Add(Task.Run(async () =>
+        {
+            await store.MarkCompletedAsync(idempotencyKey, dummyResponse, completedTtl);
+        }));
 
         for (var i = 0; i < 4; i++)
         {
             tasks.Add(Task.Run(async () =>
             {
-                var result = await store.TryAcquireAsync(idempotencyKey, inProgressTtl);
-                results.Add(result);
+                var (state, _) = await store.TryAcquireAsync(idempotencyKey, inProgressTtl);
+                results.Add(state);
             }));
         }
 
