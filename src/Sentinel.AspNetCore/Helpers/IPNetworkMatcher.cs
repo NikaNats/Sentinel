@@ -1,47 +1,46 @@
-﻿namespace Sentinel.AspNetCore.Helpers
+﻿using System.Net;
+
+namespace Sentinel.AspNetCore.Helpers;
+
+/// <summary>
+///     High-efficiency helper class for checking IP address ranges.
+/// </summary>
+internal sealed class IPNetworkMatcher
 {
-    using System.Net;
+    private readonly List<IPNetwork> _networks = [];
+
+    public IPNetworkMatcher(string[] cidrBlocks)
+    {
+        ArgumentNullException.ThrowIfNull(cidrBlocks);
+
+        foreach (var cidr in cidrBlocks)
+        {
+            if (IPNetwork.TryParse(cidr, out var network))
+            {
+                _networks.Add(network);
+            }
+            else
+            {
+                throw new ArgumentException($"Invalid CIDR format: {cidr}", nameof(cidrBlocks));
+            }
+        }
+    }
 
     /// <summary>
-    /// High-efficiency helper class for checking IP address ranges.
+    ///     Checks whether the incoming IP address falls within the trusted network range.
     /// </summary>
-    internal sealed class IPNetworkMatcher
+    public bool IsTrusted(IPAddress remoteIp)
     {
-        private readonly List<IPNetwork> _networks = [];
+        var normalizedIp = remoteIp.IsIPv4MappedToIPv6 ? remoteIp.MapToIPv4() : remoteIp;
 
-        public IPNetworkMatcher(string[] cidrBlocks)
+        for (var i = 0; i < _networks.Count; i++)
         {
-            ArgumentNullException.ThrowIfNull(cidrBlocks);
-
-            foreach (var cidr in cidrBlocks)
+            if (_networks[i].Contains(normalizedIp))
             {
-                if (IPNetwork.TryParse(cidr, out var network))
-                {
-                    _networks.Add(network);
-                }
-                else
-                {
-                    throw new ArgumentException($"Invalid CIDR format: {cidr}", nameof(cidrBlocks));
-                }
+                return true;
             }
         }
 
-        /// <summary>
-        /// Checks whether the incoming IP address falls within the trusted network range.
-        /// </summary>
-        public bool IsTrusted(IPAddress remoteIp)
-        {
-            var normalizedIp = remoteIp.IsIPv4MappedToIPv6 ? remoteIp.MapToIPv4() : remoteIp;
-
-            for (int i = 0; i < _networks.Count; i++)
-            {
-                if (_networks[i].Contains(normalizedIp))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
+        return false;
     }
 }
