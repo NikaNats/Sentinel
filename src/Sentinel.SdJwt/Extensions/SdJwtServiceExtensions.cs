@@ -62,7 +62,7 @@ public static class SdJwtServiceExtensions
         services.AddSingleton(options);
 
         // Register validator factory
-        services.AddTransient<ISdJwtTokenValidator>(validatorFactory);
+        services.AddTransient(validatorFactory);
 
         // Register presenter
         services.AddTransient<SdJwtPresenter>();

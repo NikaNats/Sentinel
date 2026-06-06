@@ -3,7 +3,7 @@ using Microsoft.IdentityModel.Tokens;
 namespace Sentinel.Security.Abstractions.Pqc;
 
 /// <summary>
-/// Post-Quantum ML-DSA (FIPS 204) Security Key.
+///     Post-Quantum ML-DSA (FIPS 204) Security Key.
 /// </summary>
 public sealed class MlDsaSecurityKey(byte[] publicKeyBytes, string algorithm) : SecurityKey
 {

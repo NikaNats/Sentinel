@@ -11,33 +11,6 @@ namespace Sentinel.Keycloak.Services;
 internal sealed class KeycloakUserService(HttpClient httpClient, ILogger<KeycloakUserService> logger)
     : IIdentityRegistry, IIdentityProvider
 {
-    public Task<SecurityResult<string>> CreateUserAsync(
-        IdentityRegistration registration,
-        string password,
-        CancellationToken cancellationToken = default)
-    {
-        if (!registration.AcceptedTerms)
-        {
-            return Task.FromResult(SecurityResultFactory.Failure<string>(SecurityErrors.TermsNotAcceptedMessage));
-        }
-
-        var legacyRegistration = new UserRegistration
-        {
-            Id = Guid.NewGuid(),
-            Email = registration.Email.Trim().ToLowerInvariant(),
-            Username = registration.Username.Trim(),
-            Consent = new ConsentInfo
-            {
-                TermsAccepted = registration.AcceptedTerms,
-                PrivacyPolicyVersion = registration.PolicyVersion,
-                AcceptedAtUtc = new DateTimeOffset(registration.AcceptedAtUtc, TimeSpan.Zero),
-                SourceIpHash = HashConsentIp(registration.SourceIp)
-            }
-        };
-
-        return CreateUserInternalAsync(legacyRegistration, password, cancellationToken);
-    }
-
     async Task<string> IIdentityProvider.CreateUserAsync(IdentityRegistration registration, string password,
         CancellationToken cancellationToken)
     {
@@ -48,60 +21,6 @@ internal sealed class KeycloakUserService(HttpClient httpClient, ILogger<Keycloa
         }
 
         return result.Value;
-    }
-
-    public async Task<SecurityResult<string>> CreateUserInternalAsync(UserRegistration registration, string password,
-        CancellationToken ct)
-    {
-        var payload = new KeycloakAdminCreateUserPayload
-        {
-            Email = registration.Email,
-            Username = registration.Username,
-            Enabled = true,
-            EmailVerified = false,
-            Credentials =
-            [
-                new KeycloakAdminCredentialPayload
-                {
-                    Type = "password",
-                    Value = password,
-                    Temporary = false
-                }
-            ],
-            Attributes = new Dictionary<string, string[]>
-            {
-                ["consent_date"] = [registration.Consent.AcceptedAtUtc.ToString("O")],
-                ["policy_version"] = [registration.Consent.PrivacyPolicyVersion],
-                ["consent_ip_hash"] = [registration.Consent.SourceIpHash]
-            }
-        };
-
-        using var response = await httpClient.PostAsJsonAsync(
-            "users",
-            payload,
-            KeycloakJsonContext.Default.KeycloakAdminCreateUserPayload,
-            ct);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            if (response.StatusCode == HttpStatusCode.Conflict)
-            {
-                return SecurityResultFactory.Failure<string>(SecurityErrors.IdentityConflictMessage);
-            }
-
-            var error = await response.Content.ReadAsStringAsync(ct);
-            logger.LogWarning("Failed to create Keycloak user. Status: {Status}. Body: {Body}",
-                (int)response.StatusCode, error);
-            return SecurityResultFactory.Failure<string>(SecurityErrors.IdentityCreationFailedMessage);
-        }
-
-        var userId = TryExtractUserId(response.Headers.Location);
-        if (string.IsNullOrWhiteSpace(userId))
-        {
-            return SecurityResultFactory.Failure<string>(SecurityErrors.IdentityCreationFailedMessage);
-        }
-
-        return SecurityResultFactory.Create(userId);
     }
 
     public async Task<bool> SetEmailVerifiedAsync(string userId, bool verified,
@@ -183,6 +102,87 @@ internal sealed class KeycloakUserService(HttpClient httpClient, ILogger<Keycloa
             cancellationToken);
 
         return response.IsSuccessStatusCode;
+    }
+
+    public Task<SecurityResult<string>> CreateUserAsync(
+        IdentityRegistration registration,
+        string password,
+        CancellationToken cancellationToken = default)
+    {
+        if (!registration.AcceptedTerms)
+        {
+            return Task.FromResult(SecurityResultFactory.Failure<string>(SecurityErrors.TermsNotAcceptedMessage));
+        }
+
+        var legacyRegistration = new UserRegistration
+        {
+            Id = Guid.NewGuid(),
+            Email = registration.Email.Trim().ToLowerInvariant(),
+            Username = registration.Username.Trim(),
+            Consent = new ConsentInfo
+            {
+                TermsAccepted = registration.AcceptedTerms,
+                PrivacyPolicyVersion = registration.PolicyVersion,
+                AcceptedAtUtc = new DateTimeOffset(registration.AcceptedAtUtc, TimeSpan.Zero),
+                SourceIpHash = HashConsentIp(registration.SourceIp)
+            }
+        };
+
+        return CreateUserInternalAsync(legacyRegistration, password, cancellationToken);
+    }
+
+    public async Task<SecurityResult<string>> CreateUserInternalAsync(UserRegistration registration, string password,
+        CancellationToken ct)
+    {
+        var payload = new KeycloakAdminCreateUserPayload
+        {
+            Email = registration.Email,
+            Username = registration.Username,
+            Enabled = true,
+            EmailVerified = false,
+            Credentials =
+            [
+                new KeycloakAdminCredentialPayload
+                {
+                    Type = "password",
+                    Value = password,
+                    Temporary = false
+                }
+            ],
+            Attributes = new Dictionary<string, string[]>
+            {
+                ["consent_date"] = [registration.Consent.AcceptedAtUtc.ToString("O")],
+                ["policy_version"] = [registration.Consent.PrivacyPolicyVersion],
+                ["consent_ip_hash"] = [registration.Consent.SourceIpHash]
+            }
+        };
+
+        using var response = await httpClient.PostAsJsonAsync(
+            "users",
+            payload,
+            KeycloakJsonContext.Default.KeycloakAdminCreateUserPayload,
+            ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            if (response.StatusCode == HttpStatusCode.Conflict)
+            {
+                return SecurityResultFactory.Failure<string>(SecurityErrors.IdentityConflictMessage);
+            }
+
+            var error = await response.Content.ReadAsStringAsync(ct);
+            logger.LogWarning("Failed to create Keycloak user. Status: {Status}. Body: {Body}",
+                (int)response.StatusCode, error);
+            return SecurityResultFactory.Failure<string>(SecurityErrors.IdentityCreationFailedMessage);
+        }
+
+        var userId = TryExtractUserId(response.Headers.Location);
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return SecurityResultFactory.Failure<string>(SecurityErrors.IdentityCreationFailedMessage);
+        }
+
+        return SecurityResultFactory.Create(userId);
     }
 
     private static string? TryExtractUserId(Uri? locationHeader)
