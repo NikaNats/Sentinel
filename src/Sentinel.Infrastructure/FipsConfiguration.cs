@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging.Abstractions;
+
 namespace Sentinel.Infrastructure;
 
 public static class FipsConfiguration
@@ -16,7 +18,7 @@ public static class FipsConfiguration
 
     public static void Apply()
     {
-        Apply(Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+        Apply(NullLogger.Instance);
     }
 
     private static bool IsFipsEnabled() =>

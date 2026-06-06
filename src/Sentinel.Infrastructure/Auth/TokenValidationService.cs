@@ -10,7 +10,8 @@ internal sealed class TokenValidationService(
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
-    public async Task<TokenValidationOutcome> ValidateAsync(ClaimsPrincipal principal, HttpContext context, CancellationToken ct)
+    public async Task<TokenValidationOutcome> ValidateAsync(ClaimsPrincipal principal, HttpContext context,
+        CancellationToken ct)
     {
         try
         {
@@ -34,7 +35,7 @@ internal sealed class TokenValidationService(
             }
 
             var sid = principal.FindFirst("sid")?.Value;
-            
+
             if (string.IsNullOrWhiteSpace(sid))
             {
                 return TokenValidationOutcome.Success;
