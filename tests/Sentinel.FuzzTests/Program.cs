@@ -9,7 +9,6 @@ using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
-using SharpFuzz;
 using Sentinel.DPoP;
 using Sentinel.SdJwt;
 using Sentinel.Security.Abstractions.DPoP;
@@ -32,13 +31,11 @@ public static class Program
         var target = args[0].ToLowerInvariant();
         var corpusPath = args[1];
 
-        // გაუშვათ ჩვენი მაღალი წარმადობის ლოკალური ფაზერი
         RunProgrammaticFuzzer(target, corpusPath);
     }
 
     private static void RunProgrammaticFuzzer(string target, string corpusPath)
     {
-        // 1. წავიკითხოთ საწყისი "თესლი"
         var seedFile = Directory.GetFiles(corpusPath, "*.txt").FirstOrDefault();
         if (seedFile == null)
         {
@@ -50,16 +47,15 @@ public static class Program
         var crashDir = Path.Combine(corpusPath, "crashes");
         Directory.CreateDirectory(crashDir);
 
-        Console.WriteLine($"=== STARTING SENTINEL PURE .NET GENERATIVE FUZZER ===");
+        Console.WriteLine("=== STARTING SENTINEL PURE .NET GENERATIVE FUZZER ===");
         Console.WriteLine($"Target: {target.ToUpperInvariant()}");
         Console.WriteLine($"Corpus Path: {corpusPath}");
         Console.WriteLine($"Crashes Saved To: {crashDir}");
         Console.WriteLine("Fuzzing is running... Press Ctrl+C to stop.");
         Console.WriteLine("-----------------------------------------------------");
 
-        // 2. მოვამზადოთ სამიზნე სერვისები
         var replayCache = new FakeInMemoryJtiCache();
-        var options = Microsoft.Extensions.Options.Options.Create(new DPoPOptions
+        var options = Options.Create(new DPoPOptions
         {
             ProofLifetimeSeconds = 300,
             AllowedClockSkewSeconds = 60
@@ -73,10 +69,8 @@ public static class Program
         var sw = Stopwatch.StartNew();
         var rnd = new Random();
 
-        // 3. ფაზინგის უსწრაფესი გენერაციული ციკლი
         while (true)
         {
-            // მოვახდინოთ ბაიტების მუტაცია
             var mutated = Mutate(seedBytes, rnd);
 
             try
@@ -96,16 +90,11 @@ public static class Program
                 }
             }
             catch (Exception ex) when (
-                ex is JsonException ||
-                ex is FormatException ||
-                ex is SecurityTokenException ||
-                ex is CryptographicException)
+                ex is JsonException or FormatException or SecurityTokenException or CryptographicException)
             {
-                // მოსალოდნელი შეცდომები ფორმატის გამო - უგულებელყოფა
             }
             catch (Exception ex)
             {
-                // ⚠️ კრიტიკული: ვიპოვეთ გაუთვალისწინებელი კრაში (ბაგი / ხვრელი!)
                 crashCount++;
                 var crashFile = Path.Combine(crashDir, $"crash_{Guid.NewGuid():N}.txt");
                 File.WriteAllBytes(crashFile, mutated);
@@ -115,7 +104,6 @@ public static class Program
                 Console.WriteLine($"Exception Details: {ex.Message}\n");
             }
 
-            // ყოველ 10,000 ოპერაციაში ვბეჭდავთ სტატისტიკას ეკრანზე
             if (execCount % 10000 == 0)
             {
                 var rps = execCount / sw.Elapsed.TotalSeconds;
@@ -124,26 +112,25 @@ public static class Program
         }
     }
 
-    // მუტაციის ალგორითმი (Bit-flipping, Byte replacement, Truncation)
     private static byte[] Mutate(byte[] original, Random rnd)
     {
         var copy = (byte[])original.Clone();
-        var mutations = rnd.Next(1, 5); // 1-დან 4-მდე სუპერ-სწრაფი მუტაცია
+        var mutations = rnd.Next(1, 5);
 
-        for (int i = 0; i < mutations; i++)
+        for (var i = 0; i < mutations; i++)
         {
             var mutationType = rnd.Next(0, 3);
             var index = rnd.Next(0, copy.Length);
 
             switch (mutationType)
             {
-                case 0: // Bit flip (XOR)
+                case 0:
                     copy[index] ^= (byte)rnd.Next(1, 256);
                     break;
-                case 1: // ბაიტის სრული ჩანაცვლება
+                case 1:
                     copy[index] = (byte)rnd.Next(0, 256);
                     break;
-                case 2: // შეკვეცა (Truncation)
+                case 2:
                     var newSize = rnd.Next(1, copy.Length);
                     Array.Resize(ref copy, newSize);
                     break;
@@ -155,7 +142,8 @@ public static class Program
 
     private sealed class FakeInMemoryJtiCache : IJtiReplayCache
     {
-        public Task<bool> TryMarkUsedAsync(string jti, DateTimeOffset expiresAt, CancellationToken cancellationToken = default)
+        public Task<bool> TryMarkUsedAsync(string jti, DateTimeOffset expiresAt,
+            CancellationToken cancellationToken = default)
             => Task.FromResult(true);
 
         public Task CleanupExpiredAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -164,7 +152,9 @@ public static class Program
     private sealed class FakeTokenValidator : ISdJwtTokenValidator
     {
         private static readonly JsonWebTokenHandler TokenHandler = new();
-        public Task<SdJwtIssuerTokenValidationResult> ValidateIssuerTokenAsync(string issuerJwt, string expectedAudience, CancellationToken cancellationToken = default) =>
+
+        public Task<SdJwtIssuerTokenValidationResult> ValidateIssuerTokenAsync(string issuerJwt,
+            string expectedAudience, CancellationToken cancellationToken = default) =>
             Task.FromResult(SdJwtIssuerTokenValidationResult.Success(TokenHandler.ReadJsonWebToken(issuerJwt)));
     }
 }

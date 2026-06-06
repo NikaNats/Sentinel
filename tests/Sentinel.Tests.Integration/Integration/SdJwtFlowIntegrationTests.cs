@@ -20,23 +20,25 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.Redis;
 using Sentinel.Redis.Extensions;
-using Sentinel.Tests.Shared;
-using Sentinel.Tests.Shared.Fixtures;
+using Sentinel.SdJwt;
+using Sentinel.Security.Abstractions.Idempotency;
+using Sentinel.Security.Abstractions.Nonce;
+using Sentinel.Security.Abstractions.Replay;
+using Sentinel.Security.Abstractions.Security;
+using Sentinel.Security.Abstractions.Session;
+using Sentinel.Security.Abstractions.SSF;
 using StackExchange.Redis;
 using Testcontainers.Redis;
+using ISsfEventProcessor = Sentinel.Application.Auth.Interfaces.ISsfEventProcessor;
 
 #pragma warning disable CA2213
 
-namespace Sentinel.Tests.Integration;
+namespace Sentinel.Tests.Integration.Integration;
 
-public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrationTests.SdJwtApiFactory>
+public sealed class SdJwtFlowIntegrationTests(SdJwtFlowIntegrationTests.SdJwtApiFactory factory)
+    : IClassFixture<SdJwtFlowIntegrationTests.SdJwtApiFactory>
 {
-    private readonly HttpClient client;
-
-    public SdJwtFlowIntegrationTests(SdJwtApiFactory factory)
-    {
-        client = factory.CreateClient();
-    }
+    private readonly HttpClient _client = factory.CreateClient();
 
     [Fact]
     public async Task Profile_WithSdJwtPresentation_MaterializesOnlyDisclosedClaims()
@@ -54,7 +56,7 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
         using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/profile");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", presentation);
 
-        var response = await client.SendAsync(request, CancellationToken.None);
+        var response = await _client.SendAsync(request, CancellationToken.None);
         var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -111,10 +113,8 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
         return Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(json));
     }
 
-    private static string ComputeDisclosureDigest(string disclosure)
-    {
-        return Base64UrlEncoder.Encode(SHA256.HashData(Encoding.ASCII.GetBytes(disclosure)));
-    }
+    private static string ComputeDisclosureDigest(string disclosure) =>
+        Base64UrlEncoder.Encode(SHA256.HashData(Encoding.ASCII.GetBytes(disclosure)));
 
     private static string ComputeSdHash(string issuerJwt, string[] disclosures)
     {
@@ -176,21 +176,16 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
 
     public sealed class SdJwtApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
-        private readonly RedisContainer redisContainer;
-        private string redisConnectionString = string.Empty;
-
-        public SdJwtApiFactory()
-        {
-            redisContainer = new RedisBuilder("redis:7.4-alpine")
-                .WithPortBinding(6379, true)
-                .Build();
-        }
+        private readonly RedisContainer _redisContainer = new RedisBuilder("redis:7.4-alpine")
+            .WithPortBinding(6379, true)
+            .Build();
+        private string _redisConnectionString = string.Empty;
 
         public async ValueTask InitializeAsync()
         {
-            await redisContainer.StartAsync();
-            var redisHostPort = redisContainer.GetMappedPublicPort(6379);
-            redisConnectionString =
+            await _redisContainer.StartAsync();
+            var redisHostPort = _redisContainer.GetMappedPublicPort(6379);
+            _redisConnectionString =
                 $"localhost:{redisHostPort},abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000";
             await WaitForRedisReadinessAsync("127.0.0.1", redisHostPort, TimeSpan.FromSeconds(30));
             _ = CreateClient();
@@ -211,8 +206,8 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
                     ["Keycloak:Authority"] = "https://localhost:8443/realms/sentinel",
                     ["Keycloak:Audience"] = "sentinel-api",
                     ["Keycloak:RequireHttpsMetadata"] = "false",
-                    ["ConnectionStrings:Redis"] = redisConnectionString,
-                    ["Sentinel:Redis:EndPoint"] = redisConnectionString,
+                    ["ConnectionStrings:Redis"] = _redisConnectionString,
+                    ["Sentinel:Redis:EndPoint"] = _redisConnectionString,
                     ["Sentinel:Redis:EnableInMemoryFallback"] = "true",
                     ["SdJwt:Enabled"] = "true",
                     ["SdJwt:RequireKeyBindingNonce"] = "false"
@@ -224,24 +219,24 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
                 services.RemoveAll<IDistributedCache>();
                 services.RemoveAll<IConnectionMultiplexer>();
                 services.RemoveAll<IRedisConnectionProvider>();
-                services.RemoveAll<Sentinel.Security.Abstractions.Idempotency.IIdempotencyStore>();
+                services.RemoveAll<IIdempotencyStore>();
                 services.RemoveAll<IConfigurationManager<OpenIdConnectConfiguration>>();
-                services.RemoveAll<Sentinel.Security.Abstractions.Replay.IJtiReplayCache>();
-                services.RemoveAll<Sentinel.Security.Abstractions.Nonce.IDpopNonceStore>();
-                services.RemoveAll<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>();
+                services.RemoveAll<IJtiReplayCache>();
+                services.RemoveAll<IDpopNonceStore>();
+                services.RemoveAll<ISessionBlacklistCache>();
                 services.RemoveAll<RedisOptions>();
 
                 services.AddSingleton(new RedisOptions
                 {
-                    EndPoint = redisConnectionString
+                    EndPoint = _redisConnectionString
                 });
 
                 services.AddSingleton<IDistributedCache>(_ =>
-                    new RedisCache(Options.Create(new RedisCacheOptions { Configuration = redisConnectionString })));
+                    new RedisCache(Options.Create(new RedisCacheOptions { Configuration = _redisConnectionString })));
 
                 services.AddSingleton<IConnectionMultiplexer>(_ =>
                 {
-                    var options = ConfigurationOptions.Parse(redisConnectionString);
+                    var options = ConfigurationOptions.Parse(_redisConnectionString);
                     options.AbortOnConnectFail = false;
                     return ConnectionMultiplexer.Connect(options);
                 });
@@ -249,25 +244,24 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
                 var redisConfig = new ConfigurationBuilder()
                     .AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["EndPoint"] = redisConnectionString,
+                        ["EndPoint"] = _redisConnectionString,
                         ["EnableInMemoryFallback"] = "true"
                     })
                     .Build();
                 services.AddRedisSecurityCaches(redisConfig);
-                services.AddTransient<Sentinel.SdJwt.ISdJwtTokenValidator, TestSdJwtTokenValidator>();
-                services.AddSingleton<Sentinel.Security.Abstractions.SSF.ISsfTokenValidator, TestSsfTokenValidator>();
-                services.AddScoped<Sentinel.Application.Auth.Interfaces.ISsfEventProcessor, SsfEventProcessorAdapter>();
-                services.AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, AuthRevocationServiceAdapter>();
+                services.AddTransient<ISdJwtTokenValidator, TestSdJwtTokenValidator>();
+                services.AddSingleton<ISsfTokenValidator, TestSsfTokenValidator>();
+                services.AddScoped<ISsfEventProcessor, SsfEventProcessorAdapter>();
+                services.AddScoped<IAuthRevocationService, AuthRevocationServiceAdapter>();
 
-                // 🟢 მკაფიოდ გაწერილი ნეიმსფეისები ნებისმიერი კონფლიქტის ასაცილებლად
-                services.AddSingleton<Sentinel.Application.Common.Abstractions.IJtiReplayCache>(sp =>
+                services.AddSingleton<Application.Common.Abstractions.IJtiReplayCache>(sp =>
                     new JtiReplayCacheAdapter(
-                        sp.GetRequiredService<Sentinel.Security.Abstractions.Replay.IJtiReplayCache>(),
+                        sp.GetRequiredService<IJtiReplayCache>(),
                         sp.GetService<TimeProvider>()));
 
-                services.AddSingleton<Sentinel.Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
+                services.AddSingleton<Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
                     new SessionBlacklistCacheAdapter(
-                        sp.GetRequiredService<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>(),
+                        sp.GetRequiredService<ISessionBlacklistCache>(),
                         sp.GetService<TimeProvider>()));
 
                 services.AddSingleton<IConfigurationManager<OpenIdConnectConfiguration>>(_ =>
@@ -285,25 +279,22 @@ public sealed class SdJwtFlowIntegrationTests : IClassFixture<SdJwtFlowIntegrati
             });
         }
 
-        private async ValueTask DisposeAsyncCore()
-        {
-            await redisContainer.DisposeAsync();
-        }
+        private async ValueTask DisposeAsyncCore() => await _redisContainer.DisposeAsync();
     }
 
     private sealed class TestOpenIdConfigurationManager(SecurityKey signingKey)
         : IConfigurationManager<OpenIdConnectConfiguration>
     {
-        private readonly OpenIdConnectConfiguration configuration = new()
+        private readonly OpenIdConnectConfiguration _configuration = new()
         {
             Issuer = "https://localhost:8443/realms/sentinel"
         };
 
         public Task<OpenIdConnectConfiguration> GetConfigurationAsync(CancellationToken cancel)
         {
-            configuration.SigningKeys.Clear();
-            configuration.SigningKeys.Add(signingKey);
-            return Task.FromResult(configuration);
+            _configuration.SigningKeys.Clear();
+            _configuration.SigningKeys.Add(signingKey);
+            return Task.FromResult(_configuration);
         }
 
         public void RequestRefresh()

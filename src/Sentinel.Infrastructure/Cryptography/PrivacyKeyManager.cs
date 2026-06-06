@@ -1,30 +1,22 @@
-using System;
 using System.Security.Cryptography;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Sentinel.Security.Abstractions.Secrets;
 using Sentinel.Security.Diagnostics;
 
 namespace Sentinel.Infrastructure.Cryptography;
 
-public sealed class PrivacyKeyManager : BackgroundService, IPrivacyKeyManager
+public sealed class PrivacyKeyManager(ISecretProvider secretProvider, ILogger<PrivacyKeyManager> logger)
+    : BackgroundService, IPrivacyKeyManager
 {
-    private readonly ISecretProvider _secretProvider;
-    private readonly ILogger<PrivacyKeyManager> _logger;
+    private readonly ILogger<PrivacyKeyManager> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-    private volatile byte[] _masterPepper = Array.Empty<byte>();
+    private readonly ISecretProvider _secretProvider =
+        secretProvider ?? throw new ArgumentNullException(nameof(secretProvider));
 
-    public PrivacyKeyManager(ISecretProvider secretProvider, ILogger<PrivacyKeyManager> logger)
-    {
-        _secretProvider = secretProvider ?? throw new ArgumentNullException(nameof(secretProvider));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
+    private volatile byte[] _masterPepper = [];
 
     public ReadOnlySpan<byte> GetMasterPepper() => _masterPepper;
 
-    // 🟢 ენტერპრაის სტანდარტი: Fail-Fast აპლიკაციის ჩართვისას
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Fetching initial Master Pepper from Vault...");
@@ -32,7 +24,8 @@ public sealed class PrivacyKeyManager : BackgroundService, IPrivacyKeyManager
 
         if (_masterPepper.Length != 32)
         {
-            throw new CryptographicException("CRITICAL: Sentinel API startup halted. Vault is unreachable or MasterPepper is invalid. Failing closed.");
+            throw new CryptographicException(
+                "CRITICAL: Sentinel API startup halted. Vault is unreachable or MasterPepper is invalid. Failing closed.");
         }
 
         await base.StartAsync(cancellationToken).ConfigureAwait(false);
@@ -58,7 +51,8 @@ public sealed class PrivacyKeyManager : BackgroundService, IPrivacyKeyManager
     {
         try
         {
-            var pepperBase64 = await _secretProvider.GetSecretAsync("sentinel/privacy", "MasterPepper", ct).ConfigureAwait(false);
+            var pepperBase64 = await _secretProvider.GetSecretAsync("sentinel/privacy", "MasterPepper", ct)
+                .ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(pepperBase64))
             {
                 _logger.LogCritical("'MasterPepper' not found in Vault.");
@@ -77,7 +71,8 @@ public sealed class PrivacyKeyManager : BackgroundService, IPrivacyKeyManager
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Vault connection error during key refresh. Old Master Pepper remains active (Fail-Safe).");
+            _logger.LogError(ex,
+                "Vault connection error during key refresh. Old Master Pepper remains active (Fail-Safe).");
         }
     }
 }

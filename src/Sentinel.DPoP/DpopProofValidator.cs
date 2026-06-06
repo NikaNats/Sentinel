@@ -36,7 +36,7 @@ internal sealed class DpopProofValidator : IDpopProofValidator
         IOptions<DPoPOptions> options,
         IDpopThumbprintComputer? thumbprintComputer = null,
         TimeProvider? timeProvider = null,
-        IMlDsaSignatureVerifier? mlDsaVerifier = null) // 🟢 უსაფრთხოდ გადატანილია სიის ბოლოში!
+        IMlDsaSignatureVerifier? mlDsaVerifier = null)
     {
         _replayCache = replayCache ?? throw new ArgumentNullException(nameof(replayCache));
         _options = (options ?? throw new ArgumentNullException(nameof(options))).Value;
