@@ -1,15 +1,9 @@
-using System;
-using System.IO;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using FluentAssertions;
-using Sentinel.Tests.Shared.Fixtures;
-using Xunit;
 
 namespace Sentinel.Tests.Integration;
 
@@ -32,7 +26,7 @@ public sealed class TlsEnforcementTests(RealKeycloakApiFactory factory)
     [Fact(DisplayName = "P0 Security Gate: Keycloak accepts TLS 1.3")]
     public async Task Keycloak_WhenUsingTls13_MustAcceptConnection()
     {
-        using var ssl = await OpenTlsConnectionAsync(SslProtocols.Tls13);
+        await using var ssl = await OpenTlsConnectionAsync(SslProtocols.Tls13);
 
         ssl.IsAuthenticated.Should().BeTrue("TLS 1.3 connections must be allowed");
         ssl.SslProtocol.Should().Be(SslProtocols.Tls13);
@@ -76,8 +70,8 @@ public sealed class TlsEnforcementTests(RealKeycloakApiFactory factory)
 
             var ssl = new SslStream(
                 client.GetStream(),
-                leaveInnerStreamOpen: false,
-                userCertificateValidationCallback: ValidateServerCertificate);
+                false,
+                ValidateServerCertificate);
 
             var options = new SslClientAuthenticationOptions
             {

@@ -18,13 +18,14 @@ public sealed class ConcurrencyRaceTests : IAsyncLifetime
 {
     private readonly SentinelApiFactory _factory;
     private readonly IDpopNonceStore _nonce_store;
-    private static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;
 
     public ConcurrencyRaceTests(SentinelApiFactory factory)
     {
         _factory = factory;
         _nonce_store = _factory.Services.GetRequiredService<IDpopNonceStore>();
     }
+
+    private static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;
 
     public ValueTask InitializeAsync() => ValueTask.CompletedTask;
 

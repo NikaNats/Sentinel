@@ -179,6 +179,7 @@ public sealed class SdJwtFlowIntegrationTests(SdJwtFlowIntegrationTests.SdJwtApi
         private readonly RedisContainer _redisContainer = new RedisBuilder("redis:7.4-alpine")
             .WithPortBinding(6379, true)
             .Build();
+
         private string _redisConnectionString = string.Empty;
 
         public async ValueTask InitializeAsync()

@@ -62,11 +62,9 @@ public class TestSecurityController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public IActionResult PostDpopProtected([FromBody] object data)
-    {
+    public IActionResult PostDpopProtected([FromBody] object data) =>
         // DPoP validation happens in middleware; if we reach here, proof is valid
-        return Ok(new { message = "DPoP-bound operation successful", received = data });
-    }
+        Ok(new { message = "DPoP-bound operation successful", received = data });
 
     /// <summary>
     ///     Endpoint for testing scope-based authorization.
