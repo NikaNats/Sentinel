@@ -1,7 +1,4 @@
 using System.Collections.Concurrent;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.AspNetCore.Endpoints;
 
@@ -18,13 +15,13 @@ internal static class DocumentEndpoints
         group.MapGet("/", ListDocuments)
             .RequireAuthorization("ScopeDocumentsRead")
             .WithName($"ListDocuments:{prefix}")
-            .Produces<IEnumerable<DocumentSummaryDto>>(StatusCodes.Status200OK)
+            .Produces<IEnumerable<DocumentSummaryDto>>()
             .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapGet("/{id:guid}", GetDocument)
             .RequireAuthorization("ScopeDocumentsRead")
             .WithName($"GetDocument:{prefix}")
-            .Produces<DocumentDetailDto>(StatusCodes.Status200OK)
+            .Produces<DocumentDetailDto>()
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status404NotFound);
 
@@ -208,10 +205,7 @@ internal sealed class DocumentRepository
 {
     private readonly ConcurrentDictionary<Guid, DocumentRecord> _store = new();
 
-    public IEnumerable<DocumentRecord> GetByOwner(string sub)
-    {
-        return _store.Values.Where(x => x.OwnerSub == sub);
-    }
+    public IEnumerable<DocumentRecord> GetByOwner(string sub) => _store.Values.Where(x => x.OwnerSub == sub);
 
     public bool TryGetByOwner(Guid id, string sub, out DocumentRecord document)
     {
@@ -225,10 +219,7 @@ internal sealed class DocumentRepository
         return false;
     }
 
-    public void Add(DocumentRecord doc)
-    {
-        _store[doc.Id] = doc;
-    }
+    public void Add(DocumentRecord doc) => _store[doc.Id] = doc;
 
     public bool Delete(Guid id, string sub)
     {

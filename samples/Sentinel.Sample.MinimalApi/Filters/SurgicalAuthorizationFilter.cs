@@ -1,7 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
 using Sentinel.Application.Auth.Rar;
 using Sentinel.RAR;
 using Sentinel.Sample.MinimalApi.Endpoints;
@@ -9,7 +7,7 @@ using Sentinel.Sample.MinimalApi.Endpoints;
 namespace Sentinel.Sample.MinimalApi.Filters;
 
 /// <summary>
-/// Domain-specific Rich Authorization Request validation filter for financial transfers.
+///     Domain-specific Rich Authorization Request validation filter for financial transfers.
 /// </summary>
 public sealed class SurgicalAuthorizationFilter(
     IRarValidator rarValidator,

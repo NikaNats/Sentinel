@@ -1,6 +1,4 @@
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
+using System.Security.Claims;
 using Sentinel.Application.Auth;
 using Sentinel.Application.Auth.Rar;
 using Sentinel.SdJwt;
@@ -19,7 +17,7 @@ internal static class ShowcaseEndpoints
 
         group.MapGet("/security-context", GetSecurityContext)
             .WithName($"GetSecurityContext:{prefix}")
-            .Produces<SecurityContextDto>(StatusCodes.Status200OK)
+            .Produces<SecurityContextDto>()
             .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapGet("/profile", GetProfileAsync)
@@ -59,11 +57,11 @@ internal static class ShowcaseEndpoints
         var authorizationDetailsCount = context.User.GetAuthorizationDetails().Length;
 
         return TypedResults.Ok(new SecurityContextDto(
-            Subject: sub,
-            Acr: acr,
-            DpopJkt: dpopJkt,
-            AuthorizationDetailsCount: authorizationDetailsCount,
-            TraceId: context.TraceIdentifier));
+            sub,
+            acr,
+            dpopJkt,
+            authorizationDetailsCount,
+            context.TraceIdentifier));
     }
 
     private static async Task<IResult> GetProfileAsync(
@@ -80,7 +78,7 @@ internal static class ShowcaseEndpoints
                 var verification = await presenter.VerifyPresentationAsync(
                     bearerToken,
                     "sentinel-api",
-                    expectedNonce: null,
+                    null,
                     cancellationToken);
 
                 if (!verification.IsValid || verification.Principal is null)
@@ -116,25 +114,21 @@ internal static class ShowcaseEndpoints
         });
     }
 
-    private static IResult GetProtected(HttpContext context)
-    {
-        return TypedResults.Ok(new
+    private static IResult GetProtected(HttpContext context) =>
+        TypedResults.Ok(new
         {
             subject = context.User.FindFirst("sub")?.Value,
             assuranceLevel = context.User.FindFirst("acr")?.Value
         });
-    }
 
-    private static IResult GetStepUp(HttpContext context)
-    {
-        return TypedResults.Ok(new
+    private static IResult GetStepUp(HttpContext context) =>
+        TypedResults.Ok(new
         {
             subject = context.User.FindFirst("sub")?.Value,
             assuranceLevel = "acr3"
         });
-    }
 
-    private static bool HasScope(System.Security.Claims.ClaimsPrincipal user, string scope)
+    private static bool HasScope(ClaimsPrincipal user, string scope)
     {
         var scopeClaim = user.FindFirst("scope")?.Value;
         if (string.IsNullOrWhiteSpace(scopeClaim))

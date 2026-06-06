@@ -1,13 +1,18 @@
+using System.Net.Security;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http.Json;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
-using Microsoft.AspNetCore.RateLimiting;
-using Sentinel.Application.Auth;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
+using Sentinel.Application.DependencyInjection;
 using Sentinel.AspNetCore.Endpoints;
 using Sentinel.AspNetCore.Extensions;
-using Sentinel.Application.DependencyInjection;
 using Sentinel.Infrastructure.DependencyInjection;
 using Sentinel.Keycloak.Extensions;
 using Sentinel.Keycloak.Services;
@@ -15,14 +20,8 @@ using Sentinel.Redis.Extensions;
 using Sentinel.Sample.MinimalApi;
 using Sentinel.Sample.MinimalApi.Endpoints;
 using Sentinel.SdJwt;
-using System.Threading.RateLimiting;
-using System.Net;
-using System.Net.Http;
-using System.Net.Security;
-using System.Security.Authentication;
-using System.Security.Cryptography.X509Certificates;
-using Microsoft.AspNetCore.Builder;
 using Sentinel.Security.Abstractions.Identity;
+using IPNetwork = System.Net.IPNetwork;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,7 +31,7 @@ if (builder.Environment.IsDevelopment())
     {
         options.ConfigureHttpsDefaults(httpsOptions =>
         {
-            httpsOptions.ClientCertificateMode = Microsoft.AspNetCore.Server.Kestrel.Https.ClientCertificateMode.DelayCertificate;
+            httpsOptions.ClientCertificateMode = ClientCertificateMode.DelayCertificate;
         });
     });
 }
@@ -41,8 +40,8 @@ builder.Services.AddOpenApi();
 
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
-                               | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor
+                               | ForwardedHeaders.XForwardedProto;
 
     options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
@@ -59,7 +58,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     }
 });
 
-builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
+builder.Services.Configure<JsonOptions>(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, SampleJsonContext.Default);
 });
@@ -218,19 +217,19 @@ const string showcasePrefix = "api/v1/showcase";
 
 app.MapGet("/", () => TypedResults.Ok(
     new SampleInfoResponse(
-        Service: "Sentinel.Sample.MinimalApi",
-        Docs: "/docs",
-        Endpoints: new EndpointMap(
-            Health: "/healthz",
-            Security: $"/{securityPrefix}",
-            Documents: $"/{documentsPrefix}",
-            Finance: $"/{financePrefix}",
-            Showcase: $"/{showcasePrefix}")))).AllowAnonymous();
+        "Sentinel.Sample.MinimalApi",
+        "/docs",
+        new EndpointMap(
+            "/healthz",
+            $"/{securityPrefix}",
+            $"/{documentsPrefix}",
+            $"/{financePrefix}",
+            $"/{showcasePrefix}")))).AllowAnonymous();
 
 app.MapGet("/healthz", () => TypedResults.Ok(new HealthResponse("ok", DateTimeOffset.UtcNow)))
     .AllowAnonymous();
 
-app.MapSentinelSecurity(securityPrefix);
+app.MapSentinelSecurity();
 app.MapDocumentEndpoints(documentsPrefix);
 app.MapFinanceEndpoints(financePrefix);
 app.MapShowcaseEndpoints(showcasePrefix);

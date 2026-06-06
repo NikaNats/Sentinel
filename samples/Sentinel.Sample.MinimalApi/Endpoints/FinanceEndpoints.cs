@@ -1,13 +1,10 @@
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
 using Sentinel.AspNetCore.Endpoints;
 using Sentinel.Sample.MinimalApi.Filters;
 
 namespace Sentinel.Sample.MinimalApi.Endpoints;
 
 /// <summary>
-/// Simple finance transfer contract secured by Sentinel's policy pipeline.
+///     Simple finance transfer contract secured by Sentinel's policy pipeline.
 /// </summary>
 public sealed record TransferRequest(
     string TransactionId,
@@ -32,7 +29,7 @@ internal static class FinanceEndpoints
         group.MapPost("/transfer", ExecuteTransfer)
             .WithName("ExecuteTransfer")
             .Accepts<TransferRequest>("application/json")
-            .Produces<TransferResponse>(StatusCodes.Status200OK)
+            .Produces<TransferResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
@@ -93,16 +90,14 @@ internal static class FinanceEndpoints
         }
 
         return TypedResults.Ok(new TransferResponse(
-            Status: "Approved",
-            TransactionId: request.TransactionId,
-            Message: $"Transfer of {request.Amount} {request.Currency.ToUpperInvariant()} to {request.DestinationAccount} accepted.",
-            ProcessedAtUtc: DateTimeOffset.UtcNow));
+            "Approved",
+            request.TransactionId,
+            $"Transfer of {request.Amount} {request.Currency.ToUpperInvariant()} to {request.DestinationAccount} accepted.",
+            DateTimeOffset.UtcNow));
     }
 
-    private static bool IsCurrencyCode(string? value)
-    {
-        return !string.IsNullOrWhiteSpace(value)
-               && value.Length == 3
-               && value.All(static c => char.IsAsciiLetter(c));
-    }
+    private static bool IsCurrencyCode(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && value.Length == 3
+        && value.All(static c => char.IsAsciiLetter(c));
 }
