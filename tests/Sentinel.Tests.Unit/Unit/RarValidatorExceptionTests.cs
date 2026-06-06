@@ -5,7 +5,7 @@ using Moq;
 using Sentinel.Domain.Auth.Rar;
 using Sentinel.RAR;
 
-namespace Sentinel.Tests.Unit.Rar;
+namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class RarValidatorExceptionTests
 {
@@ -159,7 +159,7 @@ public sealed class RarValidatorExceptionTests
                 x.Matches(It.IsAny<AuthorizationDetail>(), It.IsAny<JsonElement>(), It.IsAny<RarValidationOptions>()))
             .Returns(true);
 
-        var sut = CreateSut(matcherMock.Object, false);
+        var sut = CreateSut(matcherMock.Object);
         var detail = new AuthorizationDetail("urn:test:type");
         var details = new[] { detail };
 

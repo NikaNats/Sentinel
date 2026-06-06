@@ -6,7 +6,7 @@ using Sentinel.Application.Auth.Handlers;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Security.Abstractions.Options;
 
-namespace Sentinel.Tests.Unit;
+namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class AcrAuthorizationHandlerTests
 {

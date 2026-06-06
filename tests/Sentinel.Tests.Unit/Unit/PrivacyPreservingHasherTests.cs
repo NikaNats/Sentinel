@@ -1,9 +1,4 @@
-using System;
 using System.Net;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
@@ -16,11 +11,6 @@ namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class PrivacyPreservingHasherTests
 {
-    private sealed class FakePrivacyKeyManager(byte[] pepper) : IPrivacyKeyManager
-    {
-        public ReadOnlySpan<byte> GetMasterPepper() => pepper;
-    }
-
     [Fact(DisplayName = "📅 Ephemeral rotation: Hashing the same IP on different days yields different hashes")]
     public void HashIpAddress_OnDifferentDays_YieldsDifferentHashes()
     {
@@ -73,10 +63,15 @@ public sealed class PrivacyPreservingHasherTests
     {
         // Arrange
         var mockSecretProvider = new Mock<ISecretProvider>();
-        var originalPepper = Convert.ToBase64String(new byte[32] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32 });
-        
+        var originalPepper = Convert.ToBase64String(new byte[32]
+        {
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+            30, 31, 32
+        });
+
         // Return valid pepper on first call, throw on subsequent calls
-        mockSecretProvider.SetupSequence(x => x.GetSecretAsync("sentinel/privacy", "MasterPepper", It.IsAny<CancellationToken>()))
+        mockSecretProvider.SetupSequence(x =>
+                x.GetSecretAsync("sentinel/privacy", "MasterPepper", It.IsAny<CancellationToken>()))
             .ReturnsAsync(originalPepper)
             .ThrowsAsync(new Exception("Vault connection failure"));
 
@@ -88,7 +83,7 @@ public sealed class PrivacyPreservingHasherTests
         await keyManager.StartAsync(cancellationTokenSource.Token);
 
         // Wait for background thread to execute the first refresh
-        for (int i = 0; i < 100 && keyManager.GetMasterPepper()[0] == 0; i++)
+        for (var i = 0; i < 100 && keyManager.GetMasterPepper()[0] == 0; i++)
         {
             await Task.Delay(10);
         }
@@ -98,9 +93,14 @@ public sealed class PrivacyPreservingHasherTests
 
         // Trigger manual refresh or wait for rotation (or let's invoke the private refresh method indirectly if possible, 
         // but since we throws on second call, we just verify the worker continues to run and doesn't crash)
-        
+
         // Clean up
         cancellationTokenSource.Cancel();
         await keyManager.StopAsync(default);
+    }
+
+    private sealed class FakePrivacyKeyManager(byte[] pepper) : IPrivacyKeyManager
+    {
+        public ReadOnlySpan<byte> GetMasterPepper() => pepper;
     }
 }

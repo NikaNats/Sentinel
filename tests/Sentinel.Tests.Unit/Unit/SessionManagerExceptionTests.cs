@@ -4,7 +4,7 @@ using Moq;
 using Sentinel.Security.Abstractions.Session;
 using Sentinel.Session;
 
-namespace Sentinel.Tests.Unit.Session;
+namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class SessionManagerExceptionTests
 {
@@ -85,7 +85,7 @@ public sealed class SessionManagerExceptionTests
     public void ValidateDpopBinding_WhenThumbprintsMatch_ReturnsTrue()
     {
         var cacheMock = new Mock<ISessionBlacklistCache>();
-        var sut = CreateSut(cacheMock, true);
+        var sut = CreateSut(cacheMock);
 
         var result = sut.ValidateDpopBinding("thumbprint-abc", "thumbprint-abc");
 
@@ -96,7 +96,7 @@ public sealed class SessionManagerExceptionTests
     public void ValidateDpopBinding_WhenSessionThumbprintMissingAndBindingRequired_ReturnsFalse()
     {
         var cacheMock = new Mock<ISessionBlacklistCache>();
-        var sut = CreateSut(cacheMock, true);
+        var sut = CreateSut(cacheMock);
 
         var result = sut.ValidateDpopBinding("thumbprint-abc", null);
 

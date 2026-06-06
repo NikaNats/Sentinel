@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Time.Testing;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -26,7 +27,7 @@ public sealed class DpopValidationMiddlewareTests
             .ReturnsAsync("old-nonce");
 
         thumbprintComputerMock
-            .Setup(x => x.Compute(It.IsAny<System.Text.Json.JsonElement>()))
+            .Setup(x => x.Compute(It.IsAny<JsonElement>()))
             .Returns(thumbprint);
 
         RequestDelegate next = _ => throw new InvalidOperationException("downstream-failure");
@@ -77,7 +78,7 @@ public sealed class DpopValidationMiddlewareTests
             .Returns(Task.CompletedTask);
 
         thumbprintComputerMock
-            .Setup(x => x.Compute(It.IsAny<System.Text.Json.JsonElement>()))
+            .Setup(x => x.Compute(It.IsAny<JsonElement>()))
             .Returns(thumbprint);
 
         validatorMock
@@ -97,7 +98,8 @@ public sealed class DpopValidationMiddlewareTests
 
         // In unit-test host, response commit hooks are not executed like Kestrel/TestServer.
         // This assertion verifies sequencing: nonce state is not mutated during request execution.
-        nonceStoreMock.Verify(x => x.ConsumeNonceIfMatchesAsync(thumbprint, expectedNonce, It.IsAny<CancellationToken>()),
+        nonceStoreMock.Verify(
+            x => x.ConsumeNonceIfMatchesAsync(thumbprint, expectedNonce, It.IsAny<CancellationToken>()),
             Times.Never);
         nonceStoreMock.Verify(
             x => x.SetNonceAsync(thumbprint, nextNonce, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
@@ -117,7 +119,7 @@ public sealed class DpopValidationMiddlewareTests
             .ReturnsAsync("old-nonce");
 
         thumbprintComputerMock
-            .Setup(x => x.Compute(It.IsAny<System.Text.Json.JsonElement>()))
+            .Setup(x => x.Compute(It.IsAny<JsonElement>()))
             .Returns(thumbprint);
 
         RequestDelegate next = ctx =>

@@ -15,17 +15,19 @@ namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class MtlsBindingMiddlewareTests : IDisposable
 {
+    private readonly MtlsBindingOptions _options;
+    private readonly IOptions<MtlsBindingOptions> _optionsAccessor;
     private readonly X509Certificate2 _testCert;
     private readonly string _testCertPem;
     private readonly string _testCertThumbprint;
-    private readonly MtlsBindingOptions _options;
-    private readonly IOptions<MtlsBindingOptions> _optionsAccessor;
 
     public MtlsBindingMiddlewareTests()
     {
         using var rsa = RSA.Create(2048);
-        var request = new CertificateRequest("CN=sentinel-test-client", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        _testCert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddMinutes(30));
+        var request = new CertificateRequest("CN=sentinel-test-client", rsa, HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        _testCert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5),
+            DateTimeOffset.UtcNow.AddMinutes(30));
 
         _testCertPem = ExportToPem(_testCert);
 
@@ -42,10 +44,7 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
         _optionsAccessor = Microsoft.Extensions.Options.Options.Create(_options);
     }
 
-    public void Dispose()
-    {
-        _testCert.Dispose();
-    }
+    public void Dispose() => _testCert.Dispose();
 
     [Fact(DisplayName = "Scenario 1: Request from trusted proxy with valid header -> Allow")]
     public async Task InvokeAsync_FromTrustedProxy_WithValidHeader_Succeeds()
@@ -56,7 +55,11 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
         context.Request.Headers["X-Client-Cert"] = _testCertPem;
 
         var nextCalled = false;
-        RequestDelegate next = _ => { nextCalled = true; return Task.CompletedTask; };
+        RequestDelegate next = _ =>
+        {
+            nextCalled = true;
+            return Task.CompletedTask;
+        };
         var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor);
 
         await middleware.InvokeAsync(context);
@@ -77,7 +80,11 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
         context2.Request.Headers["X-Client-Cert"] = _testCertPem;
 
         var nextCount = 0;
-        RequestDelegate next = _ => { nextCount++; return Task.CompletedTask; };
+        RequestDelegate next = _ =>
+        {
+            nextCount++;
+            return Task.CompletedTask;
+        };
         var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor);
 
         await middleware.InvokeAsync(context1);

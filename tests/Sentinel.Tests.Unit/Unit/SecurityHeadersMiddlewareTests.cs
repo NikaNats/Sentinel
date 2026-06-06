@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Moq;
 using Sentinel.AspNetCore.Middleware;
 
-namespace Sentinel.Tests.Unit;
+namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class SecurityHeadersMiddlewareTests
 {

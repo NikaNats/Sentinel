@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using Sentinel.Application.Auth.Rar;
 
-namespace Sentinel.Tests.Unit;
+namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class RarExtensionsTests
 {

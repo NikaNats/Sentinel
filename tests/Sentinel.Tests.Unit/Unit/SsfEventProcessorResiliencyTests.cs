@@ -7,7 +7,7 @@ using Sentinel.Security.Abstractions.Session;
 using Sentinel.Security.Abstractions.SSF;
 using Sentinel.SSF;
 
-namespace Sentinel.Tests.Unit.Ssf;
+namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class SsfEventProcessorResiliencyTests
 {

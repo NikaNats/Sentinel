@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
@@ -14,7 +13,7 @@ public sealed class KeycloakAdminTokenProviderTests
     public async Task GetAccessTokenAsync_WhenCalledConcurrently_OnlyFetchesTokenOnce()
     {
         using var handler = new CountingHandler(_ =>
-            CreateTokenResponse("token-a", expiresIn: 120));
+            CreateTokenResponse("token-a", 120));
         using var client = new HttpClient(handler);
         using var provider = CreateProvider(client, new FakeTimeProvider(DateTimeOffset.UtcNow));
 
@@ -32,8 +31,8 @@ public sealed class KeycloakAdminTokenProviderTests
     {
         using var handler = new CountingHandler(callNumber =>
             callNumber == 1
-                ? CreateTokenResponse("token-initial", expiresIn: 31)
-                : CreateTokenResponse("token-refreshed", expiresIn: 120));
+                ? CreateTokenResponse("token-initial", 31)
+                : CreateTokenResponse("token-refreshed", 120));
         using var client = new HttpClient(handler);
         var fakeTime = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var provider = CreateProvider(client, fakeTime);
@@ -67,13 +66,11 @@ public sealed class KeycloakAdminTokenProviderTests
         return new KeycloakAdminTokenProvider(factory, options, logger.Object, timeProvider);
     }
 
-    private static HttpResponseMessage CreateTokenResponse(string token, int expiresIn)
-    {
-        return new HttpResponseMessage(HttpStatusCode.OK)
+    private static HttpResponseMessage CreateTokenResponse(string token, int expiresIn) =>
+        new(HttpStatusCode.OK)
         {
             Content = JsonContent.Create(new TokenResponse(token, expiresIn))
         };
-    }
 
     private sealed record TokenResponse(string access_token, int expires_in);
 

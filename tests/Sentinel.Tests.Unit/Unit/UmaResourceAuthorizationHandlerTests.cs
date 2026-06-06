@@ -6,7 +6,7 @@ using Sentinel.Application.Auth.Handlers;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 
-namespace Sentinel.Tests.Unit;
+namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class UmaResourceAuthorizationHandlerTests
 {

@@ -2,7 +2,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Sentinel.RAR;
 
-namespace Sentinel.Tests.Unit;
+namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class RarExtractorTests
 {

@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Sentinel.Application.Auth.Models;

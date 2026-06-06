@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Sentinel.AspNetCore.Middleware;
 
-namespace Sentinel.Tests.Unit;
+namespace Sentinel.Tests.Unit.Unit;
 
 /// <summary>
 ///     High-Assurance Tests for AcrValidationMiddleware

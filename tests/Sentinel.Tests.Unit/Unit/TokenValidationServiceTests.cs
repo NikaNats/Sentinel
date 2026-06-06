@@ -8,7 +8,7 @@ using Sentinel.Infrastructure.Auth;
 using Sentinel.Security.Abstractions.Exceptions;
 using Sentinel.Security.Abstractions.Session;
 
-namespace Sentinel.Tests.Unit.Auth;
+namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class TokenValidationServiceTests
 {

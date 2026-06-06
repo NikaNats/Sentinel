@@ -2,7 +2,6 @@ using System.Net;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
-using Moq;
 using Sentinel.Security.Diagnostics;
 
 namespace Sentinel.Tests.Unit.Unit;
@@ -15,11 +14,6 @@ public sealed class SecurityContextHasherTests
         services.AddSingleton<IPrivacyKeyManager>(new FakePrivacyKeyManager(new byte[32]));
         services.AddSingleton<IPrivacyPreservingHasher, PrivacyPreservingHasher>();
         context.RequestServices = services.BuildServiceProvider();
-    }
-
-    private sealed class FakePrivacyKeyManager(byte[] pepper) : IPrivacyKeyManager
-    {
-        public ReadOnlySpan<byte> GetMasterPepper() => pepper;
     }
 
     [Fact(DisplayName =
@@ -68,5 +62,10 @@ public sealed class SecurityContextHasherTests
 
         // Must contain only valid Hex characters
         hash.Should().MatchRegex("^[0-9A-F]{64}$", scenario);
+    }
+
+    private sealed class FakePrivacyKeyManager(byte[] pepper) : IPrivacyKeyManager
+    {
+        public ReadOnlySpan<byte> GetMasterPepper() => pepper;
     }
 }

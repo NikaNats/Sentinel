@@ -6,7 +6,7 @@ using Sentinel.Infrastructure.DependencyInjection;
 using Sentinel.Infrastructure.Persistence;
 using Sentinel.Keycloak.Extensions;
 
-namespace Sentinel.Tests.Unit;
+namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class OpenIdConfigurationManagerRegistrationTests
 {
