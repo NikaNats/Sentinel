@@ -5,22 +5,8 @@ using Xunit;
 
 namespace Sentinel.Tests.DPoP;
 
-/// <summary>
-///     High-Assurance Security Invariant Suite for RFC 9449 (DPoP).
-///     This suite treats security requirements as executable specifications.
-///     Every test proves a specific mitigation in the Sentinel Threat Model.
-///     ARCHITECTURE PRINCIPLES:
-///     ✅ Deterministic Temporal Logic: Boundary testing at exact millisecond edges (-61,-60,+5,+6)
-///     ✅ Cryptographic Reality: Real ECDsa P-256 signatures, not fake JWTs
-///     ✅ Strict Verification: FakeJtiReplayCache with explicit expectations and assertion
-///     ✅ Fail-Closed: Infrastructure unavailability results in automatic denial (no degradation)
-///     ✅ Error Sanitization: Topology details never leak in error messages
-///     ✅ Adversarial Verification: Signature tampering, JWK swaps, temporal attacks all tested
-///     ✅ Resource Hygiene: IDisposable ensures proper cryptographic cleanup
-/// </summary>
 public sealed class DpopProofValidatorTests : IDisposable
 {
-    // ✅ Real cryptographic material for mathematically valid test vectors
     private readonly ECDsa _ecdsa;
     private readonly Dictionary<string, object> _publicJwk;
     private readonly StrictJtiReplayCache _replayCache;
@@ -28,16 +14,12 @@ public sealed class DpopProofValidatorTests : IDisposable
     private readonly DpopThumbprintComputer _thumbprintComputer;
     private readonly FakeTimeProvider _timeProvider;
     private readonly DpopProofValidator _validator;
-    private static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;
 
     public DpopProofValidatorTests()
     {
-        // ====== 1. Arrange: Cryptographic Context ======
-        // Create real P-256 key pair. Every test uses this to sign mathematically valid proofs.
         _ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         _securityKey = new ECDsaSecurityKey(_ecdsa) { KeyId = "sentinel-test-01" };
 
-        // Export public key only (no private material) for embedding in JWK header
         var parameters = _ecdsa.ExportParameters(false);
         _publicJwk = new Dictionary<string, object>
         {
@@ -47,8 +29,6 @@ public sealed class DpopProofValidatorTests : IDisposable
             ["y"] = Base64UrlEncoder.Encode(parameters.Q.Y ?? throw new InvalidOperationException())
         };
 
-        // ====== 2. Arrange: Infrastructure Mocks (Strict) ======
-        // We use a strict fake cache implementation to ensure NO unintended side-effects or cache bypasses.
         _timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         _replayCache = new StrictJtiReplayCache();
         _thumbprintComputer = new DpopThumbprintComputer();
@@ -68,27 +48,22 @@ public sealed class DpopProofValidatorTests : IDisposable
             _timeProvider);
     }
 
-    public void Dispose() =>
-        // ✅ Resource cleanup: Dispose cryptographic material
-        // Prevents memory leaks in long-running CI/CD agents
-        _ecdsa?.Dispose();
+    private static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;
+
+    public void Dispose() => _ecdsa?.Dispose();
 
     [Fact(DisplayName = "✅ Invariant: Perfectly signed and timed proof MUST authorize")]
     public async Task ValidateAsync_ValidProof_ReturnsSuccess()
     {
-        // Arrange
         const string requestUri = "https://sentinel.local/api/v1/vault";
         var proof = CreateSignedProof("POST", requestUri);
 
-        // Security Requirement: JTI must be committed to cache to prevent replay
         _replayCache.ExpectSuccess();
 
         var request = new DpopValidationRequest(proof, "POST", new Uri(requestUri));
 
-        // Act
         var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
-        // Assert
         result.IsSuccess.Should().BeTrue("A valid cryptographic proof is the primary token-binding requirement.");
         result.Value.Thumbprint.Should().NotBeNullOrEmpty("DPoP thumbprint must be computed for token binding.");
         _replayCache.Verify();
@@ -97,7 +72,6 @@ public sealed class DpopProofValidatorTests : IDisposable
     [Fact(DisplayName = "🛡️ Adversarial: Tampered signature MUST result in Fail-Closed")]
     public async Task ValidateAsync_TamperedSignature_ReturnsFailure()
     {
-        // Arrange
         var validProof = CreateSignedProof("GET", "https://api.io/t");
         var parts = validProof.Split('.');
 
@@ -106,22 +80,17 @@ public sealed class DpopProofValidatorTests : IDisposable
             throw new InvalidOperationException("Invalid JWT structure");
         }
 
-        // Flip bits in the signature segment (adversarial mutation)
         var tamperedSignature = new string(parts[2].Reverse().ToArray());
         var tamperedProof = $"{parts[0]}.{parts[1]}.{tamperedSignature}";
 
         var request = new DpopValidationRequest(tamperedProof, "GET", new Uri("https://api.io/t"));
 
-        // ✅ Key: NO cache setup expected. Signature validation happens BEFORE cache.
         _replayCache.ExpectNoCalls();
 
-        // Act
         var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
-        // Assert
         result.IsSuccess.Should().BeFalse("Tampered signature must be rejected before any side effects.");
 
-        // Verify no topology details leak
         var errorLower = result.ErrorMessage?.ToLowerInvariant() ?? "";
         errorLower.Should().NotContain("redis");
         errorLower.Should().NotContain("cluster");
@@ -146,50 +115,40 @@ public sealed class DpopProofValidatorTests : IDisposable
         bool expectedSuccess,
         string scenario)
     {
-        // Arrange
         var iat = _timeProvider.GetUtcNow().AddSeconds(secondsOffset);
         var proof = CreateSignedProof("GET", "https://api.io/t", iat: iat);
 
         if (expectedSuccess)
         {
-            // Setup cache to accept the JTI if temporal check passes
             _replayCache.ExpectSuccess();
         }
         else
         {
-            // No cache calls expected if temporal check fails
             _replayCache.ExpectNoCalls();
         }
 
         var request = new DpopValidationRequest(proof, "GET", new Uri("https://api.io/t"));
 
-        // Act
         var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
-        // Assert - Temporal check must happen regardless of cache state
         result.IsSuccess.Should().Be(expectedSuccess, scenario);
     }
 
     [Fact(DisplayName = "⚠️ Fail-Closed: Infrastructure unavailability MUST deny access")]
     public async Task ValidateAsync_CacheOutage_ReturnsFailure()
     {
-        // Arrange
         var proof = CreateSignedProof("GET", "https://api.io/t");
 
-        // Simulate Redis/Database failure (infrastructure is down)
         _replayCache.SetShouldFail();
 
         var request = new DpopValidationRequest(proof, "GET", new Uri("https://api.io/t"));
 
-        // Act
         var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
-        // Assert
         result.IsSuccess.Should().BeFalse(
             "In security logic, ambiguity is a denial. " +
             "Never allow bypass if the cache is down (Fail-Closed principle).");
 
-        // Error message must NOT reveal infrastructure details
         var errorLower = result.ErrorMessage?.ToLowerInvariant() ?? "";
         errorLower.Should().NotContain("redis");
         errorLower.Should().NotContain("cluster");
@@ -229,20 +188,14 @@ public sealed class DpopProofValidatorTests : IDisposable
     [Fact(DisplayName = "🎯 URI Binding: HTU (HTTP URI) mismatch MUST prevent cross-endpoint replay")]
     public async Task ValidateAsync_HtuMismatch_ReturnsFailure()
     {
-        // Arrange
-        // Proof was signed for /vault endpoint
         var proof = CreateSignedProof("POST", "https://api.io/vault");
 
-        // Attacker attempts to replay it against /admin endpoint
         var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/admin"));
 
-        // Setup: If URI validation fails, cache is never called
         _replayCache.ExpectNoCalls();
 
-        // Act
         var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
-        // Assert - URI binding is enforced with ordinal comparison (no Unicode equivalence tricks)
         result.IsSuccess.Should().BeFalse(
             "URI mismatch is a replay attack. Requests must use ordinal comparison for exact matching.");
         result.ErrorMessage.Should().Be("htu_mismatch",
@@ -254,7 +207,6 @@ public sealed class DpopProofValidatorTests : IDisposable
     [Fact(DisplayName = "🔐 JWK Header: Embedded public key MUST match actual signature")]
     public async Task ValidateAsync_TamperedJwkHeader_RejectsKeySwap()
     {
-        // Arrange: Create a different key for the JWK header
         using var tamperedEcdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var tamperedParameters = tamperedEcdsa.ExportParameters(false);
         var wrongJwk = new Dictionary<string, object>
@@ -265,7 +217,6 @@ public sealed class DpopProofValidatorTests : IDisposable
             ["y"] = Base64UrlEncoder.Encode(tamperedParameters.Q.Y ?? throw new InvalidOperationException())
         };
 
-        // Create proof: Signed with REAL key, but header contains WRONG key (classic JWK swap attack)
         var proof = TestJwtBuilder.CreateValidProof(
             _securityKey,
             SecurityAlgorithms.EcdsaSha256,
@@ -275,13 +226,10 @@ public sealed class DpopProofValidatorTests : IDisposable
 
         var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"));
 
-        // Setup: JWK mismatch fails before cache is consulted
         _replayCache.ExpectNoCalls();
 
-        // Act
         var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
-        // Assert
         result.IsSuccess.Should().BeFalse(
             "JWK header must cryptographically match the actual signing key. " +
             "JWK swapping is a critical vulnerability in JOSE processing.");
@@ -292,36 +240,24 @@ public sealed class DpopProofValidatorTests : IDisposable
     [Fact(DisplayName = "🔄 JTI Replay: Duplicate proof MUST be rejected")]
     public async Task ValidateAsync_ReplayedJti_PreventsDuplicateUse()
     {
-        // Arrange
         var proof = CreateSignedProof("POST", "https://api.io/vault");
         var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"));
 
-        // First use: Cache accepts the JTI
         _replayCache.ExpectSuccess();
 
-        // Act - First use
         var firstResult = await _validator.ValidateAsync(request, TestCancellationToken);
         firstResult.IsSuccess.Should().BeTrue("First use of valid proof must pass");
 
-        // Second use (replay): Reset cache expectations for second call - should reject
         _replayCache.Reset();
         _replayCache.ExpectFalse();
 
-        // Act - Second use (replay)
         var replayResult = await _validator.ValidateAsync(request, TestCancellationToken);
 
-        // Assert
         replayResult.IsSuccess.Should().BeFalse(
             "RFC 9449 requires JTI uniqueness. Replayed JTIs are replay attacks. " +
             "The cache must reject attempts to reuse the same JTI.");
     }
 
-    // ====== Test Helper: Production-Grade Cryptographic Proof Generation ======
-
-    /// <summary>
-    ///     Creates a mathematically valid, cryptographically signed DPoP proof.
-    ///     Used by all tests to ensure validator interacts with real JOSE structures.
-    /// </summary>
     private string CreateSignedProof(
         string method,
         string uri,
@@ -336,16 +272,12 @@ public sealed class DpopProofValidatorTests : IDisposable
             nonce,
             iat);
 
-    /// <summary>
-    ///     Strict in-memory JTI replay cache for testing.
-    ///     Enforces that cache calls happen only when expected.
-    /// </summary>
     private sealed class StrictJtiReplayCache : IJtiReplayCache
     {
         private readonly ConcurrentDictionary<string, DateTimeOffset> _usedJtis = new();
         private bool _callHappened;
         private bool _expectCalls = true;
-        private int _expectedReturnValue = 1; // 1 = true, 0 = false, -1 = no call expected
+        private int _expectedReturnValue = 1;
         private bool _shouldFail;
 
         public async Task<bool> TryMarkUsedAsync(
