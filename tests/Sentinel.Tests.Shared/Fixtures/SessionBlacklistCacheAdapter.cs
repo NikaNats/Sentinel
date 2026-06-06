@@ -30,8 +30,6 @@ public sealed class SessionBlacklistCacheAdapter : AppSessionBlacklistCache
     /// <summary>
     ///     Converts Task&lt;bool&gt; to ValueTask&lt;bool&gt; from security cache's IsBlacklistedAsync.
     /// </summary>
-    public async ValueTask<bool> IsSessionBlacklistedAsync(string sessionId, CancellationToken ct)
-    {
-        return await _securityCache.IsBlacklistedAsync(sessionId, ct);
-    }
+    public async ValueTask<bool> IsSessionBlacklistedAsync(string sessionId, CancellationToken ct) =>
+        await _securityCache.IsBlacklistedAsync(sessionId, ct);
 }

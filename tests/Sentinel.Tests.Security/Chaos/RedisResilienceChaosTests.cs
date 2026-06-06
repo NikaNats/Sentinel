@@ -6,7 +6,6 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
-using Xunit;
 
 namespace Sentinel.Tests.Security.Chaos;
 
@@ -15,13 +14,14 @@ public sealed class RedisResilienceChaosTests : IClassFixture<ChaosSentinelApiFa
 {
     private readonly HttpClient _client;
     private readonly ChaosSentinelApiFactory _factory;
-    private static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;
 
     public RedisResilienceChaosTests(ChaosSentinelApiFactory factory)
     {
         _factory = factory;
         _client = _factory.CreateClient();
     }
+
+    private static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;
 
     public ValueTask InitializeAsync() => ValueTask.CompletedTask;
 
@@ -62,7 +62,6 @@ public sealed class RedisResilienceChaosTests : IClassFixture<ChaosSentinelApiFa
     }
 
     [Fact(DisplayName = "🛑 Chaos 2: Complete Redis timeout -> System shuts down in Fail-Closed mode")]
-
     public async Task Request_WithRedisTimeout_ShouldFailClosedWith503()
     {
         await _factory.ChaosClient!.AddTimeoutAsync(6000);
@@ -90,7 +89,6 @@ public sealed class RedisResilienceChaosTests : IClassFixture<ChaosSentinelApiFa
     }
 
     [Fact(DisplayName = "📉 Chaos 3: 20% Packet Loss -> Service maintains safety")]
-
     public async Task Request_WithPacketLoss_EnforcesSecurityAndGracefulDegradation()
     {
         await _factory.ChaosClient!.AddPacketLossAsync(0.2);

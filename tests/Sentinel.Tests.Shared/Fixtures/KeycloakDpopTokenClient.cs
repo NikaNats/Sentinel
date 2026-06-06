@@ -72,10 +72,7 @@ public sealed class KeycloakDpopTokenClient(string tokenEndpoint)
         return request;
     }
 
-    public string CreateProofForTokenEndpoint(HttpMethod method)
-    {
-        return CreateProof(method.Method, tokenEndpoint);
-    }
+    public string CreateProofForTokenEndpoint(HttpMethod method) => CreateProof(method.Method, tokenEndpoint);
 
     private string CreateProof(string method, string url)
     {

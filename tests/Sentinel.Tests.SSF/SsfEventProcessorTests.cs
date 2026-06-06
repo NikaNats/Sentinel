@@ -32,7 +32,6 @@ public sealed class SsfEventProcessorTests
     private readonly SsfEventProcessor _sut;
 
     private readonly MockSsfTokenValidator _validator;
-    private static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;
 
     public SsfEventProcessorTests()
     {
@@ -55,6 +54,8 @@ public sealed class SsfEventProcessorTests
             NullLogger<SsfEventProcessor>.Instance,
             TimeProvider.System);
     }
+
+    private static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;
 
     /// <summary>
     ///     Tests: Valid CAEP session-revoked event adds the specific session to blacklist.
@@ -173,7 +174,8 @@ public sealed class SsfEventProcessorTests
             TimeProvider.System);
 
         // Act
-        var result = await processorWithFailingCache.ProcessAsync("valid-but-infrastructure-fails", TestCancellationToken);
+        var result =
+            await processorWithFailingCache.ProcessAsync("valid-but-infrastructure-fails", TestCancellationToken);
 
         // Assert
         result.IsSuccess.Should().BeFalse(
@@ -230,7 +232,8 @@ public sealed class SsfEventProcessorTests
 
         // Assert
         result.IsSuccess.Should().BeTrue();
-        (await _cache.IsBlacklistedAsync(targetSid, TestCancellationToken)).Should().BeTrue("First event should be processed");
+        (await _cache.IsBlacklistedAsync(targetSid, TestCancellationToken)).Should()
+            .BeTrue("First event should be processed");
         _revocation.WasSubjectRevoked(targetSub).Should().BeTrue("Second event should be processed");
     }
 

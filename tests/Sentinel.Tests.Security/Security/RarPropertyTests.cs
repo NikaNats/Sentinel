@@ -1,4 +1,3 @@
-using System.Linq;
 using System.Text.Json;
 using FluentAssertions;
 using FsCheck;
@@ -7,7 +6,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Sentinel.Domain.Auth.Rar;
 using Sentinel.RAR;
-using Xunit;
 
 namespace Sentinel.Tests.Security;
 

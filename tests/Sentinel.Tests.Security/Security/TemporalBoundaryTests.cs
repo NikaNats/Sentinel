@@ -1,4 +1,3 @@
-using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.Extensions.Options;

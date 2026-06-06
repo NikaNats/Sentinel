@@ -19,7 +19,6 @@ public class SessionManagerTests
     private readonly MockSessionBlacklistCache _blacklist;
     private readonly SessionManager _manager;
     private readonly IOptions<SessionManagementOptions> _options;
-    private static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;
 
     public SessionManagerTests()
     {
@@ -28,6 +27,8 @@ public class SessionManagerTests
         _manager = new SessionManager(_blacklist, _options, NullLogger<SessionManager>.Instance);
     }
 
+    private static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;
+
     [Fact(DisplayName = "Fail-Closed: Revocation fails when cache is down")]
     public async Task RevokeSessionAsync_WhenCacheIsDown_MustReturnFailClosedResult()
     {
@@ -35,7 +36,8 @@ public class SessionManagerTests
         _blacklist.ExceptionToThrow = new InvalidOperationException("Redis cluster unavailable");
 
         // Act
-        var result = await _manager.RevokeSessionAsync("sid_123", DateTimeOffset.UtcNow.AddHours(1), TestCancellationToken);
+        var result =
+            await _manager.RevokeSessionAsync("sid_123", DateTimeOffset.UtcNow.AddHours(1), TestCancellationToken);
 
         // Assert: SECURITY INVARIANT - Fail Closed
         result.IsSuccess.Should()
@@ -52,7 +54,8 @@ public class SessionManagerTests
         _blacklist.ExceptionToThrow = sensitiveError;
 
         // Act
-        var result = await _manager.RevokeSessionAsync("sid_123", DateTimeOffset.UtcNow.AddHours(1), TestCancellationToken);
+        var result =
+            await _manager.RevokeSessionAsync("sid_123", DateTimeOffset.UtcNow.AddHours(1), TestCancellationToken);
 
         // Assert: Error message must be SANITIZED (Fail-Closed + Secure)
         // The original exception details (IP, port, auth status) MUST NOT appear in the result

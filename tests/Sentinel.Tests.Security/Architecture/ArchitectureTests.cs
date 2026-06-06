@@ -1,12 +1,9 @@
 ﻿using ArchUnitNET.Domain;
-using ArchUnitNET.Fluent;
 using ArchUnitNET.Loader;
 using Sentinel.Application.Auth;
 using Sentinel.AspNetCore.Middleware;
 using Sentinel.Domain.Users;
 using Sentinel.Infrastructure;
-using Xunit;
-using System.Linq;
 using static ArchUnitNET.Fluent.ArchRuleDefinition;
 using Assembly = System.Reflection.Assembly;
 

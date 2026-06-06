@@ -106,10 +106,8 @@ public sealed class TestSsfTokenValidator : ISsfTokenValidator
 
 public sealed class AuthRevocationServiceAdapter(ApplicationAuthRevocationService inner) : IAuthRevocationService
 {
-    public async Task RevokeAllSessionsAsync(string subject, CancellationToken cancellationToken = default)
-    {
+    public async Task RevokeAllSessionsAsync(string subject, CancellationToken cancellationToken = default) =>
         _ = await inner.RevokeAllSessionsAsync(subject, cancellationToken);
-    }
 }
 
 public sealed class SsfEventProcessorAdapter(SecuritySsfEventProcessor inner) : ApplicationSsfEventProcessor

@@ -18,13 +18,16 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.Redis;
 using Sentinel.Redis.Extensions;
+using Sentinel.SdJwt;
 using Sentinel.Security.Abstractions.Idempotency;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Replay;
+using Sentinel.Security.Abstractions.Security;
 using Sentinel.Security.Abstractions.Session;
-using Sentinel.Tests.Shared;
+using Sentinel.Security.Abstractions.SSF;
 using StackExchange.Redis;
 using Testcontainers.Redis;
+using ISsfEventProcessor = Sentinel.Application.Auth.Interfaces.ISsfEventProcessor;
 
 namespace Sentinel.Tests.Security.Chaos;
 
@@ -128,10 +131,10 @@ public class ChaosSentinelApiFactory : WebApplicationFactory<Program>, IAsyncLif
                 })
                 .Build();
             services.AddRedisSecurityCaches(redisConfig);
-            services.AddTransient<Sentinel.SdJwt.ISdJwtTokenValidator, TestSdJwtTokenValidator>();
-            services.AddSingleton<Sentinel.Security.Abstractions.SSF.ISsfTokenValidator, TestSsfTokenValidator>();
-            services.AddScoped<Sentinel.Application.Auth.Interfaces.ISsfEventProcessor, SsfEventProcessorAdapter>();
-            services.AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, AuthRevocationServiceAdapter>();
+            services.AddTransient<ISdJwtTokenValidator, TestSdJwtTokenValidator>();
+            services.AddSingleton<ISsfTokenValidator, TestSsfTokenValidator>();
+            services.AddScoped<ISsfEventProcessor, SsfEventProcessorAdapter>();
+            services.AddScoped<IAuthRevocationService, AuthRevocationServiceAdapter>();
 
             services.AddSingleton<Application.Common.Abstractions.IJtiReplayCache>(sp =>
                 new JtiReplayCacheAdapter(
@@ -191,19 +194,11 @@ public class ChaosSentinelApiFactory : WebApplicationFactory<Program>, IAsyncLif
     }
 }
 
-public sealed class ToxiproxyDbClient : IDisposable
+public sealed class ToxiproxyDbClient(string adminUrl) : IDisposable
 {
-    private readonly HttpClient _client;
+    private readonly HttpClient _client = new() { BaseAddress = new Uri(adminUrl) };
 
-    public ToxiproxyDbClient(string adminUrl)
-    {
-        _client = new HttpClient { BaseAddress = new Uri(adminUrl) };
-    }
-
-    public void Dispose()
-    {
-        _client.Dispose();
-    }
+    public void Dispose() => _client.Dispose();
 
     public async Task CreateRedisProxyAsync()
     {

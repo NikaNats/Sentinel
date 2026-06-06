@@ -1,19 +1,12 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Net;
-using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Net.Sockets;
 using System.Net.Security;
+using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using DotNet.Testcontainers.Builders;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
@@ -27,14 +20,18 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Sentinel.Redis;
 using Sentinel.Redis.Extensions;
+using Sentinel.SdJwt;
 using Sentinel.Security.Abstractions.Idempotency;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Replay;
+using Sentinel.Security.Abstractions.Security;
 using Sentinel.Security.Abstractions.Session;
+using Sentinel.Security.Abstractions.SSF;
 using StackExchange.Redis;
 using Testcontainers.Keycloak;
 using Testcontainers.Redis;
 using Xunit;
+using ISsfEventProcessor = Sentinel.Application.Auth.Interfaces.ISsfEventProcessor;
 
 namespace Sentinel.Tests.Shared.Fixtures;
 
@@ -49,22 +46,22 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
     private const ushort KeycloakHttpsPort = 8443;
     private const string KeycloakCertContainerPath = "/etc/x509/https/tls.crt";
     private const string KeycloakKeyContainerPath = "/etc/x509/https/tls.key";
+
+    private const string AdminUsername = "admin";
+    private const string AdminPassword = "admin";
     private static readonly TimeSpan KeycloakHttpClientTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan KeycloakConnectTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan KeycloakReadinessTimeout = TimeSpan.FromSeconds(90);
     private static readonly TimeSpan RedisReadinessTimeout = TimeSpan.FromSeconds(30);
-
-    private const string AdminUsername = "admin";
-    private const string AdminPassword = "admin";
+    private readonly string keycloakCertDirectory;
+    private readonly X509Certificate2 keycloakCertificate;
+    private readonly string keycloakCertPath;
     private readonly KeycloakContainer keycloakContainer;
+    private readonly string keycloakKeyPath;
 
     private readonly RedisContainer redisContainer;
-    private string redisConnectionString = string.Empty;
-    private readonly string keycloakCertDirectory;
-    private readonly string keycloakCertPath;
-    private readonly string keycloakKeyPath;
-    private readonly X509Certificate2 keycloakCertificate;
     private string keycloakBaseAddress = string.Empty;
+    private string redisConnectionString = string.Empty;
 
     public RealKeycloakApiFactory()
     {
@@ -213,10 +210,10 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
                 })
                 .Build();
             services.AddRedisSecurityCaches(redisConfig);
-            services.AddTransient<Sentinel.SdJwt.ISdJwtTokenValidator, TestSdJwtTokenValidator>();
-            services.AddSingleton<Sentinel.Security.Abstractions.SSF.ISsfTokenValidator, TestSsfTokenValidator>();
-            services.AddScoped<Sentinel.Application.Auth.Interfaces.ISsfEventProcessor, SsfEventProcessorAdapter>();
-            services.AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, AuthRevocationServiceAdapter>();
+            services.AddTransient<ISdJwtTokenValidator, TestSdJwtTokenValidator>();
+            services.AddSingleton<ISsfTokenValidator, TestSsfTokenValidator>();
+            services.AddScoped<ISsfEventProcessor, SsfEventProcessorAdapter>();
+            services.AddScoped<IAuthRevocationService, AuthRevocationServiceAdapter>();
 
             // Bridge Application layer IJtiReplayCache to Security layer implementation via adapter
             services.AddSingleton<Application.Common.Abstractions.IJtiReplayCache>(sp =>
@@ -246,10 +243,7 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
         });
     }
 
-    public HttpClient CreateKeycloakHttpClient()
-    {
-        return CreateKeycloakHttpClient(SslProtocols.Tls13);
-    }
+    public HttpClient CreateKeycloakHttpClient() => CreateKeycloakHttpClient(SslProtocols.Tls13);
 
     public HttpClient CreateKeycloakHttpClient(SslProtocols protocols)
     {
@@ -267,7 +261,7 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
                     RemoteCertificateValidationCallback = ValidateKeycloakCertificate
                 }
             },
-            disposeHandler: true)
+            true)
         {
             Timeout = KeycloakHttpClientTimeout
         };
@@ -315,7 +309,7 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
             X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment,
             false));
         request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
-            new OidCollection { new("1.3.6.1.5.5.7.3.1") }, false));
+            new OidCollection { new Oid("1.3.6.1.5.5.7.3.1") }, false));
 
         var sanBuilder = new SubjectAlternativeNameBuilder();
         sanBuilder.AddDnsName("localhost");
@@ -354,7 +348,7 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
                     return;
                 }
             }
-#pragma warning disable CA1031 
+#pragma warning disable CA1031
             catch (Exception ex)
             {
                 lastError = ex;

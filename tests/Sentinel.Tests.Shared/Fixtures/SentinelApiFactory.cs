@@ -14,14 +14,18 @@ using Npgsql;
 using Sentinel.Infrastructure.Persistence;
 using Sentinel.Redis;
 using Sentinel.Redis.Extensions;
+using Sentinel.SdJwt;
 using Sentinel.Security.Abstractions.Idempotency;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Replay;
+using Sentinel.Security.Abstractions.Security;
 using Sentinel.Security.Abstractions.Session;
+using Sentinel.Security.Abstractions.SSF;
 using StackExchange.Redis;
 using Testcontainers.PostgreSql;
 using Testcontainers.Redis;
 using Xunit;
+using ISsfEventProcessor = Sentinel.Application.Auth.Interfaces.ISsfEventProcessor;
 
 namespace Sentinel.Tests.Shared.Fixtures;
 
@@ -149,10 +153,10 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
                 })
                 .Build();
             services.AddRedisSecurityCaches(redisConfig);
-            services.AddTransient<Sentinel.SdJwt.ISdJwtTokenValidator, TestSdJwtTokenValidator>();
-            services.AddSingleton<Sentinel.Security.Abstractions.SSF.ISsfTokenValidator, TestSsfTokenValidator>();
-            services.AddScoped<Sentinel.Application.Auth.Interfaces.ISsfEventProcessor, SsfEventProcessorAdapter>();
-            services.AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, AuthRevocationServiceAdapter>();
+            services.AddTransient<ISdJwtTokenValidator, TestSdJwtTokenValidator>();
+            services.AddSingleton<ISsfTokenValidator, TestSsfTokenValidator>();
+            services.AddScoped<ISsfEventProcessor, SsfEventProcessorAdapter>();
+            services.AddScoped<IAuthRevocationService, AuthRevocationServiceAdapter>();
 
             // Bridge Application layer IJtiReplayCache to Security layer implementation via adapter
             services.AddSingleton<Application.Common.Abstractions.IJtiReplayCache>(sp =>
@@ -179,12 +183,10 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
         });
     }
 
-    private async ValueTask DisposeAsyncCore()
-    {
+    private async ValueTask DisposeAsyncCore() =>
         await Task.WhenAll(
             redisContainer.DisposeAsync().AsTask(),
             postgresContainer.DisposeAsync().AsTask());
-    }
 
     private static async Task WaitForRedisReadinessAsync(string host, int port, TimeSpan timeout)
     {
