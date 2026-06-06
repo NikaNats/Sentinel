@@ -6,6 +6,7 @@ using Sentinel.Infrastructure.Cryptography;
 using Sentinel.Providers.Vault;
 using Sentinel.Security.Abstractions.DependencyInjection;
 using Sentinel.Security.Abstractions.Secrets;
+using Sentinel.Security.Abstractions.Pqc;
 using Sentinel.Security.Diagnostics;
 
 namespace Sentinel.Infrastructure.DependencyInjection;
@@ -25,18 +26,17 @@ public static class VaultPrivacyHardeningExtensions
 
         builder.Services.AddSingleton(vaultOptions);
 
-        // 🟢 HttpClient კავშირების პულინგით და ოპტიმალური თაიმაუტებით
         builder.Services.AddHttpClient<ISecretProvider, VaultSecretProvider>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(5);
         });
 
-        // Key Manager (Background Worker)
+        builder.Services.AddSingleton<IMlDsaSignatureVerifier, NotSupportedMlDsaVerifier>();
+
         builder.Services.AddSingleton<PrivacyKeyManager>();
         builder.Services.AddSingleton<IPrivacyKeyManager>(sp => sp.GetRequiredService<PrivacyKeyManager>());
         builder.Services.AddHostedService(sp => sp.GetRequiredService<PrivacyKeyManager>());
 
-        // Cryptographic Hasher
         builder.Services.AddSingleton<IPrivacyPreservingHasher, PrivacyPreservingHasher>();
 
         return builder;

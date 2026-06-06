@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Options;
+using Sentinel.DPoP.Pqc;
 using Sentinel.Security.Abstractions.Options;
+using Sentinel.Security.Abstractions.Pqc;
 
 namespace Sentinel.DPoP;
 
@@ -10,6 +12,7 @@ internal sealed class DpopProofValidator : IDpopProofValidator
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
     private readonly DPoPOptions _options;
+    private readonly PqcCryptoProviderFactory _pqcFactory;
     private readonly IJtiReplayCache _replayCache;
     private readonly HashSet<string> _supportedAlgorithms;
     private readonly IDpopThumbprintComputer _thumbprintComputer;
@@ -19,44 +22,40 @@ internal sealed class DpopProofValidator : IDpopProofValidator
     ///     Initializes a new instance of the <see cref="DpopProofValidator" /> class.
     /// </summary>
     /// <remarks>
-    ///     ✅ FIX: Injects IOptions&lt;DPoPOptions&gt; for configuration-driven security values
-    ///     and case-insensitive algorithm matching.
+    ///     Injects IOptions&lt;DPoPOptions&gt; for configuration-driven security values.
+    ///     🟢 ARCHITECT'S NOTE: The ML-DSA verifier has been placed at the absolute end of the constructor
+    ///     to preserve binary and source backward compatibility with all existing unit tests and benchmarks.
     /// </remarks>
     /// <param name="replayCache">Cache for preventing JTI replay attacks.</param>
     /// <param name="options">Configuration for DPoP validation settings.</param>
     /// <param name="thumbprintComputer">Computes RFC 7638 thumbprints (optional, creates default if null).</param>
     /// <param name="timeProvider">Time provider for validation (optional, defaults to system time).</param>
+    /// <param name="mlDsaVerifier">Optional Post-Quantum signature verifier. If null, defaults to Fail-Closed posture.</param>
     public DpopProofValidator(
         IJtiReplayCache replayCache,
         IOptions<DPoPOptions> options,
         IDpopThumbprintComputer? thumbprintComputer = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IMlDsaSignatureVerifier? mlDsaVerifier = null) // 🟢 უსაფრთხოდ გადატანილია სიის ბოლოში!
     {
         _replayCache = replayCache ?? throw new ArgumentNullException(nameof(replayCache));
         _options = (options ?? throw new ArgumentNullException(nameof(options))).Value;
         _thumbprintComputer = thumbprintComputer ?? new DpopThumbprintComputer();
         _timeProvider = timeProvider ?? TimeProvider.System;
 
-        // ✅ FIX: Case-insensitive algorithm matching (handles "ES256" vs "es256")
         _supportedAlgorithms = new HashSet<string>(_options.AllowedAlgorithms, StringComparer.OrdinalIgnoreCase);
+
+        var verifier = mlDsaVerifier ?? new FailClosedMlDsaVerifier();
+        _pqcFactory = new PqcCryptoProviderFactory(verifier);
     }
 
-    /// <summary>
-    ///     Validates a DPoP proof and returns cryptographic binding information per RFC 9449.
-    /// </summary>
-    /// <param name="request">Validation context including proof, HTTP method/URI, and optional nonce.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>
-    ///     Success with nonce and thumbprint on valid proof.
-    ///     Failure if proof is malformed, replayed, misbound, or timestamp-invalid.
-    /// </returns>
+    /// <inheritdoc />
     public async Task<SecurityResult<DpopValidationSuccess>> ValidateAsync(
         DpopValidationRequest request,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            // Parse JWT and verify structure
             if (!TokenHandler.CanReadToken(request.DpopHeader))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("invalid_dpop");
@@ -64,19 +63,16 @@ internal sealed class DpopProofValidator : IDpopProofValidator
 
             var dpopToken = TokenHandler.ReadJsonWebToken(request.DpopHeader);
 
-            // Validate algorithm (case-insensitive via configured set)
             if (!IsSupportedAlgorithm(dpopToken.Alg))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("unsupported_algorithm");
             }
 
-            // Validate typ header
             if (!string.Equals(dpopToken.Typ, "dpop+jwt", StringComparison.OrdinalIgnoreCase))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("invalid_typ");
             }
 
-            // ✅ FIX: Request JsonElement directly to prevent .ToString() type-name leakage
             if (!dpopToken.TryGetHeaderValue<JsonElement>("jwk", out var jwkElement))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("missing_jwk");
@@ -88,32 +84,28 @@ internal sealed class DpopProofValidator : IDpopProofValidator
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("invalid_jwk");
             }
 
-            // Reject private keys
             if (jwkElement.TryGetProperty("d", out _))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("private_jwk_rejected");
             }
 
-            // Validate JWT signature using extracted JWK
-            if (!await ValidateDpopSignatureAsync(request.DpopHeader, jwkJson, dpopToken.Alg, cancellationToken))
+            if (!await ValidateDpopSignatureAsync(request.DpopHeader, jwkJson, dpopToken.Alg, cancellationToken)
+                    .ConfigureAwait(false))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("invalid_signature");
             }
 
-            // Validate JTI (prevent replay)
             if (!dpopToken.TryGetPayloadValue<string>("jti", out var jti) || string.IsNullOrWhiteSpace(jti))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("missing_jti");
             }
 
-            // ✅ FIX: RFC 9449 §4.2 - HTTP Method must be exact case (Ordinal, not OrdinalIgnoreCase)
             if (!dpopToken.TryGetPayloadValue<string>("htm", out var htm)
                 || !string.Equals(htm, request.HttpMethod, StringComparison.Ordinal))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("htm_mismatch");
             }
 
-            // Validate HTTP URL binding
             if (!dpopToken.TryGetPayloadValue<string>("htu", out var htu)
                 || !string.Equals(NormalizeUri(htu), NormalizeUri(request.HttpUri.AbsoluteUri),
                     StringComparison.Ordinal))
@@ -121,25 +113,21 @@ internal sealed class DpopProofValidator : IDpopProofValidator
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("htu_mismatch");
             }
 
-            // Validate issued-at timestamp (RFC 9449 requires iat-based freshness, not exp)
             if (!dpopToken.TryGetPayloadValue<long>("iat", out var iat))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("missing_iat");
             }
 
-            // ✅ FIX: Configuration-driven clock skew instead of hardcoded magic numbers
             var iatTime = DateTimeOffset.FromUnixTimeSeconds(iat);
             var now = _timeProvider.GetUtcNow();
             var skew = TimeSpan.FromSeconds(_options.AllowedClockSkewSeconds);
 
-            // Proof must be issued recently. Window: [Now - ProofLifetime - Skew, Now + Skew]
             if (iatTime < now.AddSeconds(-_options.ProofLifetimeSeconds).Subtract(skew) ||
                 iatTime > now.Add(skew))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("iat_out_of_bounds");
             }
 
-            // Validate nonce if provided
             if (!string.IsNullOrWhiteSpace(request.ExpectedNonce))
             {
                 if (!dpopToken.TryGetPayloadValue<string>("nonce", out var proofNonce)
@@ -149,14 +137,12 @@ internal sealed class DpopProofValidator : IDpopProofValidator
                 }
             }
 
-            // Compute thumbprint for cryptographic binding
             var thumbprint = _thumbprintComputer.Compute(jwkElement);
             if (string.IsNullOrEmpty(thumbprint))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("unsupported_key_type");
             }
 
-            // Validate access token binding if provided
             if (!string.IsNullOrEmpty(request.AccessToken))
             {
                 if (!TokenHandler.CanReadToken(request.AccessToken))
@@ -178,25 +164,19 @@ internal sealed class DpopProofValidator : IDpopProofValidator
                 }
             }
 
-            // ✅ FIX: Configuration-driven JTI replay TTL instead of hardcoded 120 seconds
             var stored = await _replayCache.TryMarkUsedAsync(
                 $"dpop:{jti}",
                 now.AddSeconds(_options.ProofLifetimeSeconds),
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
 
             if (!stored)
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("jti_replay_detected");
             }
 
-            // Success: return nonce for next challenge and thumbprint for binding
             var newNonce = GenerateNewNonce();
             var success = new DpopValidationSuccess(newNonce, thumbprint);
             return SecurityResultFactory.Create(success);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
         }
         catch (JsonException)
         {
@@ -224,36 +204,40 @@ internal sealed class DpopProofValidator : IDpopProofValidator
         }
     }
 
-    /// <summary>
-    ///     ✅ FIX: Static method since it only uses TokenHandler (static) and parameters.
-    ///     Validates JWT signature using the provided keys and algorithm per RFC 7518.
-    /// </summary>
-    /// <remarks>
-    ///     ⚠️ ARCHITECTURE WARNING: ML-DSA Support
-    ///     If ML-DSA (MLDSA44/65/87) is requested, Microsoft.IdentityModel requires a registered ICryptoProvider
-    ///     that implements the post-quantum cryptography math. If absent, ValidateTokenAsync returns IsValid=false silently.
-    ///     Consider logging if an ML-DSA request fails without a registered provider.
-    /// </remarks>
-    private static async Task<bool> ValidateDpopSignatureAsync(
+    private async Task<bool> ValidateDpopSignatureAsync(
         string token,
         string jwkJson,
         string algorithm,
         CancellationToken cancellationToken)
     {
-        JsonWebKey signingKey;
+        SecurityKey signingKey;
 
         try
         {
-            signingKey = JsonWebKey.Create(jwkJson);
+            using var jwkDoc = JsonDocument.Parse(jwkJson);
+            var root = jwkDoc.RootElement;
+
+            if (root.TryGetProperty("kty", out var kty) &&
+                string.Equals(kty.GetString(), "ML-DSA", StringComparison.Ordinal))
+            {
+                if (!root.TryGetProperty("x", out var xProp) || string.IsNullOrWhiteSpace(xProp.GetString()))
+                {
+                    return false;
+                }
+
+                var publicKeyBytes = Base64UrlEncoder.DecodeBytes(xProp.GetString());
+                signingKey = new MlDsaSecurityKey(publicKeyBytes, algorithm);
+            }
+            else
+            {
+                signingKey = JsonWebKey.Create(jwkJson);
+            }
         }
-#pragma warning disable CA1031 // Catch Exception: Malformed JWK must fail validation without throwing
-        catch
+        catch (Exception ex) when (ex is JsonException or ArgumentException or FormatException)
         {
             return false;
         }
-#pragma warning restore CA1031
 
-        // RFC 9449: DPoP proofs don't use exp; freshness is via iat window + nonce
         const bool validateLifetime = false;
 
         var validationParameters = new TokenValidationParameters
@@ -265,16 +249,14 @@ internal sealed class DpopProofValidator : IDpopProofValidator
             RequireSignedTokens = true,
             ValidAlgorithms = [algorithm],
             ValidateLifetime = validateLifetime,
-            RequireExpirationTime = validateLifetime
+            RequireExpirationTime = validateLifetime,
+            CryptoProviderFactory = _pqcFactory
         };
 
-        var validationResult = await TokenHandler.ValidateTokenAsync(token, validationParameters);
+        var validationResult = await TokenHandler.ValidateTokenAsync(token, validationParameters).ConfigureAwait(false);
         return validationResult.IsValid;
     }
 
-    /// <summary>
-    ///     Normalizes a URI by removing query string and fragment per RFC 9449.
-    /// </summary>
     private static string NormalizeUri(string uri)
     {
         try
@@ -288,17 +270,12 @@ internal sealed class DpopProofValidator : IDpopProofValidator
 
             return builder.Uri.AbsoluteUri.TrimEnd('/');
         }
-#pragma warning disable CA1031 // Catch-all needed: malformed input must fail closed without throwing
         catch (UriFormatException)
         {
             return string.Empty;
         }
-#pragma warning restore CA1031
     }
 
-    /// <summary>
-    ///     Generates a cryptographically secure random nonce for the next challenge.
-    /// </summary>
     private static string GenerateNewNonce()
     {
         var bytes = new byte[32];
@@ -306,11 +283,13 @@ internal sealed class DpopProofValidator : IDpopProofValidator
         return Base64UrlEncoder.Encode(bytes);
     }
 
-    /// <summary>
-    ///     Checks if an algorithm is in the supported list for DPoP signatures.
-    ///     Uses case-insensitive matching to handle variant capitalizations.
-    /// </summary>
     private bool IsSupportedAlgorithm(string? algorithm) =>
         !string.IsNullOrWhiteSpace(algorithm)
         && _supportedAlgorithms.Contains(algorithm);
+
+    private sealed class FailClosedMlDsaVerifier : IMlDsaSignatureVerifier
+    {
+        public bool Verify(string algorithm, ReadOnlySpan<byte> publicKey, ReadOnlySpan<byte> input,
+            ReadOnlySpan<byte> signature) => false;
+    }
 }
