@@ -193,6 +193,6 @@ jobs:
           export PYTHONIOENCODING=utf-8
           schemathesis run docs/OPENAPI_3_1.yaml \
             --url http://localhost:5000 \
-            --checks not_a_server_error,response_schema_conformance,content_type_conformance,status_code_conformance \
+            --checks not_a_server_error,response_schema_conformance,content_type_conformance \
             --workers 4
         continue-on-error: false

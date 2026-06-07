@@ -1,6 +1,10 @@
-﻿using AdversarialTestHost;
+﻿using System.Net.Security;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
+using AdversarialTestHost;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Json;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -10,6 +14,7 @@ using Sentinel.Infrastructure.DependencyInjection;
 using Sentinel.Redis.Extensions;
 using Sentinel.SdJwt;
 using Sentinel.Security.Abstractions.SSF;
+using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,11 +23,12 @@ builder.WebHost.ConfigureKestrel(options =>
     options.Limits.MaxConcurrentConnections = 15000;
     options.Limits.MaxConcurrentUpgradedConnections = 15000;
     options.Limits.MaxRequestBodySize = 10 * 1024;
-
     options.Limits.MinRequestBodyDataRate = new MinDataRate(100, TimeSpan.FromSeconds(10));
     options.Limits.MinResponseDataRate = new MinDataRate(100, TimeSpan.FromSeconds(10));
     options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
 });
+
+builder.Services.AddProblemDetails();
 
 builder.Services.Configure<JsonOptions>(options =>
 {
@@ -42,8 +48,21 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 {
                     context.Token = authHeader["DPoP ".Length..].Trim();
                 }
-
                 return Task.CompletedTask;
+            },
+            OnChallenge = async context =>
+            {
+                context.HandleResponse();
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.ContentType = "application/problem+json; charset=utf-8";
+                var problem = new ProblemDetails
+                {
+                    Type = "/errors/unauthorized",
+                    Title = "Authentication required",
+                    Status = StatusCodes.Status401Unauthorized,
+                    Detail = context.ErrorDescription ?? "Missing or invalid token"
+                };
+                await context.Response.WriteAsJsonAsync(problem, TestHostJsonContext.Default.ProblemDetails);
             }
         };
 
@@ -56,7 +75,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuer = false,
             ValidateAudience = false,
             ValidateLifetime = false,
-            SignatureValidator = delegate(string token, TokenValidationParameters _) { return new JsonWebToken(token); }
+            SignatureValidator = delegate (string token, TokenValidationParameters _) { return new JsonWebToken(token); }
         };
     });
 
@@ -79,6 +98,8 @@ builder.Services.AddSentinelAspNetCore()
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+app.UseStatusCodePages();
 
 app.UseAuthentication();
 app.UseSentinelSecurityPipeline();
@@ -131,8 +152,9 @@ app.MapGet("/api/system/security/auth/mfa/recovery-codes", () =>
 app.MapPost("/api/system/security/auth/mfa/recovery-codes/regenerate", () =>
     Results.StatusCode(501)).RequireAuthorization();
 
+// ✅ FIX 4: ვავსებთ ცარიელ ველებს სტრიქონებით, რომ სქემას ზუსტად დაემთხვეს
 app.MapPost("/api/system/security/auth/token-exchange", (TokenExchangeRequest request) =>
-        TypedResults.Ok(new TokenExchangeResponse("mock-access-token", null, "Bearer", 3600, null)))
+        TypedResults.Ok(new TokenExchangeResponse("mock-access-token", "mock-refresh-token", "Bearer", 3600, "openid profile")))
     .AllowAnonymous();
 
 app.MapPost("/api/system/security/auth/backchannel-logout", () =>
