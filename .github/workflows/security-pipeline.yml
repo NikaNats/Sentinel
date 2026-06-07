@@ -31,11 +31,8 @@ jobs:
 
       - name: Ensure Full Git History For Versioning
         run: |
-          if git rev-parse --is-shallow-repository | grep -q true; then
-            git fetch --prune --unshallow --tags
-          else
-            git fetch --prune --tags
-          fi
+          git fetch origin main --unshallow || true
+          git fetch --prune --unshallow --tags || true
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5
@@ -71,11 +68,11 @@ jobs:
           node-version: 20
 
       - name: Gate 4 - Build & Generate OpenAPI Contract (from AdversarialTestHost)
-        run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release
+        run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
 
       - name: Fetch OpenAPI Schema from Running Host
         run: |
-          dotnet run --project tests/Sentinel.Tests.Load/AdversarialTestHost.csproj -c Release --no-restore --urls http://localhost:5000 > /dev/null 2>&1 &
+          dotnet run --project tests/Sentinel.Tests.Load/AdversarialTestHost.csproj -c Release -p:SkipGetBuildVersion=true -p:NBGV_Disable=true --no-restore --urls http://localhost:5000 > /dev/null 2>&1 &
           HOST_PID=$!
           
           echo "Waiting for AdversarialTestHost (PID: $HOST_PID) to start..."
@@ -122,11 +119,8 @@ jobs:
 
       - name: Ensure Full Git History For Versioning
         run: |
-          if git rev-parse --is-shallow-repository | grep -q true; then
-            git fetch --prune --unshallow --tags
-          else
-            git fetch --prune --tags
-          fi
+          git fetch origin main --unshallow || true
+          git fetch --prune --unshallow --tags || true
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5
@@ -144,7 +138,7 @@ jobs:
         run: dotnet restore ${{ matrix.test-project }}
 
       - name: Test
-        run: dotnet test ${{ matrix.test-project }} --configuration Release --no-restore --logger "console;verbosity=detailed"
+        run: dotnet test ${{ matrix.test-project }} --configuration Release --no-restore --logger "console;verbosity=detailed" -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
 
   schemathesis-fuzzing:
     name: Dynamic OpenAPI Schema Fuzzing
@@ -154,6 +148,14 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Ensure Full Git History For Versioning
+        run: |
+          git fetch origin main --unshallow || true
+          git fetch --prune --unshallow --tags || true
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5
@@ -169,11 +171,11 @@ jobs:
         run: pip install schemathesis
 
       - name: Build Test Host
-        run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release
+        run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
 
       - name: Start Test Host in Background (HTTP only, redirect disabled)
         run: |
-          nohup dotnet run --project tests/Sentinel.Tests.Load/AdversarialTestHost.csproj -c Release --no-build --urls http://localhost:5000 > /dev/null 2>&1 &
+          nohup dotnet run --project tests/Sentinel.Tests.Load/AdversarialTestHost.csproj -c Release -p:SkipGetBuildVersion=true -p:NBGV_Disable=true --no-build --urls http://localhost:5000 > /dev/null 2>&1 &
           echo "Waiting for AdversarialTestHost to bind to http://localhost:5000..."
           for i in {1..30}; do
             if curl -s http://localhost:5000/healthz > /dev/null 2>&1; then
