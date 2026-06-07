@@ -175,6 +175,7 @@ internal sealed class DpopValidationMiddleware(
     private async Task EnforceConstantTimeFailureAsync(long startTimestamp, HttpContext context)
     {
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        context.Response.ContentType = "application/problem+json; charset=utf-8";
 
         var jitterMs = RandomNumberGenerator.GetInt32(0, 16);
         var targetDuration = TimeSpan.FromMilliseconds(TargetFailureFloorMs + jitterMs);
@@ -192,6 +193,18 @@ internal sealed class DpopValidationMiddleware(
             {
             }
         }
+
+        var problem = new Microsoft.AspNetCore.Mvc.ProblemDetails
+        {
+            Type = "/errors/invalid-dpop-proof",
+            Title = "DPoP proof validation failed",
+            Status = StatusCodes.Status401Unauthorized,
+            Detail = "The provided DPoP proof is missing or invalid.",
+            Instance = context.Request.Path
+        };
+
+        var json = JsonSerializer.Serialize(problem, AspNetCoreJsonContext.Default.ProblemDetails);
+        await context.Response.WriteAsync(json, context.RequestAborted);
     }
 
     private static string? TryExtractProofThumbprint(string dpopHeader, IDpopThumbprintComputer thumbprintComputer)
