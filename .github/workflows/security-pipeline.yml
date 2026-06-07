@@ -53,7 +53,7 @@ jobs:
           extra_args: --only-verified
 
       - name: Gate 2 - SAST (Semgrep)
-        uses: returntocorp/semgrep-action@v1
+        uses: semgrep/semgrep-action@v1
         with:
           config: p/csharp
 
