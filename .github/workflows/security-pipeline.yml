@@ -40,11 +40,11 @@ jobs:
           global-json-file: global.json
 
       - name: Restore strong-name key (Staging/Release Only)
-        if: ${{ secrets.SENTINEL_SNK_BASE64 != '' }}
-        shell: bash
-        run: echo "$SENTINEL_SNK_BASE64" | base64 -d > Sentinel.snk
         env:
           SENTINEL_SNK_BASE64: ${{ secrets.SENTINEL_SNK_BASE64 }}
+        if: ${{ env.SENTINEL_SNK_BASE64 != '' }}
+        shell: bash
+        run: echo "$SENTINEL_SNK_BASE64" | base64 -d > Sentinel.snk
 
       - name: Gate 1 - Secret Scanning
         uses: trufflesecurity/trufflehog@main
@@ -110,11 +110,11 @@ jobs:
           global-json-file: global.json
 
       - name: Restore strong-name key (Staging/Release Only)
-        if: ${{ secrets.SENTINEL_SNK_BASE64 != '' }}
-        shell: bash
-        run: echo "$SENTINEL_SNK_BASE64" | base64 -d > Sentinel.snk
         env:
           SENTINEL_SNK_BASE64: ${{ secrets.SENTINEL_SNK_BASE64 }}
+        if: ${{ env.SENTINEL_SNK_BASE64 != '' }}
+        shell: bash
+        run: echo "$SENTINEL_SNK_BASE64" | base64 -d > Sentinel.snk
 
       - name: Restore
         run: dotnet restore ${{ matrix.test-project }}
