@@ -72,17 +72,25 @@ jobs:
 
       - name: Fetch OpenAPI Schema from Running Host
         run: |
-          dotnet run --project tests/Sentinel.Tests.Load/AdversarialTestHost.csproj -c Release -p:SkipGetBuildVersion=true -p:NBGV_Disable=true --no-restore --urls http://localhost:5000 > /dev/null 2>&1 &
+          dotnet run --project tests/Sentinel.Tests.Load/AdversarialTestHost.csproj -c Release --no-build --urls http://localhost:5000 > host.log 2>&1 &
           HOST_PID=$!
           
           echo "Waiting for AdversarialTestHost (PID: $HOST_PID) to start..."
+          READY=false
           for i in {1..30}; do
             if curl -s http://localhost:5000/healthz > /dev/null 2>&1; then
               echo "✓ Host is ready!"
+              READY=true
               break
             fi
             sleep 1
           done
+          
+          if [ "$READY" = "false" ]; then
+            echo "CRITICAL: Host failed to start. Printing crash logs:"
+            cat host.log
+            exit 1
+          fi
           
           echo "Fetching compiled OpenAPI schema..."
           curl -s http://localhost:5000/openapi/v1.json -o docs/generated_openapi.json

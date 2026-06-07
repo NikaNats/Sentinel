@@ -14,6 +14,14 @@ using Sentinel.Security.Abstractions.SSF;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+{
+    ["Sentinel:Redis:EndPoint"] = "localhost:6379",
+    ["Sentinel:Redis:EnableInMemoryFallback"] = "true",
+    ["Cryptography:ActiveKeyId"] = "test-key-01",
+    ["Cryptography:KeyRing:test-key-01"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+});
+
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.MaxConcurrentConnections = 15000;
