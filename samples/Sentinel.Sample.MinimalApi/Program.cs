@@ -226,11 +226,13 @@ app.UseSentinelSecurityPipeline();
 
 app.UseAuthorization();
 
-if (app.Environment.IsDevelopment())
+app.MapOpenApi();
+app.MapScalarApiReference("/docs", options =>
 {
-    app.MapOpenApi();
-    app.MapScalarApiReference("/docs");
-}
+    options.Title = "Sentinel API Documentation";
+    options.Theme = ScalarTheme.Moon;
+    options.DefaultHttpClient = new KeyValuePair<ScalarTarget, ScalarClient>(ScalarTarget.CSharp, ScalarClient.HttpClient);
+});
 
 const string securityPrefix = "v1";
 const string documentsPrefix = "api/v1/documents";

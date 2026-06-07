@@ -12,6 +12,7 @@ namespace Sentinel.Tests.Security.Chaos;
 [Collection("Sentinel Chaos Integration")]
 public sealed class RedisResilienceChaosTests : IClassFixture<ChaosSentinelApiFactory>, IAsyncLifetime
 {
+    private const string TargetEndpoint = "/api/v1/showcase/security-context";
     private readonly HttpClient _client;
     private readonly ChaosSentinelApiFactory _factory;
 
@@ -36,8 +37,6 @@ public sealed class RedisResilienceChaosTests : IClassFixture<ChaosSentinelApiFa
     [Fact(DisplayName = "⏱️ Chaos 1: 150ms Latency Jitter -> System still works")]
     public async Task Request_WithNetworkLatency_ShouldSucceedWithinSla()
     {
-        await _factory.ChaosClient!.AddLatencyAsync(150, 10);
-
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var securityKey = new ECDsaSecurityKey(ecdsa) { KeyId = "chaos-test-key" };
         var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(securityKey);
@@ -53,8 +52,17 @@ public sealed class RedisResilienceChaosTests : IClassFixture<ChaosSentinelApiFa
         var jkt = ComputeEcThumbprint(jwkObject);
         var token = TestTokenIssuer.MintAccessToken(jkt, "acr2");
 
-        using var request = CreateDpopRequest(token, ecdsa, securityKey, jwkObject, "GET", "/v1/profile");
+        using var warmupRequest = CreateDpopRequest(token, ecdsa, securityKey, jwkObject, "GET", TargetEndpoint);
+        using var warmupResponse = await _client.SendAsync(warmupRequest, TestCancellationToken);
+        warmupResponse.StatusCode.Should().Be(HttpStatusCode.OK, "Warm-up must establish active Redis connection.");
 
+        var rotatedNonce = warmupResponse.Headers.GetValues("DPoP-Nonce").FirstOrDefault();
+        rotatedNonce.Should().NotBeNullOrWhiteSpace("Server must return rotated DPoP-Nonce on 200 OK");
+
+        await _factory.ChaosClient!.AddLatencyAsync(150, 10);
+
+        using var request =
+            CreateDpopRequest(token, ecdsa, securityKey, jwkObject, "GET", TargetEndpoint, rotatedNonce);
         var response = await _client.SendAsync(request, TestCancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK,
@@ -81,7 +89,7 @@ public sealed class RedisResilienceChaosTests : IClassFixture<ChaosSentinelApiFa
         var jkt = ComputeEcThumbprint(jwkObject);
         var token = TestTokenIssuer.MintAccessToken(jkt, "acr2");
 
-        using var request = CreateDpopRequest(token, ecdsa, securityKey, jwkObject, "GET", "/v1/profile");
+        using var request = CreateDpopRequest(token, ecdsa, securityKey, jwkObject, "GET", TargetEndpoint);
 
         var response = await _client.SendAsync(request, TestCancellationToken);
 
@@ -108,7 +116,7 @@ public sealed class RedisResilienceChaosTests : IClassFixture<ChaosSentinelApiFa
         var jkt = ComputeEcThumbprint(jwkObject);
         var token = TestTokenIssuer.MintAccessToken(jkt, "acr2");
 
-        using var request = CreateDpopRequest(token, ecdsa, securityKey, jwkObject, "GET", "/v1/profile");
+        using var request = CreateDpopRequest(token, ecdsa, securityKey, jwkObject, "GET", TargetEndpoint);
 
         var response = await _client.SendAsync(request, TestCancellationToken);
 
@@ -135,17 +143,25 @@ public sealed class RedisResilienceChaosTests : IClassFixture<ChaosSentinelApiFa
         ECDsaSecurityKey securityKey,
         Dictionary<string, string> jwkObject,
         string method,
-        string path)
+        string path,
+        string? nonce = null)
     {
+        var claims = new Dictionary<string, object>
+        {
+            ["jti"] = Guid.NewGuid().ToString("N"),
+            ["htm"] = method,
+            ["htu"] = $"http://localhost{path}",
+            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+        };
+
+        if (!string.IsNullOrEmpty(nonce))
+        {
+            claims["nonce"] = nonce;
+        }
+
         var descriptor = new SecurityTokenDescriptor
         {
-            Claims = new Dictionary<string, object>
-            {
-                ["jti"] = Guid.NewGuid().ToString("N"),
-                ["htm"] = method,
-                ["htu"] = $"http://localhost{path}",
-                ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-            },
+            Claims = claims,
             SigningCredentials = new SigningCredentials(securityKey, SecurityAlgorithms.EcdsaSha256),
             TokenType = "dpop+jwt",
             AdditionalHeaderClaims = new Dictionary<string, object> { ["jwk"] = jwkObject }
@@ -157,9 +173,4 @@ public sealed class RedisResilienceChaosTests : IClassFixture<ChaosSentinelApiFa
         request.Headers.Add("DPoP", proof);
         return request;
     }
-}
-
-[CollectionDefinition("Sentinel Chaos Integration")]
-public sealed class SentinelChaosCollection : ICollectionFixture<ChaosSentinelApiFactory>
-{
 }

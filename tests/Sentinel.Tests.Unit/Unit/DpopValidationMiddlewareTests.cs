@@ -6,6 +6,7 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Moq;
 using Sentinel.AspNetCore.Middleware;
+using Sentinel.AspNetCore.Stores;
 using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Results;
@@ -32,10 +33,14 @@ public sealed class DpopValidationMiddlewareTests
 
         RequestDelegate next = _ => throw new InvalidOperationException("downstream-failure");
         var fakeTimeProvider = new FakeTimeProvider();
+
+        var l1Cache = new L1AntiFloodCache(fakeTimeProvider, TimeSpan.FromSeconds(3));
+
         var middleware = new DpopValidationMiddleware(
             next,
             thumbprintComputerMock.Object,
-            fakeTimeProvider);
+            fakeTimeProvider,
+            l1Cache);
 
         var context = CreateDpopContext();
 
@@ -87,10 +92,14 @@ public sealed class DpopValidationMiddlewareTests
 
         RequestDelegate next = _ => Task.CompletedTask;
         var fakeTimeProvider = new FakeTimeProvider();
+
+        var l1Cache = new L1AntiFloodCache(fakeTimeProvider, TimeSpan.FromSeconds(3));
+
         var middleware = new DpopValidationMiddleware(
             next,
             thumbprintComputerMock.Object,
-            fakeTimeProvider);
+            fakeTimeProvider,
+            l1Cache);
 
         var context = CreateDpopContext();
 
@@ -128,10 +137,14 @@ public sealed class DpopValidationMiddlewareTests
             return Task.CompletedTask;
         };
         var fakeTimeProvider = new FakeTimeProvider();
+
+        var l1Cache = new L1AntiFloodCache(fakeTimeProvider, TimeSpan.FromSeconds(3));
+
         var middleware = new DpopValidationMiddleware(
             next,
             thumbprintComputerMock.Object,
-            fakeTimeProvider);
+            fakeTimeProvider,
+            l1Cache);
 
         var context = CreateDpopContext();
 

@@ -43,7 +43,7 @@ export const options = {
     },
 };
 
-const TARGET_URL = 'https://api.sentinel.local/v1/finance/transfer';
+const TARGET_URL = 'http://localhost:5000/api/v1/finance/transfer';
 
 const PRE_COMPUTED_ACCESS_TOKEN = 'eyJhbGciOiJQUzI1NiI...';
 const PRE_COMPUTED_DPOP_PROOF = 'eyJhbGciOiJFUzI1NiIsInR5cCI6ImRwb3Arand0...';

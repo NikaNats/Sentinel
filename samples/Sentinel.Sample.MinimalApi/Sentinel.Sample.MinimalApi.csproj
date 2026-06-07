@@ -11,6 +11,9 @@
     <ServerGarbageCollection>true</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <GCLargeObjectHeapCompactionMode>CompactOnce</GCLargeObjectHeapCompactionMode>
+    
+    <OpenApiGenerateDocumentsOnBuild>true</OpenApiGenerateDocumentsOnBuild>
+    <OpenApiDocumentName>v1</OpenApiDocumentName>
   </PropertyGroup>
 
   <ItemGroup>
@@ -28,5 +31,9 @@
     <PackageReference Include="Scalar.AspNetCore" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
   </ItemGroup>
+
+  <Target Name="CopyGeneratedOpenApi" AfterTargets="GenerateOpenApiDocuments" Condition="'$(Configuration)' == 'Release'">
+    <Copy SourceFiles="$(TargetDir)v1.json" DestinationFiles="$(MSBuildThisFileDirectory)../../docs/generated_openapi.json" SkipUnchangedFiles="false" />
+  </Target>
 
 </Project>

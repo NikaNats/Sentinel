@@ -1,5 +1,5 @@
 import http from 'k6/http';
-import { check, sleep } from 'k6';
+import { check } from 'k6';
 import { Rate, Trend } from 'k6/metrics';
 
 export const errorRate = new Rate('errors');
@@ -26,7 +26,7 @@ export const options = {
     },
 };
 
-const TARGET_URL = 'http://127.0.0.1:5000/v1/finance/transfer';
+const TARGET_URL = 'http://localhost:5000/api/v1/finance/transfer';
 
 const PRE_COMPUTED_ACCESS_TOKEN = 'eyJhbGciOiJQUzI1NiI...';
 const PRE_COMPUTED_DPOP_PROOF = 'eyJhbGciOiJFUzI1NiIsInR5cCI6ImRwb3Arand0...';
