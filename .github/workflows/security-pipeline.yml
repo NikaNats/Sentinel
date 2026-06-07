@@ -10,6 +10,7 @@ on:
 # to meet the June 2026 compliance deadline and address NIST 800-53 SI-2 requirements.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  SkipGetBuildVersion: true
 
 permissions:
   contents: read
@@ -68,11 +69,11 @@ jobs:
           node-version: 20
 
       - name: Gate 4 - Build & Generate OpenAPI Contract (from AdversarialTestHost)
-        run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release -p:SkipGetBuildVersion=true
+        run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release
 
       - name: Fetch OpenAPI Schema from Running Host
         run: |
-          dotnet run --project tests/Sentinel.Tests.Load/AdversarialTestHost.csproj -c Release -p:SkipGetBuildVersion=true --no-restore --urls http://localhost:5000 > /dev/null 2>&1 &
+          dotnet run --project tests/Sentinel.Tests.Load/AdversarialTestHost.csproj -c Release --no-restore --urls http://localhost:5000 > /dev/null 2>&1 &
           HOST_PID=$!
           
           echo "Waiting for AdversarialTestHost (PID: $HOST_PID) to start..."
@@ -166,11 +167,11 @@ jobs:
         run: pip install schemathesis
 
       - name: Build Test Host
-        run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release -p:SkipGetBuildVersion=true
+        run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release
 
       - name: Start Test Host in Background (HTTP only, redirect disabled)
         run: |
-          nohup dotnet run --project tests/Sentinel.Tests.Load/AdversarialTestHost.csproj -c Release -p:SkipGetBuildVersion=true --no-build --urls http://localhost:5000 > /dev/null 2>&1 &
+          nohup dotnet run --project tests/Sentinel.Tests.Load/AdversarialTestHost.csproj -c Release --no-build --urls http://localhost:5000 > /dev/null 2>&1 &
           echo "Waiting for AdversarialTestHost to bind to http://localhost:5000..."
           for i in {1..30}; do
             if curl -s http://localhost:5000/healthz > /dev/null 2>&1; then
