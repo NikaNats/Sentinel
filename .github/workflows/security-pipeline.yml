@@ -67,8 +67,8 @@ jobs:
         with:
           node-version: 20
 
-      - name: Gate 4 - Build (AdversarialTestHost)
-        run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release --no-restore
+      - name: Gate 4 - Build & Generate OpenAPI Contract (from AdversarialTestHost)
+        run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release
 
       - name: Fetch OpenAPI Schema from Running Host
         run: |
@@ -166,7 +166,7 @@ jobs:
         run: pip install schemathesis
 
       - name: Build Test Host
-        run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release --no-restore
+        run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release
 
       - name: Start Test Host in Background (HTTP only, redirect disabled)
         run: |
