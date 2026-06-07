@@ -14,14 +14,6 @@ using Sentinel.Security.Abstractions.SSF;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
-{
-    ["Sentinel:Redis:EndPoint"] = "localhost:6379",
-    ["Sentinel:Redis:EnableInMemoryFallback"] = "true",
-    ["Cryptography:ActiveKeyId"] = "test-key-01",
-    ["Cryptography:KeyRing:test-key-01"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-});
-
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.MaxConcurrentConnections = 15000;
@@ -34,9 +26,9 @@ builder.WebHost.ConfigureKestrel(options =>
 
 builder.Services.AddProblemDetails();
 
-builder.Services.Configure<JsonOptions>(options =>
+builder.Services.ConfigureHttpJsonOptions(options =>
 {
-    options.JsonSerializerOptions.TypeInfoResolverChain.Insert(0, TestHostJsonContext.Default);
+    options.SerializerOptions.TypeInfoResolverChain.Add(TestHostJsonContext.Default);
 });
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -110,7 +102,6 @@ var app = builder.Build();
 app.Use(async (context, next) =>
 {
     await next();
-
     if (context.Response.StatusCode == 400 && !context.Response.HasStarted &&
         string.IsNullOrEmpty(context.Response.ContentType))
     {
@@ -131,6 +122,7 @@ app.UseStatusCodePages();
 app.UseAuthentication();
 app.UseSentinelSecurityPipeline();
 app.UseAuthorization();
+
 app.MapOpenApi();
 
 app.MapGet("/",
