@@ -40,9 +40,9 @@ jobs:
           global-json-file: global.json
 
       - name: Restore strong-name key (Staging/Release Only)
+        if: ${{ env.SENTINEL_SNK_BASE64 != '' }}
         env:
           SENTINEL_SNK_BASE64: ${{ secrets.SENTINEL_SNK_BASE64 }}
-        if: ${{ env.SENTINEL_SNK_BASE64 != '' }}
         shell: bash
         run: echo "$SENTINEL_SNK_BASE64" | base64 -d > Sentinel.snk
 
@@ -67,8 +67,29 @@ jobs:
         with:
           node-version: 20
 
-      - name: Gate 4 - Build & Generate OpenAPI Contract (from AdversarialTestHost)
+      - name: Gate 4 - Build (AdversarialTestHost)
         run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release --no-restore
+
+      - name: Fetch OpenAPI Schema from Running Host
+        run: |
+          dotnet run --project tests/Sentinel.Tests.Load/AdversarialTestHost.csproj -c Release --no-restore --urls http://localhost:5000 > /dev/null 2>&1 &
+          HOST_PID=$!
+          
+          echo "Waiting for AdversarialTestHost (PID: $HOST_PID) to start..."
+          for i in {1..30}; do
+            if curl -s http://localhost:5000/healthz > /dev/null 2>&1; then
+              echo "✓ Host is ready!"
+              break
+            fi
+            sleep 1
+          done
+          
+          echo "Fetching compiled OpenAPI schema..."
+          curl -s http://localhost:5000/openapi/v1.json -o docs/generated_openapi.json
+          
+          echo "Gracefully terminating AdversarialTestHost (PID: $HOST_PID)..."
+          kill $HOST_PID
+          wait $HOST_PID 2>/dev/null || true
 
       - name: Gate 5 - OpenAPI Schema Drift Audit
         run: |
@@ -110,9 +131,9 @@ jobs:
           global-json-file: global.json
 
       - name: Restore strong-name key (Staging/Release Only)
+        if: ${{ env.SENTINEL_SNK_BASE64 != '' }}
         env:
           SENTINEL_SNK_BASE64: ${{ secrets.SENTINEL_SNK_BASE64 }}
-        if: ${{ env.SENTINEL_SNK_BASE64 != '' }}
         shell: bash
         run: echo "$SENTINEL_SNK_BASE64" | base64 -d > Sentinel.snk
 
