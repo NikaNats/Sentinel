@@ -68,7 +68,7 @@ jobs:
           node-version: 20
 
       - name: Gate 4 - Build & Generate OpenAPI Contract (from AdversarialTestHost)
-        run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
+        run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release
 
       - name: Fetch OpenAPI Schema from Running Host
         run: |
@@ -171,7 +171,7 @@ jobs:
         run: pip install schemathesis
 
       - name: Build Test Host
-        run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
+        run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release
 
       - name: Start Test Host in Background (HTTP only, redirect disabled)
         run: |
@@ -194,6 +194,5 @@ jobs:
           schemathesis run docs/OPENAPI_3_1.yaml \
             --url http://localhost:5000 \
             --checks all \
-            --workers 4 \
-            --require-schema
+            --workers 4
         continue-on-error: false
