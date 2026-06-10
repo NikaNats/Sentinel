@@ -1,4 +1,15 @@
-# Sentinel
+<div align="center">
+  <h1>
+    <picture>
+      <source srcset="logo/logo.svg" type="image/svg+xml">
+      <img src="logo/logo.png" alt="Sentinel Logo" width="200">
+    </picture>
+    <br>
+    Sentinel
+  </h1>
+  <p><strong>A security-focused ASP.NET Core Web API enforcing sender-constrained token validation.</strong></p>
+  <p>Aligned with FAPI 2.0 Baseline and Advanced hardening goals.</p>
+</div>
 
 Sentinel is a security-focused ASP.NET Core Web API that enforces sender-constrained token validation patterns aligned with FAPI 2.0 Baseline and Advanced hardening goals.
 
