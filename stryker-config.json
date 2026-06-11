@@ -8,12 +8,11 @@
     "thresholds": {
       "high": 85,
       "low": 70,
-      "break": 45
+      "break": 70
     },
-    "coverage-analysis": "perTest",
+    "coverage-analysis": "off",
     "concurrency": 4,
     "ignore-mutations": [
-      "string"
     ],
     "ignore-methods": [
       "Log*",
