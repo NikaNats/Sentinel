@@ -16,6 +16,8 @@ public static class SentinelAspNetCoreExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        services.AddMemoryCache();
+
         services.Configure<JsonOptions>(options =>
         {
             options.SerializerOptions.TypeInfoResolverChain.Insert(0, AspNetCoreJsonContext.Default);
@@ -61,7 +63,7 @@ public sealed class SentinelAspNetCoreBuilder
             return this;
         }
 
-        _ = _services.AddOptions<DPoPOptions>()
+        _services.AddOptions<DPoPOptions>()
             .BindConfiguration(DPoPOptions.SectionName)
             .ValidateDataAnnotations();
 

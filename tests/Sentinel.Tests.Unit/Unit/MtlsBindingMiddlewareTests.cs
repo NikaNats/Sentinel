@@ -5,6 +5,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -15,6 +16,7 @@ namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class MtlsBindingMiddlewareTests : IDisposable
 {
+    private readonly MemoryCache _memoryCache;
     private readonly MtlsBindingOptions _options;
     private readonly IOptions<MtlsBindingOptions> _optionsAccessor;
     private readonly X509Certificate2 _testCert;
@@ -42,9 +44,15 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
         };
 
         _optionsAccessor = Microsoft.Extensions.Options.Options.Create(_options);
+
+        _memoryCache = new MemoryCache(new MemoryCacheOptions());
     }
 
-    public void Dispose() => _testCert.Dispose();
+    public void Dispose()
+    {
+        _testCert.Dispose();
+        _memoryCache.Dispose();
+    }
 
     [Fact(DisplayName = "Scenario 1: Request from trusted proxy with valid header -> Allow")]
     public async Task InvokeAsync_FromTrustedProxy_WithValidHeader_Succeeds()
@@ -60,7 +68,9 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
             nextCalled = true;
             return Task.CompletedTask;
         };
-        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor);
+
+        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor,
+            _memoryCache);
 
         await middleware.InvokeAsync(context);
 
@@ -85,7 +95,9 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
             nextCount++;
             return Task.CompletedTask;
         };
-        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor);
+
+        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor,
+            _memoryCache);
 
         await middleware.InvokeAsync(context1);
         await middleware.InvokeAsync(context2);
@@ -102,7 +114,9 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
         context.Request.Headers["X-Client-Cert"] = _testCertPem;
 
         RequestDelegate next = _ => Task.CompletedTask;
-        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor);
+
+        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor,
+            _memoryCache);
 
         await middleware.InvokeAsync(context);
 
@@ -120,7 +134,9 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
         context.Request.Headers["X-Client-Cert"] = _testCertPem;
 
         RequestDelegate next = _ => Task.CompletedTask;
-        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor);
+
+        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor,
+            _memoryCache);
 
         await middleware.InvokeAsync(context);
 

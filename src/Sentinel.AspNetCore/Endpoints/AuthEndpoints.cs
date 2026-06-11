@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
@@ -13,7 +14,7 @@ namespace Sentinel.AspNetCore.Endpoints;
 
 /// <summary>
 ///     Auth Endpoints - Minimal API equivalents of the legacy AuthController.
-///     All endpoints are AOT-compatible with zero reflection.
+///     All endpoints are AOT-compatible with zero reflection and support zero-downtime configuration reload.
 /// </summary>
 internal static class AuthEndpoints
 {
@@ -41,7 +42,7 @@ internal static class AuthEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
-        // Logout Current Session
+        // Logout Current Session (Strict Admin API Revocation - No Refresh Token exposure needed)
         authGroup.MapPost("/logout", LogoutAsync)
             .RequireAuthorization()
             .RequireIdempotency()
@@ -163,11 +164,12 @@ internal static class AuthEndpoints
         [FromServices] IPasswordStrengthValidator passwordStrengthValidator,
         [FromServices] IAuthRevocationService revocationService,
         [FromServices] ISessionBlacklistCache blacklistCache,
-        [FromServices] IOptions<KeycloakOptions> keycloakOptions,
+        [FromServices] IOptionsMonitor<KeycloakOptions> optionsMonitor,
         ClaimsPrincipal user,
         HttpContext context,
         CancellationToken ct)
     {
+        _ = context;
         if (string.IsNullOrWhiteSpace(request.NewPassword))
         {
             return TypedResults.Problem(
@@ -210,36 +212,45 @@ internal static class AuthEndpoints
         var sid = user.FindFirst("sid")?.Value;
         if (!string.IsNullOrWhiteSpace(sid))
         {
-            await blacklistCache.BlacklistSessionAsync(sid, keycloakOptions.Value.ResolveSessionBlacklistTtl(), ct);
+            await blacklistCache.BlacklistSessionAsync(sid, optionsMonitor.CurrentValue.ResolveSessionBlacklistTtl(), ct);
         }
 
         return TypedResults.NoContent();
     }
 
+    /// <summary>
+    ///     Secured Back-Channel Session Deletion.
+    ///     Extracts 'sid' and 'sub' directly from token context.
+    ///     Eliminates plaintext Refresh Token transmission over HTTP during logout.
+    /// </summary>
     private static async Task<IResult> LogoutAsync(
-        [FromBody] RevokeRequest request,
         [FromServices] IAuthRevocationService revocationService,
         [FromServices] ISessionBlacklistCache blacklistCache,
-        [FromServices] IOptions<KeycloakOptions> options,
+        [FromServices] IOptionsMonitor<KeycloakOptions> optionsMonitor,
         ClaimsPrincipal user,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+        var sid = user.FindFirst("sid")?.Value;
+        var sub = user.FindFirst("sub")?.Value;
+
+        if (string.IsNullOrWhiteSpace(sid) || string.IsNullOrWhiteSpace(sub))
         {
             return TypedResults.Problem(
-                "Refresh token is required.",
+                "Invalid token context: missing sid or sub claims.",
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
-        // Blacklist current session
-        var keycloakOptions = options.Value;
-        var sid = user.FindFirst("sid")?.Value;
-        if (!string.IsNullOrWhiteSpace(sid))
+        var keycloakOptions = optionsMonitor.CurrentValue;
+
+        await blacklistCache.BlacklistSessionAsync(sid, keycloakOptions.ResolveSessionBlacklistTtl(), ct);
+
+        var success = await revocationService.RevokeSessionAsync(sub, sid, ct);
+
+        if (!success)
         {
-            await blacklistCache.BlacklistSessionAsync(sid, keycloakOptions.ResolveSessionBlacklistTtl(), ct);
+            AuthTelemetry.Meter.CreateCounter<long>("auth.keycloak.revocation_failures").Add(1);
         }
 
-        await revocationService.RevokeCurrentSessionAsync(request.RefreshToken, ct);
         return TypedResults.NoContent();
     }
 
@@ -296,7 +307,7 @@ internal static class AuthEndpoints
     private static async Task<IResult> GlobalLogoutAsync(
         [FromServices] IAuthRevocationService revocationService,
         [FromServices] ISessionBlacklistCache blacklistCache,
-        [FromServices] IOptions<KeycloakOptions> options,
+        [FromServices] IOptionsMonitor<KeycloakOptions> optionsMonitor,
         ClaimsPrincipal user,
         CancellationToken ct)
     {
@@ -307,7 +318,7 @@ internal static class AuthEndpoints
         }
 
         // Blacklist current session
-        var keycloakOptions = options.Value;
+        var keycloakOptions = optionsMonitor.CurrentValue;
         var sid = user.FindFirst("sid")?.Value;
         if (!string.IsNullOrWhiteSpace(sid))
         {
@@ -329,7 +340,7 @@ internal static class AuthEndpoints
     private static async Task<IResult> DeleteAccountAsync(
         [FromServices] IAuthRevocationService revocationService,
         [FromServices] ISessionBlacklistCache blacklistCache,
-        [FromServices] IOptions<KeycloakOptions> options,
+        [FromServices] IOptionsMonitor<KeycloakOptions> optionsMonitor,
         ClaimsPrincipal user,
         CancellationToken ct)
     {
@@ -340,7 +351,7 @@ internal static class AuthEndpoints
         }
 
         // Blacklist current session
-        var keycloakOptions = options.Value;
+        var keycloakOptions = optionsMonitor.CurrentValue;
         var sid = user.FindFirst("sid")?.Value;
         if (!string.IsNullOrWhiteSpace(sid))
         {
@@ -415,7 +426,7 @@ internal static class AuthEndpoints
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
-    // DTOs
+    // DTOs (Preserved for compatibility)
     // ─────────────────────────────────────────────────────────────────────────────
 
     public sealed record RefreshRequest(string RefreshToken);

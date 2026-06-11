@@ -1,10 +1,10 @@
 using System.Buffers;
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -15,14 +15,15 @@ namespace Sentinel.AspNetCore.Middleware;
 
 /// <summary>
 ///     High-performance, secure, Native AOT-compatible mTLS binding middleware with cryptographic caching.
+///     Fixes applied: IMemoryCache for O(1) automatic eviction (No Memory Leaks), Task.Run for heavy
+///     cryptographic chain building (No Thread Pool Starvation), and X509RevocationMode.Offline.
 /// </summary>
 internal sealed class MtlsBindingMiddleware
 {
-    private const int MaxCacheSize = 25000;
     private static readonly JsonWebTokenHandler TokenHandler = new();
-    private static readonly ConcurrentDictionary<string, CacheEntry> VerifiedCertCache = new(StringComparer.Ordinal);
-    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
+    private readonly IMemoryCache _certCache;
     private readonly ILogger<MtlsBindingMiddleware> _logger;
+
     private readonly RequestDelegate _next;
     private readonly MtlsBindingOptions _options;
     private readonly IPNetworkMatcher _proxyMatcher;
@@ -30,11 +31,14 @@ internal sealed class MtlsBindingMiddleware
     public MtlsBindingMiddleware(
         RequestDelegate next,
         ILogger<MtlsBindingMiddleware> logger,
-        IOptions<MtlsBindingOptions> options)
+        IOptions<MtlsBindingOptions> options,
+        IMemoryCache certCache)
     {
         _next = next ?? throw new ArgumentNullException(nameof(next));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _certCache = certCache ?? throw new ArgumentNullException(nameof(certCache));
+
         _proxyMatcher = new IPNetworkMatcher(_options.TrustedProxies);
     }
 
@@ -63,12 +67,11 @@ internal sealed class MtlsBindingMiddleware
                     return;
                 }
 
-                var cacheKey = GenerateZeroAllocationCacheKey(rawCertData);
+                var cacheKey = $"mtls:{GenerateZeroAllocationCacheKey(rawCertData)}";
 
-                if (VerifiedCertCache.TryGetValue(cacheKey, out var cachedEntry) &&
-                    cachedEntry.ExpiresAt > DateTimeOffset.UtcNow)
+                if (_certCache.TryGetValue(cacheKey, out string? cachedThumbprint))
                 {
-                    if (FixedTimeThumbprintEquals(expectedThumbprint, cachedEntry.Thumbprint))
+                    if (FixedTimeThumbprintEquals(expectedThumbprint, cachedThumbprint!))
                     {
                         await _next(context);
                         return;
@@ -81,20 +84,21 @@ internal sealed class MtlsBindingMiddleware
                 using var proxyCert = rawCertData.Contains("-----BEGIN CERTIFICATE-----", StringComparison.Ordinal)
                     ? X509Certificate2.CreateFromPem(rawCertData)
                     : X509CertificateLoader.LoadCertificate(Convert.FromBase64String(rawCertData));
-                if (_options.ValidateChain && !ValidateCertificateChain(proxyCert, _logger))
+
+                if (_options.ValidateChain)
                 {
-                    await Reject(context, "Provided certificate failed chain validation or is revoked (OCSP/CRL).");
-                    return;
+                    var isValidChain = await Task.Run(() => ValidateCertificateChain(proxyCert, _logger));
+                    if (!isValidChain)
+                    {
+                        await Reject(context, "Provided certificate failed chain validation or is revoked.");
+                        return;
+                    }
                 }
 
                 var hashBytes = SHA256.HashData(proxyCert.RawData);
                 var actualThumbprint = Base64UrlEncoder.Encode(hashBytes);
 
-                if (VerifiedCertCache.Count < MaxCacheSize)
-                {
-                    var expiresAt = DateTimeOffset.UtcNow.Add(CacheTtl);
-                    VerifiedCertCache[cacheKey] = new CacheEntry(actualThumbprint, expiresAt);
-                }
+                _certCache.Set(cacheKey, actualThumbprint, TimeSpan.FromMinutes(5));
 
                 if (!FixedTimeThumbprintEquals(expectedThumbprint, actualThumbprint))
                 {
@@ -114,10 +118,14 @@ internal sealed class MtlsBindingMiddleware
                     return;
                 }
 
-                if (_options.ValidateChain && !ValidateCertificateChain(clientCertificate, _logger))
+                if (_options.ValidateChain)
                 {
-                    await Reject(context, "Client certificate failed chain validation.");
-                    return;
+                    var isValidChain = await Task.Run(() => ValidateCertificateChain(clientCertificate, _logger));
+                    if (!isValidChain)
+                    {
+                        await Reject(context, "Client certificate failed chain validation.");
+                        return;
+                    }
                 }
 
                 var hashBytes = SHA256.HashData(clientCertificate.RawData);
@@ -133,8 +141,7 @@ internal sealed class MtlsBindingMiddleware
             }
             else
             {
-                _logger.LogWarning(
-                    "mTLS error: Direct connections are disabled, but request arrived directly. RemoteIP: {IP}",
+                _logger.LogWarning("mTLS error: Direct connections are disabled. RemoteIP: {IP}",
                     remoteIp?.ToString() ?? "unknown");
                 await Reject(context, "Missing required client certificate for mTLS binding.");
                 return;
@@ -153,7 +160,7 @@ internal sealed class MtlsBindingMiddleware
     {
         using var chain = new X509Chain();
 
-        chain.ChainPolicy.RevocationMode = X509RevocationMode.Online;
+        chain.ChainPolicy.RevocationMode = X509RevocationMode.Offline;
         chain.ChainPolicy.RevocationFlag = X509RevocationFlag.ExcludeRoot;
         chain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
         chain.ChainPolicy.UrlRetrievalTimeout = TimeSpan.FromSeconds(2);
@@ -347,6 +354,4 @@ internal sealed class MtlsBindingMiddleware
         var json = JsonSerializer.Serialize(problem, AspNetCoreJsonContext.Default.ProblemDetails);
         await context.Response.WriteAsync(json);
     }
-
-    private sealed record CacheEntry(string Thumbprint, DateTimeOffset ExpiresAt);
 }

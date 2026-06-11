@@ -7,14 +7,19 @@ using Microsoft.IdentityModel.Tokens;
 using Moq;
 using Sentinel.AspNetCore.Middleware;
 using Sentinel.AspNetCore.Stores;
+using Sentinel.DPoP.Pqc;
 using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Security.Abstractions.Nonce;
+using Sentinel.Security.Abstractions.Pqc;
 using Sentinel.Security.Abstractions.Results;
 
 namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class DpopValidationMiddlewareTests
 {
+    private static readonly PqcCryptoProviderFactory FakePqcFactory =
+        new(new Mock<IMlDsaSignatureVerifier>().Object);
+
     [Fact]
     public async Task InvokeAsync_WhenDownstreamThrows_DoesNotConsumeOrRotateNonce()
     {
@@ -40,7 +45,8 @@ public sealed class DpopValidationMiddlewareTests
             next,
             thumbprintComputerMock.Object,
             fakeTimeProvider,
-            l1Cache);
+            l1Cache,
+            FakePqcFactory);
 
         var context = CreateDpopContext();
 
@@ -99,7 +105,8 @@ public sealed class DpopValidationMiddlewareTests
             next,
             thumbprintComputerMock.Object,
             fakeTimeProvider,
-            l1Cache);
+            l1Cache,
+            FakePqcFactory);
 
         var context = CreateDpopContext();
 
@@ -144,7 +151,8 @@ public sealed class DpopValidationMiddlewareTests
             next,
             thumbprintComputerMock.Object,
             fakeTimeProvider,
-            l1Cache);
+            l1Cache,
+            FakePqcFactory);
 
         var context = CreateDpopContext();
 

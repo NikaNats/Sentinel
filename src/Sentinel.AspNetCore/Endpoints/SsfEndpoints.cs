@@ -35,11 +35,12 @@ internal static class SsfEndpoints
     private static async Task<IResult> ReceiveEventAsync(
         HttpRequest request,
         [FromServices] ISsfEventProcessor processor,
-        [FromServices] IOptions<SsfOptions> options,
-        [FromServices] ILogger<ISsfEventProcessor> logger,
+        [FromServices] IOptionsMonitor<SsfOptions> optionsMonitor,
+        [FromServices] ILoggerFactory loggerFactory,
         CancellationToken ct)
     {
-        var ssfOptions = options.Value;
+        var logger = loggerFactory.CreateLogger("Sentinel.AspNetCore.Endpoints.SsfEndpoints");
+        var ssfOptions = optionsMonitor.CurrentValue;
 
         // SSF feature flag - return 404 if disabled (RFC 8936: clients should assume SSF not supported)
         if (!ssfOptions.Enabled)
@@ -50,10 +51,8 @@ internal static class SsfEndpoints
         // Validate authentication token if configured (prevents replay attacks on public endpoint)
         if (ssfOptions.RequireAuthToken && !IsAuthTokenValid(request, ssfOptions))
         {
-            return TypedResults.Problem(
-                type: "/errors/ssf-auth-failed",
-                detail: "SSF authentication failed.",
-                statusCode: StatusCodes.Status401Unauthorized);
+            logger.LogWarning("security:ssf_auth_failed SSF Webhook token verification failed.");
+            return TypedResults.NotFound(); // იდენტობის დასამალად ვაბრუნებთ 404-ს
         }
 
         var setToken = await ReadSecurityEventTokenAsync(request, ct);
@@ -120,14 +119,12 @@ internal static class SsfEndpoints
     /// </summary>
     private static async Task<string?> ReadSecurityEventTokenAsync(HttpRequest request, CancellationToken ct)
     {
-        // Handle raw JWT format (Content-Type: application/secevent+jwt)
         if (request.ContentType?.Contains("application/secevent+jwt", StringComparison.OrdinalIgnoreCase) == true)
         {
             using var reader = new StreamReader(request.Body);
             return (await reader.ReadToEndAsync(ct)).Trim();
         }
 
-        // Handle JSON format with 'set' property
         try
         {
             using var payload = await JsonDocument.ParseAsync(request.Body, cancellationToken: ct);

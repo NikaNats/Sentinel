@@ -1,11 +1,16 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.AspNetCore.Stores;
+using Sentinel.DPoP.Pqc;
 using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Security.Abstractions.Nonce;
+using Sentinel.Security.Abstractions.Pqc;
 using Sentinel.Security.Diagnostics;
 using IDpopProofValidator = Sentinel.Security.Abstractions.DPoP.IDpopProofValidator;
 
@@ -15,7 +20,8 @@ internal sealed class DpopValidationMiddleware(
     RequestDelegate next,
     IDpopThumbprintComputer thumbprintComputer,
     TimeProvider timeProvider,
-    L1AntiFloodCache l1AntiFloodCache)
+    L1AntiFloodCache l1AntiFloodCache,
+    PqcCryptoProviderFactory? pqcFactory = null)
 {
     private const long TargetFailureFloorMs = 100;
     private static readonly JsonWebTokenHandler TokenHandler = new();
@@ -28,9 +34,7 @@ internal sealed class DpopValidationMiddleware(
     {
         var startTimestamp = timeProvider.GetTimestamp();
 
-        var ipHash = SecurityContextHasher.HashIp(context);
         var authHeaderString = context.Request.Headers.Authorization.ToString();
-
         var authHeaderSpan = authHeaderString.AsSpan();
 
         if (authHeaderSpan.IsEmpty || !authHeaderSpan.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase))
@@ -44,12 +48,7 @@ internal sealed class DpopValidationMiddleware(
                     return;
                 }
 
-                AuthTelemetry.DpopFailures.Add(1,
-                    new KeyValuePair<string, object?>("reason", "bearer_downgrade_attempt"));
-                context.Response.Headers.Append("WWW-Authenticate",
-                    "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
-
-                await EnforceConstantTimeFailureAsync(startTimestamp, context);
+                await EnforceConstantTimeFailureAsync(startTimestamp, context, "bearer_downgrade_attempt");
                 return;
             }
 
@@ -63,10 +62,7 @@ internal sealed class DpopValidationMiddleware(
 
         if (string.IsNullOrWhiteSpace(dpopProofString))
         {
-            AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", "missing_dpop_proof"));
-            context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"missing_dpop_proof\"");
-
-            await EnforceConstantTimeFailureAsync(startTimestamp, context);
+            await EnforceConstantTimeFailureAsync(startTimestamp, context, "missing_dpop_proof");
             return;
         }
 
@@ -74,19 +70,29 @@ internal sealed class DpopValidationMiddleware(
         var requestUrl = $"{context.Request.Scheme}://{context.Request.Host}{context.Request.Path}";
 
         var thumbprint = TryExtractProofThumbprint(dpopProofString, thumbprintComputer);
-        string? expectedNonce = null;
 
+        // 1. ლოკალური L1 დაცვა (სწრაფი ბლოკირება Redis-ის გარეშე)
+        if (!string.IsNullOrWhiteSpace(thumbprint) && l1AntiFloodCache.IsTemporarilyBlacklisted(thumbprint))
+        {
+            await EnforceConstantTimeFailureAsync(startTimestamp, context, "l1_anti_flood_blocked");
+            return;
+        }
+
+        // 2. ულტრა-სწრაფი ლოკალური ხელმოწერის შემოწმება ქსელური მოთხოვნის (Redis) გაგზავნამდე!
+        if (!await ValidateDpopSignatureOnlyAsync(context, dpopProofString, context.RequestAborted))
+        {
+            if (!string.IsNullOrWhiteSpace(thumbprint))
+            {
+                l1AntiFloodCache.RecordFailedAttempt(thumbprint);
+            }
+            await EnforceConstantTimeFailureAsync(startTimestamp, context, "invalid_signature");
+            return;
+        }
+
+        // 3. მხოლოდ ახლა მივმართავთ Redis-ს (რადგან ხელმოწერა უკვე დადასტურდა)
+        string? expectedNonce = null;
         if (!string.IsNullOrWhiteSpace(thumbprint))
         {
-            if (l1AntiFloodCache.IsTemporarilyBlacklisted(thumbprint))
-            {
-                AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", "l1_anti_flood_blocked"));
-                context.Response.Headers.Append("WWW-Authenticate",
-                    "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
-                await EnforceConstantTimeFailureAsync(startTimestamp, context);
-                return;
-            }
-
             expectedNonce = await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted);
         }
 
@@ -97,8 +103,6 @@ internal sealed class DpopValidationMiddleware(
 
         if (!result.IsValid)
         {
-            AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", "invalid_dpop_proof"));
-
             if (!string.IsNullOrWhiteSpace(thumbprint))
             {
                 l1AntiFloodCache.RecordFailedAttempt(thumbprint);
@@ -115,16 +119,9 @@ internal sealed class DpopValidationMiddleware(
                     : await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted) ?? challengeNonce;
 
                 context.Response.Headers.Append("DPoP-Nonce", effectiveNonce);
-                context.Response.Headers.Append("WWW-Authenticate",
-                    "DPoP error=\"use_dpop_nonce\", algs=\"PS256 ES256\"");
-            }
-            else
-            {
-                context.Response.Headers.Append("WWW-Authenticate",
-                    "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
             }
 
-            await EnforceConstantTimeFailureAsync(startTimestamp, context);
+            await EnforceConstantTimeFailureAsync(startTimestamp, context, result.Error ?? "invalid_dpop_proof");
             return;
         }
 
@@ -172,8 +169,87 @@ internal sealed class DpopValidationMiddleware(
         await next(context);
     }
 
-    private async Task EnforceConstantTimeFailureAsync(long startTimestamp, HttpContext context)
+    private async Task<bool> ValidateDpopSignatureOnlyAsync(HttpContext context, string dpopHeader, CancellationToken cancellationToken)
     {
+        try
+        {
+            if (!TokenHandler.CanReadToken(dpopHeader)) return false;
+            var token = TokenHandler.ReadJsonWebToken(dpopHeader);
+
+            if (!token.TryGetHeaderValue<JsonElement>("jwk", out var jwkElement)) return false;
+            var jwkJson = jwkElement.GetRawText();
+            if (string.IsNullOrWhiteSpace(jwkJson)) return false;
+
+            SecurityKey signingKey;
+            var algorithm = token.Alg;
+
+            using var jwkDoc = JsonDocument.Parse(jwkJson);
+            var root = jwkDoc.RootElement;
+
+            if (root.TryGetProperty("kty", out var kty) && string.Equals(kty.GetString(), "ML-DSA", StringComparison.Ordinal))
+            {
+                if (!root.TryGetProperty("x", out var xProp) || string.IsNullOrWhiteSpace(xProp.GetString()))
+                {
+                    return false;
+                }
+                var publicKeyBytes = Base64UrlEncoder.DecodeBytes(xProp.GetString());
+                signingKey = new MlDsaSecurityKey(publicKeyBytes, algorithm);
+            }
+            else
+            {
+                signingKey = JsonWebKey.Create(jwkJson);
+            }
+
+            var activeFactory = pqcFactory ?? context.RequestServices.GetService<PqcCryptoProviderFactory>();
+            if (activeFactory is null)
+            {
+                var verifier = context.RequestServices.GetService<IMlDsaSignatureVerifier>();
+                if (verifier is not null)
+                {
+                    activeFactory = new PqcCryptoProviderFactory(verifier);
+                }
+            }
+
+            var validationParameters = new TokenValidationParameters
+            {
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = signingKey,
+                CryptoProviderFactory = activeFactory,
+                ValidateIssuer = false,
+                ValidateAudience = false,
+                RequireSignedTokens = true,
+                ValidAlgorithms = [algorithm],
+                ValidateLifetime = false,
+                RequireExpirationTime = false
+            };
+
+            var result = await TokenHandler.ValidateTokenAsync(dpopHeader, validationParameters);
+            return result.IsValid;
+        }
+        catch (Exception ex) when (ex is ArgumentException or SecurityTokenException or JsonException or CryptographicException)
+        {
+            return false;
+        }
+    }
+
+    private async Task EnforceConstantTimeFailureAsync(long startTimestamp, HttpContext context, string reason)
+    {
+        AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", reason));
+
+        // RFC 9449: ზუსტი WWW-Authenticate ჰედერების მინიჭება პროტოკოლური შეცდომის მიხედვით
+        if (string.Equals(reason, "use_dpop_nonce", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"use_dpop_nonce\", algs=\"PS256 ES256\"");
+        }
+        else if (string.Equals(reason, "missing_dpop_proof", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"missing_dpop_proof\"");
+        }
+        else
+        {
+            context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
+        }
+
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         context.Response.ContentType = "application/problem+json; charset=utf-8";
 
@@ -199,7 +275,9 @@ internal sealed class DpopValidationMiddleware(
             Type = "/errors/invalid-dpop-proof",
             Title = "DPoP proof validation failed",
             Status = StatusCodes.Status401Unauthorized,
-            Detail = "The provided DPoP proof is missing or invalid.",
+            Detail = string.Equals(reason, "use_dpop_nonce", StringComparison.OrdinalIgnoreCase)
+                        ? "A new DPoP nonce is required."
+                        : "The provided DPoP proof is missing or invalid.",
             Instance = context.Request.Path
         };
 
