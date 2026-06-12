@@ -1,30 +1,40 @@
 {
+  "$schema": "https://json.schemastore.org/stryker-config",
   "stryker-config": {
+    "project": "Sentinel.DPoP.csproj",
+    "test-runner": "MTP",
+    "mutation-level": "Advanced",
+    "coverage-analysis": "off",
+    "disable-bail": false,
+    "disable-mix-mutants": false,
     "reporters": [
-      "progress",
+      "dots",
       "html",
-      "cleartext"
+      "cleartext",
+      "markdown"
     ],
     "thresholds": {
       "high": 85,
       "low": 70,
       "break": 70
     },
-    "coverage-analysis": "off",
-    "concurrency": 4,
-    "ignore-mutations": [
-    ],
+    "additional-timeout": 3000,
     "ignore-methods": [
-      "Log*",
-      "Write*",
+      "*Log*",
+      "Console.Write*",
       "Emit*",
-      "WipeKey"
+      "WipeKey",
+      "*Exception.ctor",
+      "Diagnostics*",
+      "Trace*"
     ],
     "mutate": [
       "**/*.cs",
       "!**/*Extensions.cs",
       "!**/*Options.cs",
-      "!**/GlobalUsings.cs"
+      "!**/GlobalUsings.cs",
+      "!**/*.g.cs",
+      "!**/*JsonContext.cs"
     ]
   }
 }

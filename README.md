@@ -265,11 +265,13 @@ make all        # build + lint + test + sec-scan
 
 ## Mutation Testing (Security Gate)
 
-Mutation testing is configured for DPoP-critical code paths via Stryker.NET:
+Mutation testing is configured for DPoP-critical code paths via Stryker.NET.
+To avoid "Test Scope Leaks" and ensure sub-minute execution, always run Stryker from inside the specific test project directory:
 
 ```powershell
 dotnet tool restore
-dotnet stryker --config-file stryker-config.json
+cd tests/Sentinel.Tests.DPoP/
+dotnet stryker --config-file ../../stryker-config.json --project Sentinel.DPoP.csproj
 ```
 
 Baseline gate thresholds:
