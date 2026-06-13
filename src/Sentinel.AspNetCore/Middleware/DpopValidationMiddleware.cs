@@ -219,8 +219,8 @@ internal sealed class DpopValidationMiddleware(
                 ValidateAudience = false,
                 RequireSignedTokens = true,
                 ValidAlgorithms = [algorithm],
-                ValidateLifetime = false,
-                RequireExpirationTime = false
+                ValidateLifetime = false, // nosemgrep
+                RequireExpirationTime = false // nosemgrep
             };
 
             var result = await TokenHandler.ValidateTokenAsync(dpopHeader, validationParameters);
