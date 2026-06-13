@@ -92,20 +92,18 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
 
         builder.ConfigureAppConfiguration((_, config) =>
         {
-            // Keep non-connection string configurations here
             var testSettings = new Dictionary<string, string?>
             {
                 ["Keycloak:Authority"] = "https://localhost:8443/realms/sentinel",
                 ["Keycloak:Audience"] = "sentinel-api",
                 ["Keycloak:RequireHttpsMetadata"] = "false",
                 ["FeatureFlags:Auth:DpopFlow"] = "true",
-                // Add Redis configuration for test containers
-                ["Sentinel:Redis:EndPoint"] =
-                    $"localhost:{redisContainer.GetMappedPublicPort(6379)},abortConnect=false",
-                ["Sentinel:Redis:EnableInMemoryFallback"] = "true"
+                ["Sentinel:Redis:EndPoint"] = $"localhost:{redisContainer.GetMappedPublicPort(6379)},abortConnect=false",
+                ["Sentinel:Redis:EnableInMemoryFallback"] = "true",
+                ["Sentinel:Security:Captcha:SecretKey"] = "0x4AAAAAAABB-MOCK-SECRET",
+                ["Sentinel:Security:Captcha:Enabled"] = "false"
             };
 
-            // Add test cryptography configuration
             var cryptoConfig = TestCryptographyHelper.GenerateTestCryptographyConfig();
             foreach (var kvp in cryptoConfig)
             {

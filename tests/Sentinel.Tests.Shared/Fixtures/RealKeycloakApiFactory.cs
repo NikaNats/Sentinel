@@ -167,10 +167,11 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
                 ["Keycloak:Audience"] = ClientId,
                 ["Keycloak:RequireHttpsMetadata"] = "true",
                 ["Sentinel:Redis:EndPoint"] = redisConnectionString,
-                ["FeatureFlags:Auth:DpopFlow"] = "true"
+                ["FeatureFlags:Auth:DpopFlow"] = "true",
+                ["Sentinel:Security:Captcha:SecretKey"] = "0x4AAAAAAABB-MOCK-SECRET",
+                ["Sentinel:Security:Captcha:Enabled"] = "false"
             };
 
-            // Add test cryptography configuration
             var cryptoConfig = TestCryptographyHelper.GenerateTestCryptographyConfig();
             foreach (var kvp in cryptoConfig)
             {

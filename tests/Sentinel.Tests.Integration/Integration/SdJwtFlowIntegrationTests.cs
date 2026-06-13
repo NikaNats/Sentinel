@@ -211,7 +211,9 @@ public sealed class SdJwtFlowIntegrationTests(SdJwtFlowIntegrationTests.SdJwtApi
                     ["Sentinel:Redis:EndPoint"] = _redisConnectionString,
                     ["Sentinel:Redis:EnableInMemoryFallback"] = "true",
                     ["SdJwt:Enabled"] = "true",
-                    ["SdJwt:RequireKeyBindingNonce"] = "false"
+                    ["SdJwt:RequireKeyBindingNonce"] = "false",
+                    ["Sentinel:Security:Captcha:SecretKey"] = "0x4AAAAAAABB-MOCK-SECRET",
+                    ["Sentinel:Security:Captcha:Enabled"] = "false"
                 });
             });
 

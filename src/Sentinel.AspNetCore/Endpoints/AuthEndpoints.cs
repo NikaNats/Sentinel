@@ -158,6 +158,13 @@ internal static class AuthEndpoints
             statusCode: StatusCodes.Status401Unauthorized);
     }
 
+
+
+    /// <summary>
+    /// Secure endpoint for changing a user's password.
+    /// Performs password strength validation, updates the identity provider,
+    /// and revokes all active sessions for security purposes.
+    /// </summary>
     private static async Task<IResult> ChangePasswordAsync(
         [FromBody] ChangePasswordRequest request,
         [FromServices] IIdentityProvider identityProvider,
@@ -166,58 +173,68 @@ internal static class AuthEndpoints
         [FromServices] ISessionBlacklistCache blacklistCache,
         [FromServices] IOptionsMonitor<KeycloakOptions> optionsMonitor,
         ClaimsPrincipal user,
-        HttpContext context,
         CancellationToken ct)
     {
-        _ = context;
+        // 1. Initial validation
         if (string.IsNullOrWhiteSpace(request.NewPassword))
         {
             return TypedResults.Problem(
-                "New password is required.",
+                type: ErrorCodes.InvalidRequest,
+                title: "Request validation error",
+                detail: "New password is required.",
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
+        // 2. Password strength validation (Enterprise Validator - entropy + blacklist)
+        var passwordValidation = passwordStrengthValidator.Validate(request.NewPassword);
+        if (!passwordValidation.IsValid)
+        {
+            return TypedResults.Problem(
+                type: ErrorCodes.WeakPassword,
+                title: "Password is not strong enough",
+                detail: passwordValidation.Error ?? "The password does not meet security standards.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        // 3. Identify user from token
         var sub = user.FindFirst("sub")?.Value;
         if (string.IsNullOrWhiteSpace(sub))
         {
             return TypedResults.Unauthorized();
         }
 
+        // Select identifier required for Keycloak (Username > Email > Sub)
         var loginIdentifier = user.FindFirst("preferred_username")?.Value
                               ?? user.FindFirst("email")?.Value
                               ?? sub;
 
-        var passwordValidation = passwordStrengthValidator.Validate(request.NewPassword);
-        if (!passwordValidation.IsValid)
-        {
-            return TypedResults.Problem(
-                type: ErrorCodes.WeakPassword,
-                title: passwordValidation.Error ?? "Password does not meet complexity requirements.",
-                statusCode: StatusCodes.Status400BadRequest);
-        }
-
+        // 4. Update password in Identity Provider (Keycloak)
         var updated = await identityProvider.UpdatePasswordAsync(loginIdentifier, request.NewPassword, ct);
         if (!updated)
         {
             return TypedResults.Problem(
                 type: ErrorCodes.InternalServerError,
-                title: "Failed to update password.",
+                title: "Operation failed",
+                detail: "Failed to update password in identity provider.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
 
-        // Revoke all other sessions after password change for security
+        // 5. Security purge
+        // a) Revoke all other sessions
+        // This protects the user if their account was accessed from another device
         _ = await revocationService.RevokeAllSessionsAsync(sub, ct);
 
-        // Blacklist current session too
+        // b) Add current session to blacklist
+        // After changing the password, the user must re-authenticate with the new password
         var sid = user.FindFirst("sid")?.Value;
         if (!string.IsNullOrWhiteSpace(sid))
         {
-            await blacklistCache.BlacklistSessionAsync(sid, optionsMonitor.CurrentValue.ResolveSessionBlacklistTtl(), ct);
+            var ttl = optionsMonitor.CurrentValue.ResolveSessionBlacklistTtl();
+            await blacklistCache.BlacklistSessionAsync(sid, ttl, ct);
         }
 
         return TypedResults.NoContent();
     }
-
     /// <summary>
     ///     Secured Back-Channel Session Deletion.
     ///     Extracts 'sid' and 'sub' directly from token context.

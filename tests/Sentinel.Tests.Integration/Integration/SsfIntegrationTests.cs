@@ -217,7 +217,9 @@ public sealed class SsfIntegrationTests(SsfIntegrationTests.SsfApiFactory factor
                     ["Sentinel:Redis:EndPoint"] = _redisConnectionString,
                     ["Sentinel:Redis:EnableInMemoryFallback"] = "true",
                     ["Ssf:Enabled"] = "true",
-                    ["Ssf:RequireAuthToken"] = "false"
+                    ["Ssf:RequireAuthToken"] = "false",
+                    ["Sentinel:Security:Captcha:SecretKey"] = "0x4AAAAAAABB-MOCK-SECRET",
+                    ["Sentinel:Security:Captcha:Enabled"] = "false"
                 });
             });
 
