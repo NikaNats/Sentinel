@@ -12,5 +12,6 @@ public static class Program
 
         _ = BenchmarkRunner.Run<DpopValidatorBenchmark>(config, args);
         _ = BenchmarkRunner.Run<SdJwtPresenterBenchmark>(config, args);
+        _ = BenchmarkRunner.Run<PrivacyPreservingHasherBenchmark>(config, args);
     }
 }

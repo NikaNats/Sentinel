@@ -1,7 +1,6 @@
 {
   "realm": "sentinel",
   "displayName": "Sentinel",
-  "description": "FAPI 2.0 compliant secure authentication realm for Sentinel API",
   "enabled": true,
   "sslRequired": "all",
   "registrationAllowed": false,
@@ -29,29 +28,15 @@
     "realm": [
       {
         "name": "admin",
-        "description": "Realm administrator — grants access to admin console",
         "composite": false,
         "clientRole": false
       },
       {
         "name": "user",
-        "description": "Standard government employee — default role",
         "composite": false,
         "clientRole": false
       }
     ]
-  },
-  "webAuthnPolicy": {
-    "rpEntityName": "Sentinel",
-    "rpId": "sentinel.local",
-    "attestationConveyancePreference": "direct",
-    "authenticatorAttachment": "cross-platform",
-    "requireResidentKey": "Yes",
-    "userVerificationRequirement": "required",
-    "signatureAlgorithms": ["ES256", "RS256"],
-    "avoidSameAuthenticatorRegister": false,
-    "acceptableAaguids": [],
-    "extraOrigins": []
   },
   "requiredActions": [
     {
@@ -109,69 +94,15 @@
       "config": {}
     }
   ],
-  "defaultRoles": ["user"],
+  "defaultRoles": [ "user" ],
   "eventsEnabled": true,
-  "eventsListeners": ["jboss-logging", "event-queue"],
-  "eventStoreProvider": "jpa",
+  "eventsListeners": [ "jboss-logging", "event-queue" ],
   "adminEventsEnabled": true,
-  "adminEventStoreProvider": "jpa",
-  "adminEventDetailsEnabled": true,
+  "adminEventsDetailsEnabled": true,
   "identityProviders": [],
   "identityProviderMappers": [],
   "protocolMappers": [],
-  "components": {
-    "org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy": [
-      {
-        "name": "Allowed Protocol Mapper Types",
-        "providerId": "allowed-protocol-mapper-types",
-        "subType": "anonymous",
-        "subComponents": {},
-        "config": {
-          "allowed-protocol-mapper-types": [
-            "oidc-full-name-mapper",
-            "oidc-usermodel-attribute-mapper",
-            "oidc-address-mapper",
-            "oidc-usermodel-realm-role-mapper",
-            "oidc-usermodel-client-role-mapper"
-          ]
-        }
-      },
-      {
-        "name": "Allowed Client Authenticators",
-        "providerId": "allowed-client-authenticators",
-        "subType": "anonymous",
-        "subComponents": {},
-        "config": {
-          "allowed-client-authenticators": [
-            "client-secret-basic",
-            "client-secret-post",
-            "client-secret-jwt",
-            "client-jwt",
-            "client-x509"
-          ]
-        }
-      },
-      {
-        "name": "Allowed Client Scopes",
-        "providerId": "allowed-client-scopes",
-        "subType": "anonymous",
-        "subComponents": {},
-        "config": {
-          "allowed-client-scopes": [
-            "web-origins",
-            "acr",
-            "profile",
-            "roles",
-            "email",
-            "address",
-            "phone",
-            "offline_access",
-            "microprofile-jwt"
-          ]
-        }
-      }
-    ]
-  },
+  "components": {},
   "internationalizationEnabled": false,
   "supportedLocales": [],
   "browserSecurityHeaders": {
@@ -192,7 +123,6 @@
     "policies": [
       {
         "name": "fapi2-security-policy",
-        "description": "Enforces FAPI 2.0 + DPoP + PAR for all clients",
         "enabled": true,
         "conditions": [
           {
@@ -200,18 +130,17 @@
             "configuration": {}
           }
         ],
-        "profiles": ["fapi2-security-profile"]
+        "profiles": [ "fapi2-security-profile" ]
       }
     ],
     "profiles": [
       {
         "name": "fapi2-security-profile",
-        "description": "FAPI 2.0 security profile: DPoP, PAR, PKCE S256, PS256 signing",
         "executors": [
           {
             "executor": "pkce-enforcer",
             "configuration": {
-              "allow-method": ["S256"]
+              "allow-method": [ "S256" ]
             }
           },
           {
@@ -229,7 +158,7 @@
           {
             "executor": "secure-signing-algorithm",
             "configuration": {
-              "algorithm": ["PS256", "ES256"]
+              "algorithm": [ "PS256", "ES256" ]
             }
           },
           {
@@ -252,7 +181,6 @@
     {
       "clientId": "sentinel-api-client",
       "name": "Sentinel API Client",
-      "description": "FAPI 2.0 compliant API client for Sentinel",
       "clientAuthenticatorType": "client-jwt",
       "protocol": "openid-connect",
       "publicClient": false,
@@ -296,7 +224,6 @@
     {
       "clientId": "sentinel-m2m-worker",
       "name": "Sentinel M2M Worker",
-      "description": "Service account client authenticated with mTLS certificate and bound access tokens",
       "clientAuthenticatorType": "client-x509",
       "protocol": "openid-connect",
       "publicClient": false,
@@ -320,7 +247,6 @@
   "clientScopes": [
     {
       "name": "roles",
-      "description": "OpenID Connect scope for add user roles to the access token",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "false",
@@ -345,7 +271,6 @@
     },
     {
       "name": "profile",
-      "description": "OpenID Connect scope for add profile information to the ID token",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true",
@@ -380,7 +305,6 @@
     },
     {
       "name": "email",
-      "description": "OpenID Connect scope for add email information to the ID token",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true",
@@ -417,7 +341,6 @@
     },
     {
       "name": "offline_access",
-      "description": "OpenID Connect scope for offline access",
       "protocol": "openid-connect",
       "attributes": {
         "consent.screen.text": "${offlineAccessScopeConsentText}",
@@ -425,24 +348,16 @@
       }
     }
   ],
-  "defaultClientScopes": [
+  "defaultDefaultClientScopes": [
     "roles",
     "profile",
     "email"
   ],
-  "optionalClientScopes": [
+  "defaultOptionalClientScopes": [
     "offline_access"
   ],
   "scopeMappings": [],
   "clientScopeMappings": {},
   "groups": [],
-  "users": [],
-  "oauth2DeviceConsentUrl": null,
-  "oauth2DeviceVerificationUrl": null,
-  "attributes": {
-    "cibaBackchannelTokenDeliveryMode": "poll",
-    "cibaExpiresIn": "120",
-    "cibaInterval": "5",
-    "cibaAuthRequestedUserHint": "login_hint"
-  }
+  "users": []
 }

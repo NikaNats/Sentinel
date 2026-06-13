@@ -71,6 +71,9 @@ secrets.json
 user-secrets.json
 *.pem
 *.key
+*.csr
+*.ext
+*.srl
 *.crt
 *.snk
 !Sentinel.public.snk

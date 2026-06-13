@@ -6,6 +6,7 @@ WORKDIR /src
 COPY Directory.Build.props ./
 COPY Directory.Packages.props ./
 COPY global.json ./
+COPY .editorconfig ./
 COPY src ./src
 COPY samples ./samples
 
@@ -32,8 +33,8 @@ RUN apt-get update && apt-get install -y ca-certificates \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN addgroup --system sentinel \
-    && adduser --system --ingroup sentinel sentinel
+RUN groupadd --system sentinel \
+    && useradd --system --gid sentinel sentinel
 
 COPY --from=build /app/publish ./
 

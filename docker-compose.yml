@@ -24,7 +24,7 @@ services:
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
-      KC_FEATURES: dpop,par,fips:preview
+      KC_FEATURES: dpop,par
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
       KC_HTTP_ENABLED: "false"
@@ -41,11 +41,6 @@ services:
     command:
       - start-dev
       - --import-realm
-    healthcheck:
-      test: ["CMD-SHELL", "curl -k -s -f https://localhost:8443/health/ready || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   redis:
     image: redis:7.4-alpine
@@ -66,7 +61,7 @@ services:
     container_name: sentinel-api
     depends_on:
       keycloak:
-        condition: service_healthy
+        condition: service_started
       postgres:
         condition: service_healthy
       redis:

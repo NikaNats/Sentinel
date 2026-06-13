@@ -1,22 +1,26 @@
 import http from 'k6/http';
 import { check } from 'k6';
 import { Rate, Trend } from 'k6/metrics';
+import exec from 'k6/execution';
 
+// Metrics
 export const errorRate = new Rate('errors');
 export const failClosedRate = new Rate('fail_closed_503');
 export const authLatency = new Trend('auth_dpop_latency', true);
 
+// Configuration & Thresholds
 export const options = {
+    discardResponseBodies: true, // Discard bodies to prevent k6 RAM exhaustion at 10k RPS
+    noConnectionReuse: false,    // Reuse connections to prevent Windows port starvation
     scenarios: {
         avalanche_fake_nonces: {
             executor: 'constant-arrival-rate',
-            rate: 10000, // Lowered to 10K for local Windows testing
+            rate: 10000,
             timeUnit: '1s',
             duration: '10s',
-            preAllocatedVUs: 100,
-            maxVUs: 500,
+            preAllocatedVUs: 500,
+            maxVUs: 1500,
             exec: 'avalancheFakeNonces',
-            startTime: '0s',
         },
     },
     thresholds: {
@@ -26,39 +30,47 @@ export const options = {
     },
 };
 
-const TARGET_URL = 'http://localhost:5000/api/v1/finance/transfer';
+// Constants
+const TARGET_URL = 'http://localhost:5260/api/v1/finance/transfer';
 
 const PRE_COMPUTED_ACCESS_TOKEN = 'eyJhbGciOiJQUzI1NiI...';
 const PRE_COMPUTED_DPOP_PROOF = 'eyJhbGciOiJFUzI1NiIsInR5cCI6ImRwb3Arand0...';
 
-export function avalancheFakeNonces() {
-    let headers = {
-        'Authorization': `DPoP ${PRE_COMPUTED_ACCESS_TOKEN}`,
-        'DPoP': PRE_COMPUTED_DPOP_PROOF,
-        'Content-Type': 'application/json',
-        'Idempotency-Key': `k6-stress-${__ITER}-${__VU}`,
-    };
+const BASE_HEADERS = {
+    'Authorization': `DPoP ${PRE_COMPUTED_ACCESS_TOKEN}`,
+    'DPoP': PRE_COMPUTED_DPOP_PROOF,
+    'Content-Type': 'application/json',
+};
 
-    let payload = JSON.stringify({
-        transactionId: `txn-${__ITER}`,
-        amount: 50.00,
-        currency: 'USD',
-        destinationAccount: 'stress-test-acc',
+// Execution Payload
+export function avalancheFakeNonces() {
+    const uniqueId = `${exec.vu.idInTest}-${exec.scenario.iterationInTest}`;
+
+    // Shallow clone headers to inject the unique Idempotency-Key
+    const headers = Object.assign({}, BASE_HEADERS, {
+        'Idempotency-Key': `k6-stress-${uniqueId}`
     });
 
-    const start = Date.now();
-    let res = http.post(TARGET_URL, payload, { headers: headers });
-    authLatency.add(Date.now() - start);
+    // Fast template literal payload concatenation
+    const payload = `{"transactionId":"txn-${uniqueId}","amount":50.00,"currency":"USD","destinationAccount":"stress-test-acc"}`;
 
-    let ok = check(res, {
-        'status is 401/429/503 (fail-closed)': (r) => [401, 429, 503].includes(r.status),
-        'status is NOT 200': (r) => r.status !== 200,
+    const res = http.post(TARGET_URL, payload, {
+        headers: headers,
+        tags: { name: 'Adversarial_Transfer' }
+    });
+
+    // Add native Go-measured response latency
+    authLatency.add(res.timings.duration);
+
+    const ok = check(res, {
+        'status is 401/429/503 (fail-closed)': (r) => r.status === 401 || r.status === 429 || r.status === 503,
+        'status is NOT 200 (secure)': (r) => r.status !== 200,
     });
 
     errorRate.add(!ok || res.status >= 500);
-    failClosedRate.add(res.status === 503);
-}
 
-export default function () {
-    avalancheFakeNonces();
+
+    if (res.status === 503) {
+        failClosedRate.add(1);
+    }
 }
