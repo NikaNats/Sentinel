@@ -1,11 +1,10 @@
 # Sentinel Architecture Specification
 
-> **Document ID**: ARC-0001  
-> **Status**: APPROVED  
-> **Runtime Baseline**: .NET 10.0 (LTS Ready)  
+> **Document ID**: ARC-0001
+> **Status**: APPROVED
+> **Runtime Baseline**: .NET 10.0 (LTS Ready)
 > **Architecture Model**: Decoupled Hexagonal (Ports & Adapters) with High-Assurance Hardening
 
----
 
 ## 1. Executive Summary
 
@@ -20,7 +19,6 @@ Sentinel is a highly modular, high-assurance security platform focused on strict
 - **Exception Shielding (DoS Protection):** Robust `try-catch` boundaries around token/proof parsers to prevent process-crashing exploits.
 - **Decoupled Hexagonal Architecture:** Complete separation of core infrastructure from database/caching drivers (Redis, EF Core).
 
----
 
 ## 2. Module Topology & Dependency Inversion
 
@@ -31,17 +29,17 @@ flowchart TD
     %% Registration flow (Composition Root wires up concrete implementations)
     Host -->|Registers| Redis[(Sentinel.Redis<br/>Optional Adapter)]
     Host -->|Registers| EF[(Sentinel.EntityFrameworkCore<br/>Optional Adapter)]
-    
+
     %% Core dependencies (pointing strictly inward)
     Host --> SentinelAspNetCore[Sentinel.AspNetCore]
     Host --> SentinelSecurity[Sentinel.Security.Abstractions]
-    
+
     SentinelAspNetCore --> SentinelSecurity
     SentinelAspNetCore --> SentinelApplication[Sentinel.Application]
     SentinelSecurity --> SentinelApplication
-    
+
     SentinelApplication --> SentinelDomain[Sentinel.Domain]
-    
+
     %% Concrete adapters depend ONLY on core abstractions (Dependency Inversion)
     Redis -->|Implements| SentinelSecurity
     EF -->|Implements| SentinelSecurity
@@ -52,7 +50,7 @@ flowchart TD
     classDef host stroke:#333,stroke-width:2px,fill:#f9f9f9
     classDef optional stroke:#333,stroke-width:1.5px,stroke-dasharray: 4 4,fill:#fff
     classDef domain stroke:#333,stroke-width:2px,fill:#eee
-    
+
     class Host host
     class SentinelAspNetCore,SentinelSecurity,SentinelApplication core
     class SentinelDomain domain
@@ -79,8 +77,6 @@ flowchart TD
 - **Sentinel.AspNetCore:** Minimal API mapping extensions, request/response JSON serialization contexts, and core security middlewares.
 - **samples/Sentinel.Sample.MinimalApi:** Reference host (Composition Root) that explicitly references the core assemblies and the desired adapter (`Sentinel.Redis`) and binds them together during startup.
 
----
-
 ## 3. High-Assurance Request Flow
 
 ```mermaid
@@ -100,9 +96,9 @@ sequenceDiagram
     C->>S: Request
     S->>Corr: +HSTS/CSP, -Server Fingerprints
     Corr->>DPoP: W3C Trace context propagated
-    
+
     Note over DPoP: Exception Shielding active<br/>Failure Delay + Jitter (0-15ms)
-    
+
     DPoP->>mTLS: Validate DPoP proof signature & claims
     mTLS->>ACR: Client certificate thumbprint check
     ACR->>Auth: Validate required ACR level (acr3)
@@ -111,8 +107,6 @@ sequenceDiagram
     API->>Nonce: Execute business handler logic
     Nonce-->>C: Response + Rotated DPoP-Nonce
 ```
-
----
 
 ## 4. Security Control Architecture
 
@@ -132,14 +126,12 @@ Redis and database backends are treated as part of the security boundary. If the
 - The system immediately **fails closed**, aborting request execution and returning a secure `503 Service Unavailable` (or `500` depending on environment configuration).
 - Security checks are **never bypassed** under infrastructure degradation.
 
----
-
 ## 5. Architectural Decision Records (ADRs)
 
 ### ADR-2026-001: Minimal APIs Migration for Native AOT
 - **Context:** Legacy MVC controllers rely heavily on reflection-based assembly scanning and runtime JIT compilation, which are incompatible with Native AOT compilation and increase cold-start latency.
 - **Decision:** Replaced all legacy MVC Controllers with Minimal API group mappings using explicit JSON Source Generation contexts (`JsonSerializerContext`).
-- **Consequences:** 
+- **Consequences:**
   - *Positive:* Faster startup times (<50ms), an 82% reduction in memory footprint, and compile-time trim-safety.
   - *Negative:* Increased build-time code generation complexity; all custom DTOs must be explicitly annotated.
 
@@ -164,11 +156,18 @@ Redis and database backends are treated as part of the security boundary. If the
   - *Positive:* Protects the Kestrel web server from process-crashing Denial of Service (DoS) exploits on malformed headers.
   - *Negative:* Hides deep parsing errors from the client; debug-level logging must be used internally for triage.
 
----
+### ADR-2026-005: Zero-Allocation Rich Authorization Requests (RAR) Parsing
+- **Context:** High-value financial transactions trigger frequent executions of the `GetAuthorizationDetails()` extension. Standard JSON array wrappers (`"[" + val + "]"`) generate significant heap allocation overhead, causing garbage collection spikes during high-throughput stress.
+- **Decision:** Implemented a dual-path deserialization logic in `RarExtensions.cs` using index-from-end pattern matching (`val[^1]`). Registered both `AuthorizationDetail` and `AuthorizationDetail[]` in `RarJsonContext` to bypass reflection entirely.
+- **Consequences:**
+  - *Positive:* Zero temporary string allocations during single-object parsing, dramatically decreasing memory pressure on highly contested API pathways.
+  - *Negative:* Requires strict synchronization between the extensions layer and the source-generation context models.
+
 
 ## 6. Testing Strategy & Verifications
 
-The Sentinel framework undergoes three levels of advanced testing:
+The Sentinel framework undergoes four levels of advanced testing:
 1.  **Systematic Concurrency Testing (Microsoft Coyote):** Programmatic xUnit tests that systematically explore all thread-scheduling interleavings to mathematically prove the absence of race conditions or deadlocks in our sliding Nonce and Idempotency stores under extreme concurrent load.
 2.  **Generative Fuzz Testing (SharpFuzz):** An automated, coverage-guided fuzzing harness executing over **2.4 Million iterations per second** (RyuJIT AVX2 optimized) to ensure our JSON and cryptographic parsers never crash on corrupted inputs.
 3.  **Real-world Chaos Engineering (Testcontainers & Toxiproxy):** Docker-based integration tests simulating network latency jitter, packet loss, and database timeouts to verify graceful degradation and fail-closed state boundaries under real-world cloud network anomalies.
+4.  **High-Assurance Acceptance Testing (Reqnroll BDD):** Automated Gherkin acceptance tests running against a fully composited Docker network to mathematically verify real-world FAPI 2.0 financial transfer validations, RAR constraints, and continuous CAEP session revocations.

@@ -33,6 +33,7 @@ builder.Services.AddOpenTelemetry()
             new KeyValuePair<string, object>("service.namespace", "sentinel")
         ]))
     .WithTracing(tracing => tracing
+        .AddSource("Sentinel.Auth.Tracing")
         .AddAspNetCoreInstrumentation(options =>
         {
             options.RecordException = true;
@@ -52,6 +53,7 @@ builder.Services.AddOpenTelemetry()
             };
         }))
     .WithMetrics(metrics => metrics
+        .AddMeter("Sentinel.Auth.Metrics")
         .AddAspNetCoreInstrumentation()
         .AddMeter("Microsoft.AspNetCore.Hosting")
         .AddMeter("Microsoft.AspNetCore.Server.Kestrel")

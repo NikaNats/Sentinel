@@ -1,11 +1,9 @@
 # Build Configuration & Tooling Guide
 
-> **Document ID**: CFG-0001  
-> **Status**: APPROVED  
-> **Scope**: Repository build, compilation-safety, and secure release gates  
+> **Document ID**: CFG-0001
+> **Status**: APPROVED
+> **Scope**: Repository build, compilation-safety, and secure release gates
 > **Target Baseline**: .NET 10.0 (SDK 10.0.300+)
-
----
 
 ## 1. Build Baseline & compiler Enforcements
 
@@ -25,8 +23,6 @@ These settings are centralized in three primary files in the repository root:
 2. `Directory.Build.props` (Compiler flags and signing rules)
 3. `Directory.Packages.props` (Central Package Management)
 
----
-
 ## 2. Central Build Files
 
 ### 2.1 `global.json`
@@ -45,8 +41,6 @@ Centralizes common compiler settings, static analysis levels, and our **SOTA Hyb
 
 ### 2.3 `Directory.Packages.props` (Central Package Management)
 Enforces Central Package Management (CPM). Individual project files (`.csproj`) are **prohibited** from defining explicit `Version` attributes on `<PackageReference>` elements. All versions must be centrally registered inside `Directory.Packages.props` to prevent transitive dependency drift and vulnerabilities.
-
----
 
 ## 3. Standard Build & Test Commands
 
@@ -93,7 +87,21 @@ cd tests/Sentinel.FuzzTests
 powershell -ExecutionPolicy Bypass -File .\run-fuzzing.ps1
 ```
 
----
+### 3.7 Acceptance & E2E Testing (Reqnroll)
+To execute the high-assurance end-to-end acceptance suite validating FAPI 2.0 and CAEP SSF:
+```powershell
+# 1. Spin up the localized caching and IAM infrastructure
+docker-compose up -d redis keycloak
+
+# 2. Build the Minimal API with Release configuration
+dotnet build samples/Sentinel.Sample.MinimalApi/Sentinel.Sample.MinimalApi.csproj -c Release
+
+# 3. Spin up the API host locally on port 5260
+dotnet run --project samples/Sentinel.Sample.MinimalApi/Sentinel.Sample.MinimalApi.csproj -c Release --no-build --urls "http://127.0.0.1:5260"
+
+# 4. Execute the Reqnroll acceptance test suite in a separate terminal
+dotnet test Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release
+```
 
 ## 4. Strong-Name Signing (Hybrid Model)
 
@@ -111,8 +119,6 @@ To compile and pack with full strong-name signing enabled:
 dotnet pack Sentinel.slnx -c Release -p:SignSentinelRelease=true -o ./artifacts
 ```
 
----
-
 ## 5. Native AOT & Trimming Considerations
 
 The reference Minimal API host (`Sentinel.Sample.MinimalApi`) is configured with `<PublishAot>true</PublishAot>` to prove Native AOT compatibility.
@@ -128,8 +134,6 @@ The reference Minimal API host (`Sentinel.Sample.MinimalApi`) is configured with
     ```
 3.  **No Anonymous Types:** Returning anonymous objects (`new { token = "..." }`) inside route handlers is **strictly prohibited**. It requires runtime reflection and crashes under AOT with `NotSupportedException`. Always use named C# records registered in your JSON context.
 
----
-
 ## 6. Hardened Container Packaging
 
 The repository contains a production-ready, highly secure multi-stage Docker build located at `src/Sentinel.AspNetCore/Dockerfile`.
@@ -139,8 +143,6 @@ The repository contains a production-ready, highly secure multi-stage Docker bui
 - **Non-Root Execution:** Runs under a dedicated unprivileged user (`USER sentinel` / UID 1654) to mitigate container escape exploits.
 - **Disabled Diagnostics:** `DOTNET_EnableDiagnostics=0` is set to block runtime profiling, heap dumps, and memory scanning vectors.
 - **TLS 1.3 & mTLS Ready:** Hardened to negotiate TLS 1.3 exclusively for service-to-service secure mesh topologies.
-
----
 
 ## 7. Troubleshooting
 
@@ -159,4 +161,3 @@ If a code analyzer demands a concrete type (`CA1859`), but the concrete type imp
 #pragma warning disable CA1859
 IDpopProofValidator validator = new DpopProofValidator(replayCache, options);
 #pragma warning restore CA1859
-```

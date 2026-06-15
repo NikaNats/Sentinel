@@ -1,11 +1,10 @@
 # Container Build Readiness
 
-> **Document ID**: CBR-0001  
-> **Status**: RELEASE-READY (100% HARDENED & COMPLIANT)  
-> **Runtime Baseline**: .NET 10.0 (LTS Ready)  
+> **Document ID**: CBR-0001
+> **Status**: RELEASE-READY (100% HARDENED & COMPLIANT)
+> **Runtime Baseline**: .NET 10.0 (LTS Ready)
 > **Deployment Model**: Multi-stage, Rootless, and Distroless-Ready
 
----
 
 ## 1. Current Reality
 
@@ -14,7 +13,6 @@ The Sentinel repository contains a production-grade, highly secure, and optimize
 
 The container builds reproducibly using lock-files, runs under a dedicated unprivileged user, and is fully integrated with the local development stack via `docker-compose.yml`. All previous compilation, dependency, and routing gaps have been successfully resolved.
 
----
 
 ## 2. Baseline Inputs
 
@@ -22,7 +20,6 @@ The container builds reproducibly using lock-files, runs under a dedicated unpri
 - **SDK Target:** .NET 10.0 SDK (`mcr.microsoft.com/dotnet/sdk:10.0`)
 - **Compose Services:** postgres (v17-alpine), keycloak (v26.1), redis (v7.4-alpine), sentinel-api (net10.0)
 
----
 
 ## 3. Readiness Assessment
 
@@ -35,7 +32,6 @@ The container builds reproducibly using lock-files, runs under a dedicated unpri
 | **Non-Root Execution** | Implemented | Runs under unprivileged user `sentinel` (UID 1654), mitigating container-escape vulnerabilities. |
 | **Locked Restore Posture** | Implemented | Uses `dotnet restore --locked-mode` in build stage to guarantee reproducible binaries. |
 
----
 
 ## 4. Hardening Controls Deployed
 
@@ -48,8 +44,7 @@ The container builds reproducibly using lock-files, runs under a dedicated unpri
 3.  **Proactive Diagnostics Disabling:** `DOTNET_EnableDiagnostics=0` is injected to block runtime debugging ports, preventing unauthorized process memory dumps (heap scanning) on the container.
 4.  **Globalization Invariant Mode:** `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` is configured to reduce container size and dependencies, complying with FIPS-compatibility standards.
 5.  **Secure Local Port:** Exposed port `8080` (non-privileged) instead of standard port `80` to allow rootless execution.
-
----
+6.  **Proactive Root CA Trust Injection**: Copies the enterprise Root CA certificate (`infra/certs/ca.crt`) into the container's trusted store at `/usr/local/share/ca-certificates/` and executes `update-ca-certificates` as part of the build process. This enables secure out-of-the-box OIDC HTTPS communication with Keycloak without disabling metadata validation.
 
 ## 5. Deployed Dockerfile Reference
 
@@ -82,6 +77,14 @@ ENV ASPNETCORE_URLS=http://+:8080
 ENV DOTNET_EnableDiagnostics=0
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 
+USER root
+
+COPY infra/certs/ca.crt /usr/local/share/ca-certificates/sentinel-ca.crt
+
+RUN apt-get update && apt-get install -y ca-certificates \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN addgroup --system sentinel \
     && adduser --system --ingroup sentinel sentinel
 
@@ -92,7 +95,6 @@ EXPOSE 8080
 ENTRYPOINT ["dotnet", "Sentinel.Sample.MinimalApi.dll"]
 ```
 
----
 
 ## 6. Validation & Smoke Test Procedure
 
@@ -115,8 +117,6 @@ ENTRYPOINT ["dotnet", "Sentinel.Sample.MinimalApi.dll"]
     ```bash
     docker-compose up --build -d
     ```
-
----
 
 ## 7. Release Gate Sign-Off
 

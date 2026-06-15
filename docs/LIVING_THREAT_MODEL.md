@@ -1,11 +1,10 @@
 # Sentinel Living Threat Model
 
-> **Document ID**: LTM-0001  
-> **Last Updated**: 2026-05-30  
-> **Classification**: CONFIDENTIAL / INTERNAL USE ONLY  
+> **Document ID**: LTM-0001
+> **Last Updated**: 2026-06-16
+> **Classification**: CONFIDENTIAL / INTERNAL USE ONLY
 > **Review Cycle**: Quarterly + on any major protocol modification
 
----
 
 ## 1. System Context
 
@@ -19,7 +18,6 @@ Sentinel protects API access using high-performance, sender-constrained tokens, 
 - `Sentinel.AspNetCore` (Middleware Pipeline, Exception Shielding, and Failure Padding)
 - `Sentinel.Infrastructure` (Envelope Cryptography & FIPS 140-3 Compliance Layer)
 
----
 
 ## 2. Protected Assets
 
@@ -30,7 +28,6 @@ Sentinel protects API access using high-performance, sender-constrained tokens, 
 5.  **Authorization Detail Constraints:** Signed transaction bounds (RFC 9396) for financial transfers.
 6.  **Security Telemetry & Metrics:** Anonymous diagnostics and correlation trace IDs (W3C).
 
----
 
 ## 3. Trust Boundaries
 
@@ -40,7 +37,6 @@ Sentinel protects API access using high-performance, sender-constrained tokens, 
 4.  **Event Sender (IdP Webhook) ──► SSF Ingress:** External boundary (secured via signature checks + constant-time token comparison).
 5.  **Internal Class Library Boundaries:** Strict logical decoupling between `Sentinel.Security.Abstractions` (Ports) and concrete Adapters.
 
----
 
 ## 4. Threat Inventory (STRIDE + DREAD)
 
@@ -57,7 +53,6 @@ Sentinel protects API access using high-performance, sender-constrained tokens, 
 | **T-09** | Telemetry privacy leakage via naive IP logging | Info Leak | Medium | Low | HMAC-SHA256 based `SecurityContextHasher` for privacy-hardened pseudonymization. |
 | **T-10** | Cache outage on security-critical checks | Availability | High | Medium | **Fail-closed semantics** on Redis/DB timeouts (rejects requests immediately). |
 
----
 
 ## 5. Key Mitigations in Code
 
@@ -69,13 +64,14 @@ Sentinel protects API access using high-performance, sender-constrained tokens, 
 ### 5.2 Session and Revocation
 - **Continuous Session Blacklisting:** In-request authorization paths check `ISessionBlacklistCache`. SSF webhooks and local logout paths converge on session invalidation.
 - **Fail-Closed State Boundaries:** If the distributed cache times out, the store throws `ReplayCacheUnavailableException` / `SessionBlacklistUnavailableException`, failing closed with a secure HTTP 503/500 instead of bypassing security checks.
+- **RFC 7807 Challenge Serialization:** Standardized JWT validation failures (such as session termination) write formatted `ProblemDetails` payloads via `OnChallenge` to prevent unhandled 500 information leaks while maintaining clear, testable context for the client.
 
 ### 5.3 SSF Integrity & Concurrency Verification
 - **Constant-Time Ingress Authentication:** Webhook authentication tokens are validated using `CryptographicOperations.FixedTimeEquals` to prevent timing side-channel exploits.
 - **Coyote Systematic Verification:** Thread-scheduling concurrency races (such as parallel nonce consumption) are systematically tested 1000-fold using Microsoft Coyote to mathematically prove the absence of race conditions.
 - **Toxiproxy Chaos Verification:** Network latencies, packet losses, and timeouts are simulated in integration environments using Testcontainers to verify pipeline resilience.
+- **Automated Reqnroll E2E Acceptance Testing:** End-to-end scenarios (such as financial wire transfers and CAEP session revocations) are executed continuously to mathematically verify that the deployed infrastructure behaves exactly as defined by the security models, preventing any drift in compliance.
 
----
 
 ## 6. Fail-Closed Expectations
 
@@ -86,7 +82,6 @@ The following are **mandatory, non-negotiable** security behaviors:
 3.  **Invalid SSF token or signature:** Reject webhook processing (return 401).
 4.  **Missing/invalid required Nonce:** Challenge immediately with a fresh Nonce (return 401), do not bypass.
 
----
 
 ## 7. Detection and Monitoring Priorities
 
@@ -94,16 +89,14 @@ The following are **mandatory, non-negotiable** security behaviors:
 2.  **DPoP Failure Ratio Increase:** Elevated rate of `401 Unauthorized` with `invalid_dpop_proof`.
 3.  **`use_dpop_nonce` Surge Patterns:** Abnormal volume of Nonce challenge-responses (possible replay scanning).
 4.  **SSF Rejection Trends:** Webhook signature or timing validation failures.
-5.  **Cache Dependency Latency/Error Rates:** Real-time monitoring of Redis response times and connection failures.
+5.  **Cache Dependency Leakage/Latency/Error Rates:** Real-time monitoring of Redis response times and connection failures.
 
----
 
 ## 8. Residual Risks
 
 1.  **Identity Provider Outage:** Outages in Keycloak JWKS endpoints will degrade trust-refresh and token-validation operations (acceptable dependency risk, mitigated via JWKS caching).
 2.  **OpenAPI Contract Drift:** The OpenAPI contract is manually maintained and can drift from active route mappings if not release-gated (mitigated via route-audit CI gate).
 
----
 
 ## 9. Review Cadence and Triggers
 

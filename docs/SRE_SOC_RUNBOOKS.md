@@ -1,7 +1,7 @@
 # SRE And SOC Runbooks
 
-> **Document ID**: OPS-0001  
-> **Last Updated**: 2026-05-30  
+> **Document ID**: OPS-0001
+> **Last Updated**: 2026-06-16
 > **Scope**: Incident response, continuous monitoring, and emergency recovery for Sentinel core security paths
 
 ---
@@ -68,7 +68,7 @@ This warning indicates that Sentinel's **Exception Shielding** is successfully i
 1.  Configure the rate-limiter to block the offending IP dynamically at the Ingress/WAF layer.
 2.  Do not disable the exception shielding; it is protecting the Kestrel process from memory corruption.
 
----
+
 
 ## 5. Runbook: Cache Dependency Timeout / Outage
 
@@ -84,8 +84,6 @@ Sentinel is strictly **fail-closed**. All protected routes will reject requests 
 3.  If memory is exhausted, perform a safe Redis memory eviction or restart the degraded nodes.
 4.  Once Redis is back online, verify connection restoration logs:
     `Redis connection restored. Endpoint: 127.0.0.1:6379`
-
----
 
 ## 6. Post-Incident Validation Checklist
 
@@ -104,8 +102,11 @@ After any security incident or emergency infrastructure restoration, run the fol
   ```powershell
   dotnet test tests/Sentinel.Tests.Security/Sentinel.Tests.Security.csproj --filter "FullyQualifiedName~Chaos" -c Release
   ```
+- [ ] **Verify Acceptance & E2E Behavior (Reqnroll):** Run the Reqnroll acceptance suite against the active gateway endpoint to mathematically prove that FAPI 2.0 financial transfer validations, RAR constraints, and continuous CAEP session revocations are fully operational:
+  ```powershell
+  dotnet test Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release
+  ```
 
----
 
 ## 7. Escalation & SIRT Contact
 

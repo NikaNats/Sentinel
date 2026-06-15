@@ -451,6 +451,30 @@ Focus areas:
 - Unit test suites: JtiReplayCache (2), DpopProofValidator (3), Idempotency (3), Auth (4), Backchannel (2), Services (2)
 - All security scenario paths exercised (DPoP nonce, token replay, proof replay, rate limits, ACR, scope validation)
 
+### Acceptance Tests (Reqnroll E2E)
+
+Acceptance tests validate end-to-end user journeys (such as high-value finance wire transfers under FAPI 2.0 bounds and continuous CAEP session revocations over SSF) against the live running API gateway.
+
+1. **Start the local Docker infrastructure**:
+   Ensure Redis and Keycloak containers are healthy and online:
+   ```bash
+   docker-compose up -d redis keycloak
+   ```
+
+2. **Build and start the Minimal API Host**:
+   Always compile the API project before executing the host locally on port 5260:
+   ```bash
+   dotnet build samples/Sentinel.Sample.MinimalApi/Sentinel.Sample.MinimalApi.csproj -c Release
+   dotnet run --project samples/Sentinel.Sample.MinimalApi/Sentinel.Sample.MinimalApi.csproj -c Release --no-build --urls "http://127.0.0.1:5260"
+   ```
+   *Note: Keep this terminal process active.*
+
+3. **Execute the Reqnroll Acceptance Suite**:
+   Open a separate terminal and execute the acceptance tests:
+   ```bash
+   dotnet test Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release
+   ```
+
 ## Containerization And Runtime Hardening
 
 - Multi-stage Docker build with locked restore and release publish

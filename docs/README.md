@@ -1,8 +1,8 @@
 # Sentinel Documentation Index
 
-> **Document ID**: DOC-0001  
-> **Last Updated**: 2026-05-30  
-> **Code Baseline**: .NET 10.0 (SDK 10.0.300)  
+> **Document ID**: DOC-0001
+> **Last Updated**: 2026-06-16
+> **Code Baseline**: .NET 10.0 (SDK 10.0.300)
 > **Architecture**: Modular security platform with decoupled Hexagonal (Ports & Adapters) integration surface
 
 This folder serves as the authoritative, FAPI 2.0-compliant documentation suite for Sentinel's runtime behavior, cryptographic security controls, integration contracts, and SRE operations.
@@ -45,6 +45,7 @@ Sentinel consists of reusable, stateless security modules under `src/` and a ref
 -   **Integration Modules (Adapters):** `Sentinel.Redis` (optional), `Sentinel.Keycloak`, `Sentinel.EntityFrameworkCore` (optional), `Sentinel.Infrastructure`
 -   **Host Integration Layer (Glue):** `Sentinel.AspNetCore`
 -   **Reference Host (Composition Root):** `samples/Sentinel.Sample.MinimalApi`
+-   **Verification & Test Suites:** `Sentinel.Tests.Unit`, `Sentinel.Tests.Integration`, `Sentinel.Tests.Security`, `Sentinel.Tests.Acceptance` (Reqnroll E2E)
 
 ---
 
@@ -69,3 +70,4 @@ When shipping a new release, the releasing engineer **must** verify and update a
 - [ ] **COMPLIANCE_AUDIT_MATRIX.md** (control statuses and code evidence paths)
 - [ ] **LIVING_THREAT_MODEL.md** (new threats, mitigations, or changed risk scores)
 - [ ] **CONTAINER_BUILD_READINESS.md** (container packaging, base image updates, and security scans)
+- [ ] **Acceptance & E2E Suite (Reqnroll)** successfully validated against live running host

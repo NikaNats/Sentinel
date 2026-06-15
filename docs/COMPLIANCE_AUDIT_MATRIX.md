@@ -1,8 +1,8 @@
 # Compliance And Audit Matrix
 
-> **Document ID**: CMP-0001  
-> **Status**: APPROVED  
-> **Scope**: Sentinel core libraries, ASP.NET Core middleware, and reference sample  
+> **Document ID**: CMP-0001
+> **Status**: APPROVED
+> **Scope**: Sentinel core libraries, ASP.NET Core middleware, and reference sample
 > **Compliance Baseline**: FAPI 2.0 Baseline/Advanced · NIST 800-63B AAL3 · FedRAMP High · GDPR
 
 ---
@@ -77,6 +77,7 @@ This matrix maps international security standards, regulatory frameworks, and co
 - `tests/Sentinel.Tests.Security/Security/DpopTimingSideChannelTests.cs` (Welch's T-Test Timing Side-Channel Tests)
 - `tests/Sentinel.Benchmarks/` (Micro-benchmarking Suite)
 - `tests/Sentinel.FuzzTests/` (Generative Fuzz Testing Harness)
+- `Sentinel.Tests.Acceptance/` (Reqnroll E2E Acceptance Tests for FAPI 2.0 Financial Transfers and CAEP SSF Session Revocation)
 
 ---
 
@@ -99,6 +100,16 @@ This matrix maps international security standards, regulatory frameworks, and co
 4.  **Network Chaos & Timing Side-Channel Verification:**
     ```powershell
     dotnet test tests/Sentinel.Tests.Security/Sentinel.Tests.Security.csproj --filter "FullyQualifiedName~Chaos|FullyQualifiedName~Timing" -c Release
+    ```
+5.  **Acceptance & E2E Verification (Reqnroll):**
+    ```powershell
+    # Start infrastructure
+    docker-compose up -d redis keycloak
+    # Build and run API
+    dotnet build samples/Sentinel.Sample.MinimalApi/Sentinel.Sample.MinimalApi.csproj -c Release
+    dotnet run --project samples/Sentinel.Sample.MinimalApi/Sentinel.Sample.MinimalApi.csproj -c Release --no-build --urls "http://127.0.0.1:5260"
+    # Run acceptance suite
+    dotnet test Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release
     ```
 
 ---

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Sentinel API Contract (Framework + Reference Host)
-  version: 2026-03-29
+  version: 2026-06-16
   description: |-
     OpenAPI contract for the current Sentinel reference host and mounted Sentinel.AspNetCore security endpoints.
 
@@ -526,6 +526,72 @@ paths:
         '401':
           $ref: '#/components/responses/Problem401'
 
+  /api/v1/showcase/profile:
+    get:
+      tags: [Showcase]
+      summary: Get user profile with SD-JWT selective disclosure or standard claims
+      operationId: getShowcaseProfile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Profile claims
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '403':
+          description: Forbidden by scope or policy
+
+  /api/v1/showcase/test/protected:
+    get:
+      tags: [Showcase]
+      summary: Simple authenticated test endpoint
+      operationId: getShowcaseProtected
+      security:
+        - BearerAuth: []
+          DPoPProof: []
+      responses:
+        '200':
+          description: Protected data returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject:
+                    type: string
+                  assuranceLevel:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Problem401'
+
+  /api/v1/showcase/test/step-up:
+    get:
+      tags: [Showcase]
+      summary: Elevated endpoint requiring high-assurance hardware MFA (acr3)
+      operationId: getShowcaseStepUp
+      security:
+        - BearerAuth: []
+          DPoPProof: []
+      responses:
+        '200':
+          description: High-assurance data returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject:
+                    type: string
+                  assuranceLevel:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Problem401'
+
 components:
   securitySchemes:
     BearerAuth:
@@ -777,6 +843,7 @@ components:
           type: string
         encryptedBytes:
           type: integer
+          format: int32
         createdUtc:
           type: string
           format: date-time
