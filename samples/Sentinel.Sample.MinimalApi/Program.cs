@@ -242,9 +242,10 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
         {
             ValidateIssuer = false,
             ValidateAudience = false,
-            ValidateLifetime = false,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(5),
             ValidateIssuerSigningKey = false,
-            SignatureValidator = delegate (string token, TokenValidationParameters _) { return new JsonWebToken(token); }
+            SignatureValidator = (token, _) => new JsonWebToken(token)
         };
     }
     else
