@@ -4,7 +4,7 @@ using Sentinel.Security.Abstractions.Session;
 
 namespace Sentinel.Infrastructure.Auth;
 
-internal sealed class TokenValidationService(
+public sealed class TokenValidationService(
     ISessionBlacklistCache sessionBlacklist,
     TimeProvider? timeProvider = null)
 {

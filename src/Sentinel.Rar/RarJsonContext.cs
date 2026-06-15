@@ -9,6 +9,7 @@ namespace Sentinel.RAR;
 /// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(AuthorizationDetail[]))]
+[JsonSerializable(typeof(AuthorizationDetail))]
 public sealed partial class RarJsonContext : JsonSerializerContext
 {
 }

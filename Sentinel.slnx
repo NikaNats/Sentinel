@@ -3,33 +3,34 @@
     <Project Path="samples/Sentinel.Sample.MinimalApi/Sentinel.Sample.MinimalApi.csproj" />
   </Folder>
   <Folder Name="/src/">
-    <Project Path="src/Sentinel.AspNetCore/Sentinel.AspNetCore.csproj" />
-    <Project Path="src/Sentinel.Infrastructure/Sentinel.Infrastructure.csproj" />
     <Project Path="src/Sentinel.Application/Sentinel.Application.csproj" />
+    <Project Path="src/Sentinel.AspNetCore/Sentinel.AspNetCore.csproj" />
     <Project Path="src/Sentinel.Domain/Sentinel.Domain.csproj" />
-    <Project Path="src/Sentinel.Security.Abstractions/Sentinel.Security.Abstractions.csproj" />
     <Project Path="src/Sentinel.DPoP/Sentinel.DPoP.csproj" />
-    <Project Path="src/Sentinel.Session/Sentinel.Session.csproj" />
-    <Project Path="src/Sentinel.SSF/Sentinel.SSF.csproj" />
-    <Project Path="src/Sentinel.SdJwt/Sentinel.SdJwt.csproj" />
-    <Project Path="src/Sentinel.Rar/Sentinel.Rar.csproj" />
-    <Project Path="src/Sentinel.Security.Diagnostics/Sentinel.Security.Diagnostics.csproj" />
-    <Project Path="src/Sentinel.Redis/Sentinel.Redis.csproj" />
     <Project Path="src/Sentinel.EntityFrameworkCore/Sentinel.EntityFrameworkCore.csproj" />
+    <Project Path="src/Sentinel.Infrastructure/Sentinel.Infrastructure.csproj" />
     <Project Path="src/Sentinel.Keycloak/Sentinel.Keycloak.csproj" />
     <Project Path="src/Sentinel.Providers.Vault/Sentinel.Providers.Vault.csproj" />
+    <Project Path="src/Sentinel.Rar/Sentinel.Rar.csproj" />
+    <Project Path="src/Sentinel.Redis/Sentinel.Redis.csproj" />
+    <Project Path="src/Sentinel.SdJwt/Sentinel.SdJwt.csproj" />
+    <Project Path="src/Sentinel.Security.Abstractions/Sentinel.Security.Abstractions.csproj" />
+    <Project Path="src/Sentinel.Security.Diagnostics/Sentinel.Security.Diagnostics.csproj" />
+    <Project Path="src/Sentinel.Session/Sentinel.Session.csproj" />
+    <Project Path="src/Sentinel.SSF/Sentinel.SSF.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/Sentinel.FuzzTests/Sentinel.FuzzTests.csproj" />
+    <Project Path="Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj" Id="416f9303-d5a3-4f71-a042-e908482f5a78" />
     <Project Path="tests/Sentinel.Benchmarks/Sentinel.Benchmarks.csproj" />
-    <Project Path="tests/Sentinel.Tests.Shared/Sentinel.Tests.Shared.csproj" />
-    <Project Path="tests/Sentinel.Tests.Unit/Sentinel.Tests.Unit.csproj" />
-    <Project Path="tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj" />
-    <Project Path="tests/Sentinel.Tests.Security/Sentinel.Tests.Security.csproj" />
-    <Project Path="tests/Sentinel.Tests.DPoP/Sentinel.Tests.DPoP.csproj" />
-    <Project Path="tests/Sentinel.Tests.Session/Sentinel.Tests.Session.csproj" />
-    <Project Path="tests/Sentinel.Tests.SSF/Sentinel.Tests.SSF.csproj" />
+    <Project Path="tests/Sentinel.FuzzTests/Sentinel.FuzzTests.csproj" />
     <Project Path="tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj" />
+    <Project Path="tests/Sentinel.Tests.DPoP/Sentinel.Tests.DPoP.csproj" />
+    <Project Path="tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj" />
     <Project Path="tests/Sentinel.Tests.Load/AdversarialTestHost.csproj" />
+    <Project Path="tests/Sentinel.Tests.Security/Sentinel.Tests.Security.csproj" />
+    <Project Path="tests/Sentinel.Tests.Session/Sentinel.Tests.Session.csproj" />
+    <Project Path="tests/Sentinel.Tests.Shared/Sentinel.Tests.Shared.csproj" />
+    <Project Path="tests/Sentinel.Tests.SSF/Sentinel.Tests.SSF.csproj" />
+    <Project Path="tests/Sentinel.Tests.Unit/Sentinel.Tests.Unit.csproj" />
   </Folder>
 </Solution>

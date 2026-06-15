@@ -9,19 +9,56 @@ public static class RarExtensions
 {
     public static AuthorizationDetail[] GetAuthorizationDetails(this ClaimsPrincipal user)
     {
-        var claim = user.FindFirst("authorization_details");
-        if (string.IsNullOrWhiteSpace(claim?.Value))
+        var claims = user.FindAll("authorization_details").ToList();
+        if (claims.Count == 0)
         {
             return [];
         }
 
-        try
+        var details = new List<AuthorizationDetail>();
+
+        foreach (var claim in claims)
         {
-            return JsonSerializer.Deserialize(claim.Value, RarJsonContext.Default.AuthorizationDetailArray) ?? [];
+            var val = claim.Value.Trim();
+            if (string.IsNullOrWhiteSpace(val))
+            {
+                continue;
+            }
+
+            try
+            {
+                var firstChar = val[0];
+                var lastChar = val[^1];
+
+                switch (firstChar)
+                {
+                    case '[' when lastChar == ']':
+                    {
+                        var array = JsonSerializer.Deserialize(val, RarJsonContext.Default.AuthorizationDetailArray);
+                        if (array != null)
+                        {
+                            details.AddRange(array);
+                        }
+
+                        break;
+                    }
+                    case '{' when lastChar == '}':
+                    {
+                        var singleDetail = JsonSerializer.Deserialize(val, RarJsonContext.Default.AuthorizationDetail);
+                        if (singleDetail != null)
+                        {
+                            details.Add(singleDetail);
+                        }
+
+                        break;
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+            }
         }
-        catch (JsonException)
-        {
-            return [];
-        }
+
+        return details.ToArray();
     }
 }
