@@ -75,7 +75,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuer = false,
             ValidateAudience = false,
             ValidateLifetime = false,
-            SignatureValidator = delegate(string token, TokenValidationParameters _) { return new JsonWebToken(token); }
+            SignatureValidator = (token, _) => new JsonWebToken(token)
         };
     });
 
@@ -171,7 +171,9 @@ app.MapGet("/api/v1/documents/{id}",
 app.MapDelete("/api/v1/documents/{id}",
     (string id) => id switch
     {
-        "forbidden-id" => Results.Forbid(), "notfound-id" => Results.NotFound(), _ => Results.NoContent()
+        "forbidden-id" => Results.Forbid(),
+        "notfound-id" => Results.NotFound(),
+        _ => Results.NoContent()
     }).RequireAuthorization();
 app.MapPost("/api/v1/finance/transfer", (TransferRequest request, HttpContext context) =>
 {
@@ -185,6 +187,24 @@ app.MapGet("/api/v1/showcase/security-context", (HttpContext context) =>
     var sub = context.User.FindFirst("sub")?.Value ?? "anonymous";
     return TypedResults.Ok(
         new SecurityContextDto(sub, "urn:sentinel:test", "mock-jkt", 0, Guid.NewGuid().ToString("N")));
+}).RequireAuthorization();
+
+app.MapGet("/api/v1/showcase/profile", () =>
+{
+    var profile = new Dictionary<string, string> { ["sub"] = "test-user" };
+    return TypedResults.Ok(profile);
+}).AllowAnonymous();
+
+app.MapGet("/api/v1/showcase/test/protected", () =>
+{
+    var response = new ShowcaseTestResponse("test-user", "acr2");
+    return TypedResults.Ok(response);
+}).RequireAuthorization();
+
+app.MapGet("/api/v1/showcase/test/step-up", () =>
+{
+    var response = new ShowcaseTestResponse("test-user", "acr3");
+    return TypedResults.Ok(response);
 }).RequireAuthorization();
 
 app.Run();

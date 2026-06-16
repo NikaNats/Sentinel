@@ -1,12 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Collections.Generic;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.JsonWebTokens;
-using Sentinel.SdJwt;
-using Sentinel.Security.Abstractions.SSF;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
+using Sentinel.SdJwt;
+using Sentinel.Security.Abstractions.SSF;
 
 namespace AdversarialTestHost;
 
@@ -31,9 +30,13 @@ namespace AdversarialTestHost;
 [JsonSerializable(typeof(TokenExchangeResponse))]
 [JsonSerializable(typeof(object[]))]
 [JsonSerializable(typeof(DocumentSummaryDto[]))]
+[JsonSerializable(typeof(ShowcaseTestResponse))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
 internal sealed partial class TestHostJsonContext : JsonSerializerContext
 {
 }
+
+public sealed record ShowcaseTestResponse(string Subject, string AssuranceLevel);
 
 public sealed record TransferRequest(
     string TransactionId,
@@ -52,8 +55,10 @@ public sealed record HealthResponse(string Status, DateTimeOffset Utc);
 public sealed record RefreshRequest(string RefreshToken);
 
 public sealed record RefreshResponse(
-    [property: JsonPropertyName("access_token")] string AccessToken,
-    [property: JsonPropertyName("refresh_token")] string RefreshToken);
+    [property: JsonPropertyName("access_token")]
+    string AccessToken,
+    [property: JsonPropertyName("refresh_token")]
+    string RefreshToken);
 
 public sealed record ChangePasswordRequest(string NewPassword);
 
@@ -100,10 +105,14 @@ public sealed record TokenExchangeRequest(
     string CodeVerifier);
 
 public sealed record TokenExchangeResponse(
-    [property: JsonPropertyName("access_token")] string AccessToken,
-    [property: JsonPropertyName("refresh_token")] string? RefreshToken,
-    [property: JsonPropertyName("token_type")] string TokenType,
-    [property: JsonPropertyName("expires_in")] int ExpiresIn,
+    [property: JsonPropertyName("access_token")]
+    string AccessToken,
+    [property: JsonPropertyName("refresh_token")]
+    string? RefreshToken,
+    [property: JsonPropertyName("token_type")]
+    string TokenType,
+    [property: JsonPropertyName("expires_in")]
+    int ExpiresIn,
     [property: JsonPropertyName("scope")] string? Scope);
 
 internal sealed class SampleSdJwtTokenValidator : ISdJwtTokenValidator
@@ -134,10 +143,10 @@ internal sealed class SampleSsfTokenValidator : ISsfTokenValidator
     }
 }
 
-internal sealed class SampleAuthRevocationService : Sentinel.Application.Auth.Interfaces.IAuthRevocationService
+internal sealed class SampleAuthRevocationService : IAuthRevocationService
 {
-    public Task<IReadOnlyCollection<Sentinel.Application.Auth.Models.UserSessionInfo>> GetActiveSessionsAsync(string subjectId, CancellationToken ct)
-        => Task.FromResult<IReadOnlyCollection<Sentinel.Application.Auth.Models.UserSessionInfo>>(Array.Empty<Sentinel.Application.Auth.Models.UserSessionInfo>());
+    public Task<IReadOnlyCollection<UserSessionInfo>> GetActiveSessionsAsync(string subjectId, CancellationToken ct)
+        => Task.FromResult<IReadOnlyCollection<UserSessionInfo>>(Array.Empty<UserSessionInfo>());
 
     public Task<bool> RevokeSessionAsync(string subjectId, string sessionId, CancellationToken ct)
         => Task.FromResult(true);
