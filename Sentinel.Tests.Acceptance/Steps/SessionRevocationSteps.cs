@@ -101,7 +101,7 @@ public sealed class SessionRevocationSteps : IDisposable
 
     private async Task ExecuteProfileRequestAsync()
     {
-        const string requestUrl = "http://127.0.0.1:5260/api/v1/showcase/security-context";
+        const string requestUrl = "http://127.0.0.1:5260/v1/security-context";
 
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
         if (!string.IsNullOrEmpty(_accessToken))

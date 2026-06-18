@@ -99,7 +99,24 @@ var tls13HandlerFactory = () => new SocketsHttpHandler
         CertificateRevocationCheckMode = builder.Environment.IsDevelopment()
             ? X509RevocationMode.NoCheck
             : X509RevocationMode.Online,
-        RemoteCertificateValidationCallback = null
+        RemoteCertificateValidationCallback = builder.Environment.IsDevelopment()
+            ? (sender, cert, chain, errors) =>
+            {
+                if (errors == SslPolicyErrors.None)
+                {
+                    return true;
+                }
+
+                if (cert is X509Certificate2 xc)
+                {
+                    var subject = xc.Subject;
+                    return subject.Contains("CN=keycloak", StringComparison.OrdinalIgnoreCase)
+                           || subject.Contains("CN=localhost", StringComparison.OrdinalIgnoreCase);
+                }
+
+                return false;
+            }
+            : null
     }
 };
 
