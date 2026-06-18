@@ -103,12 +103,7 @@ This matrix maps international security standards, regulatory frameworks, and co
     ```
 5.  **Acceptance & E2E Verification (Reqnroll):**
     ```powershell
-    # Start infrastructure
-    docker-compose up -d redis keycloak
-    # Build and run API
-    dotnet build samples/Sentinel.Sample.MinimalApi/Sentinel.Sample.MinimalApi.csproj -c Release
-    dotnet run --project samples/Sentinel.Sample.MinimalApi/Sentinel.Sample.MinimalApi.csproj -c Release --no-build --urls "http://127.0.0.1:5260"
-    # Run acceptance suite
+    # The entire lifecycle is fully automated (containers, host, tests, teardown).
     dotnet test Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release
     ```
 

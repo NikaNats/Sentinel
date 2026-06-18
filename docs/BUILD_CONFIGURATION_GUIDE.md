@@ -90,16 +90,8 @@ powershell -ExecutionPolicy Bypass -File .\run-fuzzing.ps1
 ### 3.7 Acceptance & E2E Testing (Reqnroll)
 To execute the high-assurance end-to-end acceptance suite validating FAPI 2.0 and CAEP SSF:
 ```powershell
-# 1. Spin up the localized caching and IAM infrastructure
-docker-compose up -d redis keycloak
-
-# 2. Build the Minimal API with Release configuration
-dotnet build samples/Sentinel.Sample.MinimalApi/Sentinel.Sample.MinimalApi.csproj -c Release
-
-# 3. Spin up the API host locally on port 5260
-dotnet run --project samples/Sentinel.Sample.MinimalApi/Sentinel.Sample.MinimalApi.csproj -c Release --no-build --urls "http://127.0.0.1:5260"
-
-# 4. Execute the Reqnroll acceptance test suite in a separate terminal
+# The test runner automatically manages the entire local Docker (Redis + Keycloak) 
+# and Minimal API host lifecycle under AcceptanceTestHooks.
 dotnet test Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release
 ```
 
