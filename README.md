@@ -460,7 +460,7 @@ The entire test lifecycle is **fully automated**. When you run the tests, the su
 To execute the acceptance suite, simply run:
 
 ```bash
-dotnet test Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release
+dotnet test tests/Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release
 ```
 
 ## Containerization And Runtime Hardening

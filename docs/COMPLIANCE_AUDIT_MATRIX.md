@@ -104,7 +104,7 @@ This matrix maps international security standards, regulatory frameworks, and co
 5.  **Acceptance & E2E Verification (Reqnroll):**
     ```powershell
     # The entire lifecycle is fully automated (containers, host, tests, teardown).
-    dotnet test Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release
+    dotnet test tests/Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release
     ```
 
 ---

@@ -92,7 +92,7 @@ To execute the high-assurance end-to-end acceptance suite validating FAPI 2.0 an
 ```powershell
 # The test runner automatically manages the entire local Docker (Redis + Keycloak) 
 # and Minimal API host lifecycle under AcceptanceTestHooks.
-dotnet test Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release
+dotnet test tests/Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release
 ```
 
 ## 4. Strong-Name Signing (Hybrid Model)

@@ -26,8 +26,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\tests\Sentinel.Tests.Load\AdversarialTestHost.csproj" />
-    <ProjectReference Include="..\tests\Sentinel.Tests.Shared\Sentinel.Tests.Shared.csproj" />
+    <ProjectReference Include="..\Sentinel.Tests.Load\AdversarialTestHost.csproj" />
+    <ProjectReference Include="..\Sentinel.Tests.Shared\Sentinel.Tests.Shared.csproj" />
   </ItemGroup>
 
 </Project>

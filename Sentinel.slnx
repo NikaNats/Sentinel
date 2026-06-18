@@ -20,7 +20,7 @@
     <Project Path="src/Sentinel.SSF/Sentinel.SSF.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj" Id="416f9303-d5a3-4f71-a042-e908482f5a78" />
+    <Project Path="tests/Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj"/>
     <Project Path="tests/Sentinel.Benchmarks/Sentinel.Benchmarks.csproj" />
     <Project Path="tests/Sentinel.FuzzTests/Sentinel.FuzzTests.csproj" />
     <Project Path="tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj" />
