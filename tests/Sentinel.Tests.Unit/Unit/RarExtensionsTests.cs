@@ -38,7 +38,7 @@ public sealed class RarExtensionsTests
     [Fact]
     public void GetAuthorizationDetails_WhenClaimJsonShapeInvalid_ReturnsEmpty()
     {
-        const string json = """{"type":"urn:sentinel:finance:transfer"}""";
+        const string json = """{"type":"urn:sentinel:finance:transfer" """;
         var user = new ClaimsPrincipal(new ClaimsIdentity([new Claim("authorization_details", json)], "test"));
 
         var details = user.GetAuthorizationDetails();

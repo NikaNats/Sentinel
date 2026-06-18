@@ -1,10 +1,10 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using Sentinel.DPoP;
 
 namespace Sentinel.Tests.Integration;
 
@@ -35,14 +35,10 @@ public sealed class AuthFlowIntegrationTests(SentinelApiFactory factory)
             ["y"] = jwk.Y!
         };
 
-        var canonical = JsonSerializer.Serialize(new Dictionary<string, string>
-        {
-            ["crv"] = jwkObject["crv"],
-            ["kty"] = jwkObject["kty"],
-            ["x"] = jwkObject["x"],
-            ["y"] = jwkObject["y"]
-        });
-        var jkt = Base64UrlEncoder.Encode(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+        var thumbprintComputer = new DpopThumbprintComputer();
+        using var jwkDoc = JsonDocument.Parse(JsonSerializer.Serialize(jwkObject));
+        var jkt = thumbprintComputer.Compute(jwkDoc.RootElement);
+
         var accessToken = TestTokenIssuer.MintAccessToken(jkt);
 
         var requestUrl = new Uri(client.BaseAddress!, "/v1/profile").ToString();

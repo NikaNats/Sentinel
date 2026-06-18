@@ -3,15 +3,53 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Sentinel.Tests.Integration;
 
 [Collection("Sentinel Integration")]
-public sealed class SecurityScenarioTests(SentinelApiFactory factory)
+public sealed class SecurityScenarioTests : IDisposable
 {
-    private readonly HttpClient client = factory.CreateClient();
+    private readonly WebApplicationFactory<Program> _factory;
+    private readonly HttpClient client;
+
+    public SecurityScenarioTests(SentinelApiFactory factory)
+    {
+        _factory = factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureTestServices(services =>
+            {
+                services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+                {
+                    options.TokenValidationParameters ??= new TokenValidationParameters();
+                    options.TokenValidationParameters.IssuerSigningKey = TestTokenIssuer.AuthoritySecurityKey;
+                    options.TokenValidationParameters.ValidateIssuerSigningKey = true;
+                    options.TokenValidationParameters.ValidIssuer = "https://localhost:8443/realms/sentinel";
+                    options.TokenValidationParameters.ValidAudience = "sentinel-api";
+                    options.TokenValidationParameters.ValidateIssuer = true;
+                    options.TokenValidationParameters.ValidateAudience = true;
+                    options.TokenValidationParameters.ValidateLifetime = true;
+                    options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
+                    options.TokenValidationParameters.SignatureValidator = null;
+
+                    options.RequireHttpsMetadata = false;
+                    options.ConfigurationManager = null;
+                });
+            });
+        });
+        client = _factory.CreateClient();
+    }
+
+    public void Dispose()
+    {
+        _factory.Dispose();
+        client.Dispose();
+    }
 
     [Fact]
     public async Task S01_ExpiredAccessToken_Returns401()

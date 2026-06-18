@@ -4,6 +4,10 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
@@ -12,14 +16,38 @@ namespace Sentinel.Tests.Security.Chaos;
 [Collection("Sentinel Chaos Integration")]
 public sealed class RedisResilienceChaosTests : IClassFixture<ChaosSentinelApiFactory>, IAsyncLifetime
 {
-    private const string TargetEndpoint = "/api/v1/showcase/security-context";
+    private const string TargetEndpoint = "/v1/security-context";
     private readonly HttpClient _client;
     private readonly ChaosSentinelApiFactory _factory;
 
     public RedisResilienceChaosTests(ChaosSentinelApiFactory factory)
     {
         _factory = factory;
-        _client = _factory.CreateClient();
+
+        var wrappedFactory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureTestServices(services =>
+            {
+                services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+                {
+                    options.TokenValidationParameters ??= new TokenValidationParameters();
+                    options.TokenValidationParameters.IssuerSigningKey = TestTokenIssuer.AuthoritySecurityKey;
+                    options.TokenValidationParameters.ValidateIssuerSigningKey = true;
+                    options.TokenValidationParameters.ValidIssuer = "https://localhost:8443/realms/sentinel";
+                    options.TokenValidationParameters.ValidAudience = "sentinel-api";
+                    options.TokenValidationParameters.ValidateIssuer = true;
+                    options.TokenValidationParameters.ValidateAudience = true;
+                    options.TokenValidationParameters.ValidateLifetime = true;
+                    options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
+                    options.TokenValidationParameters.SignatureValidator = null;
+
+                    options.RequireHttpsMetadata = false;
+                    options.ConfigurationManager = null;
+                });
+            });
+        });
+
+        _client = wrappedFactory.CreateClient();
     }
 
     private static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;

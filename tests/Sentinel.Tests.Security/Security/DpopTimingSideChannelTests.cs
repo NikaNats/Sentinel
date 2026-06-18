@@ -286,7 +286,7 @@ public class TimingTestApiFactory : WebApplicationFactory<Program>
     }
 }
 
-file sealed class TestOpenIdConfigurationManager(SecurityKey signingKey)
+public sealed class TestOpenIdConfigurationManager(SecurityKey signingKey)
     : IConfigurationManager<OpenIdConnectConfiguration>
 {
     private readonly OpenIdConnectConfiguration _configuration = new()

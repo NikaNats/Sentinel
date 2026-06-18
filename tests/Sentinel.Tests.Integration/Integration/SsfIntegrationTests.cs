@@ -284,6 +284,28 @@ public sealed class SsfIntegrationTests(SsfIntegrationTests.SsfApiFactory factor
                     options.TokenValidationParameters.ValidAudience = "sentinel-api";
                     options.RequireHttpsMetadata = false;
                     options.ConfigurationManager = null;
+
+                    options.Events ??= new JwtBearerEvents();
+                    var originalOnMessageReceived = options.Events.OnMessageReceived;
+                    options.Events.OnMessageReceived = async context =>
+                    {
+                        if (originalOnMessageReceived != null)
+                        {
+                            await originalOnMessageReceived(context);
+                        }
+
+                        context.Options.TokenValidationParameters.IssuerSigningKey =
+                            TestTokenIssuer.AuthoritySecurityKey;
+                        context.Options.TokenValidationParameters.ValidateIssuerSigningKey = true;
+                        context.Options.TokenValidationParameters.ValidIssuer =
+                            "https://localhost:8443/realms/sentinel";
+                        context.Options.TokenValidationParameters.ValidAudience = "sentinel-api";
+                        context.Options.TokenValidationParameters.ValidateIssuer = true;
+                        context.Options.TokenValidationParameters.ValidateAudience = true;
+                        context.Options.TokenValidationParameters.ValidateLifetime = true;
+                        context.Options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
+                        context.Options.TokenValidationParameters.SignatureValidator = null;
+                    };
                 });
             });
         }
@@ -311,27 +333,24 @@ file sealed class FailingSsfApiFactory : SsfIntegrationTests.SsfApiFactory
     }
 }
 
-#pragma warning disable CA1822
+#pragma warning disable CA1822 
+
 file sealed class ThrowingSecuritySessionBlacklistCache : ISessionBlacklistCache
 {
-    public Task BlacklistSessionAsync(string sessionId, DateTimeOffset expiresAt,
-        CancellationToken cancellationToken = default) =>
-        throw new InvalidOperationException("Simulated blacklist failure.");
+    public Task BlacklistSessionAsync(string sessionId, DateTimeOffset expiresAt, CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Simulated blacklist failure.");
 
-    public Task<bool> IsBlacklistedAsync(string sessionId, CancellationToken cancellationToken = default) =>
-        Task.FromResult(false);
+    public Task<bool> IsBlacklistedAsync(string sessionId, CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
 
     public Task CleanupExpiredAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
+
 #pragma warning restore CA1822
 
-file sealed class TestOpenIdConfigurationManager(SecurityKey signingKey)
-    : IConfigurationManager<OpenIdConnectConfiguration>
+file sealed class TestOpenIdConfigurationManager(SecurityKey signingKey) : IConfigurationManager<OpenIdConnectConfiguration>
 {
-    private readonly OpenIdConnectConfiguration _configuration = new()
-    {
-        Issuer = "https://localhost:8443/realms/sentinel"
-    };
+    private readonly OpenIdConnectConfiguration _configuration = new() { Issuer = "https://localhost:8443/realms/sentinel" };
 
     public Task<OpenIdConnectConfiguration> GetConfigurationAsync(CancellationToken cancel)
     {

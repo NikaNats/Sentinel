@@ -50,7 +50,7 @@ public sealed class ChangePasswordIntegrationTests : IClassFixture<SentinelApiFa
                     RequireNonAlphanumeric = true,
                     MinimumEntropyBits = 50.0
                 });
-                services.AddSingleton<IOptions<PasswordPolicyOptions>>(testPasswordOptions);
+                services.AddSingleton(testPasswordOptions);
                 services.AddSingleton<IPasswordStrengthValidator, EnterprisePasswordStrengthValidator>();
 
                 services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
@@ -62,17 +62,19 @@ public sealed class ChangePasswordIntegrationTests : IClassFixture<SentinelApiFa
                     options.RequireHttpsMetadata = false;
                     options.ConfigurationManager = null;
 
-                    options.Events = new JwtBearerEvents
-                    {
-                        OnMessageReceived = context =>
-                        {
-                            var authHeader = context.Request.Headers.Authorization.ToString();
-                            if (authHeader.StartsWith("TestScheme ", StringComparison.OrdinalIgnoreCase))
-                            {
-                                context.Token = authHeader["TestScheme ".Length..].Trim();
-                            }
+                    var originalOnMessageReceived = options.Events.OnMessageReceived;
 
-                            return Task.CompletedTask;
+                    options.Events.OnMessageReceived = async context =>
+                    {
+                        var authHeader = context.Request.Headers.Authorization.ToString();
+                        if (authHeader.StartsWith("TestScheme ", StringComparison.OrdinalIgnoreCase))
+                        {
+                            context.Token = authHeader["TestScheme ".Length..].Trim();
+                        }
+
+                        if (originalOnMessageReceived != null)
+                        {
+                            await originalOnMessageReceived(context);
                         }
                     };
                 });

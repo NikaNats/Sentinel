@@ -71,13 +71,11 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
         _ = CreateClient();
 
         // 4. ARCHITECT'S FIX: Run migrations AFTER CreateClient (Services container exists)
-        // This happens after the WebHost is built but before tests actually run
         using var scope = Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<SentinelDbContext>();
         await dbContext.Database.MigrateAsync();
     }
 
-    // Overriding DisposeAsync instead of shadowing it with the 'new' keyword resolves warnings.
     public override async ValueTask DisposeAsync()
     {
         await DisposeAsyncCore();
@@ -86,10 +84,6 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        // ARCHITECT'S 2026 FIX: Direct DI Injection pattern
-        // We SKIP builder.UseSetting() for connection strings because it doesn't reach
-        // ConfigureTestServices in time. Instead, we inject directly into the DI container.
-
         builder.ConfigureAppConfiguration((_, config) =>
         {
             var testSettings = new Dictionary<string, string?>
@@ -115,13 +109,9 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
 
         builder.ConfigureTestServices(services =>
         {
-            // DIRECTLY inject the dynamic connection strings where the container variables are available!
-
-            // Configure DbContext with explicit container connection string
             services.RemoveAll<DbContextOptions<SentinelDbContext>>();
             services.AddDbContext<SentinelDbContext>(options => { options.UseNpgsql(postgresConnectionString); });
 
-            // Configure Redis with explicit container connection string
             services.RemoveAll<IDistributedCache>();
             services.RemoveAll<IConnectionMultiplexer>();
             services.RemoveAll<IRedisConnectionProvider>();
@@ -142,7 +132,6 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
                 return ConnectionMultiplexer.Connect(options);
             });
 
-            // Register Redis security caches using configuration-based approach
             var redisConfig = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
@@ -153,22 +142,21 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
             services.AddRedisSecurityCaches(redisConfig);
             services.AddTransient<ISdJwtTokenValidator, TestSdJwtTokenValidator>();
             services.AddSingleton<ISsfTokenValidator, TestSsfTokenValidator>();
+
+            // Successfully registers SsfEventProcessorAdapter against Application layer interface
             services.AddScoped<ISsfEventProcessor, SsfEventProcessorAdapter>();
             services.AddScoped<IAuthRevocationService, AuthRevocationServiceAdapter>();
 
-            // Bridge Application layer IJtiReplayCache to Security layer implementation via adapter
             services.AddSingleton<Application.Common.Abstractions.IJtiReplayCache>(sp =>
                 new JtiReplayCacheAdapter(
                     sp.GetRequiredService<IJtiReplayCache>(),
                     sp.GetService<TimeProvider>()));
 
-            // Bridge Application layer ISessionBlacklistCache to Security layer implementation via adapter
             services.AddSingleton<Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
                 new SessionBlacklistCacheAdapter(
                     sp.GetRequiredService<ISessionBlacklistCache>(),
                     sp.GetService<TimeProvider>()));
 
-            // Configure JWT authentication override
             services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
             {
                 options.TokenValidationParameters.IssuerSigningKey = TestTokenIssuer.AuthoritySecurityKey;
@@ -177,6 +165,25 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
                 options.TokenValidationParameters.ValidAudience = "sentinel-api";
                 options.RequireHttpsMetadata = false;
                 options.ConfigurationManager = null;
+
+                var originalOnMessageReceived = options.Events.OnMessageReceived;
+                options.Events.OnMessageReceived = async context =>
+                {
+                    if (originalOnMessageReceived != null)
+                    {
+                        await originalOnMessageReceived(context);
+                    }
+
+                    context.Options.TokenValidationParameters.IssuerSigningKey = TestTokenIssuer.AuthoritySecurityKey;
+                    context.Options.TokenValidationParameters.ValidateIssuerSigningKey = true;
+                    context.Options.TokenValidationParameters.ValidIssuer = "https://localhost:8443/realms/sentinel";
+                    context.Options.TokenValidationParameters.ValidAudience = "sentinel-api";
+                    context.Options.TokenValidationParameters.ValidateIssuer = true;
+                    context.Options.TokenValidationParameters.ValidateAudience = true;
+                    context.Options.TokenValidationParameters.ValidateLifetime = true;
+                    context.Options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
+                    context.Options.TokenValidationParameters.SignatureValidator = null;
+                };
             });
         });
     }
@@ -222,7 +229,6 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
         {
             try
             {
-                // Attempt to open a connection to verify the database is accepting connections
                 using var connection = new NpgsqlConnection(connectionString);
                 await connection.OpenAsync();
                 await connection.CloseAsync();

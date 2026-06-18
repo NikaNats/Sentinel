@@ -231,35 +231,30 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
 
     var allowedIssuers = new List<string> { configuredAuthority };
 
-    if (builder.Environment.IsDevelopment() && !configuredAuthority.Contains("localhost:8443", StringComparison.OrdinalIgnoreCase))
+    if (builder.Environment.IsDevelopment() &&
+        !configuredAuthority.Contains("localhost:8443", StringComparison.OrdinalIgnoreCase))
     {
         allowedIssuers.Add("https://localhost:8443/realms/sentinel");
     }
 
     if (builder.Environment.IsDevelopment())
     {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = false,
-            ValidateAudience = false,
-            ValidateLifetime = true,
-            ClockSkew = TimeSpan.FromMinutes(5),
-            ValidateIssuerSigningKey = false,
-            SignatureValidator = (token, _) => new JsonWebToken(token)
-        };
+        options.TokenValidationParameters.ValidateIssuer = false;
+        options.TokenValidationParameters.ValidateAudience = false;
+        options.TokenValidationParameters.ValidateLifetime = true;
+        options.TokenValidationParameters.ClockSkew = TimeSpan.FromMinutes(5);
+        options.TokenValidationParameters.ValidateIssuerSigningKey = false;
+        options.TokenValidationParameters.SignatureValidator = (token, _) => new JsonWebToken(token);
     }
     else
     {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidIssuers = allowedIssuers,
-            ValidateAudience = true,
-            ValidAudience = keycloakSection["Audience"],
-            ValidateLifetime = true,
-            ClockSkew = TimeSpan.Zero,
-            ValidateIssuerSigningKey = true
-        };
+        options.TokenValidationParameters.ValidateIssuer = true;
+        options.TokenValidationParameters.ValidIssuers = allowedIssuers;
+        options.TokenValidationParameters.ValidateAudience = true;
+        options.TokenValidationParameters.ValidAudience = keycloakSection["Audience"];
+        options.TokenValidationParameters.ValidateLifetime = true;
+        options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
+        options.TokenValidationParameters.ValidateIssuerSigningKey = true;
     }
 });
 
@@ -366,9 +361,9 @@ app.MapScalarApiReference("/docs", options =>
 });
 
 const string securityPrefix = "v1";
-const string documentsPrefix = "api/v1/documents";
+const string documentsPrefix = "v1/documents";
 const string financePrefix = "api/v1/finance";
-const string showcasePrefix = "api/v1/showcase";
+const string showcasePrefix = "v1";
 
 app.MapGet("/", () => TypedResults.Ok(
     new SampleInfoResponse("Sentinel.Sample.MinimalApi", "/docs",
