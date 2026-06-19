@@ -10,6 +10,11 @@ using StackExchange.Redis;
 
 namespace Sentinel.Infrastructure.Cache;
 
+/// <summary>
+///     High-assurance hybrid session blacklist cache store.
+///     Combines PostgreSQL (Persistent Source of Truth) and Redis (Volatile Fast-Path)
+///     using "Write-Through" and "Read-Through" patterns with concurrency protection.
+/// </summary>
 public sealed class HybridSessionBlacklistCache(
     RedisSessionBlacklistCache redisCache,
     ILogger<HybridSessionBlacklistCache> logger,
@@ -20,6 +25,10 @@ public sealed class HybridSessionBlacklistCache(
     private readonly ILogger<HybridSessionBlacklistCache> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly RedisSessionBlacklistCache _redisCache = redisCache ?? throw new ArgumentNullException(nameof(redisCache));
 
+    /// <summary>
+    ///     Write-Through write: Writes data to both PostgreSQL and Redis in parallel.
+    ///     Protects against concurrent unique key violations gracefully without throwing false 503 errors.
+    /// </summary>
     public async Task BlacklistSessionAsync(string sessionId, DateTimeOffset expiresAt,
         CancellationToken cancellationToken = default)
     {
@@ -47,8 +56,11 @@ public sealed class HybridSessionBlacklistCache(
                     await dbContext.SaveChangesAsync(cancellationToken);
                 }
             }
-            catch (Exception ex) when (ex is DbException or DbUpdateException or TimeoutException or SocketException
-                                           or InvalidOperationException)
+            catch (DbUpdateException ex)
+            {
+                _logger.LogInformation(ex, "Session {SessionId} already blacklisted by a concurrent request.", sessionId);
+            }
+            catch (Exception ex) when (ex is DbException or TimeoutException or SocketException or InvalidOperationException)
             {
                 _logger.LogError(ex,
                     "Critical error during session revocation in PostgreSQL. System entering Fail-Closed mode.");
@@ -77,6 +89,9 @@ public sealed class HybridSessionBlacklistCache(
         }
     }
 
+    /// <summary>
+    ///     Read-Through read: First checks Redis; on a Cache Miss, queries the database and populates the cache.
+    /// </summary>
     public async Task<bool> IsBlacklistedAsync(string sessionId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
@@ -140,6 +155,9 @@ public sealed class HybridSessionBlacklistCache(
         return false;
     }
 
+    /// <summary>
+    ///     Cleans up expired entries from the PostgreSQL database.
+    /// </summary>
     public async Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
     {
         if (dbContextFactory != null)
