@@ -19,6 +19,7 @@ using Sentinel.Application.DependencyInjection;
 using Sentinel.AspNetCore.Endpoints;
 using Sentinel.AspNetCore.Extensions;
 using Sentinel.Infrastructure.Auth;
+using Sentinel.Infrastructure.Cache;
 using Sentinel.Infrastructure.DependencyInjection;
 using Sentinel.Keycloak.Extensions;
 using Sentinel.Keycloak.Services;
@@ -28,6 +29,7 @@ using Sentinel.Sample.MinimalApi;
 using Sentinel.Sample.MinimalApi.Endpoints;
 using Sentinel.SdJwt;
 using Sentinel.Security.Abstractions.Identity;
+using Sentinel.Security.Abstractions.Session;
 using Sentinel.Security.Abstractions.SSF;
 using IPNetwork = System.Net.IPNetwork;
 using ISsfEventProcessor = Sentinel.Security.Abstractions.SSF.ISsfEventProcessor;
@@ -277,6 +279,7 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
 
 builder.Services
     .AddRedisSecurityCaches(builder.Configuration.GetSection("Sentinel:Redis"))
+    .AddSingleton<ISessionBlacklistCache, HybridSessionBlacklistCache>()
     .AddApplicationLayer()
     .AddSsfProcessing(builder.Configuration)
     .AddRarValidation(builder.Configuration)

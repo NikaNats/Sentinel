@@ -55,7 +55,17 @@ public static class RedisServiceExtensions
         services.AddSingleton<IRedisConnectionProvider, RedisConnectionProvider>();
         services.AddSingleton<IJtiReplayCache, RedisJtiReplayCache>();
         services.AddSingleton<IDpopNonceStore, RedisDpopNonceStore>();
-        services.AddSingleton<ISessionBlacklistCache, RedisSessionBlacklistCache>();
+
+        services.AddSingleton<RedisSessionBlacklistCache>(sp =>
+        {
+            var provider = sp.GetRequiredService<IRedisConnectionProvider>();
+            var redisOpts = sp.GetRequiredService<RedisOptions>();
+            var logger = sp.GetRequiredService<ILogger<RedisSessionBlacklistCache>>();
+            return new RedisSessionBlacklistCache(provider, redisOpts, logger);
+        });
+
+        services.AddSingleton<ISessionBlacklistCache>(sp => sp.GetRequiredService<RedisSessionBlacklistCache>());
+
         services.AddSingleton<IIdempotencyStore, RedisIdempotencyStore>();
 
         return services;
@@ -84,13 +94,8 @@ public static class RedisServiceExtensions
         };
     }
 
-    private static bool TryReadBoolean(string? value, out bool result)
-    {
-        return bool.TryParse(value, out result);
-    }
+    private static bool TryReadBoolean(string? value, out bool result) => bool.TryParse(value, out result);
 
-    private static bool TryReadPositiveInt32(string? value, out int result)
-    {
-        return int.TryParse(value, out result) && result > 0;
-    }
+    private static bool TryReadPositiveInt32(string? value, out int result) =>
+        int.TryParse(value, out result) && result > 0;
 }

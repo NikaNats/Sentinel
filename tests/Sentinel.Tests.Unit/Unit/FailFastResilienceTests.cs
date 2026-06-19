@@ -19,7 +19,7 @@ namespace Sentinel.Tests.Unit.Unit;
 public sealed class FailFastResilienceTests
 {
     [Fact(DisplayName = "🔴 Fail-Fast 1: Registering InMemoryIdempotencyStore in production blocks startup")]
-    public void StartupFilter_WhenInMemoryStoreInProduction_MustThrowInvalidOperationException()
+    public async Task StartupFilter_WhenInMemoryStoreInProduction_MustThrowInvalidOperationException()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -32,10 +32,9 @@ public sealed class FailFastResilienceTests
         services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
         services.AddSingleton<IStartupFilter, SecurityInvariantsStartupFilter>();
 
-        // Build and execute entirely inside act
-        var act = () =>
+        var act = async () =>
         {
-            using var provider = services.BuildServiceProvider();
+            await using var provider = services.BuildServiceProvider();
             var filter = provider.GetRequiredService<IStartupFilter>();
             var appBuilderMock = new Mock<IApplicationBuilder>();
             var action = filter.Configure(_ => { });
@@ -43,13 +42,13 @@ public sealed class FailFastResilienceTests
         };
 
         // Assert: system must block startup with critical error
-        act.Should().Throw<Exception>()
+        await act.Should().ThrowAsync<Exception>()
             .Where(ex => ex.Message.Contains("CRITICAL SECURITY INVARIANT VIOLATED")
                          && ex.Message.Contains("InMemoryIdempotencyStore"));
     }
 
     [Fact(DisplayName = "🔴 Fail-Fast 2: Missing Redis endpoint in production blocks startup")]
-    public void StartupFilter_WhenRedisEndpointMissingInProduction_MustThrowInvalidOperationException()
+    public async Task StartupFilter_WhenRedisEndpointMissingInProduction_MustThrowInvalidOperationException()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -70,10 +69,9 @@ public sealed class FailFastResilienceTests
         services.AddRedisSecurityCaches(config);
         services.AddSingleton<IStartupFilter, SecurityInvariantsStartupFilter>();
 
-        // Build inside act to capture options validation
-        var act = () =>
+        var act = async () =>
         {
-            using var provider = services.BuildServiceProvider();
+            await using var provider = services.BuildServiceProvider();
             var filter = provider.GetRequiredService<IStartupFilter>();
             var appBuilderMock = new Mock<IApplicationBuilder>();
             var action = filter.Configure(_ => { });
@@ -81,12 +79,12 @@ public sealed class FailFastResilienceTests
         };
 
         // Assert: startup must be blocked by strict Redis options validation
-        act.Should().Throw<Exception>()
+        await act.Should().ThrowAsync<Exception>()
             .Where(ex => ex.Message.Contains("Redis Connection EndPoint must be configured."));
     }
 
     [Fact(DisplayName = "✓ Sandbox: Strict Redis registration is allowed in development environment")]
-    public void StartupFilter_WithStrictRedisRegistrationInDevelopmentEnvironment_DoesNotThrow()
+    public async Task StartupFilter_WithStrictRedisRegistrationInDevelopmentEnvironment_DoesNotThrow()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -108,10 +106,9 @@ public sealed class FailFastResilienceTests
         services.AddRedisSecurityCaches(config);
         services.AddSingleton<IStartupFilter, SecurityInvariantsStartupFilter>();
 
-        // Fixed
-        var act = () =>
+        var act = async () =>
         {
-            using var provider = services.BuildServiceProvider();
+            await using var provider = services.BuildServiceProvider();
             var filter = provider.GetRequiredService<IStartupFilter>();
             var appBuilderMock = new Mock<IApplicationBuilder>();
             var action = filter.Configure(_ => { });
@@ -119,6 +116,6 @@ public sealed class FailFastResilienceTests
         };
 
         // Act & Assert: application should start without issues in development
-        act.Should().NotThrow();
+        await act.Should().NotThrowAsync();
     }
 }

@@ -30,6 +30,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Sentinel.Application\Sentinel.Application.csproj" />
     <ProjectReference Include="..\Sentinel.Domain\Sentinel.Domain.csproj" />
+    <ProjectReference Include="..\Sentinel.EntityFrameworkCore\Sentinel.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\Sentinel.Redis\Sentinel.Redis.csproj" />
     <ProjectReference Include="..\Sentinel.Security.Abstractions\Sentinel.Security.Abstractions.csproj" />
     <!-- <ProjectReference Include="..\Sentinel.Security.Captcha\Sentinel.Security.Captcha.csproj" /> -->
     <!-- <ProjectReference Include="..\Sentinel.Security.Tokens\Sentinel.Security.Tokens.csproj" /> -->
