@@ -96,15 +96,25 @@ spec:
                 secretKeyRef:
                   name: sentinel-runtime-secrets
                   key: redis-connection-string
+            - name: Keycloak__Authority
+              value: https://keycloak.keycloak.svc.cluster.local:8443/realms/sentinel
+            - name: Keycloak__Audience
+              value: sentinel-api
+            - name: Keycloak__RequireHttpsMetadata
+              value: "true"
+            - name: Sentinel__Keycloak__Authority
+              value: https://keycloak.keycloak.svc.cluster.local:8443/realms/sentinel
+            - name: Sentinel__Keycloak__Audience
+              value: sentinel-api
+            - name: Sentinel__Keycloak__RequireHttpsMetadata
+              value: "true"
             - name: Sentinel__Keycloak__ClientSecret
               valueFrom:
                 secretKeyRef:
                   name: sentinel-runtime-secrets
                   key: keycloak-client-secret
-            - name: Sentinel__Keycloak__Authority
-              value: https://keycloak.keycloak.svc.cluster.local:8443/realms/sentinel
-            - name: Sentinel__Keycloak__Audience
-              value: sentinel-api
+            - name: Security__TrustedRootCaPath
+              value: /var/run/sentinel/ca/ca.crt
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
@@ -143,6 +153,9 @@ spec:
             - name: tls
               mountPath: /var/run/sentinel/tls
               readOnly: true
+            - name: sentinel-ca
+              mountPath: /var/run/sentinel/ca
+              readOnly: true
       volumes:
         - name: tmp
           emptyDir:
@@ -151,6 +164,10 @@ spec:
         - name: tls
           secret:
             secretName: sentinel-api-tls
+            defaultMode: 0440
+        - name: sentinel-ca
+          secret:
+            secretName: sentinel-ca-bundle
             defaultMode: 0440
 ---
 apiVersion: v1

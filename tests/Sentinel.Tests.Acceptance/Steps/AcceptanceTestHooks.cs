@@ -1,6 +1,4 @@
-﻿// tests/Sentinel.Tests.Acceptance/Steps/AcceptanceTestHooks.cs
-
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -61,6 +59,9 @@ public static class AcceptanceTestHooks
                 RedirectStandardError = true,
                 WorkingDirectory = solutionRoot
             };
+
+            var pubKeyBytes = Sentinel.Tests.Shared.Fixtures.TestTokenIssuer.AuthorityKey.ExportSubjectPublicKeyInfo();
+            startInfo.EnvironmentVariables["Security__TestPublicKey"] = Convert.ToBase64String(pubKeyBytes);
 
             _apiProcess = new Process { StartInfo = startInfo };
 

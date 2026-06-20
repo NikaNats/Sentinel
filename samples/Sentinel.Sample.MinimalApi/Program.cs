@@ -37,7 +37,10 @@ using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
 var builder = WebApplication.CreateBuilder(args);
 
-if (builder.Environment.IsDevelopment())
+var isDevelopment = builder.Environment.IsDevelopment();
+var localCaPath = builder.Configuration["Security:TrustedRootCaPath"];
+
+if (isDevelopment)
 {
     builder.WebHost.ConfigureKestrel(options =>
     {
@@ -50,7 +53,7 @@ if (builder.Environment.IsDevelopment())
 
 builder.WebHost.ConfigureKestrel(options =>
 {
-    if (builder.Environment.IsDevelopment())
+    if (isDevelopment)
     {
         options.ConfigureHttpsDefaults(_ =>
         {
@@ -93,33 +96,52 @@ builder.Services.Configure<JsonOptions>(options =>
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, SampleJsonContext.Default);
 });
 
-var tls13HandlerFactory = () => new SocketsHttpHandler
+var tls13HandlerFactory = () =>
 {
-    SslOptions = new SslClientAuthenticationOptions
+    var handler = new SocketsHttpHandler
     {
-        EnabledSslProtocols = SslProtocols.Tls13,
-        CertificateRevocationCheckMode = builder.Environment.IsDevelopment()
-            ? X509RevocationMode.NoCheck
-            : X509RevocationMode.Online,
-        RemoteCertificateValidationCallback = builder.Environment.IsDevelopment()
-            ? (sender, cert, chain, errors) =>
-            {
-                if (errors == SslPolicyErrors.None)
-                {
-                    return true;
-                }
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+        SslOptions = new SslClientAuthenticationOptions
+        {
+            EnabledSslProtocols = SslProtocols.Tls13,
+            CertificateRevocationCheckMode = isDevelopment
+                ? X509RevocationMode.NoCheck
+                : X509RevocationMode.Online
+        }
+    };
 
-                if (cert is X509Certificate2 xc)
-                {
-                    var subject = xc.Subject;
-                    return subject.Contains("CN=keycloak", StringComparison.OrdinalIgnoreCase)
-                           || subject.Contains("CN=localhost", StringComparison.OrdinalIgnoreCase);
-                }
+    if (!string.IsNullOrWhiteSpace(localCaPath) && File.Exists(localCaPath))
+    {
+        var trustedCa = X509Certificate2.CreateFromPemFile(localCaPath);
+        handler.SslOptions.RemoteCertificateValidationCallback = (sender, cert, chain, errors) =>
+        {
+            if (errors == SslPolicyErrors.None) return true;
 
-                return false;
-            }
-            : null
+            using var customChain = new X509Chain();
+            customChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+            customChain.ChainPolicy.DisableCertificateDownloads = true;
+            customChain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+            customChain.ChainPolicy.CustomTrustStore.Add(trustedCa);
+
+            return customChain.Build((X509Certificate2)cert!);
+        };
     }
+    else if (isDevelopment)
+    {
+        handler.SslOptions.RemoteCertificateValidationCallback = (sender, cert, chain, errors) =>
+        {
+            if (errors == SslPolicyErrors.None) return true;
+            if (cert is X509Certificate2 xc)
+            {
+                var subject = xc.Subject;
+                return subject.Contains("CN=keycloak", StringComparison.OrdinalIgnoreCase)
+                       || subject.Contains("CN=localhost", StringComparison.OrdinalIgnoreCase);
+            }
+            return false;
+        };
+    }
+
+    return handler;
 };
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -227,7 +249,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         var configuredAuthority = keycloakSection["Authority"] ?? string.Empty;
         var allowedIssuers = new List<string> { configuredAuthority };
 
-        if (builder.Environment.IsDevelopment() && !configuredAuthority.Contains("localhost:8443", StringComparison.OrdinalIgnoreCase))
+        if (isDevelopment && !configuredAuthority.Contains("localhost:8443", StringComparison.OrdinalIgnoreCase))
         {
             allowedIssuers.Add("https://localhost:8443/realms/sentinel");
         }
@@ -250,32 +272,41 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
 
     var allowedIssuers = new List<string> { configuredAuthority };
 
-    if (builder.Environment.IsDevelopment() &&
+    if (isDevelopment &&
         !configuredAuthority.Contains("localhost:8443", StringComparison.OrdinalIgnoreCase))
     {
         allowedIssuers.Add("https://localhost:8443/realms/sentinel");
     }
 
-    if (builder.Environment.IsDevelopment())
+    options.TokenValidationParameters.ValidateIssuer = true;
+    options.TokenValidationParameters.ValidIssuers = allowedIssuers;
+    options.TokenValidationParameters.ValidateAudience = true;
+    options.TokenValidationParameters.ValidAudience = keycloakSection["Audience"];
+    options.TokenValidationParameters.ValidateLifetime = true;
+    options.TokenValidationParameters.ValidateIssuerSigningKey = true;
+
+    if (isDevelopment)
     {
-        options.TokenValidationParameters.ValidateIssuer = false;
-        options.TokenValidationParameters.ValidateAudience = false;
-        options.TokenValidationParameters.ValidateLifetime = true;
-        options.TokenValidationParameters.ClockSkew = TimeSpan.FromMinutes(5);
-        options.TokenValidationParameters.ValidateIssuerSigningKey = false;
-        options.TokenValidationParameters.SignatureValidator = (token, _) => new JsonWebToken(token);
+        options.TokenValidationParameters.ClockSkew = TimeSpan.FromSeconds(60);
+
+        var testPublicKey = builder.Configuration["Security:TestPublicKey"];
+        if (!string.IsNullOrWhiteSpace(testPublicKey))
+        {
+
+                var ecdsa = System.Security.Cryptography.ECDsa.Create();
+                ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(testPublicKey), out _);
+                options.TokenValidationParameters.IssuerSigningKey = new ECDsaSecurityKey(ecdsa);
+
+                options.ConfigurationManager = null;
+
+        }
     }
     else
     {
-        options.TokenValidationParameters.ValidateIssuer = true;
-        options.TokenValidationParameters.ValidIssuers = allowedIssuers;
-        options.TokenValidationParameters.ValidateAudience = true;
-        options.TokenValidationParameters.ValidAudience = keycloakSection["Audience"];
-        options.TokenValidationParameters.ValidateLifetime = true;
         options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
-        options.TokenValidationParameters.ValidateIssuerSigningKey = true;
     }
 });
+
 
 builder.Services
     .AddRedisSecurityCaches(builder.Configuration.GetSection("Sentinel:Redis"))

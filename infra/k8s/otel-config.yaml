@@ -28,6 +28,7 @@ data:
             endpoint: 0.0.0.0:4317
           http:
             endpoint: 0.0.0.0:4318
+
       prometheus:
         config:
           scrape_configs:
@@ -46,17 +47,20 @@ data:
     processors:
       memory_limiter:
         check_interval: 1s
-        limit_mib: 256
-        spike_limit_mib: 64
+        limit_mib: 410
+        spike_limit_mib: 102
+
       batch:
         timeout: 2s
         send_batch_size: 8192
         send_batch_max_size: 16384
+
       resource:
         attributes:
           - key: deployment.environment
             value: production
             action: upsert
+
           - key: service.namespace
             value: sentinel
             action: upsert
@@ -68,6 +72,7 @@ data:
           ca_file: /var/run/sentinel/siem/ca.crt
           cert_file: /var/run/sentinel/siem/tls.crt
           key_file: /var/run/sentinel/siem/tls.key
+
       debug:
         verbosity: basic
 
@@ -75,6 +80,7 @@ data:
       telemetry:
         logs:
           level: info
+
       pipelines:
         traces:
           receivers:
@@ -85,6 +91,7 @@ data:
             - batch
           exporters:
             - otlp/siem
+
         metrics:
           receivers:
             - otlp
@@ -107,18 +114,22 @@ metadata:
 spec:
   replicas: 2
   revisionHistoryLimit: 2
+
   selector:
     matchLabels:
       app.kubernetes.io/name: otel-collector
+
   template:
     metadata:
       labels:
         app.kubernetes.io/name: otel-collector
         app.kubernetes.io/part-of: sentinel
+
     spec:
       serviceAccountName: otel-collector
       automountServiceAccountToken: false
       enableServiceLinks: false
+
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -127,57 +138,73 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
+
       containers:
         - name: otel-collector
           image: otel/opentelemetry-collector-contrib:0.127.0
           imagePullPolicy: IfNotPresent
+
           args:
             - --config=/etc/otelcol/collector.yaml
+
           ports:
             - name: otlp-grpc
               containerPort: 4317
               protocol: TCP
+
             - name: otlp-http
               containerPort: 4318
               protocol: TCP
+
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
             readOnlyRootFilesystem: true
+
             capabilities:
               drop:
                 - ALL
+
           resources:
             requests:
               cpu: 250m
               memory: 256Mi
+
             limits:
               cpu: 500m
               memory: 512Mi
+
           volumeMounts:
             - name: config
               mountPath: /etc/otelcol
               readOnly: true
+
             - name: tmp
               mountPath: /tmp
+
             - name: sentinel-ca
               mountPath: /var/run/sentinel/ca
               readOnly: true
+
             - name: siem-mtls
               mountPath: /var/run/sentinel/siem
               readOnly: true
+
       volumes:
         - name: config
           configMap:
             name: otel-collector-config
+
         - name: tmp
           emptyDir:
             medium: Memory
             sizeLimit: 64Mi
+
         - name: sentinel-ca
           secret:
             secretName: sentinel-ca-bundle
             defaultMode: 0440
+
         - name: siem-mtls
           secret:
             secretName: sentinel-siem-mtls
@@ -192,13 +219,16 @@ metadata:
     app.kubernetes.io/name: otel-collector
 spec:
   type: ClusterIP
+
   selector:
     app.kubernetes.io/name: otel-collector
+
   ports:
     - name: otlp-grpc
       port: 4317
       targetPort: 4317
       protocol: TCP
+
     - name: otlp-http
       port: 4318
       targetPort: 4318

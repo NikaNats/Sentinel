@@ -1,36 +1,54 @@
-#!/usr/bin/env bash
-set -euo pipefail
+﻿#!/usr/bin/env bash
+set -eu
 
-# 1. Create a Private Root Certificate Authority (CA)
+umask 077
+
+cat <<EOF > ca.ext
+[req]
+distinguished_name = req_distinguished_name
+prompt = no
+[req_distinguished_name]
+CN = Sentinel Enterprise Root CA
+O = Sentinel Security
+C = GE
+[ca_ext]
+basicConstraints = critical,CA:TRUE
+keyUsage = critical,keyCertSign,cRLSign
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always,issuer
+EOF
+
 openssl req -x509 \
   -nodes \
   -days 3650 \
   -newkey rsa:4096 \
   -keyout ca.key \
   -out ca.crt \
-  -subj "/CN=Sentinel Enterprise Root CA/O=Sentinel Security/C=GE"
+  -config ca.ext \
+  -extensions ca_ext \
+  -sha384
 
-# 2. Create the Certificate Signing Request (CSR) for Keycloak
 openssl req -nodes \
-  -newkey rsa:2048 \
+  -newkey ec:<(openssl ecparam -name secp384r1) \
   -keyout keycloak.key \
   -out keycloak.csr \
   -subj "/CN=keycloak/O=Sentinel Security/C=GE"
 
-# 3. Create the SAN (Subject Alternative Name) extension config
 cat <<EOF > keycloak.ext
 authorityKeyIdentifier=keyid,issuer
 basicConstraints=CA:FALSE
-keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+keyUsage = critical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
 subjectAltName = @alt_names
 
 [alt_names]
 DNS.1 = keycloak
 DNS.2 = localhost
+DNS.3 = keycloak.keycloak.svc
+DNS.4 = keycloak.keycloak.svc.cluster.local
 IP.1 = 127.0.0.1
 EOF
 
-# 4. Sign Keycloak's leaf certificate using our Private Root CA
 openssl x509 -req \
   -in keycloak.csr \
   -CA ca.crt \
@@ -38,20 +56,12 @@ openssl x509 -req \
   -CAcreateserial \
   -out keycloak.crt \
   -days 365 \
-  -extfile keycloak.ext
+  -extfile keycloak.ext \
+  -sha256
 
-# 5. Harden permissions: restrict private keys but allow read access for Keycloak container
-# Keycloak container runs as non-root UID 1000, so we grant read access to the group/others safely
-chmod 644 ca.crt keycloak.crt
-chmod 640 ca.key keycloak.key
+chmod 400 ca.key keycloak.key
+chmod 444 ca.crt keycloak.crt
 
-# Grant Keycloak container (UID 1000) permission to read the private key/cert.
-if command -v chown >/dev/null 2>&1; then
-  if [ "$(id -u)" -eq 0 ]; then
-    chown 1000:0 keycloak.key keycloak.crt
-  elif command -v sudo >/dev/null 2>&1; then
-    sudo chown 1000:0 keycloak.key keycloak.crt
-  else
-    echo "WARNING: Unable to chown keycloak.key/keycloak.crt to UID 1000 (sudo not available)."
-  fi
-fi
+rm -f ca.ext keycloak.csr keycloak.ext ca.srl
+
+echo "=== CA & Keycloak Certificates generated successfully ==="
