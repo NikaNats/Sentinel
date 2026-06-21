@@ -4,26 +4,26 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.AspNetCore.Helpers;
 using Sentinel.AspNetCore.Options;
+using Sentinel.AspNetCore.Stores;
 
 namespace Sentinel.AspNetCore.Middleware;
 
 /// <summary>
 ///     High-performance, secure, Native AOT-compatible mTLS binding middleware with cryptographic caching.
-///     Fixes applied: IMemoryCache for O(1) automatic eviction (No Memory Leaks), Task.Run for heavy
-///     cryptographic chain building (No Thread Pool Starvation), and X509RevocationMode.Offline.
+///     Fixes applied: MtlsCertificateCache for O(1) automatic eviction (No Memory Leaks / DoS Protection),
+///     Task.Run for heavy cryptographic chain building (No Thread Pool Starvation), and X509RevocationMode.Offline.
 /// </summary>
 internal sealed class MtlsBindingMiddleware
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
-    private readonly IMemoryCache _certCache;
-    private readonly ILogger<MtlsBindingMiddleware> _logger;
 
+    private readonly MtlsCertificateCache _certCache;
+    private readonly ILogger<MtlsBindingMiddleware> _logger;
     private readonly RequestDelegate _next;
     private readonly MtlsBindingOptions _options;
     private readonly IPNetworkMatcher _proxyMatcher;
@@ -32,7 +32,7 @@ internal sealed class MtlsBindingMiddleware
         RequestDelegate next,
         ILogger<MtlsBindingMiddleware> logger,
         IOptions<MtlsBindingOptions> options,
-        IMemoryCache certCache)
+        MtlsCertificateCache certCache)
     {
         _next = next ?? throw new ArgumentNullException(nameof(next));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -69,7 +69,7 @@ internal sealed class MtlsBindingMiddleware
 
                 var cacheKey = $"mtls:{GenerateZeroAllocationCacheKey(rawCertData)}";
 
-                if (_certCache.TryGetValue(cacheKey, out string? cachedThumbprint))
+                if (_certCache.TryGetValue(cacheKey, out var cachedThumbprint))
                 {
                     if (FixedTimeThumbprintEquals(expectedThumbprint, cachedThumbprint!))
                     {

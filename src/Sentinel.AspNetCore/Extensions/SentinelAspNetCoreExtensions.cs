@@ -99,6 +99,8 @@ public sealed class SentinelAspNetCoreBuilder
         _services.AddOptions<MtlsBindingOptions>()
             .BindConfiguration(MtlsBindingOptions.SectionName);
 
+        _services.AddSingleton<MtlsCertificateCache>();
+
         return this;
     }
 
