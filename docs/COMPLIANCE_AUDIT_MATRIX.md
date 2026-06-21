@@ -3,7 +3,7 @@
 > **Document ID**: CMP-0001
 > **Status**: APPROVED
 > **Scope**: Sentinel core libraries, ASP.NET Core middleware, and reference sample
-> **Compliance Baseline**: FAPI 2.0 Baseline/Advanced · NIST 800-63B AAL3 · FedRAMP High · GDPR
+> **Compliance Baseline**: FAPI 2.0 Baseline/Advanced · NIST 800-63B AAL3 · FedRAMP High · GDPR · FIPS 204 (ML-DSA)
 
 ---
 
@@ -32,6 +32,7 @@ This matrix maps international security standards, regulatory frameworks, and co
 | **RFC 9449** | DPoP sender-constrained token validation and nonce challenges | Implemented | `src/Sentinel.DPoP/`, `src/Sentinel.AspNetCore/Middleware/DpopValidationMiddleware.cs` |
 | **RFC 9901** | Selective Disclosure JWT (SD-JWT) presentation and verification | Implemented | `src/Sentinel.SdJwt/`, `tests/Sentinel.Tests.Integration/Integration/SdJwtFlowIntegrationTests.cs` |
 | **NIST 800-63B** | Authentication Assurance (AAL3) via WebAuthn + ACR step-up | Implemented | `src/Sentinel.AspNetCore/Filters/AcrStepUpAuthorizationFilter.cs` |
+| **FIPS 204** | Post-Quantum Cryptographic signatures (ML-DSA) validation | Implemented | `src/Sentinel.Infrastructure/Cryptography/MlDsaSignatureVerifier.cs` |
 
 ---
 
@@ -48,7 +49,9 @@ This matrix maps international security standards, regulatory frameworks, and co
 | **Exception Shielding (DoS Protection)** | Implemented | Robust `try-catch` boundaries on token/proof parsers preventing unhandled crashes on malformed headers (`DpopValidationMiddleware.TryExtractProofThumbprint`). |
 | **Systematic Concurrency Verification** | Implemented | Concurrency race tests simulated 1000-fold using Microsoft Coyote task scheduler (`IdempotencyConcurrencyTests.cs`). |
 | **Network Chaos Resilience** | Implemented | Docker-based Testcontainers + Toxiproxy tests simulating packet loss, timeouts, and network latency jitter (`RedisResilienceChaosTests.cs`). |
-| **Production Container Hardening** | Implemented | Multi-stage, distroless `Dockerfile` running as unprivileged user `sentinel` (UID 1654) with `DOTNET_EnableDiagnostics=0` (`src/Sentinel.AspNetCore/Dockerfile`). |
+| **Production Container Hardening** | Implemented | Multi-stage, distroless `Dockerfile` running as unprivileged user `sentinel` (UID 1000) with `DOTNET_EnableDiagnostics=0` (`src/Sentinel.AspNetCore/Dockerfile`). |
+| **Post-Quantum Cryptography** | Implemented | Native .NET 10 FIPS 204 `MLDsa` cryptographic signature verification (`MlDsaSignatureVerifier.cs`), mathematically verified via `MlDsaSignatureVerifierTests.cs`. |
+| **Persistent vs Ephemeral State** | Implemented | Safe multi-tier mapping: RDBMS (PostgreSQL) is restricted to persistent writes via Write-Through `HybridSessionBlacklistCache.cs`, while ephemeral caches (Nonces, JTIs) are strictly blocked from RDBMS in production via `SecurityInvariantsStartupFilter` to prevent DB DoS. |
 
 ---
 
@@ -62,6 +65,7 @@ This matrix maps international security standards, regulatory frameworks, and co
 - `src/Sentinel.AspNetCore/Endpoints/BackchannelLogoutEndpoints.cs`
 - `src/Sentinel.AspNetCore/Middleware/DpopValidationMiddleware.cs` (includes Timing & Exception Shielding)
 - `src/Sentinel.AspNetCore/Middleware/MtlsBindingMiddleware.cs` (includes mTLS binding verification)
+- `src/Sentinel.AspNetCore/Infrastructure/SecurityInvariantsStartupFilter.cs` (Production fail-fast architectural guardrails)
 
 ### 4.2 Protocol, Parsing & Security Modules
 - `src/Sentinel.DPoP/` (DPoP Proof Validation Engine)
@@ -69,6 +73,8 @@ This matrix maps international security standards, regulatory frameworks, and co
 - `src/Sentinel.SSF/` (Shared Signals Event Processor)
 - `src/Sentinel.SdJwt/` (Selective Disclosure Presentation Verifier)
 - `src/Sentinel.Rar/` (Rich Authorization Request Evaluator)
+- `src/Sentinel.Infrastructure/Cryptography/MlDsaSignatureVerifier.cs` (Native FIPS 204 ML-DSA Signature Verifier)
+- `src/Sentinel.Infrastructure/Cache/HybridSessionBlacklistCache.cs` (PostgreSQL + Redis Write-Through Cache)
 
 ### 4.3 Advanced Testing & Verification Suites
 - `tests/Sentinel.Tests.Concurrency/IdempotencyConcurrencyTests.cs` (Coyote Systematic Concurrency Tests)
@@ -77,6 +83,8 @@ This matrix maps international security standards, regulatory frameworks, and co
 - `tests/Sentinel.Tests.Security/Security/DpopTimingSideChannelTests.cs` (Welch's T-Test Timing Side-Channel Tests)
 - `tests/Sentinel.Benchmarks/` (Micro-benchmarking Suite)
 - `tests/Sentinel.FuzzTests/` (Generative Fuzz Testing Harness)
+- `tests/Sentinel.Tests.Unit/Unit/MlDsaSignatureVerifierTests.cs` (Natively verified Post-Quantum Cryptographic Tests)
+- `tests/Sentinel.Tests.Integration/Integration/HybridSessionBlacklistCacheIntegrationTests.cs` (Containerized multi-tier persistence and caching tests)
 - `Sentinel.Tests.Acceptance/` (Reqnroll E2E Acceptance Tests for FAPI 2.0 Financial Transfers and CAEP SSF Session Revocation)
 
 ---
@@ -88,7 +96,7 @@ This matrix maps international security standards, regulatory frameworks, and co
     dotnet restore Sentinel.slnx --locked-mode
     dotnet build Sentinel.slnx -c Release -p:SignSentinelRelease=true
     ```
-2.  **Core Regression Verification (Unit Suite):**
+2.  **Core Regression Verification (Unit Suite including Post-Quantum checks):**
     ```powershell
     dotnet test tests/Sentinel.Tests.Unit/Sentinel.Tests.Unit.csproj -c Release
     ```
@@ -101,7 +109,11 @@ This matrix maps international security standards, regulatory frameworks, and co
     ```powershell
     dotnet test tests/Sentinel.Tests.Security/Sentinel.Tests.Security.csproj --filter "FullyQualifiedName~Chaos|FullyQualifiedName~Timing" -c Release
     ```
-5.  **Acceptance & E2E Verification (Reqnroll):**
+5.  **Multi-Tier Integration Cache Verification (PostgreSQL + Redis containerized tests):**
+    ```powershell
+    dotnet test tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj --filter "FullyQualifiedName~HybridSession" -c Release
+    ```
+6.  **Acceptance & E2E Verification (Reqnroll):**
     ```powershell
     # The entire lifecycle is fully automated (containers, host, tests, teardown).
     dotnet test tests/Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release
@@ -121,4 +133,6 @@ This matrix maps international security standards, regulatory frameworks, and co
 - [x] Add and validate a production-grade, rootless, distroless Dockerfile (`src/Sentinel.AspNetCore/Dockerfile`).
 - [x] Implement constant-time mitigation and cryptographic jitter on failure paths to eliminate timing side-channels.
 - [x] Automate systematic concurrency and network chaos engineering verification in the test suite.
+- [x] Implement FIPS 204 compliant post-quantum cryptographic signature validation using .NET 10 native APIs.
+- [x] Optimize persistent vs ephemeral cache mapping to prevent RDBMS-based Denial of Service and index fragmentation in production environments.
 - [ ] Implement CI-based automated OpenAPI drift detection to verify contract alignment with route mappings.

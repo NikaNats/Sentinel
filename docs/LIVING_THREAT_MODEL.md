@@ -10,20 +10,20 @@
 
 Sentinel protects API access using high-performance, sender-constrained tokens, real-time session revocation propagation, and deep-verification pipelines. The scope of this threat model covers the following core modules:
 
-- `Sentinel.DPoP` (DPoP Proof Validation Engine)
+- `Sentinel.DPoP` (DPoP Proof Validation Engine and FIPS 204 PQC Provider)
 - `Sentinel.Session` (Session Lifecycle Management)
 - `Sentinel.SSF` (Shared Signals Ingestion & CAEP Event Processor)
 - `Sentinel.Rar` (RFC 9396 Rich Authorization Request Evaluator)
 - `Sentinel.Redis` (Decoupled Distributed State Adapter)
 - `Sentinel.AspNetCore` (Middleware Pipeline, Exception Shielding, and Failure Padding)
-- `Sentinel.Infrastructure` (Envelope Cryptography & FIPS 140-3 Compliance Layer)
+- `Sentinel.Infrastructure` (Envelope Cryptography, Hybrid Multi-tier Caching, and FIPS 140-3/FIPS 204 Native Layers)
 
 
 ## 2. Protected Assets
 
 1.  **Access and Refresh Tokens:** Cryptographically bound bearer credentials.
 2.  **DPoP Proof Integrity:** Ephemeral signatures and proof private-key binding semantics (`cnf.jkt`).
-3.  **Session Blacklist & Replay Records:** Redis/Relational database-backed state cache.
+3.  **Session Blacklist & Replay Records:** PostgreSQL/Redis-backed multi-tier state cache.
 4.  **SSF Event Trust Decisions:** Webhook signature and SHARED token verification secrets.
 5.  **Authorization Detail Constraints:** Signed transaction bounds (RFC 9396) for financial transfers.
 6.  **Security Telemetry & Metrics:** Anonymous diagnostics and correlation trace IDs (W3C).
@@ -32,8 +32,8 @@ Sentinel protects API access using high-performance, sender-constrained tokens, 
 ## 3. Trust Boundaries
 
 1.  **External Untrusted Clients ──► API Host:** Crosses the public Internet boundary (TLS 1.3 terminated at Ingress).
-2.  **API Host ──► Caching/State Backends (Redis):** Internal boundary (secured via private network policy + mTLS).
-3.  **API Host ──► Identity Provider (Keycloak JWKS):** External boundary (secured via pinned HTTPS and metadata caching).
+2.  **API Host ──► Caching/State Backends (Redis/Postgres):** Internal boundary (secured via private network policy + mTLS).
+3.  **API Host ──► Identity Provider (Keycloak JWKS):** External boundary (secured via pinned HTTPS, custom root CA trust, and metadata caching).
 4.  **Event Sender (IdP Webhook) ──► SSF Ingress:** External boundary (secured via signature checks + constant-time token comparison).
 5.  **Internal Class Library Boundaries:** Strict logical decoupling between `Sentinel.Security.Abstractions` (Ports) and concrete Adapters.
 
@@ -44,27 +44,29 @@ Sentinel protects API access using high-performance, sender-constrained tokens, 
 |---|---|---|---|---|---|
 | **T-01** | Access token replay / hijacking | Repudiation | High | Medium | JTI replay checks with fail-closed behavior on timeout. |
 | **T-02** | DPoP proof replay / MITM interception | Repudiation | High | Medium | Proof JTI replay state + Nonce challenge-response rotation. |
-| **T-03** | Nonce bypass / reuse under concurrent load | Tampering | High | Medium | Atomic Nonce consumption via Redis transaction compare-and-delete. |
+| **T-03** | Nonce bypass / reuse under concurrent load | Tampering | High | Medium | Atomic Nonce consumption via Redis transaction compare-and-delete Lua script. |
 | **T-04** | Authorization payload tampering (RAR bypass) | Tampering | High | Medium | Case-insensitive, precision-safe RAR-style transfer bounds filter. |
 | **T-05** | SSF forgery or stale event replay | Spoofing | High | Medium | Signature/issuer/timing checks + constant-time webhook auth token compare. |
 | **T-06** | **Timing Side-Channel Attacks (Timing Oracle)** | Info Leak | High | Low | **Constant-Time Failure Padding** + **Cryptographic Jitter Injection (0-15ms)** in DPoP middleware ($p\text{-value} > 0.05$). |
 | **T-07** | **Denial of Service (DoS) via Malformed Tokens** | Availability | High | Medium | **Localized Exception Shielding** on JWT/JSON parsers preventing process-crashing unhandled exceptions. |
 | **T-08** | **Concurrency / Lock Races on Sliding Nonces** | Tampering | High | Low | **Systematic Concurrency Testing** via Microsoft Coyote (1000+ thread interleaving iterations). |
 | **T-09** | Telemetry privacy leakage via naive IP logging | Info Leak | Medium | Low | HMAC-SHA256 based `SecurityContextHasher` for privacy-hardened pseudonymization. |
-| **T-10** | Cache outage on security-critical checks | Availability | High | Medium | **Fail-closed semantics** on Redis/DB timeouts (rejects requests immediately). |
+| **T-10** | Cache outage on security-critical checks | Availability | High | Medium | **Fail-closed semantics** on Redis/DB timeouts. Volatile caches (Nonces, JTIs) immediately fail closed. Session blacklisting uses `HybridSessionBlacklistCache` (PostgreSQL write-through + Redis fast-path) to preserve revocation states across cache-restart events. |
+| **T-11** | **Future Quantum Cryptanalysis (Key Decryption)** | Spoofing | High | Low | **FIPS 204 Native ML-DSA** signature validation (`MlDsaSignatureVerifier.cs`) preventing classical key extraction by future quantum adversaries. |
 
 
 ## 5. Key Mitigations in Code
 
-### 5.1 DPoP and Replay Protection
+### 5.1 DPoP, Replay, and Post-Quantum Protection
 - **DPoP Proof Validation:** Strict signature, type (`dpop+jwt`), `htm`, `htu`, and `iat` window (±60s) validation in `DpopProofValidator.cs`.
+- **Post-Quantum Cryptography (FIPS 204):** Native .NET 10 `MLDsa` lattice-based signature verification (`MlDsaSignatureVerifier.cs`) with platform-level `IsSupported` safety gates, protecting transitively against quantum-level cryptanalysis.
 - **Constant-Time Failure Padding:** All failed requests in `DpopValidationMiddleware` are padded up to a minimum floor (100ms) and randomized with **0-15ms of cryptographic jitter** to fully wash out sub-millisecond cryptographic execution deltas.
 - **Exception Shielding:** Localized `try-catch` blocks on JSON/JWT parsing entries (specifically `TryExtractProofThumbprint`) catch `ArgumentException` and `SecurityTokenException` and return `null`, preventing process-crashing DoS exploits on malformed headers.
 
 ### 5.2 Session and Revocation
 - **Continuous Session Blacklisting:** In-request authorization paths check `ISessionBlacklistCache`. SSF webhooks and local logout paths converge on session invalidation.
-- **Fail-Closed State Boundaries:** If the distributed cache times out, the store throws `ReplayCacheUnavailableException` / `SessionBlacklistUnavailableException`, failing closed with a secure HTTP 503/500 instead of bypassing security checks.
-- **RFC 7807 Challenge Serialization:** Standardized JWT validation failures (such as session termination) write formatted `ProblemDetails` payloads via `OnChallenge` to prevent unhandled 500 information leaks while maintaining clear, testable context for the client.
+- **Hybrid Write-Through Caching:** The `HybridSessionBlacklistCache` writes session revocations to both PostgreSQL (durable anchor) and Redis (fast-path) in parallel. On Redis cache misses or outages, it safely falls back to PostgreSQL (Read-Through) to verify session revocation status, preserving 100% security coverage across cache-restart boundaries.
+- **Fail-Closed State Boundaries:** If all distributed state stores timeout or fail, the system throws `SessionBlacklistUnavailableException` or `ReplayCacheUnavailableException` and immediately fails closed, rejecting requests with formatted `ProblemDetails` via RFC 7807 serialization.
 
 ### 5.3 SSF Integrity & Concurrency Verification
 - **Constant-Time Ingress Authentication:** Webhook authentication tokens are validated using `CryptographicOperations.FixedTimeEquals` to prevent timing side-channel exploits.

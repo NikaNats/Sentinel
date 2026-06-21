@@ -29,7 +29,7 @@ public static class VaultPrivacyHardeningExtensions
             client.Timeout = TimeSpan.FromSeconds(5);
         });
 
-        builder.Services.AddSingleton<IMlDsaSignatureVerifier, NotSupportedMlDsaVerifier>();
+        builder.Services.AddSingleton<IMlDsaSignatureVerifier, MlDsaSignatureVerifier>();
 
         builder.Services.AddSingleton<PrivacyKeyManager>();
         builder.Services.AddSingleton<IPrivacyKeyManager>(sp => sp.GetRequiredService<PrivacyKeyManager>());
