@@ -9,57 +9,76 @@ using Sentinel.Security.Abstractions.Replay;
 namespace Sentinel.AspNetCore.Infrastructure;
 
 /// <summary>
-///     Validates DI container invariants at startup and blocks the application in production if unsafe configurations are
-///     detected.
+///     Validates security-critical DI container invariants at application startup.
+///     Blocks non-development environments (Staging, UAT, Production) when unsafe configurations
+///     such as InMemory stores or RDBMS-backed caches are detected, enforcing a secure-by-default
+///     posture and preventing production configuration drift.
 /// </summary>
 internal sealed class SecurityInvariantsStartupFilter(IServiceProvider serviceProvider, IWebHostEnvironment env)
     : IStartupFilter
 {
+    private readonly IWebHostEnvironment _env = env ?? throw new ArgumentNullException(nameof(env));
+
+    private readonly ILogger<SecurityInvariantsStartupFilter>? _logger =
+        serviceProvider.GetService<ILogger<SecurityInvariantsStartupFilter>>();
+
+    private readonly IServiceProvider _serviceProvider =
+        serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+
     public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
     {
-        ArgumentNullException.ThrowIfNull(env);
-        ArgumentNullException.ThrowIfNull(serviceProvider);
+        ArgumentNullException.ThrowIfNull(next);
 
-        if (env.IsProduction())
+        if (!_env.IsDevelopment())
         {
-            // 1. Force Redis options validation at startup (Blocks if EndPoint is missing)
-            var redisOptions = serviceProvider.GetService<RedisOptions>();
-            var redisValidator = serviceProvider.GetService<IValidateOptions<RedisOptions>>();
+            _logger?.LogInformation(
+                "SecurityInvariantsStartupFilter: Enforcing strict production-grade security invariants in environment: {Env}",
+                _env.EnvironmentName);
+
+            var redisOptions = _serviceProvider.GetService<RedisOptions>();
+            var redisValidator = _serviceProvider.GetService<IValidateOptions<RedisOptions>>();
 
             if (redisOptions is not null && redisValidator is not null)
             {
                 var validationResult = redisValidator.Validate(null, redisOptions);
                 if (validationResult.Failed)
                 {
-                    throw new InvalidOperationException(validationResult.FailureMessage);
+                    _logger?.LogCritical("CRITICAL CONFIGURATION ERROR: Redis options validation failed: {Error}",
+                        validationResult.FailureMessage);
+                    throw new InvalidOperationException(
+                        $"Redis configuration invalid: {validationResult.FailureMessage}");
                 }
             }
 
-            // 2. Block InMemoryIdempotencyStore in production (Prevents Split-Brain / Double-Spending)
-            var idempotencyStore = serviceProvider.GetService<IIdempotencyStore>();
+            var idempotencyStore = _serviceProvider.GetService<IIdempotencyStore>();
             if (idempotencyStore is null or InMemoryIdempotencyStore)
             {
-                throw new InvalidOperationException(
-                    "CRITICAL SECURITY INVARIANT VIOLATED: An insecure InMemoryIdempotencyStore is registered in the PRODUCTION environment. " +
-                    "Production environments must use a distributed, transaction-safe database provider (Redis) to prevent Split-Brain / Double-Spending.");
+                const string errorMsg =
+                    "CRITICAL SECURITY INVARIANT VIOLATED: An insecure InMemoryIdempotencyStore is registered in a non-development environment. " +
+                    "Staging, UAT, and Production environments MUST use a distributed, transaction-safe database provider (Redis) to prevent Split-Brain / Double-Spending.";
+                _logger?.LogCritical(errorMsg);
+                throw new InvalidOperationException(errorMsg);
             }
 
-            // 3. Block RDBMS (EF Core) for ephemeral security caches (Prevents Database DoS and Vacuum Bloat)
-            var nonceStore = serviceProvider.GetService<IDpopNonceStore>();
-            var jtiCache = serviceProvider.GetService<IJtiReplayCache>();
+            var nonceStore = _serviceProvider.GetService<IDpopNonceStore>();
+            var jtiCache = _serviceProvider.GetService<IJtiReplayCache>();
 
             if (nonceStore != null && nonceStore.GetType().Name.StartsWith("Ef", StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException(
-                    "CRITICAL SECURITY INVARIANT VIOLATED: Using EF Core (RDBMS) for DPoP Nonce Store in PRODUCTION is forbidden. " +
-                    "High-frequency single-use nonces cause fatal database disk I/O bottlenecks and index bloat. Use RedisDpopNonceStore.");
+                const string errorMsg =
+                    "CRITICAL SECURITY INVARIANT VIOLATED: Using EF Core (RDBMS) for DPoP Nonce Store in a non-development environment is forbidden. " +
+                    "High-frequency single-use nonces cause fatal database disk I/O bottlenecks and index bloat. Use RedisDpopNonceStore.";
+                _logger?.LogCritical(errorMsg);
+                throw new InvalidOperationException(errorMsg);
             }
 
             if (jtiCache != null && jtiCache.GetType().Name.StartsWith("Ef", StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException(
-                    "CRITICAL SECURITY INVARIANT VIOLATED: Using EF Core for JTI Replay Cache in PRODUCTION is forbidden. " +
-                    "High-frequency token replay checks must use Redis to prevent database locks and latency spikes.");
+                const string errorMsg =
+                    "CRITICAL SECURITY INVARIANT VIOLATED: Using EF Core (RDBMS) for JTI Replay Cache in a non-development environment is forbidden. " +
+                    "High-frequency token replay checks must use Redis to prevent database locks and latency spikes.";
+                _logger?.LogCritical(errorMsg);
+                throw new InvalidOperationException(errorMsg);
             }
         }
 

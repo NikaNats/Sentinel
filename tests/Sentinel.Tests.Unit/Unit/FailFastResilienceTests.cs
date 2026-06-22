@@ -13,21 +13,27 @@ using Sentinel.Security.Abstractions.Idempotency;
 namespace Sentinel.Tests.Unit.Unit;
 
 /// <summary>
-///     Enterprise security resilience tests.
-///     Verifies that unsafe fallbacks are not allowed in production (Fail-Fast).
+///     security resilience validation suite.
+///     Enforces Fail-Fast principle by blocking unsafe fallback mechanisms (e.g., InMemory stores)
+///     in production, staging, and UAT environments to prevent security downgrades.
 /// </summary>
 public sealed class FailFastResilienceTests
 {
-    [Fact(DisplayName = "🔴 Fail-Fast 1: Registering InMemoryIdempotencyStore in production blocks startup")]
-    public async Task StartupFilter_WhenInMemoryStoreInProduction_MustThrowInvalidOperationException()
+    [Theory(DisplayName =
+        "🔴 Fail-Fast 1: Registering InMemoryIdempotencyStore in non-development environments blocks startup")]
+    [InlineData("Staging")]
+    [InlineData("Production")]
+    [InlineData("UAT")]
+    public async Task StartupFilter_WhenInMemoryStoreInNonDevelopment_MustThrowInvalidOperationException(
+        string environmentName)
     {
-        // Arrange
         var services = new ServiceCollection();
 
         var envMock = new Mock<IWebHostEnvironment>();
-        envMock.SetupGet(x => x.EnvironmentName).Returns(Environments.Production);
+        envMock.SetupGet(x => x.EnvironmentName).Returns(environmentName);
         services.AddSingleton(envMock.Object);
         services.AddSingleton<IHostEnvironment>(envMock.Object);
+        services.AddLogging();
 
         services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
         services.AddSingleton<IStartupFilter, SecurityInvariantsStartupFilter>();
@@ -41,20 +47,22 @@ public sealed class FailFastResilienceTests
             action(appBuilderMock.Object);
         };
 
-        // Assert: system must block startup with critical error
-        await act.Should().ThrowAsync<Exception>()
+        await act.Should().ThrowAsync<InvalidOperationException>()
             .Where(ex => ex.Message.Contains("CRITICAL SECURITY INVARIANT VIOLATED")
-                         && ex.Message.Contains("InMemoryIdempotencyStore"));
+                         && ex.Message.Contains("InMemoryIdempotencyStore")
+                         && ex.Message.Contains("non-development environment"));
     }
 
-    [Fact(DisplayName = "🔴 Fail-Fast 2: Missing Redis endpoint in production blocks startup")]
-    public async Task StartupFilter_WhenRedisEndpointMissingInProduction_MustThrowInvalidOperationException()
+    [Theory(DisplayName = "🔴 Fail-Fast 2: Missing Redis endpoint in non-development environments blocks startup")]
+    [InlineData("Staging")]
+    [InlineData("Production")]
+    public async Task StartupFilter_WhenRedisEndpointMissingInNonDevelopment_MustThrowInvalidOperationException(
+        string environmentName)
     {
-        // Arrange
         var services = new ServiceCollection();
 
         var envMock = new Mock<IWebHostEnvironment>();
-        envMock.SetupGet(x => x.EnvironmentName).Returns(Environments.Production);
+        envMock.SetupGet(x => x.EnvironmentName).Returns(environmentName);
         services.AddSingleton(envMock.Object);
         services.AddSingleton<IHostEnvironment>(envMock.Object);
         services.AddLogging();
@@ -78,15 +86,13 @@ public sealed class FailFastResilienceTests
             action(appBuilderMock.Object);
         };
 
-        // Assert: startup must be blocked by strict Redis options validation
-        await act.Should().ThrowAsync<Exception>()
+        await act.Should().ThrowAsync<InvalidOperationException>()
             .Where(ex => ex.Message.Contains("Redis Connection EndPoint must be configured."));
     }
 
     [Fact(DisplayName = "✓ Sandbox: Strict Redis registration is allowed in development environment")]
     public async Task StartupFilter_WithStrictRedisRegistrationInDevelopmentEnvironment_DoesNotThrow()
     {
-        // Arrange
         var services = new ServiceCollection();
 
         var envMock = new Mock<IWebHostEnvironment>();
@@ -115,7 +121,6 @@ public sealed class FailFastResilienceTests
             action(appBuilderMock.Object);
         };
 
-        // Act & Assert: application should start without issues in development
         await act.Should().NotThrowAsync();
     }
 }
