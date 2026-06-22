@@ -3,43 +3,67 @@ using System.Collections.Concurrent;
 namespace Sentinel.AspNetCore.Stores;
 
 /// <summary>
-///     L1 In-Memory Cache to protect Redis from L7 DoS attacks.
-///     Remembers discredited JTIs or Thumbprints for a very short time (e.g., 3 seconds).
-///     ✅ HIGH-ASSURANCE: Thread-safe, bounded-capacity, and self-pruning.
-///     Prevents memory exhaustion attacks under randomized key floods.
+///     L1 In-Memory Cache acting as a first-line defense against L7 DoS attacks targeting Redis.
+///     Temporarily stores discredited JTIs or Thumbprints with a short TTL (e.g., 3 seconds).
+///     Implements thread-safe, lock-free O(1) amortized pruning to maintain optimal performance.
+///     Minimizes CPU spikes and GC pressure even during high-volume flood attack scenarios.
 /// </summary>
 internal sealed class L1AntiFloodCache(TimeProvider timeProvider, TimeSpan ttl)
 {
     private const int MaxCacheCapacity = 50000;
+    private readonly ConcurrentQueue<(string Key, long Expiration)> _expiryQueue = new();
 
     private readonly ConcurrentDictionary<string, long> _shortTermBlacklist =
         new(Environment.ProcessorCount * 4, MaxCacheCapacity);
 
+    private readonly TimeProvider _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     private readonly long _ttlTicks = ttl.Ticks;
+    private int _pruningActive;
 
     public void RecordFailedAttempt(string identifier)
     {
-        var nowTicks = timeProvider.GetUtcNow().Ticks;
+        var nowTicks = _timeProvider.GetUtcNow().Ticks;
 
         if (_shortTermBlacklist.Count >= MaxCacheCapacity)
         {
-            PruneExpiredEntries(nowTicks);
-
-            if (_shortTermBlacklist.Count >= MaxCacheCapacity)
+            if (Interlocked.CompareExchange(ref _pruningActive, 1, 0) == 0)
             {
-                _shortTermBlacklist.Clear();
+                try
+                {
+                    PruneExpiredEntriesO1(nowTicks);
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref _pruningActive, 0);
+                }
+            }
+
+            while (_shortTermBlacklist.Count >= MaxCacheCapacity)
+            {
+                if (_expiryQueue.TryDequeue(out var oldest))
+                {
+                    _shortTermBlacklist.TryRemove(oldest.Key, out _);
+                }
+                else
+                {
+                    _shortTermBlacklist.Clear();
+                    break;
+                }
             }
         }
 
         var expiration = nowTicks + _ttlTicks;
-        _shortTermBlacklist[identifier] = expiration;
+        if (_shortTermBlacklist.TryAdd(identifier, expiration))
+        {
+            _expiryQueue.Enqueue((identifier, expiration));
+        }
     }
 
     public bool IsTemporarilyBlacklisted(string identifier)
     {
         if (_shortTermBlacklist.TryGetValue(identifier, out var expirationTicks))
         {
-            if (timeProvider.GetUtcNow().Ticks < expirationTicks)
+            if (_timeProvider.GetUtcNow().Ticks < expirationTicks)
             {
                 return true;
             }
@@ -50,13 +74,16 @@ internal sealed class L1AntiFloodCache(TimeProvider timeProvider, TimeSpan ttl)
         return false;
     }
 
-    private void PruneExpiredEntries(long nowTicks)
+    private void PruneExpiredEntriesO1(long nowTicks)
     {
-        foreach (var kvp in _shortTermBlacklist)
+        while (_expiryQueue.TryPeek(out var oldest) && oldest.Expiration < nowTicks)
         {
-            if (kvp.Value < nowTicks)
+            if (_expiryQueue.TryDequeue(out oldest))
             {
-                _shortTermBlacklist.TryRemove(kvp.Key, out _);
+                if (_shortTermBlacklist.TryGetValue(oldest.Key, out var currentExp) && currentExp == oldest.Expiration)
+                {
+                    _shortTermBlacklist.TryRemove(oldest.Key, out _);
+                }
             }
         }
     }
