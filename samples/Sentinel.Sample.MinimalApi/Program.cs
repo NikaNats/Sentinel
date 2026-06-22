@@ -292,13 +292,11 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
         var testPublicKey = builder.Configuration["Security:TestPublicKey"];
         if (!string.IsNullOrWhiteSpace(testPublicKey))
         {
+            var ecdsa = System.Security.Cryptography.ECDsa.Create();
+            ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(testPublicKey), out _);
+            options.TokenValidationParameters.IssuerSigningKey = new ECDsaSecurityKey(ecdsa);
 
-                var ecdsa = System.Security.Cryptography.ECDsa.Create();
-                ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(testPublicKey), out _);
-                options.TokenValidationParameters.IssuerSigningKey = new ECDsaSecurityKey(ecdsa);
-
-                options.ConfigurationManager = null;
-
+            options.ConfigurationManager = null;
         }
     }
     else
@@ -318,22 +316,15 @@ builder.Services
     .AddInfrastructureLayer(builder.Configuration);
 
 _ = builder.Services.AddHttpClient("keycloak-admin").ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(IUmaPermissionService).FullName!)
-    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(ITokenRefreshService).FullName!)
-    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(ITokenExchangeService).FullName!)
-    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(IIdentityRegistry).FullName!)
-    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(IUserProfileManager).FullName!)
-    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(IIdentityFederationProvider).FullName!)
-    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(IAuthRevocationService).FullName!)
-    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(KeycloakConfigurationManager).FullName!)
-    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IUmaPermissionService).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(ITokenRefreshService).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(ITokenExchangeService).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IIdentityRegistry).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IUserProfileManager).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IIdentityFederationProvider).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IAuthRevocationService).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(KeycloakConfigurationManager).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(ICaptchaService).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
 
 builder.Services.AddSingleton(
     Options.Create(new SdJwtVerificationOptions
