@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using FluentAssertions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -128,6 +129,57 @@ public sealed class SecurityScenarioTests : IDisposable
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Contains("invalid_dpop_proof", response.Headers.WwwAuthenticate.ToString());
+    }
+
+    [Fact(DisplayName = "S14B_SymmetricKeyConfusionAttack_IsBlockedAtHttpBoundary_Returns401")]
+    public async Task S14B_SymmetricKeyConfusionAttack_IsBlockedAtHttpBoundary_Returns401()
+    {
+        var symmetricKey =
+            new SymmetricSecurityKey(Encoding.UTF8.GetBytes("super-secret-key-that-is-too-long-32-bytes!!!"));
+
+        var header = new Dictionary<string, object>
+        {
+            ["typ"] = "dpop+jwt",
+            ["jwk"] = new Dictionary<string, string>
+            {
+                ["kty"] = "oct",
+                ["k"] = Base64UrlEncoder.Encode(symmetricKey.Key)
+            }
+        };
+        var payload = new Dictionary<string, object>
+        {
+            ["jti"] = Guid.NewGuid().ToString("N"),
+            ["htm"] = "GET",
+            ["htu"] = $"{client.BaseAddress}v1/profile",
+            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+        };
+
+        var handler = new JsonWebTokenHandler();
+        var descriptor = new SecurityTokenDescriptor
+        {
+            Claims = payload,
+            SigningCredentials = new SigningCredentials(symmetricKey, "HS256"),
+            TokenType = "dpop+jwt",
+            AdditionalHeaderClaims = new Dictionary<string, object>()
+        };
+
+        foreach (var h in header)
+        {
+            descriptor.AdditionalHeaderClaims[h.Key] = h.Value;
+        }
+
+        var maliciousSymmetricProof = handler.CreateToken(descriptor);
+
+        var token = TestTokenIssuer.MintAccessToken("mock-jkt");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/profile");
+        request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", token);
+        request.Headers.Add("DPoP", maliciousSymmetricProof); // ვამაგრებთ Key-Confusion Proof-ს
+
+        var response = await client.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.WwwAuthenticate.ToString().Should().Contain("invalid_dpop_proof");
     }
 
     [Fact]

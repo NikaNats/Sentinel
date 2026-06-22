@@ -1,15 +1,16 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
-using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.AspNetCore.Stores;
 using Sentinel.DPoP.Pqc;
 using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Security.Abstractions.Nonce;
+using Sentinel.Security.Abstractions.Options;
 using Sentinel.Security.Abstractions.Pqc;
 using Sentinel.Security.Diagnostics;
 using IDpopProofValidator = Sentinel.Security.Abstractions.DPoP.IDpopProofValidator;
@@ -30,7 +31,8 @@ internal sealed class DpopValidationMiddleware(
     public async Task InvokeAsync(
         HttpContext context,
         IDpopProofValidator validator,
-        IDpopNonceStore nonceStore)
+        IDpopNonceStore nonceStore,
+        IOptions<DPoPOptions> dpopOptions)
     {
         var startTimestamp = timeProvider.GetTimestamp();
 
@@ -71,25 +73,23 @@ internal sealed class DpopValidationMiddleware(
 
         var thumbprint = TryExtractProofThumbprint(dpopProofString, thumbprintComputer);
 
-        // 1. ლოკალური L1 დაცვა (სწრაფი ბლოკირება Redis-ის გარეშე)
         if (!string.IsNullOrWhiteSpace(thumbprint) && l1AntiFloodCache.IsTemporarilyBlacklisted(thumbprint))
         {
             await EnforceConstantTimeFailureAsync(startTimestamp, context, "l1_anti_flood_blocked");
             return;
         }
 
-        // 2. ულტრა-სწრაფი ლოკალური ხელმოწერის შემოწმება ქსელური მოთხოვნის (Redis) გაგზავნამდე!
-        if (!await ValidateDpopSignatureOnlyAsync(context, dpopProofString, context.RequestAborted))
+        if (!await ValidateDpopSignatureOnlyAsync(context, dpopProofString, dpopOptions, context.RequestAborted))
         {
             if (!string.IsNullOrWhiteSpace(thumbprint))
             {
                 l1AntiFloodCache.RecordFailedAttempt(thumbprint);
             }
+
             await EnforceConstantTimeFailureAsync(startTimestamp, context, "invalid_signature");
             return;
         }
 
-        // 3. მხოლოდ ახლა მივმართავთ Redis-ს (რადგან ხელმოწერა უკვე დადასტურდა)
         string? expectedNonce = null;
         if (!string.IsNullOrWhiteSpace(thumbprint))
         {
@@ -169,29 +169,89 @@ internal sealed class DpopValidationMiddleware(
         await next(context);
     }
 
-    private async Task<bool> ValidateDpopSignatureOnlyAsync(HttpContext context, string dpopHeader, CancellationToken cancellationToken)
+    private async Task<bool> ValidateDpopSignatureOnlyAsync(
+        HttpContext context,
+        string dpopHeader,
+        IOptions<DPoPOptions> dpopOptions,
+        CancellationToken cancellationToken)
     {
         try
         {
-            if (!TokenHandler.CanReadToken(dpopHeader)) return false;
+            if (string.IsNullOrWhiteSpace(dpopHeader))
+            {
+                return false;
+            }
+
+            if (!TokenHandler.CanReadToken(dpopHeader))
+            {
+                return false;
+            }
+
             var token = TokenHandler.ReadJsonWebToken(dpopHeader);
-
-            if (!token.TryGetHeaderValue<JsonElement>("jwk", out var jwkElement)) return false;
-            var jwkJson = jwkElement.GetRawText();
-            if (string.IsNullOrWhiteSpace(jwkJson)) return false;
-
-            SecurityKey signingKey;
             var algorithm = token.Alg;
+
+            if (string.IsNullOrWhiteSpace(algorithm))
+            {
+                return false;
+            }
+
+            var allowedAlgs = dpopOptions.Value.AllowedAlgorithms;
+            if (!allowedAlgs.Contains(algorithm, StringComparer.OrdinalIgnoreCase))
+            {
+                var logger = context.RequestServices.GetService<ILogger<DpopValidationMiddleware>>();
+                logger?.LogWarning("DPoP Security Block: Rejecting unsupported or symmetric algorithm: {Alg}",
+                    algorithm);
+                return false;
+            }
+
+            if (!string.Equals(token.Typ, "dpop+jwt", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!token.TryGetHeaderValue<JsonElement>("jwk", out var jwkElement))
+            {
+                return false;
+            }
+
+            var jwkJson = jwkElement.GetRawText();
+            if (string.IsNullOrWhiteSpace(jwkJson))
+            {
+                return false;
+            }
 
             using var jwkDoc = JsonDocument.Parse(jwkJson);
             var root = jwkDoc.RootElement;
 
-            if (root.TryGetProperty("kty", out var kty) && string.Equals(kty.GetString(), "ML-DSA", StringComparison.Ordinal))
+            if (root.TryGetProperty("kty", out var ktyProp))
+            {
+                var kty = ktyProp.GetString();
+                if (string.Equals(kty, "oct", StringComparison.OrdinalIgnoreCase))
+                {
+                    var logger = context.RequestServices.GetService<ILogger<DpopValidationMiddleware>>();
+                    logger?.LogCritical("DPoP Attack Blocked: Symmetric oct-key confusion attempt detected.");
+                    return false; // Fail-Closed
+                }
+            }
+
+            if (root.TryGetProperty("d", out _))
+            {
+                var logger = context.RequestServices.GetService<ILogger<DpopValidationMiddleware>>();
+                logger?.LogCritical(
+                    "DPoP Attack Blocked: Public JWK header contains private key material (d parameter).");
+                return false;
+            }
+
+            SecurityKey signingKey;
+
+            if (root.TryGetProperty("kty", out var ktyVal) &&
+                string.Equals(ktyVal.GetString(), "ML-DSA", StringComparison.Ordinal))
             {
                 if (!root.TryGetProperty("x", out var xProp) || string.IsNullOrWhiteSpace(xProp.GetString()))
                 {
                     return false;
                 }
+
                 var publicKeyBytes = Base64UrlEncoder.DecodeBytes(xProp.GetString());
                 signingKey = new MlDsaSecurityKey(publicKeyBytes, algorithm);
             }
@@ -226,7 +286,8 @@ internal sealed class DpopValidationMiddleware(
             var result = await TokenHandler.ValidateTokenAsync(dpopHeader, validationParameters);
             return result.IsValid;
         }
-        catch (Exception ex) when (ex is ArgumentException or SecurityTokenException or JsonException or CryptographicException)
+        catch (Exception ex) when (ex is ArgumentException or SecurityTokenException or JsonException
+                                       or CryptographicException)
         {
             return false;
         }
@@ -236,7 +297,6 @@ internal sealed class DpopValidationMiddleware(
     {
         AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", reason));
 
-        // RFC 9449: ზუსტი WWW-Authenticate ჰედერების მინიჭება პროტოკოლური შეცდომის მიხედვით
         if (string.Equals(reason, "use_dpop_nonce", StringComparison.OrdinalIgnoreCase))
         {
             context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"use_dpop_nonce\", algs=\"PS256 ES256\"");
@@ -247,7 +307,8 @@ internal sealed class DpopValidationMiddleware(
         }
         else
         {
-            context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
+            context.Response.Headers.Append("WWW-Authenticate",
+                "DPoP error=\"invalid_dpop_proof\", algs=\"PS256 ES256\"");
         }
 
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -270,14 +331,14 @@ internal sealed class DpopValidationMiddleware(
             }
         }
 
-        var problem = new Microsoft.AspNetCore.Mvc.ProblemDetails
+        var problem = new ProblemDetails
         {
             Type = "/errors/invalid-dpop-proof",
             Title = "DPoP proof validation failed",
             Status = StatusCodes.Status401Unauthorized,
             Detail = string.Equals(reason, "use_dpop_nonce", StringComparison.OrdinalIgnoreCase)
-                        ? "A new DPoP nonce is required."
-                        : "The provided DPoP proof is missing or invalid.",
+                ? "A new DPoP nonce is required."
+                : "The provided DPoP proof is missing or invalid.",
             Instance = context.Request.Path
         };
 

@@ -1,6 +1,11 @@
+using System;
+using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -10,8 +15,10 @@ using Sentinel.AspNetCore.Stores;
 using Sentinel.DPoP.Pqc;
 using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Security.Abstractions.Nonce;
+using Sentinel.Security.Abstractions.Options;
 using Sentinel.Security.Abstractions.Pqc;
 using Sentinel.Security.Abstractions.Results;
+using Xunit;
 
 namespace Sentinel.Tests.Unit.Unit;
 
@@ -19,6 +26,15 @@ public sealed class DpopValidationMiddlewareTests
 {
     private static readonly PqcCryptoProviderFactory FakePqcFactory =
         new(new Mock<IMlDsaSignatureVerifier>().Object);
+
+    private static IOptions<DPoPOptions> CreateDpopOptions()
+    {
+        var options = new DPoPOptions();
+        options.AllowedAlgorithms.Clear();
+        options.AllowedAlgorithms.Add("ES256");
+        options.AllowedAlgorithms.Add("PS256");
+        return Microsoft.Extensions.Options.Options.Create(options);
+    }
 
     [Fact]
     public async Task InvokeAsync_WhenDownstreamThrows_DoesNotConsumeOrRotateNonce()
@@ -51,7 +67,7 @@ public sealed class DpopValidationMiddlewareTests
         var context = CreateDpopContext();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            middleware.InvokeAsync(context, validatorMock.Object, nonceStoreMock.Object));
+            middleware.InvokeAsync(context, validatorMock.Object, nonceStoreMock.Object, CreateDpopOptions()));
 
         nonceStoreMock.Verify(x => x.GetNonceAsync(thumbprint, It.IsAny<CancellationToken>()), Times.Once);
         nonceStoreMock.Verify(
@@ -110,7 +126,7 @@ public sealed class DpopValidationMiddlewareTests
 
         var context = CreateDpopContext();
 
-        await middleware.InvokeAsync(context, validatorMock.Object, nonceStoreMock.Object);
+        await middleware.InvokeAsync(context, validatorMock.Object, nonceStoreMock.Object, CreateDpopOptions());
 
         // In unit-test host, response commit hooks are not executed like Kestrel/TestServer.
         // This assertion verifies sequencing: nonce state is not mutated during request execution.
@@ -156,7 +172,7 @@ public sealed class DpopValidationMiddlewareTests
 
         var context = CreateDpopContext();
 
-        await middleware.InvokeAsync(context, validatorMock.Object, nonceStoreMock.Object);
+        await middleware.InvokeAsync(context, validatorMock.Object, nonceStoreMock.Object, CreateDpopOptions());
         await context.Response.WriteAsync("error");
 
         nonceStoreMock.Verify(
