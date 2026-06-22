@@ -1,8 +1,8 @@
 <div align="center">
   <h1>
     <picture>
-      <source srcset="logo/logo.svg" type="image/svg+xml">
-      <img src="logo/logo.png" alt="Sentinel Logo" width="200">
+      <source srcset="Logo/Logo.svg" type="image/svg+xml">
+      <img src="Logo/Logo.png" alt="Sentinel Logo" width="200">
     </picture>
     <br>
     Sentinel
