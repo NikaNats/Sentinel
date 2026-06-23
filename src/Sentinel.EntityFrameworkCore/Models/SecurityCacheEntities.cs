@@ -4,7 +4,6 @@ namespace Sentinel.EntityFrameworkCore.Models;
 
 /// <summary>
 ///     Entity model for storing JWT IDs (jti claims) for replay detection.
-///     Sealed class for EF Core change tracker reference equality semantics.
 /// </summary>
 [Table("jti_replay_cache")]
 public sealed class JtiReplayCacheEntry
@@ -13,12 +12,11 @@ public sealed class JtiReplayCacheEntry
 
     [Column("expires_at")] public required DateTimeOffset ExpiresAt { get; set; }
 
-    [Column("created_at")] public DateTimeOffset CreatedAt { get; set; }
+    [Column("created_at")] public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 /// <summary>
 ///     Entity model for storing DPoP nonces.
-///     Sealed class for EF Core change tracker reference equality semantics.
 /// </summary>
 [Table("dpop_nonce_store")]
 public sealed class DpopNonceEntry
@@ -29,12 +27,11 @@ public sealed class DpopNonceEntry
 
     [Column("expires_at")] public required DateTimeOffset ExpiresAt { get; set; }
 
-    [Column("created_at")] public DateTimeOffset CreatedAt { get; set; }
+    [Column("created_at")] public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 /// <summary>
 ///     Entity model for storing blacklisted sessions.
-///     Sealed class for EF Core change tracker reference equality semantics.
 /// </summary>
 [Table("session_blacklist")]
 public sealed class SessionBlacklistEntry
@@ -43,5 +40,5 @@ public sealed class SessionBlacklistEntry
 
     [Column("expires_at")] public required DateTimeOffset ExpiresAt { get; set; }
 
-    [Column("created_at")] public DateTimeOffset CreatedAt { get; set; }
+    [Column("created_at")] public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
