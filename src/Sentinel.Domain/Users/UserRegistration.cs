@@ -37,6 +37,7 @@ public sealed class UserRegistration
     /// <summary>
     ///     Parameterless constructor for source-generated serializers (Native AOT compatibility).
     /// </summary>
+    [SetsRequiredMembers]
     public UserRegistration()
     {
         Id = Guid.Empty;
