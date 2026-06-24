@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -7,7 +7,7 @@
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <NoWarn>$(NoWarn);xUnit1051;CA2000;CA1849;CA1508;xUnit1012</NoWarn>
+    <NoWarn>$(NoWarn);xUnit1051;CA2000;CA1849;CA1508;xUnit1012;CS0436</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -35,7 +35,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\samples\Sentinel.Sample.MinimalApi\Sentinel.Sample.MinimalApi.csproj" AdditionalProperties="OutputType=Library" />
+    <ProjectReference Include="..\..\samples\Sentinel.Sample.MinimalApi\Sentinel.Sample.MinimalApi.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Application\Sentinel.Application.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Infrastructure\Sentinel.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.AspNetCore\Sentinel.AspNetCore.csproj" />
