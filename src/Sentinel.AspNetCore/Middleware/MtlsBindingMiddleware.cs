@@ -1,9 +1,12 @@
+using System;
 using System.Buffers;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -149,9 +152,13 @@ internal sealed class MtlsBindingMiddleware
 
             await _next(context);
         }
-        catch (CryptographicException ex)
+        catch (OperationCanceledException)
         {
-            _logger.LogError(ex, "Cryptographic error during mTLS validation process.");
+            throw;
+        }
+        catch (Exception ex) when (ex is CryptographicException or FormatException)
+        {
+            _logger.LogError(ex, "Cryptographic or format error during mTLS validation process.");
             await Reject(context, "Provided certificate is malformed or invalid.");
         }
     }
@@ -293,29 +300,25 @@ internal sealed class MtlsBindingMiddleware
             return null;
         }
 
-        if (!TokenHandler.CanReadToken(token))
-        {
-            return null;
-        }
+        if (!TokenHandler.CanReadToken(token)) return null;
 
         try
         {
             var jwt = TokenHandler.ReadJsonWebToken(token);
-            if (!jwt.TryGetPayloadValue<JsonElement>("cnf", out var cnfElement) ||
-                cnfElement.ValueKind != JsonValueKind.Object)
+            if (jwt.TryGetPayloadValue<JsonElement>("cnf", out var cnf) &&
+                cnf.ValueKind == JsonValueKind.Object &&
+                cnf.TryGetProperty("x5t#S256", out var x5t) &&
+                !string.IsNullOrWhiteSpace(x5t.GetString()))
             {
-                return null;
+                return x5t.GetString();
             }
-
-            return cnfElement.TryGetProperty("x5t#S256", out var thumbprintElement)
-                ? thumbprintElement.GetString()
-                : null;
         }
-        catch (Exception ex) when (ex is ArgumentException or JsonException)
+        catch (Exception ex) when (ex is ArgumentException or SecurityTokenException or JsonException)
         {
-            logger.LogWarning("Error reading cnf claim from token.");
-            return null;
+            logger.LogWarning("Error reading cnf claim from token payload.");
         }
+
+        return null;
     }
 
     private static string? TryParseThumbprint(string cnfClaimValue, ILogger logger, string? subject)
