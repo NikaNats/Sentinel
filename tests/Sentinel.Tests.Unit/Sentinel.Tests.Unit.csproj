@@ -25,6 +25,9 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="xunit.v3" />
+
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.Certificate" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
   </ItemGroup>
 
   <ItemGroup>
@@ -32,7 +35,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\samples\Sentinel.Sample.MinimalApi\Sentinel.Sample.MinimalApi.csproj" />
+    <ProjectReference Include="..\..\samples\Sentinel.Sample.MinimalApi\Sentinel.Sample.MinimalApi.csproj" AdditionalProperties="OutputType=Library" />
     <ProjectReference Include="..\..\src\Sentinel.Application\Sentinel.Application.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Infrastructure\Sentinel.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.AspNetCore\Sentinel.AspNetCore.csproj" />
