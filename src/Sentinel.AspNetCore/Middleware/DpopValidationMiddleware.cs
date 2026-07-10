@@ -14,6 +14,7 @@ using Sentinel.Security.Abstractions.Options;
 using Sentinel.Security.Abstractions.Pqc;
 using Sentinel.Security.Diagnostics;
 using IDpopProofValidator = Sentinel.Security.Abstractions.DPoP.IDpopProofValidator;
+using MlDsaSecurityKey = Sentinel.Security.Abstractions.Pqc.MlDsaSecurityKey;
 
 namespace Sentinel.AspNetCore.Middleware;
 

@@ -7,7 +7,6 @@ namespace Sentinel.Redis;
 ///     - No thundering herd of concurrent connection attempts during startup
 ///     - Graceful background reconnection (AbortOnConnectFail = false)
 ///     - Clean async/await semantics (no blocking thread pool threads)
-///     - SocketManager pooling to prevent thread starvation under extreme load
 /// </summary>
 internal sealed class RedisConnectionProvider : IRedisConnectionProvider
 {
@@ -30,7 +29,6 @@ internal sealed class RedisConnectionProvider : IRedisConnectionProvider
         _options.ConnectTimeout = redisOptions.SyncTimeout;
         _options.AsyncTimeout = redisOptions.SyncTimeout;
 
-        _options.SocketManager = new SocketManager(nameof(RedisConnectionProvider), Environment.ProcessorCount * 2);
         _options.ChannelPrefix = RedisChannel.Literal("sentinel");
         _options.SyncTimeout = 2000;
         _options.AsyncTimeout = 2000;

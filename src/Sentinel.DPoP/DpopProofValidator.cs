@@ -2,6 +2,7 @@ using Microsoft.Extensions.Options;
 using Sentinel.DPoP.Pqc;
 using Sentinel.Security.Abstractions.Options;
 using Sentinel.Security.Abstractions.Pqc;
+using MlDsaSecurityKey = Sentinel.Security.Abstractions.Pqc.MlDsaSecurityKey;
 
 namespace Sentinel.DPoP;
 
@@ -18,19 +19,6 @@ internal sealed class DpopProofValidator : IDpopProofValidator
     private readonly IDpopThumbprintComputer _thumbprintComputer;
     private readonly TimeProvider _timeProvider;
 
-    /// <summary>
-    ///     Initializes a new instance of the <see cref="DpopProofValidator" /> class.
-    /// </summary>
-    /// <remarks>
-    ///     Injects IOptions&lt;DPoPOptions&gt; for configuration-driven security values.
-    ///     🟢 ARCHITECT'S NOTE: The ML-DSA verifier has been placed at the absolute end of the constructor
-    ///     to preserve binary and source backward compatibility with all existing unit tests and benchmarks.
-    /// </remarks>
-    /// <param name="replayCache">Cache for preventing JTI replay attacks.</param>
-    /// <param name="options">Configuration for DPoP validation settings.</param>
-    /// <param name="thumbprintComputer">Computes RFC 7638 thumbprints (optional, creates default if null).</param>
-    /// <param name="timeProvider">Time provider for validation (optional, defaults to system time).</param>
-    /// <param name="mlDsaVerifier">Optional Post-Quantum signature verifier. If null, defaults to Fail-Closed posture.</param>
     public DpopProofValidator(
         IJtiReplayCache replayCache,
         IOptions<DPoPOptions> options,
@@ -49,7 +37,6 @@ internal sealed class DpopProofValidator : IDpopProofValidator
         _pqcFactory = new PqcCryptoProviderFactory(verifier);
     }
 
-    /// <inheritdoc />
     public async Task<SecurityResult<DpopValidationSuccess>> ValidateAsync(
         DpopValidationRequest request,
         CancellationToken cancellationToken = default)

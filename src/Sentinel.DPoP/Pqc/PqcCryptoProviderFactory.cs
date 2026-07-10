@@ -1,11 +1,11 @@
 using Sentinel.Security.Abstractions.Pqc;
+using MlDsaSecurityKey = Sentinel.Security.Abstractions.Pqc.MlDsaSecurityKey;
 
 namespace Sentinel.DPoP.Pqc;
 
 public sealed class PqcCryptoProviderFactory(IMlDsaSignatureVerifier mlDsaVerifier) : CryptoProviderFactory
 {
-    private readonly IMlDsaSignatureVerifier _mlDsaVerifier =
-        mlDsaVerifier ?? throw new ArgumentNullException(nameof(mlDsaVerifier));
+    private readonly IMlDsaSignatureVerifier _mlDsaVerifier = mlDsaVerifier ?? throw new ArgumentNullException(nameof(mlDsaVerifier));
 
     public override SignatureProvider CreateForVerifying(SecurityKey key, string algorithm)
     {

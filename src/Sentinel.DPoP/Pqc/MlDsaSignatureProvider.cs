@@ -1,4 +1,5 @@
 using Sentinel.Security.Abstractions.Pqc;
+using MlDsaSecurityKey = Sentinel.Security.Abstractions.Pqc.MlDsaSecurityKey;
 
 namespace Sentinel.DPoP.Pqc;
 
