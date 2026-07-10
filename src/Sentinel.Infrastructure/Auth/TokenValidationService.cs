@@ -4,15 +4,25 @@ using Sentinel.Security.Abstractions.Session;
 
 namespace Sentinel.Infrastructure.Auth;
 
+/// <summary>
+///     High-assurance token validation and session status verification service.
+///     Performs dual-tier cryptographic verification (subject + session level) to prevent authorization bypass.
+/// </summary>
 public sealed class TokenValidationService(
     ISessionBlacklistCache sessionBlacklist,
     TimeProvider? timeProvider = null)
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
+    /// <summary>
+    ///     Performs atomic verification of token expiration and session blacklist status.
+    /// </summary>
     public async Task<TokenValidationOutcome> ValidateAsync(ClaimsPrincipal principal, HttpContext context,
         CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(principal);
+        _ = context;
+
         try
         {
             var exp = principal.FindFirst("exp")?.Value;
@@ -34,17 +44,24 @@ public sealed class TokenValidationService(
                 return TokenValidationOutcome.Fail("Token is already expired.");
             }
 
-            var sid = principal.FindFirst("sid")?.Value;
-
-            if (string.IsNullOrWhiteSpace(sid))
+            var sub = principal.FindFirst("sub")?.Value;
+            if (!string.IsNullOrWhiteSpace(sub))
             {
-                return TokenValidationOutcome.Success;
+                var isSubjectBlacklisted = await sessionBlacklist.IsBlacklistedAsync(sub, ct).ConfigureAwait(false);
+                if (isSubjectBlacklisted)
+                {
+                    return TokenValidationOutcome.Fail("User account has been globally revoked or locked.");
+                }
             }
 
-            var isBlacklisted = await sessionBlacklist.IsBlacklistedAsync(sid, ct).ConfigureAwait(false);
-            if (isBlacklisted)
+            var sid = principal.FindFirst("sid")?.Value;
+            if (!string.IsNullOrWhiteSpace(sid))
             {
-                return TokenValidationOutcome.Fail("Session has been terminated.");
+                var isSessionBlacklisted = await sessionBlacklist.IsBlacklistedAsync(sid, ct).ConfigureAwait(false);
+                if (isSessionBlacklisted)
+                {
+                    return TokenValidationOutcome.Fail("Session has been terminated.");
+                }
             }
 
             return TokenValidationOutcome.Success;

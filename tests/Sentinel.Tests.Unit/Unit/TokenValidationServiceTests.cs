@@ -47,12 +47,17 @@ public sealed class TokenValidationServiceTests
     public async Task ValidateAsync_WhenSessionBlacklisted_ReturnsSessionFailure()
     {
         var futureExp = _timeProvider.GetUtcNow().AddMinutes(5);
+        const string sub = "user-revoked";
         const string sid = "sid-revoked";
 
         var principal = BuildPrincipal(
-            ("sub", "user-revoked"),
+            ("sub", sub),
             ("sid", sid),
             ("exp", futureExp.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
+
+        _sessionBlacklistMock
+            .Setup(x => x.IsBlacklistedAsync(sub, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
 
         _sessionBlacklistMock
             .Setup(x => x.IsBlacklistedAsync(sid, It.IsAny<CancellationToken>()))
@@ -64,7 +69,35 @@ public sealed class TokenValidationServiceTests
         result.FailureReason.Should().Be("Session has been terminated.");
         result.FailureException.Should().BeNull();
 
+        _sessionBlacklistMock.Verify(x => x.IsBlacklistedAsync(sub, It.IsAny<CancellationToken>()), Times.Once);
         _sessionBlacklistMock.Verify(x => x.IsBlacklistedAsync(sid, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact(DisplayName = "🔐 Subject Blacklist: Globally revoked user MUST result in fail-fast rejection")]
+    public async Task ValidateAsync_WhenSubjectBlacklisted_ReturnsSubjectFailure()
+    {
+        var futureExp = _timeProvider.GetUtcNow().AddMinutes(5);
+        const string sub = "user-globally-blocked";
+        const string sid = "sid-active";
+
+        var principal = BuildPrincipal(
+            ("sub", sub),
+            ("sid", sid),
+            ("exp", futureExp.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
+
+        _sessionBlacklistMock
+            .Setup(x => x.IsBlacklistedAsync(sub, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var result = await _sut.ValidateAsync(principal, new DefaultHttpContext(), CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+        result.FailureReason.Should().Be("User account has been globally revoked or locked.");
+        result.FailureException.Should().BeNull();
+
+        _sessionBlacklistMock.Verify(x => x.IsBlacklistedAsync(sub, It.IsAny<CancellationToken>()), Times.Once);
+        _sessionBlacklistMock.Verify(x => x.IsBlacklistedAsync(sid, It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact(DisplayName = "⚠️ Fail-Closed: Cache outage during check throws and returns exception")]
@@ -72,14 +105,15 @@ public sealed class TokenValidationServiceTests
     {
         var blacklistError = new SessionBlacklistUnavailableException("Redis cluster unreachable");
         var futureExp = _timeProvider.GetUtcNow().AddMinutes(5);
+        const string sub = "user-001";
 
         var principal = BuildPrincipal(
-            ("sub", "user-001"),
+            ("sub", sub),
             ("sid", "sid-unavailable"),
             ("exp", futureExp.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
 
         _sessionBlacklistMock
-            .Setup(x => x.IsBlacklistedAsync("sid-unavailable", It.IsAny<CancellationToken>()))
+            .Setup(x => x.IsBlacklistedAsync(sub, It.IsAny<CancellationToken>()))
             .ThrowsAsync(blacklistError);
 
         var result = await _sut.ValidateAsync(principal, new DefaultHttpContext(), CancellationToken.None);
@@ -93,12 +127,17 @@ public sealed class TokenValidationServiceTests
     public async Task ValidateAsync_WhenClaimsAndStateAreValid_ReturnsSuccess()
     {
         var futureExp = _timeProvider.GetUtcNow().AddMinutes(5);
+        const string sub = "user-authenticated";
         const string sid = "sid-active";
 
         var principal = BuildPrincipal(
-            ("sub", "user-authenticated"),
+            ("sub", sub),
             ("sid", sid),
             ("exp", futureExp.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
+
+        _sessionBlacklistMock
+            .Setup(x => x.IsBlacklistedAsync(sub, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
 
         _sessionBlacklistMock
             .Setup(x => x.IsBlacklistedAsync(sid, It.IsAny<CancellationToken>()))
@@ -110,6 +149,7 @@ public sealed class TokenValidationServiceTests
         result.FailureReason.Should().BeNull();
         result.FailureException.Should().BeNull();
 
+        _sessionBlacklistMock.Verify(x => x.IsBlacklistedAsync(sub, It.IsAny<CancellationToken>()), Times.Once);
         _sessionBlacklistMock.Verify(x => x.IsBlacklistedAsync(sid, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -117,10 +157,15 @@ public sealed class TokenValidationServiceTests
     public async Task ValidateAsync_WhenSessionMissing_ReturnsSuccess()
     {
         var futureExp = _timeProvider.GetUtcNow().AddMinutes(5);
+        const string sub = "m2m-client";
 
         var principal = BuildPrincipal(
-            ("sub", "m2m-client"),
+            ("sub", sub),
             ("exp", futureExp.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
+
+        _sessionBlacklistMock
+            .Setup(x => x.IsBlacklistedAsync(sub, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
 
         var result = await _sut.ValidateAsync(principal, new DefaultHttpContext(), CancellationToken.None);
 
@@ -128,7 +173,7 @@ public sealed class TokenValidationServiceTests
         result.FailureReason.Should().BeNull();
         result.FailureException.Should().BeNull();
 
-        _sessionBlacklistMock.VerifyNoOtherCalls();
+        _sessionBlacklistMock.Verify(x => x.IsBlacklistedAsync(sub, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static ClaimsPrincipal BuildPrincipal(params (string Type, string Value)[] claims) =>
