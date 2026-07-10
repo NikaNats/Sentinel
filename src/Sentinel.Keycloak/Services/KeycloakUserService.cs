@@ -1,14 +1,16 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Security.Cryptography;
-using System.Text;
 using Sentinel.Domain.Users;
 using Sentinel.Security.Abstractions.Identity;
 using Sentinel.Security.Abstractions.Results;
+using Sentinel.Security.Diagnostics;
 
 namespace Sentinel.Keycloak.Services;
 
-internal sealed class KeycloakUserService(HttpClient httpClient, ILogger<KeycloakUserService> logger)
+internal sealed class KeycloakUserService(
+    HttpClient httpClient,
+    IPrivacyPreservingHasher privacyHasher,
+    ILogger<KeycloakUserService> logger)
     : IIdentityRegistry, IIdentityProvider
 {
     async Task<string> IIdentityProvider.CreateUserAsync(IdentityRegistration registration, string password,
@@ -196,7 +198,7 @@ internal sealed class KeycloakUserService(HttpClient httpClient, ILogger<Keycloa
         return segments.Length == 0 ? null : segments[^1].Trim('/');
     }
 
-    private static string HashConsentIp(string ipAddress)
+    private string HashConsentIp(string ipAddress)
     {
         if (string.IsNullOrWhiteSpace(ipAddress))
         {
@@ -205,15 +207,9 @@ internal sealed class KeycloakUserService(HttpClient httpClient, ILogger<Keycloa
 
         try
         {
-            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes("sentinel-ip-salt"));
-            var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(ipAddress));
-            return Convert.ToBase64String(hash);
+            return IPAddress.TryParse(ipAddress, out var parsedIp) ? privacyHasher.HashIpAddress(parsedIp) : "[error]";
         }
-        catch (ArgumentException)
-        {
-            return "[error]";
-        }
-        catch (FormatException)
+        catch (Exception ex) when (ex is FormatException or ArgumentException)
         {
             return "[error]";
         }

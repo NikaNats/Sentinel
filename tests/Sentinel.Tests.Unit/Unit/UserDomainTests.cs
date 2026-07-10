@@ -12,7 +12,7 @@ public sealed class UserDomainTests
     private static readonly ConsentInfo ValidConsent = ConsentInfo.Create(
         accepted: true,
         policyVersion: "1.0",
-        rawIp: "192.168.1.1",
+        sourceIpHash: "hashed-192.168.1.1",
         timestamp: DateTimeOffset.UtcNow);
 
     [Fact(DisplayName = "✅ Domain: Constructor successfully trims and normalizes email")]
@@ -61,27 +61,24 @@ public sealed class UserDomainTests
         sut.Consent.Should().BeNull();
     }
 
-    [Fact(DisplayName = "✅ Domain: ConsentInfo.Create successfully hashes IP for GDPR compliance")]
-    public void Create_WithValidParams_HashesIpAndSaves()
+    [Fact(DisplayName = "✅ Domain: ConsentInfo.Create successfully stores pre-hashed IP")]
+    public void Create_WithValidParams_StoresPreHashedIp()
     {
         var now = DateTimeOffset.UtcNow;
-        const string rawIp = "2001:db8:85d3:8d3:1319:8a2e:370:7348";
+        const string expectedHash = "hashed-2001-db8-85d3-8d3-1319-8a2e-370-7348";
 
-        var sut = ConsentInfo.Create(accepted: true, policyVersion: "2.1", rawIp: rawIp, timestamp: now);
+        var sut = ConsentInfo.Create(accepted: true, policyVersion: "2.1", sourceIpHash: expectedHash, timestamp: now);
 
         sut.TermsAccepted.Should().BeTrue();
         sut.PrivacyPolicyVersion.Should().Be("2.1");
         sut.AcceptedAtUtc.Should().Be(now);
-
-        sut.SourceIpHash.Should().NotContain(rawIp);
-        sut.SourceIpHash.Should().NotBeNullOrWhiteSpace();
-        sut.SourceIpHash.Should().MatchRegex(@"^[A-Za-z0-9+/=]+$");
+        sut.SourceIpHash.Should().Be(expectedHash);
     }
 
     [Fact(DisplayName = "🔴 Domain: Terms not accepted violates consent invariant and throws")]
     public void Create_WithTermsNotAccepted_ThrowsInvalidOperationException()
     {
-        var act = () => ConsentInfo.Create(accepted: false, "1.0", "127.0.0.1", DateTimeOffset.UtcNow);
+        var act = () => ConsentInfo.Create(accepted: false, "1.0", "hashed-ip", DateTimeOffset.UtcNow);
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("Consent invariant violated: Terms must be explicitly accepted.");
@@ -93,32 +90,21 @@ public sealed class UserDomainTests
     [InlineData("   ")]
     public void Create_WithEmptyPolicyVersion_ThrowsArgumentException(string? invalidVersion)
     {
-        var act = () => ConsentInfo.Create(accepted: true, invalidVersion!, "127.0.0.1", DateTimeOffset.UtcNow);
+        var act = () => ConsentInfo.Create(accepted: true, invalidVersion!, "hashed-ip", DateTimeOffset.UtcNow);
 
         act.Should().Throw<ArgumentException>()
             .WithParameterName("policyVersion");
     }
 
-    [Theory(DisplayName = "✓ Domain: Empty or invalid IP returns GDPR-safe anonymous placeholder")]
+    [Theory(DisplayName = "🔴 Domain: Empty or whitespace IP hash throws ArgumentException")]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void Create_WithEmptyIp_ReturnsAnonymousPlaceholder(string? emptyIp)
+    public void Create_WithEmptyIp_ThrowsArgumentException(string? emptyIp)
     {
-        var sut = ConsentInfo.Create(accepted: true, "1.0", emptyIp!, DateTimeOffset.UtcNow);
+        var act = () => ConsentInfo.Create(accepted: true, "1.0", emptyIp!, DateTimeOffset.UtcNow);
 
-        sut.SourceIpHash.Should().Be("[anonymous]", "GDPR mandates providing anonymous placeholders for missing PII.");
-    }
-
-    [Fact(DisplayName = "✓ Domain: IP hashing is deterministic and produces consistent HMAC hashes")]
-    public void Create_WithSameIp_ProducesIdenticalHashes()
-    {
-        const string ip = "192.168.1.100";
-        var now = DateTimeOffset.UtcNow;
-
-        var sut1 = ConsentInfo.Create(true, "1.0", ip, now);
-        var sut2 = ConsentInfo.Create(true, "1.0", ip, now);
-
-        sut1.SourceIpHash.Should().Be(sut2.SourceIpHash, "Same input must produce identical HMAC output for audit indexing.");
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("sourceIpHash");
     }
 }
