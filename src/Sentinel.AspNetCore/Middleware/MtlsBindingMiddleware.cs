@@ -1,12 +1,12 @@
-using System;
+// Sentinel Security API - FAPI 2.0 Compliant
+// მოდული: Sentinel.AspNetCore.Middleware
+
 using System.Buffers;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -88,6 +88,18 @@ internal sealed class MtlsBindingMiddleware
                     ? X509Certificate2.CreateFromPem(rawCertData)
                     : X509CertificateLoader.LoadCertificate(Convert.FromBase64String(rawCertData));
 
+                var hashBytes = SHA256.HashData(proxyCert.RawData);
+                var actualThumbprint = Base64UrlEncoder.Encode(hashBytes);
+
+                if (!FixedTimeThumbprintEquals(expectedThumbprint, actualThumbprint))
+                {
+                    _logger.LogWarning(
+                        "mTLS error: Client certificate thumbprint mismatch. Expected: {Expected}, Got: {Actual}",
+                        expectedThumbprint, actualThumbprint);
+                    await Reject(context, "Certificate thumbprint mismatch.");
+                    return;
+                }
+
                 if (_options.ValidateChain)
                 {
                     var isValidChain = await Task.Run(() => ValidateCertificateChain(proxyCert, _logger));
@@ -98,16 +110,7 @@ internal sealed class MtlsBindingMiddleware
                     }
                 }
 
-                var hashBytes = SHA256.HashData(proxyCert.RawData);
-                var actualThumbprint = Base64UrlEncoder.Encode(hashBytes);
-
                 _certCache.Set(cacheKey, actualThumbprint, TimeSpan.FromMinutes(5));
-
-                if (!FixedTimeThumbprintEquals(expectedThumbprint, actualThumbprint))
-                {
-                    await Reject(context, "Certificate thumbprint mismatch.");
-                    return;
-                }
             }
             else if (_options.AllowDirectConnection)
             {
@@ -121,16 +124,6 @@ internal sealed class MtlsBindingMiddleware
                     return;
                 }
 
-                if (_options.ValidateChain)
-                {
-                    var isValidChain = await Task.Run(() => ValidateCertificateChain(clientCertificate, _logger));
-                    if (!isValidChain)
-                    {
-                        await Reject(context, "Client certificate failed chain validation.");
-                        return;
-                    }
-                }
-
                 var hashBytes = SHA256.HashData(clientCertificate.RawData);
                 var actualThumbprint = Base64UrlEncoder.Encode(hashBytes);
 
@@ -140,6 +133,16 @@ internal sealed class MtlsBindingMiddleware
                         remoteIp?.ToString() ?? "unknown");
                     await Reject(context, "Certificate thumbprint mismatch.");
                     return;
+                }
+
+                if (_options.ValidateChain)
+                {
+                    var isValidChain = await Task.Run(() => ValidateCertificateChain(clientCertificate, _logger));
+                    if (!isValidChain)
+                    {
+                        await Reject(context, "Client certificate failed chain validation.");
+                        return;
+                    }
                 }
             }
             else
@@ -300,7 +303,10 @@ internal sealed class MtlsBindingMiddleware
             return null;
         }
 
-        if (!TokenHandler.CanReadToken(token)) return null;
+        if (!TokenHandler.CanReadToken(token))
+        {
+            return null;
+        }
 
         try
         {
