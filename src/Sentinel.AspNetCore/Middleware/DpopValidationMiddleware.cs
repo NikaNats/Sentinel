@@ -126,6 +126,26 @@ internal sealed class DpopValidationMiddleware(
             return;
         }
 
+
+        if (!string.IsNullOrWhiteSpace(thumbprint) && !string.IsNullOrWhiteSpace(expectedNonce))
+        {
+            var wasConsumed = await nonceStore.ConsumeNonceIfMatchesAsync(
+                thumbprint,
+                expectedNonce,
+                context.RequestAborted);
+
+            if (!wasConsumed)
+            {
+                if (!string.IsNullOrWhiteSpace(thumbprint))
+                {
+                    l1AntiFloodCache.RecordFailedAttempt(thumbprint);
+                }
+
+                await EnforceConstantTimeFailureAsync(startTimestamp, context, "use_dpop_nonce");
+                return;
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(thumbprint))
         {
             Activity.Current?.AddBaggage("dpop.jkt", thumbprint);
@@ -143,28 +163,26 @@ internal sealed class DpopValidationMiddleware(
                     return;
                 }
 
-                if (!string.IsNullOrWhiteSpace(callbackState.ExpectedNonce))
+                try
                 {
-                    _ = await callbackState.NonceStore.ConsumeNonceIfMatchesAsync(
+                    var stored = await callbackState.NonceStore.TryStoreNonceAsync(
                         callbackState.Thumbprint,
-                        callbackState.ExpectedNonce,
+                        callbackState.NewNonce,
+                        NonceTtl,
                         callbackState.HttpContext.RequestAborted);
+
+                    var nonceToEmit = stored
+                        ? callbackState.NewNonce
+                        : await callbackState.NonceStore.GetNonceAsync(
+                            callbackState.Thumbprint,
+                            callbackState.HttpContext.RequestAborted) ?? callbackState.NewNonce;
+
+                    callbackState.HttpContext.Response.Headers.Append("DPoP-Nonce", nonceToEmit);
                 }
-
-                var stored = await callbackState.NonceStore.TryStoreNonceAsync(
-                    callbackState.Thumbprint,
-                    callbackState.NewNonce,
-                    NonceTtl,
-                    callbackState.HttpContext.RequestAborted);
-
-                var nonceToEmit = stored
-                    ? callbackState.NewNonce
-                    : await callbackState.NonceStore.GetNonceAsync(
-                        callbackState.Thumbprint,
-                        callbackState.HttpContext.RequestAborted) ?? callbackState.NewNonce;
-
-                callbackState.HttpContext.Response.Headers.Append("DPoP-Nonce", nonceToEmit);
-            }, new NonceRotationState(context, nonceStore, thumbprint, expectedNonce, result.NewNonce));
+                catch (OperationCanceledException)
+                {
+                }
+            }, new NonceRotationState(context, nonceStore, thumbprint, result.NewNonce));
         }
 
         await next(context);
@@ -190,7 +208,6 @@ internal sealed class DpopValidationMiddleware(
 
             var token = TokenHandler.ReadJsonWebToken(dpopHeader);
             var algorithm = token.Alg;
-
             if (string.IsNullOrWhiteSpace(algorithm))
             {
                 return false;
@@ -200,8 +217,7 @@ internal sealed class DpopValidationMiddleware(
             if (!allowedAlgs.Contains(algorithm, StringComparer.OrdinalIgnoreCase))
             {
                 var logger = context.RequestServices.GetService<ILogger<DpopValidationMiddleware>>();
-                logger?.LogWarning("DPoP Security Block: Rejecting unsupported or symmetric algorithm: {Alg}",
-                    algorithm);
+                logger?.LogWarning("DPoP Security Block: Rejecting unsupported algorithm: {Alg}", algorithm);
                 return false;
             }
 
@@ -231,20 +247,18 @@ internal sealed class DpopValidationMiddleware(
                 {
                     var logger = context.RequestServices.GetService<ILogger<DpopValidationMiddleware>>();
                     logger?.LogCritical("DPoP Attack Blocked: Symmetric oct-key confusion attempt detected.");
-                    return false; // Fail-Closed
+                    return false;
                 }
             }
 
             if (root.TryGetProperty("d", out _))
             {
                 var logger = context.RequestServices.GetService<ILogger<DpopValidationMiddleware>>();
-                logger?.LogCritical(
-                    "DPoP Attack Blocked: Public JWK header contains private key material (d parameter).");
+                logger?.LogCritical("DPoP Attack Blocked: Public JWK header contains private key material.");
                 return false;
             }
 
             SecurityKey signingKey;
-
             if (root.TryGetProperty("kty", out var ktyVal) &&
                 string.Equals(ktyVal.GetString(), "ML-DSA", StringComparison.Ordinal))
             {
@@ -280,8 +294,8 @@ internal sealed class DpopValidationMiddleware(
                 ValidateAudience = false,
                 RequireSignedTokens = true,
                 ValidAlgorithms = [algorithm],
-                ValidateLifetime = false, // nosemgrep
-                RequireExpirationTime = false // nosemgrep
+                ValidateLifetime = false,
+                RequireExpirationTime = false
             };
 
             var result = await TokenHandler.ValidateTokenAsync(dpopHeader, validationParameters);
@@ -369,8 +383,7 @@ internal sealed class DpopValidationMiddleware(
             }
 
             using var jwkDoc = JsonDocument.Parse(jwkJson);
-            var thumbprint = thumbprintComputer.Compute(jwkDoc.RootElement);
-            return string.IsNullOrWhiteSpace(thumbprint) ? null : thumbprint;
+            return thumbprintComputer.Compute(jwkDoc.RootElement);
         }
         catch (Exception ex) when (ex is ArgumentException or SecurityTokenException or JsonException)
         {
@@ -389,6 +402,5 @@ internal sealed class DpopValidationMiddleware(
         HttpContext HttpContext,
         IDpopNonceStore NonceStore,
         string Thumbprint,
-        string? ExpectedNonce,
         string NewNonce);
 }
