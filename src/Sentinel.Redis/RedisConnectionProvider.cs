@@ -10,23 +10,37 @@ internal sealed class RedisConnectionProvider : IRedisConnectionProvider
 
     public RedisConnectionProvider(RedisOptions redisOptions, ILogger<RedisConnectionProvider> logger)
     {
-        _logger = logger;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        ArgumentNullException.ThrowIfNull(redisOptions);
 
         _options = ConfigurationOptions.Parse(redisOptions.EndPoint ?? "localhost:6379");
+
         _options.Ssl = redisOptions.UseSsl;
         _options.Password = redisOptions.Password;
 
         _options.AbortOnConnectFail = false;
         _options.ConnectRetry = 5;
+        _options.KeepAlive = 60;
 
         _options.ConnectTimeout = redisOptions.SyncTimeout;
         _options.SyncTimeout = redisOptions.SyncTimeout;
         _options.AsyncTimeout = redisOptions.SyncTimeout;
 
+        _options.CommandMap = CommandMap.Create(new Dictionary<string, string?>
+        {
+            ["KEYS"] = null,
+            ["FLUSHALL"] = null,
+            ["FLUSHDB"] = null
+        });
+
+        _options.ClientName = "Sentinel_Security_Gateway_Node";
         _options.ChannelPrefix = RedisChannel.Literal("sentinel");
     }
 
-#pragma warning disable CA1508
+    /// <summary>
+    ///     Asynchronously retrieves the lazy-initialized, resilient connection multiplexer.
+    ///     Employs SemaphoreSlim to prevent the 'Thundering Herd' problem under concurrent request load.
+    /// </summary>
     public async ValueTask<IConnectionMultiplexer> GetConnectionAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -45,33 +59,38 @@ internal sealed class RedisConnectionProvider : IRedisConnectionProvider
                 return _multiplexer;
             }
 
-            _logger.LogInformation("Initializing Redis connection asynchronously...");
+            _logger.LogInformation("Initializing high-availability Redis connection asynchronously...");
 
             _multiplexer = await ConnectionMultiplexer.ConnectAsync(_options).ConfigureAwait(false);
 
             _multiplexer.ConnectionRestored += (sender, args) =>
-                _logger.LogInformation("Redis connection restored. Endpoint: {Endpoint}", args.EndPoint);
+                _logger.LogInformation("Redis connection restored. Active Endpoint: {Endpoint}", args.EndPoint);
 
             _multiplexer.ConnectionFailed += (sender, args) =>
             {
                 if (args.Exception is null)
                 {
-                    _logger.LogWarning("Redis connection failed. Endpoint: {Endpoint}", args.EndPoint);
+                    _logger.LogWarning("Redis connection failed. Lost Endpoint: {Endpoint}", args.EndPoint);
                 }
                 else
                 {
-                    _logger.LogWarning(args.Exception, "Redis connection failed. Endpoint: {Endpoint}", args.EndPoint);
+                    _logger.LogWarning(args.Exception, "Redis connection failed. Lost Endpoint: {Endpoint}",
+                        args.EndPoint);
                 }
             };
 
             return _multiplexer;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Failed to establish high-availability connection to the configured Redis cluster.");
+            throw;
         }
         finally
         {
             _connectionLock.Release();
         }
     }
-#pragma warning restore CA1508
 
     public async ValueTask DisposeAsync()
     {
