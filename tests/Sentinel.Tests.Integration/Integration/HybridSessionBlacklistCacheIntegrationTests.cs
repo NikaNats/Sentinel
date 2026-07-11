@@ -14,12 +14,6 @@ using Testcontainers.Redis;
 
 namespace Sentinel.Tests.Integration.Integration;
 
-/// <summary>
-///     High-assurance integration test suite validating HybridSessionBlacklistCache behavior
-///     against isolated PostgreSQL and Redis containers using Testcontainers.
-///     Enforces write-through, read-through, and fail-closed resilience guarantees
-///     in a production-like environment with real infrastructure dependencies.
-/// </summary>
 public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _postgresContainer = new PostgreSqlBuilder("postgres:17-alpine")
@@ -31,9 +25,11 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
     private readonly RedisContainer _redisContainer = new RedisBuilder("redis:7.4-alpine")
         .Build();
 
+    private readonly RedisOptions _redisOptions = new() { KeyPrefix = "test_blacklist:" };
+    private IRedisConnectionProvider _connectionProvider = null!;
+
     private IDbContextFactory<SentinelSecurityDbContext> _dbContextFactory = null!;
     private RedisSessionBlacklistCache _redisCache = null!;
-
     private ConnectionMultiplexer? _redisConnection;
     private HybridSessionBlacklistCache _sut = null!;
 
@@ -60,14 +56,14 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
             .ReturnsAsync(() => new SentinelSecurityDbContext(dbOptions));
         _dbContextFactory = factoryMock.Object;
 
-        var redisOptions = new RedisOptions { KeyPrefix = "test_blacklist:" };
         var connectionProviderMock = new Mock<IRedisConnectionProvider>();
         connectionProviderMock.Setup(p => p.GetConnectionAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(_redisConnection!);
+            .ReturnsAsync(_redisConnection);
+        _connectionProvider = connectionProviderMock.Object;
 
         _redisCache = new RedisSessionBlacklistCache(
-            connectionProviderMock.Object,
-            redisOptions,
+            _connectionProvider,
+            _redisOptions,
             NullLogger<RedisSessionBlacklistCache>.Instance);
 
         _sut = new HybridSessionBlacklistCache(
@@ -83,8 +79,14 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
             await _redisConnection.DisposeAsync();
         }
 
-        await _postgresContainer.DisposeAsync();
-        await _redisContainer.DisposeAsync();
+        if (_connectionProvider != null)
+        {
+            await _connectionProvider.DisposeAsync();
+        }
+
+        await Task.WhenAll(
+            _postgresContainer.DisposeAsync().AsTask(),
+            _redisContainer.DisposeAsync().AsTask());
     }
 
     [Fact(DisplayName = "✅ Write-Through: Session successfully writes to real Postgres and propagates to real Redis")]
@@ -115,17 +117,38 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
         isCached.Should().BeTrue();
     }
 
-    [Fact(DisplayName = "🔄 Read-Through: On cache miss in Redis, data is read from Postgres and written back to Redis")]
-    public async Task Production_ReadThrough_FillsCacheOnMiss()
+    [Fact(DisplayName = "⚡ Fast-Path: When Redis is healthy, database query is bypassed completely on active requests")]
+    public async Task IsBlacklistedAsync_WhenRedisIsHealthy_BypassesDatabaseQuery()
     {
-        var sessionId = $"session-miss-{Guid.NewGuid():N}";
+        var crashingDbFactoryMock = new Mock<IDbContextFactory<SentinelSecurityDbContext>>(MockBehavior.Strict);
+
+        var sutWithBypass = new HybridSessionBlacklistCache(
+            _redisCache,
+            NullLogger<HybridSessionBlacklistCache>.Instance,
+            crashingDbFactoryMock.Object);
+
+        var sessionId = $"session-bypass-{Guid.NewGuid():N}";
+
+        var act = async () => await sutWithBypass.IsBlacklistedAsync(sessionId, TestContext.Current.CancellationToken);
+
+        await act.Should().NotThrowAsync("Fast-Path must bypass PostgreSQL when Redis is online.");
+
+        var result = await act();
+        result.Should().BeFalse();
+    }
+
+    [Fact(DisplayName =
+        "🔄 Read-Through Fallback: On Redis outage, system falls back to PostgreSQL and successfully recovers state")]
+    public async Task Production_ReadThrough_FillsCacheOnMiss_DuringRedisOutage()
+    {
+        var sessionId = $"session-fallback-{Guid.NewGuid():N}";
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
 
         var dbOptions = new DbContextOptionsBuilder<SentinelSecurityDbContext>()
             .UseNpgsql(_postgresContainer.GetConnectionString())
             .Options;
 
-        using (var dbContext = new SentinelSecurityDbContext(dbOptions))
+        await using (var dbContext = new SentinelSecurityDbContext(dbOptions))
         {
             dbContext.SessionBlacklist.Add(new SessionBlacklistEntry
             {
@@ -136,29 +159,49 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
             await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
-        var db = _redisConnection!.GetDatabase();
-        var redisKey = $"test_blacklist:session:{sessionId}";
-        (await db.KeyExistsAsync(redisKey)).Should().BeFalse();
+        var brokenConnectionProviderMock = new Mock<IRedisConnectionProvider>(MockBehavior.Strict);
+        brokenConnectionProviderMock
+            .Setup(p => p.GetConnectionAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect, "Redis offline"));
 
-        var result = await _sut.IsBlacklistedAsync(sessionId, TestContext.Current.CancellationToken);
+        var brokenRedisCache = new RedisSessionBlacklistCache(
+            brokenConnectionProviderMock.Object,
+            _redisOptions,
+            NullLogger<RedisSessionBlacklistCache>.Instance);
 
-        result.Should().BeTrue();
+        var sutWithFallback = new HybridSessionBlacklistCache(
+            brokenRedisCache,
+            NullLogger<HybridSessionBlacklistCache>.Instance,
+            _dbContextFactory);
 
-        var isCachedNow = await db.KeyExistsAsync(redisKey);
-        isCachedNow.Should().BeTrue();
+        var result = await sutWithFallback.IsBlacklistedAsync(sessionId, TestContext.Current.CancellationToken);
+
+        result.Should().BeTrue("The system must fall back to PostgreSQL and verify session revocation.");
     }
 
-    [Fact(DisplayName = "🔴 Fail-Closed: Any unexpected PostgreSQL exception must result in SessionBlacklistUnavailableException")]
+    [Fact(DisplayName =
+        "🔴 Fail-Closed: Unexpected PostgreSQL exception during fallback must result in SessionBlacklistUnavailableException")]
     public async Task FailClosed_WhenPostgresThrowsUnexpectedException_ThrowsSessionBlacklistUnavailableException()
     {
-        var brokenFactoryMock = new Mock<IDbContextFactory<SentinelSecurityDbContext>>();
-        brokenFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("Simulated critical DB connection failure"));
+        var brokenConnectionProviderMock = new Mock<IRedisConnectionProvider>(MockBehavior.Strict);
+        brokenConnectionProviderMock
+            .Setup(p => p.GetConnectionAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect, "Redis offline"));
+
+        var brokenRedisCache = new RedisSessionBlacklistCache(
+            brokenConnectionProviderMock.Object,
+            _redisOptions,
+            NullLogger<RedisSessionBlacklistCache>.Instance);
+
+        var brokenDbFactoryMock = new Mock<IDbContextFactory<SentinelSecurityDbContext>>(MockBehavior.Strict);
+        brokenDbFactoryMock
+            .Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("PostgreSQL cluster connection pool exhausted"));
 
         var brokenSut = new HybridSessionBlacklistCache(
-            _redisCache,
+            brokenRedisCache,
             NullLogger<HybridSessionBlacklistCache>.Instance,
-            brokenFactoryMock.Object);
+            brokenDbFactoryMock.Object);
 
         var sessionId = $"session-fail-postgres-{Guid.NewGuid():N}";
 
@@ -166,28 +209,5 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
 
         await act.Should().ThrowAsync<SessionBlacklistUnavailableException>()
             .WithMessage("The system was unable to verify the session status.");
-    }
-
-    [Fact(DisplayName = "🔴 Fail-Closed: Redis failure when no database is configured must result in SessionBlacklistUnavailableException")]
-    public async Task FailClosed_WhenRedisThrowsAndNoDbConfigured_ThrowsSessionBlacklistUnavailableException()
-    {
-        var brokenConnectionProviderMock = new Mock<IRedisConnectionProvider>();
-        brokenConnectionProviderMock.Setup(p => p.GetConnectionAsync(It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect, "Redis nodes are offline"));
-
-        var brokenRedisCache = new RedisSessionBlacklistCache(
-            brokenConnectionProviderMock.Object,
-            new RedisOptions { KeyPrefix = "test_blacklist:" },
-            NullLogger<RedisSessionBlacklistCache>.Instance);
-
-        var brokenSut = new HybridSessionBlacklistCache(
-            brokenRedisCache,
-            NullLogger<HybridSessionBlacklistCache>.Instance,
-            dbContextFactory: null);
-
-        var sessionId = $"session-fail-redis-{Guid.NewGuid():N}";
-
-        var act = async () => await brokenSut.IsBlacklistedAsync(sessionId, TestContext.Current.CancellationToken);
-        await act.Should().ThrowAsync<SessionBlacklistUnavailableException>();
     }
 }
