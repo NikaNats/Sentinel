@@ -1,12 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Net;
-using System.Net.Http;
+﻿using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -18,8 +13,8 @@ using Moq;
 using Sentinel.AspNetCore.Endpoints;
 using Sentinel.Security.Abstractions.Options;
 using Sentinel.Security.Abstractions.Results;
+using Sentinel.Security.Abstractions.Session;
 using Sentinel.Security.Abstractions.SSF;
-using Xunit;
 
 namespace Sentinel.Tests.Unit.Unit;
 
@@ -30,8 +25,8 @@ namespace Sentinel.Tests.Unit.Unit;
 /// </summary>
 public sealed class SsfEndpointsTests : IClassFixture<SsfEndpointsTests.LocalTestFactory>
 {
-    private readonly LocalTestFactory _factory;
     private const string ValidAuthToken = "hvs.secret-webhook-auth-token-999";
+    private readonly LocalTestFactory _factory;
 
     public SsfEndpointsTests(LocalTestFactory factory)
     {
@@ -70,7 +65,7 @@ public sealed class SsfEndpointsTests : IClassFixture<SsfEndpointsTests.LocalTes
         var payload = new { set = setToken };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/ssf/events");
-        request.Content = JsonContent.Create(payload, typeof(object), mediaType: null, options: LocalTestFactory.SerializerOptions);
+        request.Content = JsonContent.Create(payload, typeof(object), null, LocalTestFactory.SerializerOptions);
         request.Headers.Add("SSF-Auth-Token", ValidAuthToken);
 
         _factory.ProcessorMock
@@ -84,7 +79,8 @@ public sealed class SsfEndpointsTests : IClassFixture<SsfEndpointsTests.LocalTes
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
     }
 
-    [Fact(DisplayName = "🔴 SSF: Spoofing protection - missing or mismatched auth token returns 404 Not Found to obfuscate route existence")]
+    [Fact(DisplayName =
+        "🔴 SSF: Spoofing protection - missing or mismatched auth token returns 404 Not Found to obfuscate route existence")]
     public async Task ReceiveEvent_WithInvalidAuthToken_Returns404NotFound()
     {
         // Arrange
@@ -98,7 +94,8 @@ public sealed class SsfEndpointsTests : IClassFixture<SsfEndpointsTests.LocalTes
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        _factory.ProcessorMock.Verify(x => x.ProcessAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _factory.ProcessorMock.Verify(x => x.ProcessAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact(DisplayName = "🔴 SSF: Feature disabled - must immediately return 404 Not Found")]
@@ -148,17 +145,16 @@ public sealed class SsfEndpointsTests : IClassFixture<SsfEndpointsTests.LocalTes
         body.Should().Contain("Invalid SET signature.");
     }
 
-    // --- იზოლირებული, მსუბუქი სატესტო WebApplicationFactory ---
+    // --- Isolated WebApplicationFactory ---
     public sealed class LocalTestFactory : WebApplicationFactory<Program>
     {
-        public Mock<ISsfEventProcessor> ProcessorMock { get; } = new(MockBehavior.Strict);
-        public SsfOptions SsfOptionsValue { get; set; } = new();
-
-        // ✅ შესწორებულია: გამოყენებულია JsonNamingPolicy.CamelCase კლასი
         public static readonly JsonSerializerOptions SerializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
+
+        public Mock<ISsfEventProcessor> ProcessorMock { get; } = new(MockBehavior.Strict);
+        public SsfOptions SsfOptionsValue { get; set; } = new();
 
         public void ResetMocks()
         {
@@ -176,6 +172,22 @@ public sealed class SsfEndpointsTests : IClassFixture<SsfEndpointsTests.LocalTes
         {
             builder.ConfigureTestServices(services =>
             {
+                var dbDependentServices = services.Where(d =>
+                    d.ServiceType == typeof(ISessionBlacklistCache) ||
+                    d.ServiceType == typeof(Application.Common.Abstractions.ISessionBlacklistCache) ||
+                    d.ImplementationType?.Name == "HybridSessionBlacklistCache").ToList();
+
+                foreach (var service in dbDependentServices)
+                {
+                    services.Remove(service);
+                }
+
+                var blacklistMock = new Mock<ISessionBlacklistCache>();
+                services.AddSingleton(blacklistMock.Object);
+
+                var appBlacklistMock = new Mock<Application.Common.Abstractions.ISessionBlacklistCache>();
+                services.AddSingleton(appBlacklistMock.Object);
+
                 services.AddSingleton(ProcessorMock.Object);
 
                 var optionsMonitorMock = new Mock<IOptionsMonitor<SsfOptions>>();

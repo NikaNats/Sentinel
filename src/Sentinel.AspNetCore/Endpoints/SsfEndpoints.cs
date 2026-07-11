@@ -52,7 +52,7 @@ internal static class SsfEndpoints
         if (ssfOptions.RequireAuthToken && !IsAuthTokenValid(request, ssfOptions))
         {
             logger.LogWarning("security:ssf_auth_failed SSF Webhook token verification failed.");
-            return TypedResults.NotFound(); // იდენტობის დასამალად ვაბრუნებთ 404-ს
+            return TypedResults.NotFound(); // Route obfuscation: obfuscating endpoint existence
         }
 
         var setToken = await ReadSecurityEventTokenAsync(request, ct);
@@ -88,8 +88,8 @@ internal static class SsfEndpoints
     // ─────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    ///     Validates SSF-Auth-Token header using constant-time comparison to prevent timing attacks.
-    ///     Follows RFC 8936 guidance on SET endpoint authentication.
+    ///     Validates SSF-Auth-Token header using secure, zero-allocation SHA-256 length normalization
+    ///     and constant-time comparison to mathematically eliminate timing side-channel attacks.
     /// </summary>
     private static bool IsAuthTokenValid(HttpRequest request, SsfOptions ssfOptions)
     {
@@ -105,11 +105,24 @@ internal static class SsfEndpoints
             return false;
         }
 
-        var configuredBytes = Encoding.UTF8.GetBytes(configuredToken);
-        var suppliedBytes = Encoding.UTF8.GetBytes(suppliedToken);
+        var maxConfiguredBytes = Encoding.UTF8.GetMaxByteCount(configuredToken.Length);
+        var maxSuppliedBytes = Encoding.UTF8.GetMaxByteCount(suppliedToken.Length);
 
-        // Constant-time comparison prevents timing side-channel attacks
-        return CryptographicOperations.FixedTimeEquals(suppliedBytes, configuredBytes);
+        var configuredBytes = maxConfiguredBytes <= 512
+            ? stackalloc byte[maxConfiguredBytes]
+            : new byte[maxConfiguredBytes];
+        var suppliedBytes = maxSuppliedBytes <= 512 ? stackalloc byte[maxSuppliedBytes] : new byte[maxSuppliedBytes];
+
+        var configuredLen = Encoding.UTF8.GetBytes(configuredToken, configuredBytes);
+        var suppliedLen = Encoding.UTF8.GetBytes(suppliedToken, suppliedBytes);
+
+        Span<byte> configuredHash = stackalloc byte[32];
+        Span<byte> suppliedHash = stackalloc byte[32];
+
+        SHA256.HashData(configuredBytes[..configuredLen], configuredHash);
+        SHA256.HashData(suppliedBytes[..suppliedLen], suppliedHash);
+
+        return CryptographicOperations.FixedTimeEquals(configuredHash, suppliedHash);
     }
 
     /// <summary>
