@@ -5,8 +5,8 @@ namespace Sentinel.AspNetCore.Stores;
 /// <summary>
 ///     L1 In-Memory Cache acting as a first-line defense against L7 DoS attacks targeting Redis.
 ///     Temporarily stores discredited JTIs or Thumbprints with a short TTL (e.g., 3 seconds).
-///     Implements thread-safe, lock-free O(1) amortized pruning to maintain optimal performance.
-///     Minimizes CPU spikes and GC pressure even during high-volume flood attack scenarios.
+///     Implements a lock-free, chronological pruning with FIFO fallback to guarantee write-availability and strict memory
+///     bounds.
 /// </summary>
 internal sealed class L1AntiFloodCache(TimeProvider timeProvider, TimeSpan ttl)
 {
@@ -20,8 +20,15 @@ internal sealed class L1AntiFloodCache(TimeProvider timeProvider, TimeSpan ttl)
     private readonly long _ttlTicks = ttl.Ticks;
     private int _pruningActive;
 
+    /// <summary>
+    ///     Records a failed security attempt.
+    ///     First attempts to prune expired entries. If still at capacity, employs a strict FIFO
+    ///     eviction to guarantee write-availability for new failures while maintaining strict memory bounds.
+    /// </summary>
     public void RecordFailedAttempt(string identifier)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(identifier);
+
         var nowTicks = _timeProvider.GetUtcNow().Ticks;
 
         if (_shortTermBlacklist.Count >= MaxCacheCapacity)
@@ -59,8 +66,14 @@ internal sealed class L1AntiFloodCache(TimeProvider timeProvider, TimeSpan ttl)
         }
     }
 
+    /// <summary>
+    ///     Checks if the identifier is temporarily blacklisted.
+    ///     Automatically prunes the entry if its TTL has expired.
+    /// </summary>
     public bool IsTemporarilyBlacklisted(string identifier)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(identifier);
+
         if (_shortTermBlacklist.TryGetValue(identifier, out var expirationTicks))
         {
             if (_timeProvider.GetUtcNow().Ticks < expirationTicks)
@@ -74,6 +87,9 @@ internal sealed class L1AntiFloodCache(TimeProvider timeProvider, TimeSpan ttl)
         return false;
     }
 
+    /// <summary>
+    ///     Prunes expired entries in amortized O(1) time.
+    /// </summary>
     private void PruneExpiredEntriesO1(long nowTicks)
     {
         while (_expiryQueue.TryPeek(out var oldest) && oldest.Expiration < nowTicks)
