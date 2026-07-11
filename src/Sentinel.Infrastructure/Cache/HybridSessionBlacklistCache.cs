@@ -1,6 +1,7 @@
 ﻿using System.Data.Common;
 using System.Net.Sockets;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Sentinel.EntityFrameworkCore;
 using Sentinel.EntityFrameworkCore.Models;
 using Sentinel.Redis.Stores;
@@ -13,39 +14,55 @@ namespace Sentinel.Infrastructure.Cache;
 /// <summary>
 ///     High-performance, secure, and allocation-optimized hybrid session blacklist cache.
 ///     Uses PostgreSQL as the persistent source of truth and Redis as a volatile fast-path accelerator.
-///     Protects database pools against saturation by bypassing RDBMS reads when Redis is online.
+///     Employs a devirtualized, concrete MemoryCache? L1 barrier for microsecond-level active session checks.
 /// </summary>
-public sealed class HybridSessionBlacklistCache(
-    RedisSessionBlacklistCache redisCache,
-    ILogger<HybridSessionBlacklistCache> logger,
-    IDbContextFactory<SentinelSecurityDbContext> dbContextFactory)
-    : ISessionBlacklistCache,
-        Application.Common.Abstractions.ISessionBlacklistCache
+public sealed class HybridSessionBlacklistCache : ISessionBlacklistCache, Application.Common.Abstractions.ISessionBlacklistCache
 {
-    private readonly IDbContextFactory<SentinelSecurityDbContext> _dbContextFactory =
-        dbContextFactory ?? throw new ArgumentNullException(nameof(dbContextFactory));
+    private readonly IDbContextFactory<SentinelSecurityDbContext> _dbContextFactory;
+    private readonly ILogger<HybridSessionBlacklistCache> _logger;
+    private readonly RedisSessionBlacklistCache _redisCache;
 
-    private readonly ILogger<HybridSessionBlacklistCache> _logger =
-        logger ?? throw new ArgumentNullException(nameof(logger));
+    // JIT Optimization: Using concrete MemoryCache instead of IMemoryCache 
+    // to enable devirtualization and method inlining on hot paths.
+    private readonly MemoryCache? _memoryCache;
 
-    private readonly RedisSessionBlacklistCache _redisCache =
-        redisCache ?? throw new ArgumentNullException(nameof(redisCache));
+    private static readonly TimeSpan L1ActiveTtl = TimeSpan.FromSeconds(30);
+
+    public HybridSessionBlacklistCache(
+        RedisSessionBlacklistCache redisCache,
+        ILogger<HybridSessionBlacklistCache> logger,
+        IDbContextFactory<SentinelSecurityDbContext> dbContextFactory,
+        IMemoryCache? memoryCache = null)
+    {
+        _redisCache = redisCache ?? throw new ArgumentNullException(nameof(redisCache));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _dbContextFactory = dbContextFactory ?? throw new ArgumentNullException(nameof(dbContextFactory));
+
+        // Safely cast the injected interface to its concrete high-performance implementation
+        _memoryCache = memoryCache as MemoryCache;
+    }
 
     /// <summary>
     ///     Blacklists a session across both PostgreSQL (persistent) and Redis (volatile) layers.
-    ///     Optimized to insert directly to database, catching duplicate key conflicts instead of pre-querying.
+    ///     Evicts any temporary L1 active cache markers.
     /// </summary>
-    public async Task BlacklistSessionAsync(string sessionId, DateTimeOffset expiresAt,
-        CancellationToken cancellationToken = default)
+    public async Task BlacklistSessionAsync(string sessionId, DateTimeOffset expiresAt, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
         _logInitiatingRevocation(_logger, sessionId, null);
 
+        // 1. Evict from local L1 active barrier
+        if (_memoryCache is not null)
+        {
+            var l1Key = $"active_session:{sessionId}";
+            _memoryCache.Remove(l1Key);
+        }
+
+        // 2. Write-Through: PostgreSQL (Persistent Anchor)
         try
         {
-            await using var dbContext =
-                await _dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+            await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
             dbContext.SessionBlacklist.Add(new SessionBlacklistEntry
             {
@@ -64,14 +81,13 @@ public sealed class HybridSessionBlacklistCache(
         {
             _logAlreadyBlacklisted(_logger, sessionId, ex);
         }
-        catch (Exception ex) when
-            (ex is DbException or SocketException or TimeoutException or InvalidOperationException)
+        catch (Exception ex) when (ex is DbException or SocketException or TimeoutException or InvalidOperationException)
         {
             _logDbWriteError(_logger, sessionId, ex);
-            throw new SessionBlacklistUnavailableException(
-                "Database is unavailable for persistent session revocation.", ex);
+            throw new SessionBlacklistUnavailableException("Database is unavailable for persistent session revocation.", ex);
         }
 
+        // 3. Write-Through: Redis (Fast-Path Accelerator)
         try
         {
             await _redisCache.BlacklistSessionAsync(sessionId, expiresAt, cancellationToken).ConfigureAwait(false);
@@ -80,8 +96,7 @@ public sealed class HybridSessionBlacklistCache(
         {
             throw;
         }
-        catch (Exception ex) when (ex is RedisException or SocketException or TimeoutException
-                                       or SessionBlacklistUnavailableException)
+        catch (Exception ex) when (ex is RedisException or SocketException or TimeoutException or SessionBlacklistUnavailableException)
         {
             _logRedisWriteError(_logger, sessionId, ex);
         }
@@ -89,76 +104,83 @@ public sealed class HybridSessionBlacklistCache(
 
     /// <summary>
     ///     Verifies if a session is blacklisted.
-    ///     High-performance: Short-circuits and avoids RDBMS hits completely if Redis returns a valid check result.
+    ///     Optimized L1/L2/L3 Fallback with direct devirtualized calls on MemoryCache.
     /// </summary>
     public async Task<bool> IsBlacklistedAsync(string sessionId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
+        var l1Key = $"active_session:{sessionId}";
+
+        // --- LEVEL 1: Local Ephemeral Active Barrier (Devirtualized, Non-Allocating) ---
+        if (_memoryCache is not null && _memoryCache.TryGetValue(l1Key, out _))
+        {
+            return false; // Fast-path hit: Session is active. No vtable dispatch, no DB hit.
+        }
+
         var redisFailed = false;
 
+        // --- LEVEL 2: Distributed Redis Cache (Fast-Path Blacklist) ---
         try
         {
-            var isRedisBlacklisted =
-                await _redisCache.IsBlacklistedAsync(sessionId, cancellationToken).ConfigureAwait(false);
-
-            return isRedisBlacklisted;
+            var isRedisBlacklisted = await _redisCache.IsBlacklistedAsync(sessionId, cancellationToken).ConfigureAwait(false);
+            if (isRedisBlacklisted)
+            {
+                return true;
+            }
         }
         catch (OperationCanceledException)
         {
             throw;
         }
-        catch (Exception ex) when (ex is RedisException or SocketException or TimeoutException
-                                       or SessionBlacklistUnavailableException)
+        catch (Exception ex) when (ex is RedisException or SocketException or TimeoutException or SessionBlacklistUnavailableException)
         {
             redisFailed = true;
             _logRedisFallback(_logger, sessionId, ex);
         }
 
-        if (redisFailed)
+        // --- LEVEL 3: PostgreSQL Fallback on Cache Miss / Redis Outage ---
+        try
         {
-            try
+            await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+
+            var dbEntry = await dbContext.SessionBlacklist
+                .Where(e => e.SessionId == sessionId && e.ExpiresAt > DateTimeOffset.UtcNow)
+                .FirstOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (dbEntry != null)
             {
-                await using var dbContext =
-                    await _dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+                _logBackfill(_logger, sessionId, null);
 
-                var dbEntry = await dbContext.SessionBlacklist
-                    .Where(e => e.SessionId == sessionId && e.ExpiresAt > DateTimeOffset.UtcNow)
-                    .FirstOrDefaultAsync(cancellationToken)
-                    .ConfigureAwait(false);
-
-                if (dbEntry != null)
+                if (!redisFailed)
                 {
-                    _logBackfill(_logger, sessionId, null);
-
                     try
                     {
-                        await _redisCache.BlacklistSessionAsync(sessionId, dbEntry.ExpiresAt, cancellationToken)
-                            .ConfigureAwait(false);
+                        await _redisCache.BlacklistSessionAsync(sessionId, dbEntry.ExpiresAt, cancellationToken).ConfigureAwait(false);
                     }
-                    catch (Exception ex) when (ex is RedisException or SocketException or TimeoutException
-                                                   or SessionBlacklistUnavailableException)
+                    catch (Exception ex) when (ex is RedisException or SocketException or TimeoutException or SessionBlacklistUnavailableException)
                     {
                         _logBackfillFailed(_logger, sessionId, ex);
                     }
-
-                    return true;
                 }
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (ex is DbException or SocketException or TimeoutException
-                                           or InvalidOperationException)
-            {
-                _logDbError(_logger, sessionId, ex);
-                throw new SessionBlacklistUnavailableException(
-                    "The system was unable to verify the session status.", ex);
-            }
-        }
 
-        return false;
+                return true;
+            }
+
+            // Write to L1 active barrier to protect PostgreSQL from future redundant queries
+            _memoryCache?.Set(l1Key, true, L1ActiveTtl);
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is DbException or SocketException or TimeoutException or InvalidOperationException)
+        {
+            _logDbError(_logger, sessionId, ex);
+            throw new SessionBlacklistUnavailableException("The system was unable to verify the session status.", ex);
+        }
     }
 
     /// <summary>
@@ -168,8 +190,7 @@ public sealed class HybridSessionBlacklistCache(
     {
         try
         {
-            await using var dbContext =
-                await _dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+            await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
             var expiredCount = await dbContext.SessionBlacklist
                 .Where(e => e.ExpiresAt <= DateTimeOffset.UtcNow)
                 .ExecuteDeleteAsync(cancellationToken)
@@ -181,8 +202,7 @@ public sealed class HybridSessionBlacklistCache(
         {
             throw;
         }
-        catch (Exception ex) when
-            (ex is DbException or SocketException or TimeoutException or InvalidOperationException)
+        catch (Exception ex) when (ex is DbException or SocketException or TimeoutException or InvalidOperationException)
         {
             _logCleanupError(_logger, ex);
             throw;
@@ -235,15 +255,13 @@ public sealed class HybridSessionBlacklistCache(
 
     #region Implicit/Interface Mappings
 
-    async Task Application.Common.Abstractions.ISessionBlacklistCache.BlacklistSessionAsync(string sessionId,
-        TimeSpan ttl, CancellationToken ct)
+    async Task Application.Common.Abstractions.ISessionBlacklistCache.BlacklistSessionAsync(string sessionId, TimeSpan ttl, CancellationToken ct)
     {
         var expiresAt = DateTimeOffset.UtcNow.Add(ttl);
         await BlacklistSessionAsync(sessionId, expiresAt, ct).ConfigureAwait(false);
     }
 
-    async ValueTask<bool> Application.Common.Abstractions.ISessionBlacklistCache.
-        IsSessionBlacklistedAsync(string sessionId, CancellationToken ct) =>
+    async ValueTask<bool> Application.Common.Abstractions.ISessionBlacklistCache.IsSessionBlacklistedAsync(string sessionId, CancellationToken ct) =>
         await IsBlacklistedAsync(sessionId, ct).ConfigureAwait(false);
 
     #endregion
