@@ -1,13 +1,5 @@
 namespace Sentinel.Redis;
 
-/// <summary>
-///     Thread-safe asynchronous connection provider for Redis.
-///     Uses double-check locking pattern to ensure:
-///     - Only one connection multiplexer instance is created
-///     - No thundering herd of concurrent connection attempts during startup
-///     - Graceful background reconnection (AbortOnConnectFail = false)
-///     - Clean async/await semantics (no blocking thread pool threads)
-/// </summary>
 internal sealed class RedisConnectionProvider : IRedisConnectionProvider
 {
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
@@ -26,38 +18,28 @@ internal sealed class RedisConnectionProvider : IRedisConnectionProvider
 
         _options.AbortOnConnectFail = false;
         _options.ConnectRetry = 5;
+
         _options.ConnectTimeout = redisOptions.SyncTimeout;
+        _options.SyncTimeout = redisOptions.SyncTimeout;
         _options.AsyncTimeout = redisOptions.SyncTimeout;
 
         _options.ChannelPrefix = RedisChannel.Literal("sentinel");
-        _options.SyncTimeout = 2000;
-        _options.AsyncTimeout = 2000;
     }
 
-    /// <summary>
-    ///     Asynchronously retrieves the connection multiplexer.
-    ///     Fast path (connection already exists): Returns immediately.
-    ///     Slow path (first call): Acquires lock, establishes connection, registers reconnect handlers.
-    /// </summary>
-#pragma warning disable CA1508 // The second null check after lock is valid in double-check locking pattern
+#pragma warning disable CA1508
     public async ValueTask<IConnectionMultiplexer> GetConnectionAsync(CancellationToken cancellationToken = default)
     {
-        // ✅ FIX: Check disposal state to prevent zombie connections after disposal
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        // Fast path: connection already exists
         if (_multiplexer != null)
         {
             return _multiplexer;
         }
 
-        // Acquire lock to ensure only one thread initiates connection
-        await _connectionLock.WaitAsync(cancellationToken);
+        await _connectionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // ✅ FIX: Re-check disposal state after acquiring lock
             ObjectDisposedException.ThrowIf(_disposed, this);
-            // Double-check locking pattern: another thread may have initialized while we waited
             if (_multiplexer != null)
             {
                 return _multiplexer;
@@ -65,13 +47,11 @@ internal sealed class RedisConnectionProvider : IRedisConnectionProvider
 
             _logger.LogInformation("Initializing Redis connection asynchronously...");
 
-            _multiplexer = await ConnectionMultiplexer.ConnectAsync(_options);
+            _multiplexer = await ConnectionMultiplexer.ConnectAsync(_options).ConfigureAwait(false);
 
-            // Register handlers for operational observability
             _multiplexer.ConnectionRestored += (sender, args) =>
                 _logger.LogInformation("Redis connection restored. Endpoint: {Endpoint}", args.EndPoint);
 
-            // ✅ FIX: Safely handle nullable Exception in event args
             _multiplexer.ConnectionFailed += (sender, args) =>
             {
                 if (args.Exception is null)
@@ -93,10 +73,6 @@ internal sealed class RedisConnectionProvider : IRedisConnectionProvider
     }
 #pragma warning restore CA1508
 
-    /// <summary>
-    ///     Gracefully disposes the connection and internal synchronization primitive.
-    ///     ✅ FIX: Acquire lock during disposal to safely block incoming GetConnectionAsync requests.
-    /// </summary>
     public async ValueTask DisposeAsync()
     {
         if (_disposed)
@@ -104,14 +80,13 @@ internal sealed class RedisConnectionProvider : IRedisConnectionProvider
             return;
         }
 
-        // ✅ FIX: Acquire the lock during disposal to safe block incoming GetConnectionAsync requests
-        await _connectionLock.WaitAsync();
+        await _connectionLock.WaitAsync().ConfigureAwait(false);
         try
         {
             _disposed = true;
             if (_multiplexer != null)
             {
-                await _multiplexer.DisposeAsync();
+                await _multiplexer.DisposeAsync().ConfigureAwait(false);
             }
         }
         finally
