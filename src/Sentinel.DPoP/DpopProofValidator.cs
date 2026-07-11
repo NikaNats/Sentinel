@@ -6,10 +6,7 @@ using MlDsaSecurityKey = Sentinel.Security.Abstractions.Pqc.MlDsaSecurityKey;
 
 namespace Sentinel.DPoP;
 
-/// <summary>
-///     Validates RFC 9449 DPoP proofs with FAPI 2.0 security requirements.
-/// </summary>
-internal sealed class DpopProofValidator : IDpopProofValidator
+public sealed class DpopProofValidator : IDpopProofValidator
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
     private readonly DPoPOptions _options;
@@ -100,6 +97,38 @@ internal sealed class DpopProofValidator : IDpopProofValidator
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("htu_mismatch");
             }
 
+            if (!dpopToken.TryGetPayloadValue<string>("nonce", out var proofNonce))
+            {
+                proofNonce = string.Empty;
+            }
+
+            var nonceInProofExists = !string.IsNullOrWhiteSpace(proofNonce);
+
+            if (_options.RequireNonce)
+            {
+                if (!nonceInProofExists)
+                {
+                    return SecurityResultFactory.Failure<DpopValidationSuccess>("use_dpop_nonce");
+                }
+
+                if (string.IsNullOrWhiteSpace(request.ExpectedNonce))
+                {
+                    return SecurityResultFactory.Failure<DpopValidationSuccess>("use_dpop_nonce");
+                }
+
+                if (!string.Equals(proofNonce, request.ExpectedNonce, StringComparison.Ordinal))
+                {
+                    return SecurityResultFactory.Failure<DpopValidationSuccess>("use_dpop_nonce");
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(request.ExpectedNonce))
+            {
+                if (!nonceInProofExists || !string.Equals(proofNonce, request.ExpectedNonce, StringComparison.Ordinal))
+                {
+                    return SecurityResultFactory.Failure<DpopValidationSuccess>("use_dpop_nonce");
+                }
+            }
+
             if (!dpopToken.TryGetPayloadValue<long>("iat", out var iat))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("missing_iat");
@@ -113,15 +142,6 @@ internal sealed class DpopProofValidator : IDpopProofValidator
                 iatTime > now.Add(skew))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("iat_out_of_bounds");
-            }
-
-            if (!string.IsNullOrWhiteSpace(request.ExpectedNonce))
-            {
-                if (!dpopToken.TryGetPayloadValue<string>("nonce", out var proofNonce)
-                    || !string.Equals(proofNonce, request.ExpectedNonce, StringComparison.Ordinal))
-                {
-                    return SecurityResultFactory.Failure<DpopValidationSuccess>("nonce_mismatch");
-                }
             }
 
             var thumbprint = _thumbprintComputer.Compute(jwkElement);

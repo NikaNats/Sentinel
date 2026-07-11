@@ -14,6 +14,7 @@ public sealed class DpopProofValidatorTests : IDisposable
     private readonly DpopThumbprintComputer _thumbprintComputer;
     private readonly FakeTimeProvider _timeProvider;
     private readonly DpopProofValidator _validator;
+    private readonly IOptions<DPoPOptions> _dpopOptions;
 
     public DpopProofValidatorTests()
     {
@@ -33,17 +34,18 @@ public sealed class DpopProofValidatorTests : IDisposable
         _replayCache = new StrictJtiReplayCache();
         _thumbprintComputer = new DpopThumbprintComputer();
 
-        var dpopOptions = Options.Create(new DPoPOptions
+        _dpopOptions = Options.Create(new DPoPOptions
         {
             ProofLifetimeSeconds = 60,
-            AllowedClockSkewSeconds = 5
+            AllowedClockSkewSeconds = 5,
+            RequireNonce = false
         });
-        dpopOptions.Value.AllowedAlgorithms.Clear();
-        dpopOptions.Value.AllowedAlgorithms.Add(SecurityAlgorithms.EcdsaSha256);
+        _dpopOptions.Value.AllowedAlgorithms.Clear();
+        _dpopOptions.Value.AllowedAlgorithms.Add(SecurityAlgorithms.EcdsaSha256);
 
         _validator = new DpopProofValidator(
             _replayCache,
-            dpopOptions,
+            _dpopOptions,
             _thumbprintComputer,
             _timeProvider);
     }
@@ -256,6 +258,87 @@ public sealed class DpopProofValidatorTests : IDisposable
         replayResult.IsSuccess.Should().BeFalse(
             "RFC 9449 requires JTI uniqueness. Replayed JTIs are replay attacks. " +
             "The cache must reject attempts to reuse the same JTI.");
+    }
+
+    [Fact(DisplayName = "🔐 Nonce 1: RequireNonce=True and no nonce in proof MUST result in use_dpop_nonce")]
+    public async Task ValidateAsync_RequireNonceTrue_NoNonceInProof_Fails()
+    {
+        _dpopOptions.Value.RequireNonce = true;
+        var proof = CreateSignedProof("POST", "https://api.io/vault", nonce: null);
+        var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"), expectedNonce: "server-nonce-123");
+
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Be("use_dpop_nonce");
+    }
+
+    [Fact(DisplayName = "🔐 Nonce 2: RequireNonce=True and empty/expired ExpectedNonce on server MUST result in use_dpop_nonce")]
+    public async Task ValidateAsync_RequireNonceTrue_NoExpectedNonceOnServer_Fails()
+    {
+        _dpopOptions.Value.RequireNonce = true;
+        var proof = CreateSignedProof("POST", "https://api.io/vault", nonce: "client-nonce-xyz");
+        var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"), expectedNonce: null);
+
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Be("use_dpop_nonce");
+    }
+
+    [Fact(DisplayName = "🔐 Nonce 3: RequireNonce=True and mismatched nonce MUST result in use_dpop_nonce")]
+    public async Task ValidateAsync_RequireNonceTrue_MismatchedNonce_Fails()
+    {
+        _dpopOptions.Value.RequireNonce = true;
+        var proof = CreateSignedProof("POST", "https://api.io/vault", nonce: "wrong-nonce-abc");
+        var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"), expectedNonce: "correct-nonce-xyz");
+
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Be("use_dpop_nonce");
+    }
+
+    [Fact(DisplayName = "🔐 Nonce 4: RequireNonce=True and valid matching nonce MUST succeed")]
+    public async Task ValidateAsync_RequireNonceTrue_ValidMatchingNonce_Succeeds()
+    {
+        _dpopOptions.Value.RequireNonce = true;
+        const string matchingNonce = "matching-nonce-12345";
+        var proof = CreateSignedProof("POST", "https://api.io/vault", nonce: matchingNonce);
+        var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"), expectedNonce: matchingNonce);
+
+        _replayCache.ExpectSuccess();
+
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact(DisplayName = "🔐 Nonce 5: RequireNonce=False and expected nonce active but missing in proof MUST fail")]
+    public async Task ValidateAsync_RequireNonceFalse_ExpectedActiveButMissingInProof_Fails()
+    {
+        _dpopOptions.Value.RequireNonce = false;
+        var proof = CreateSignedProof("POST", "https://api.io/vault", nonce: null);
+        var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"), expectedNonce: "active-server-nonce");
+
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Be("use_dpop_nonce");
+    }
+
+    [Fact(DisplayName = "🔐 Nonce 6: RequireNonce=False and no active expected nonce on server MUST allow proof without nonce")]
+    public async Task ValidateAsync_RequireNonceFalse_NoExpectedNonce_SucceedsWithoutNonceInProof()
+    {
+        _dpopOptions.Value.RequireNonce = false;
+        var proof = CreateSignedProof("POST", "https://api.io/vault", nonce: null);
+        var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"), expectedNonce: null);
+
+        _replayCache.ExpectSuccess();
+
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
+
+        result.IsSuccess.Should().BeTrue();
     }
 
     private string CreateSignedProof(
