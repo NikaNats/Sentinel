@@ -1,6 +1,7 @@
 ﻿using System.Net.Security;
 using System.Security.Authentication;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using System.Threading.RateLimiting;
@@ -115,10 +116,15 @@ var tls13HandlerFactory = () =>
         var trustedCa = X509Certificate2.CreateFromPemFile(localCaPath);
         handler.SslOptions.RemoteCertificateValidationCallback = (sender, cert, chain, errors) =>
         {
-            if (errors == SslPolicyErrors.None) return true;
+            if (errors == SslPolicyErrors.None)
+            {
+                return true;
+            }
 
             using var customChain = new X509Chain();
-            customChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+            customChain.ChainPolicy.RevocationMode = isDevelopment
+                ? X509RevocationMode.NoCheck
+                : X509RevocationMode.Online;
             customChain.ChainPolicy.DisableCertificateDownloads = true;
             customChain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
             customChain.ChainPolicy.CustomTrustStore.Add(trustedCa);
@@ -128,15 +134,20 @@ var tls13HandlerFactory = () =>
     }
     else if (isDevelopment)
     {
+        var devThumbprint = builder.Configuration["Security:ExpectedDevCertificateThumbprint"];
         handler.SslOptions.RemoteCertificateValidationCallback = (sender, cert, chain, errors) =>
         {
-            if (errors == SslPolicyErrors.None) return true;
-            if (cert is X509Certificate2 xc)
+            if (errors == SslPolicyErrors.None)
             {
-                var subject = xc.Subject;
-                return subject.Contains("CN=keycloak", StringComparison.OrdinalIgnoreCase)
-                       || subject.Contains("CN=localhost", StringComparison.OrdinalIgnoreCase);
+                return true;
             }
+
+            if (cert is X509Certificate2 xc && !string.IsNullOrWhiteSpace(devThumbprint))
+            {
+                var actualThumbprint = xc.GetCertHashString(HashAlgorithmName.SHA256);
+                return string.Equals(actualThumbprint, devThumbprint, StringComparison.OrdinalIgnoreCase);
+            }
+
             return false;
         };
     }
@@ -292,7 +303,7 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
         var testPublicKey = builder.Configuration["Security:TestPublicKey"];
         if (!string.IsNullOrWhiteSpace(testPublicKey))
         {
-            var ecdsa = System.Security.Cryptography.ECDsa.Create();
+            var ecdsa = ECDsa.Create();
             ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(testPublicKey), out _);
             options.TokenValidationParameters.IssuerSigningKey = new ECDsaSecurityKey(ecdsa);
 
@@ -316,15 +327,24 @@ builder.Services
     .AddInfrastructureLayer(builder.Configuration);
 
 _ = builder.Services.AddHttpClient("keycloak-admin").ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(IUmaPermissionService).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(ITokenRefreshService).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(ITokenExchangeService).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(IIdentityRegistry).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(IUserProfileManager).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(IIdentityFederationProvider).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(IAuthRevocationService).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(KeycloakConfigurationManager).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(ICaptchaService).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IUmaPermissionService).FullName!)
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(ITokenRefreshService).FullName!)
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(ITokenExchangeService).FullName!)
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IIdentityRegistry).FullName!)
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IUserProfileManager).FullName!)
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IIdentityFederationProvider).FullName!)
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IAuthRevocationService).FullName!)
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(KeycloakConfigurationManager).FullName!)
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(ICaptchaService).FullName!)
+    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
 
 builder.Services.AddSingleton(
     Options.Create(new SdJwtVerificationOptions
@@ -339,7 +359,8 @@ builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<SdJwtVerifica
 builder.Services.AddTransient<SdJwtPresenter>();
 builder.Services.AddTransient<ISdJwtTokenValidator, SampleSdJwtTokenValidator>();
 builder.Services.AddSingleton<ISsfTokenValidator, BypassSsfTokenValidator>();
-builder.Services.AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, SecurityAuthRevocationServiceAdapter>();
+builder.Services
+    .AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, SecurityAuthRevocationServiceAdapter>();
 builder.Services.AddScoped<Sentinel.Application.Auth.Interfaces.ISsfEventProcessor, SecuritySsfEventProcessorAdapter>();
 
 builder.Services.AddAuthorizationBuilder()
