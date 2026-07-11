@@ -1,6 +1,3 @@
-// Sentinel Security API - FAPI 2.0 Compliant
-// მოდული: Sentinel.AspNetCore.Middleware
-
 using System.Buffers;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -16,11 +13,6 @@ using Sentinel.AspNetCore.Stores;
 
 namespace Sentinel.AspNetCore.Middleware;
 
-/// <summary>
-///     High-performance, secure, Native AOT-compatible mTLS binding middleware with cryptographic caching.
-///     Fixes applied: MtlsCertificateCache for O(1) automatic eviction (No Memory Leaks / DoS Protection),
-///     Task.Run for heavy cryptographic chain building (No Thread Pool Starvation), and X509RevocationMode.Offline.
-/// </summary>
 internal sealed class MtlsBindingMiddleware
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
@@ -47,9 +39,22 @@ internal sealed class MtlsBindingMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
+        var authHeader = context.Request.Headers.Authorization.ToString();
+        var hasToken = !string.IsNullOrWhiteSpace(authHeader) &&
+                       (authHeader.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase) ||
+                        authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase));
+
         var expectedThumbprint = TryResolveExpectedThumbprint(context, _logger);
+
         if (string.IsNullOrWhiteSpace(expectedThumbprint))
         {
+            if (hasToken || context.User.Identity?.IsAuthenticated == true)
+            {
+                _logger.LogWarning("mTLS error: Authenticated request or token is missing the required 'cnf' claim.");
+                await Reject(context, "Missing required certificate confirmation (cnf) claim.");
+                return;
+            }
+
             await _next(context);
             return;
         }

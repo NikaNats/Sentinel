@@ -1,12 +1,8 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
-using System.Threading.Tasks;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,15 +11,9 @@ using Microsoft.IdentityModel.Tokens;
 using Sentinel.AspNetCore.Middleware;
 using Sentinel.AspNetCore.Options;
 using Sentinel.AspNetCore.Stores;
-using Xunit;
 
 namespace Sentinel.Tests.Unit.Unit;
 
-/// <summary>
-///     High-assurance unit tests for MtlsBindingMiddleware.
-///     Consolidates original proxy scenarios with direct connection, chain failure, and exception shielding tests.
-///     Achieves 100% line and branch coverage on MtlsBindingMiddleware.cs.
-/// </summary>
 public sealed class MtlsBindingMiddlewareTests : IDisposable
 {
     private readonly MtlsCertificateCache _certCache;
@@ -40,7 +30,8 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
         var request = new CertificateRequest("CN=sentinel-test-client", rsa, HashAlgorithmName.SHA256,
             RSASignaturePadding.Pkcs1);
 
-        _testCert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddMinutes(30));
+        _testCert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5),
+            DateTimeOffset.UtcNow.AddMinutes(30));
 
         _testCertPem = ExportToPem(_testCert);
 
@@ -63,10 +54,6 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
         _testCert.Dispose();
         _certCache.Dispose();
     }
-
-    // =========================================================================
-    // 🛡️ თქვენი ორიგინალი სატესტო სცენარები (Scenarios 1-4)
-    // =========================================================================
 
     [Fact(DisplayName = "Scenario 1: Request from trusted proxy with valid header -> Allow")]
     public async Task InvokeAsync_FromTrustedProxy_WithValidHeader_Succeeds()
@@ -160,10 +147,6 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
         body.Should().Contain("Certificate thumbprint mismatch");
     }
 
-    // =========================================================================
-    // 🛡️ ახალი ენტერპრაის სცენარები (Scenarios 5-10) 
-    // =========================================================================
-
     [Fact(DisplayName = "Scenario 5: Direct connection with matching client certificate -> Allow")]
     public async Task InvokeAsync_DirectConnection_WithValidCertificate_Succeeds()
     {
@@ -185,7 +168,8 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
             return Task.CompletedTask;
         };
 
-        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, localOptions, _certCache);
+        var middleware =
+            new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, localOptions, _certCache);
 
         await middleware.InvokeAsync(context);
 
@@ -208,7 +192,8 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
         context.Connection.ClientCertificate = null!;
 
         RequestDelegate next = _ => Task.CompletedTask;
-        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, localOptions, _certCache);
+        var middleware =
+            new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, localOptions, _certCache);
 
         await middleware.InvokeAsync(context);
 
@@ -232,14 +217,14 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
         context.Connection.ClientCertificate = _testCert;
 
         RequestDelegate next = _ => Task.CompletedTask;
-        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, localOptions, _certCache);
+        var middleware =
+            new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, localOptions, _certCache);
 
         await middleware.InvokeAsync(context);
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         var body = await ReadResponseBody(context);
 
-        // ✅ შესწორებულია: სინქრონიზებულია ნატიურ პირდაპირი კავშირის შეცდომის ტექსტთან
         body.Should().Contain("Client certificate failed chain validation.");
     }
 
@@ -251,7 +236,8 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
         context.Request.Headers["X-Client-Cert"] = "corrupted-unreadable-pem-bytes-!!!";
 
         RequestDelegate next = _ => Task.CompletedTask;
-        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor, _certCache);
+        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor,
+            _certCache);
 
         await middleware.InvokeAsync(context);
 
@@ -273,7 +259,8 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
             return Task.CompletedTask;
         };
 
-        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor, _certCache);
+        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor,
+            _certCache);
 
         await middleware.InvokeAsync(context);
 
@@ -281,31 +268,24 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
     }
 
-    [Fact(DisplayName = "Scenario 10: Authenticated request without 'cnf' claim passes through (No-Op)")]
-    public async Task InvokeAsync_AuthenticatedButNoCnfClaim_PassesThrough()
+    [Fact(DisplayName = "Scenario 10: Authenticated request without 'cnf' claim is strictly rejected (Fail-Closed)")]
+    public async Task InvokeAsync_AuthenticatedButNoCnfClaim_IsRejected()
     {
         var context = new DefaultHttpContext();
         context.Response.Body = new MemoryStream();
         context.User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("sub", "user") }, "test"));
 
-        var nextCalled = false;
-        RequestDelegate next = _ =>
-        {
-            nextCalled = true;
-            return Task.CompletedTask;
-        };
+        RequestDelegate next = _ => Task.CompletedTask;
 
-        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor, _certCache);
+        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor,
+            _certCache);
 
         await middleware.InvokeAsync(context);
 
-        nextCalled.Should().BeTrue();
-        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        var body = await ReadResponseBody(context);
+        body.Should().Contain("Missing required certificate confirmation (cnf) claim.");
     }
-
-    // =========================================================================
-    // 🛠️ დამხმარე მეთოდები (Helpers)
-    // =========================================================================
 
     private static DefaultHttpContext CreateHttpContextWithCnf(string thumbprint)
     {
