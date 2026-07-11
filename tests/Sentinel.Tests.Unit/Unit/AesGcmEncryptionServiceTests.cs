@@ -1,12 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
 using Moq;
 using Sentinel.Infrastructure.Cryptography;
-using Xunit;
 
 namespace Sentinel.Tests.Unit.Unit;
 
@@ -30,19 +27,19 @@ public sealed class AesGcmEncryptionServiceTests
     {
         using var aes = new AesGcm(keyBytes, 16);
 
-        var iv = new byte[12];
+        Span<byte> iv = stackalloc byte[12];
         RandomNumberGenerator.Fill(iv);
 
         var plaintextBytes = Encoding.UTF8.GetBytes(plainText);
         var ciphertext = new byte[plaintextBytes.Length];
-        var tag = new byte[16];
+        Span<byte> tag = stackalloc byte[16];
 
         aes.Encrypt(iv, plaintextBytes, ciphertext, tag);
 
         var result = new byte[iv.Length + tag.Length + ciphertext.Length];
-        Buffer.BlockCopy(iv, 0, result, 0, iv.Length);
-        Buffer.BlockCopy(tag, 0, result, iv.Length, tag.Length);
-        Buffer.BlockCopy(ciphertext, 0, result, iv.Length + tag.Length, ciphertext.Length);
+        iv.CopyTo(result.AsSpan(0, 12));
+        tag.CopyTo(result.AsSpan(12, 16));
+        Buffer.BlockCopy(ciphertext, 0, result, 28, ciphertext.Length);
 
         return result;
     }
@@ -103,7 +100,8 @@ public sealed class AesGcmEncryptionServiceTests
         act.Should().Throw<Exception>("First generation service cannot decrypt data encrypted with the rotated key.");
     }
 
-    [Fact(DisplayName = "🛡️ Integrity: Tampering with a single bit of ciphertext must fail-closed via AEAD authentication")]
+    [Fact(DisplayName =
+        "🛡️ Integrity: Tampering with a single bit of ciphertext must fail-closed via AEAD authentication")]
     public void Decrypt_WithTamperedCiphertext_ThrowsCryptographicException()
     {
         var activeKey = GenerateRandomKeyBase64();
@@ -119,7 +117,8 @@ public sealed class AesGcmEncryptionServiceTests
         ciphertext[ciphertext.Length / 2] ^= 0x01;
 
         var act = () => sut.Decrypt(ciphertext);
-        act.Should().Throw<CryptographicException>("AES-GCM AEAD authentication tag validation must fail closed on tampering.");
+        act.Should()
+            .Throw<CryptographicException>("AES-GCM AEAD authentication tag validation must fail closed on tampering.");
     }
 
     [Fact(DisplayName = "✓ Legacy: Verifies unversioned legacy ciphertext fallback decryption")]
@@ -143,6 +142,7 @@ public sealed class AesGcmEncryptionServiceTests
 
         var decrypted = modernSut.Decrypt(legacyCiphertext);
 
-        decrypted.Should().Be(plainText, "Modern service must transparently fall back to legacy key for unversioned ciphertexts.");
+        decrypted.Should().Be(plainText,
+            "Modern service must transparently fall back to legacy key for unversioned ciphertexts.");
     }
 }

@@ -15,13 +15,12 @@ namespace Sentinel.Infrastructure.Cryptography;
 /// </summary>
 internal sealed class AesGcmEncryptionService : IEncryptionService, IDisposable
 {
-    private const byte MagicByte = 0x56; // 'V' for Versioned
+    private const byte MagicByte = 0x56;
     private const int NonceSize = 12;
     private const int TagSize = 16;
 
     private readonly IDisposable? _optionsChangeListener;
 
-    // volatile უზრუნველყოფს მყისიერ ხილვადობას მრავალძაფიან (multi-threaded) გარემოში.
     private volatile CryptoState _state;
 
     public AesGcmEncryptionService(IOptionsMonitor<CryptographyOptions> optionsMonitor)
@@ -36,7 +35,7 @@ internal sealed class AesGcmEncryptionService : IEncryptionService, IDisposable
             {
                 _state = BuildState(newOptions);
             }
-#pragma warning disable CA1031 // Swallowing configuration parsing errors during dynamic reload is a design requirement to preserve previous valid state
+#pragma warning disable CA1031
             catch (Exception)
             {
             }
@@ -48,7 +47,6 @@ internal sealed class AesGcmEncryptionService : IEncryptionService, IDisposable
 
     public byte[] Encrypt(string plainText)
     {
-        // სნეპშოტის ლოკალური კოპირება Thread-safety გარანტიისთვის
         var state = _state;
 
         var plainBytes = Encoding.UTF8.GetBytes(plainText);
@@ -60,14 +58,17 @@ internal sealed class AesGcmEncryptionService : IEncryptionService, IDisposable
                 $"ActiveKeyId '{state.ActiveKeyId}' exceeds 255 bytes when UTF-8 encoded.");
         }
 
-        var nonce = new byte[NonceSize];
+        Span<byte> nonce = stackalloc byte[NonceSize];
         RandomNumberGenerator.Fill(nonce);
 
-        var cipherBytes = new byte[plainBytes.Length];
-        var tag = new byte[TagSize];
+        Span<byte> tag = stackalloc byte[TagSize];
 
-        using var aesGcm = new AesGcm(state.ActiveKey, TagSize);
-        aesGcm.Encrypt(nonce, plainBytes, cipherBytes, tag);
+        var cipherBytes = new byte[plainBytes.Length];
+
+        using (var aesGcm = new AesGcm(state.ActiveKey, TagSize))
+        {
+            aesGcm.Encrypt(nonce, plainBytes, cipherBytes, tag);
+        }
 
         var envelopeSize = 1 + 1 + keyIdBytes.Length + NonceSize + TagSize + cipherBytes.Length;
         var result = new byte[envelopeSize];
@@ -79,10 +80,10 @@ internal sealed class AesGcmEncryptionService : IEncryptionService, IDisposable
         Buffer.BlockCopy(keyIdBytes, 0, result, cursor, keyIdBytes.Length);
         cursor += keyIdBytes.Length;
 
-        Buffer.BlockCopy(nonce, 0, result, cursor, NonceSize);
+        nonce.CopyTo(result.AsSpan(cursor, NonceSize));
         cursor += NonceSize;
 
-        Buffer.BlockCopy(tag, 0, result, cursor, TagSize);
+        tag.CopyTo(result.AsSpan(cursor, TagSize));
         cursor += TagSize;
 
         Buffer.BlockCopy(cipherBytes, 0, result, cursor, cipherBytes.Length);
