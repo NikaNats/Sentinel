@@ -39,18 +39,42 @@ internal sealed class MtlsBindingMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        var authHeader = context.Request.Headers.Authorization.ToString();
-        var hasToken = !string.IsNullOrWhiteSpace(authHeader) &&
-                       (authHeader.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase) ||
-                        authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase));
+        if (context.User.Identity?.IsAuthenticated == true)
+        {
+            var cnfClaimValue = context.User.FindFirst("cnf")?.Value;
+
+            if (string.IsNullOrWhiteSpace(cnfClaimValue))
+            {
+                _logger.LogWarning("mTLS error: Authenticated request is missing the required 'cnf' claim.");
+                await Reject(context, "Missing required certificate confirmation (cnf) claim.");
+                return;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(cnfClaimValue);
+
+                if (doc.RootElement.TryGetProperty("jkt", out _) && !doc.RootElement.TryGetProperty("x5t#S256", out _))
+                {
+                    await _next(context);
+                    return;
+                }
+            }
+            catch (JsonException)
+            {
+                _logger.LogWarning("Invalid cnf claim JSON structure.");
+                await Reject(context, "Provided certificate confirmation (cnf) is malformed.");
+                return;
+            }
+        }
 
         var expectedThumbprint = TryResolveExpectedThumbprint(context, _logger);
 
         if (string.IsNullOrWhiteSpace(expectedThumbprint))
         {
-            if (hasToken || context.User.Identity?.IsAuthenticated == true)
+            if (context.User.Identity?.IsAuthenticated == true)
             {
-                _logger.LogWarning("mTLS error: Authenticated request or token is missing the required 'cnf' claim.");
+                _logger.LogWarning("mTLS error: Authenticated request is missing the required 'x5t#S256' claim.");
                 await Reject(context, "Missing required certificate confirmation (cnf) claim.");
                 return;
             }
