@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Claims;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Sentinel.Infrastructure.Auth;
@@ -23,6 +24,7 @@ public sealed class TokenValidationServiceTests
 
         _sut = new TokenValidationService(
             _sessionBlacklistMock.Object,
+            NullLogger<TokenValidationService>.Instance,
             _timeProvider);
     }
 
@@ -89,6 +91,10 @@ public sealed class TokenValidationServiceTests
             .Setup(x => x.IsBlacklistedAsync(sub, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
+        _sessionBlacklistMock
+            .Setup(x => x.IsBlacklistedAsync(sid, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
         var result = await _sut.ValidateAsync(principal, new DefaultHttpContext(), CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
@@ -96,8 +102,7 @@ public sealed class TokenValidationServiceTests
         result.FailureException.Should().BeNull();
 
         _sessionBlacklistMock.Verify(x => x.IsBlacklistedAsync(sub, It.IsAny<CancellationToken>()), Times.Once);
-        _sessionBlacklistMock.Verify(x => x.IsBlacklistedAsync(sid, It.IsAny<CancellationToken>()),
-            Times.Never);
+        _sessionBlacklistMock.Verify(x => x.IsBlacklistedAsync(sid, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact(DisplayName = "⚠️ Fail-Closed: Cache outage during check throws and returns exception")]
@@ -106,15 +111,20 @@ public sealed class TokenValidationServiceTests
         var blacklistError = new SessionBlacklistUnavailableException("Redis cluster unreachable");
         var futureExp = _timeProvider.GetUtcNow().AddMinutes(5);
         const string sub = "user-001";
+        const string sid = "sid-unavailable";
 
         var principal = BuildPrincipal(
             ("sub", sub),
-            ("sid", "sid-unavailable"),
+            ("sid", sid),
             ("exp", futureExp.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
 
         _sessionBlacklistMock
             .Setup(x => x.IsBlacklistedAsync(sub, It.IsAny<CancellationToken>()))
             .ThrowsAsync(blacklistError);
+
+        _sessionBlacklistMock
+            .Setup(x => x.IsBlacklistedAsync(sid, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
 
         var result = await _sut.ValidateAsync(principal, new DefaultHttpContext(), CancellationToken.None);
 
