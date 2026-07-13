@@ -20,7 +20,6 @@ using Sentinel.Application.DependencyInjection;
 using Sentinel.AspNetCore.Endpoints;
 using Sentinel.AspNetCore.Extensions;
 using Sentinel.Infrastructure.Auth;
-using Sentinel.Infrastructure.Cache;
 using Sentinel.Infrastructure.DependencyInjection;
 using Sentinel.Keycloak.Extensions;
 using Sentinel.Keycloak.Services;
@@ -30,7 +29,6 @@ using Sentinel.Sample.MinimalApi;
 using Sentinel.Sample.MinimalApi.Endpoints;
 using Sentinel.SdJwt;
 using Sentinel.Security.Abstractions.Identity;
-using Sentinel.Security.Abstractions.Session;
 using Sentinel.Security.Abstractions.SSF;
 using IPNetwork = System.Net.IPNetwork;
 using ISsfEventProcessor = Sentinel.Security.Abstractions.SSF.ISsfEventProcessor;
@@ -260,7 +258,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         var configuredAuthority = keycloakSection["Authority"] ?? string.Empty;
         var allowedIssuers = new List<string> { configuredAuthority };
 
-        if (isDevelopment && !configuredAuthority.Contains("localhost:8443", StringComparison.OrdinalIgnoreCase))
+        var testPublicKey = builder.Configuration["Security:TestPublicKey"];
+        if ((isDevelopment || !string.IsNullOrWhiteSpace(testPublicKey)) &&
+            !configuredAuthority.Contains("localhost:8443", StringComparison.OrdinalIgnoreCase))
         {
             allowedIssuers.Add("https://localhost:8443/realms/sentinel");
         }
@@ -283,7 +283,8 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
 
     var allowedIssuers = new List<string> { configuredAuthority };
 
-    if (isDevelopment &&
+    var testPublicKey = builder.Configuration["Security:TestPublicKey"];
+    if ((isDevelopment || !string.IsNullOrWhiteSpace(testPublicKey)) &&
         !configuredAuthority.Contains("localhost:8443", StringComparison.OrdinalIgnoreCase))
     {
         allowedIssuers.Add("https://localhost:8443/realms/sentinel");
@@ -296,19 +297,20 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
     options.TokenValidationParameters.ValidateLifetime = true;
     options.TokenValidationParameters.ValidateIssuerSigningKey = true;
 
-    if (isDevelopment)
+    if (!string.IsNullOrWhiteSpace(testPublicKey))
     {
         options.TokenValidationParameters.ClockSkew = TimeSpan.FromSeconds(60);
 
-        var testPublicKey = builder.Configuration["Security:TestPublicKey"];
-        if (!string.IsNullOrWhiteSpace(testPublicKey))
-        {
-            var ecdsa = ECDsa.Create();
-            ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(testPublicKey), out _);
-            options.TokenValidationParameters.IssuerSigningKey = new ECDsaSecurityKey(ecdsa);
+        var ecdsa = ECDsa.Create();
+        ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(testPublicKey), out _);
 
-            options.ConfigurationManager = null;
-        }
+        var key = new ECDsaSecurityKey(ecdsa) { KeyId = "test-authority-key" };
+        options.TokenValidationParameters.IssuerSigningKey = key;
+        options.TokenValidationParameters.IssuerSigningKeys = new[] { key };
+
+        options.ConfigurationManager = null;
+        options.MetadataAddress = null!;
+        options.Authority = null!;
     }
     else
     {
@@ -316,10 +318,8 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
     }
 });
 
-
 builder.Services
     .AddRedisSecurityCaches(builder.Configuration.GetSection("Sentinel:Redis"))
-    .AddSingleton<ISessionBlacklistCache, HybridSessionBlacklistCache>()
     .AddApplicationLayer()
     .AddSsfProcessing(builder.Configuration)
     .AddRarValidation(builder.Configuration)

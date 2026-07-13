@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using AdversarialTestHost;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Reqnroll;
@@ -46,10 +47,7 @@ public sealed class FinanceTransferSteps(ScenarioContext scenarioContext) : IDis
     [Given("""
            the corporate officer has completed "(.*)" hardware MFA
            """)]
-    public void GivenCompletedHardwareMfa(string acrLevel)
-    {
-        GivenAuthenticatedWithSecurityLevel(acrLevel);
-    }
+    public void GivenCompletedHardwareMfa(string acrLevel) => GivenAuthenticatedWithSecurityLevel(acrLevel);
 
     [Given("""
            their token authorizes a transfer of up to (.*) "(.*)" with transaction ID "(.*)"
@@ -67,35 +65,26 @@ public sealed class FinanceTransferSteps(ScenarioContext scenarioContext) : IDis
     [Given("""
            they present a valid DPoP proof matching their certificate
            """)]
-    public void GivenValidDpopProof()
-    {
-        _ = _httpClient;
-    }
+    public void GivenValidDpopProof() => _ = _httpClient;
 
     [When("""
           they attempt to transfer (.*) "(.*)" to account "(.*)"
           """)]
-    public async Task WhenAttemptToTransfer(decimal amount, string currency, string account)
-    {
+    public async Task WhenAttemptToTransfer(decimal amount, string currency, string account) =>
         await ExecuteTransferRequestAsync(amount, currency, "txn-direct-123", account);
-    }
 
     [When("""
           they request to transfer (.*) "(.*)" with transaction ID "(.*)" to "(.*)"
           """)]
-    public async Task WhenRequestToTransferWithTxnId(decimal amount, string currency, string txnId, string account)
-    {
+    public async Task WhenRequestToTransferWithTxnId(decimal amount, string currency, string txnId, string account) =>
         await ExecuteTransferRequestAsync(amount, currency, txnId, account);
-    }
 
     [When("""
           they attempt to transfer (.*) "(.*)" with transaction ID "(.*)" to "(.*)"
           """)]
     public async Task WhenAttemptToTransferExceedingBounds(decimal amount, string currency, string txnId,
-        string account)
-    {
+        string account) =>
         await ExecuteTransferRequestAsync(amount, currency, txnId, account);
-    }
 
     [Then("""
           the API gateway must reject the request with a "(.*)" status
@@ -122,14 +111,11 @@ public sealed class FinanceTransferSteps(ScenarioContext scenarioContext) : IDis
     {
         var lastResponse = scenarioContext.Get<HttpResponseMessage>("LastResponse");
 
-        if (!lastResponse.Headers.WwwAuthenticate.ToString().Contains($"acr_values=\"{requiredAcr}\""))
-        {
-            lastResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        }
-        else
-        {
-            lastResponse.Headers.WwwAuthenticate.ToString().Should().Contain($"acr_values=\"{requiredAcr}\"");
-        }
+        var authHeader = lastResponse.Headers.WwwAuthenticate.ToString();
+        var expectedString = $"acr_values=\"{requiredAcr}\"";
+
+        authHeader.Should().Contain(expectedString,
+            "The API MUST return an RFC 6750 / FAPI 2.0 compliant WWW-Authenticate header containing the required acr_values.");
     }
 
     [Then("""
@@ -139,7 +125,16 @@ public sealed class FinanceTransferSteps(ScenarioContext scenarioContext) : IDis
     {
         var lastResponse = scenarioContext.Get<HttpResponseMessage>("LastResponse");
         var expectedCode = ParseStatusCode(statusCodeDescription);
-        lastResponse.StatusCode.Should().Be(expectedCode);
+
+        if (lastResponse.StatusCode != expectedCode)
+        {
+            var body = lastResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            var authHeader = lastResponse.Headers.WwwAuthenticate.ToString();
+            throw new AssertionFailedException(
+                $"Expected status {expectedCode}, but got {lastResponse.StatusCode}.\n" +
+                $"Response Body: {body}\n" +
+                $"WWW-Authenticate: {authHeader}");
+        }
     }
 
     [Then("""
@@ -255,6 +250,7 @@ public sealed class FinanceTransferSteps(ScenarioContext scenarioContext) : IDis
             [JwtRegisteredClaimNames.Exp] = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds(),
             ["acr"] = acr,
             ["scope"] = scope,
+            ["auth_time"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             ["cnf"] = new Dictionary<string, string> { ["jkt"] = jkt }
         };
 
@@ -283,6 +279,7 @@ public sealed class FinanceTransferSteps(ScenarioContext scenarioContext) : IDis
             [JwtRegisteredClaimNames.Exp] = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds(),
             ["acr"] = acr,
             ["scope"] = "finance",
+            ["auth_time"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             ["cnf"] = new Dictionary<string, string> { ["jkt"] = jkt }
         };
 

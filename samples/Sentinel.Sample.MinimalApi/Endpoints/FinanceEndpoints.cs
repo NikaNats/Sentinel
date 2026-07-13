@@ -34,8 +34,7 @@ internal static class FinanceEndpoints
             .Produces(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status409Conflict)
-            .RequireAuthorization(policy =>
-                policy.RequireClaim("acr", "acr3"))
+            .RequireAcrStepUp("acr3", TimeSpan.FromMinutes(5))
             .RequireIdempotency()
             .AddEndpointFilter<SurgicalAuthorizationFilter>();
     }
@@ -96,8 +95,21 @@ internal static class FinanceEndpoints
             DateTimeOffset.UtcNow));
     }
 
-    private static bool IsCurrencyCode(string? value) =>
-        !string.IsNullOrWhiteSpace(value)
-        && value.Length == 3
-        && value.All(static c => char.IsAsciiLetter(c));
+    private static bool IsCurrencyCode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length != 3)
+        {
+            return false;
+        }
+
+        foreach (var c in value.AsSpan())
+        {
+            if (!char.IsAsciiLetter(c))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }

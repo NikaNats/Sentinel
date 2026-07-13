@@ -205,6 +205,7 @@ public sealed class FinanceEndpointsTests : IClassFixture<FinanceEndpointsTests.
                         new Claim("sub", "user-uuid-12345"),
                         new Claim("acr", "acr3"),
                         new Claim("scope", "finance"),
+                        new Claim("auth_time", DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString()),
                         new Claim("authorization_details",
                             "[{\"type\":\"urn:sentinel:finance:transfer\",\"transaction_id\":\"txn-unique-123\",\"amount\":50000.00,\"currency\":\"USD\"}]")
                     };

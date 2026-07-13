@@ -1,14 +1,11 @@
 ﻿using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
 using System.Net.NetworkInformation;
-using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using Reqnroll;
+using Sentinel.Tests.Shared.Fixtures;
 
 namespace Sentinel.Tests.Acceptance.Steps;
 
@@ -34,12 +31,13 @@ public static class AcceptanceTestHooks
 
             await StartDockerInfrastructureAsync(solutionRoot);
 
-            var infraReady = await WaitForPortActiveAsync(RedisPort, TimeSpan.FromSeconds(30))
-                             && await WaitForPortActiveAsync(port: KeycloakPort, TimeSpan.FromSeconds(30));
+            var infraReady = await WaitForPortActiveAsync(RedisPort, TimeSpan.FromSeconds(60))
+                             && await WaitForPortActiveAsync(KeycloakPort, TimeSpan.FromSeconds(60));
 
             if (!infraReady)
             {
-                throw new TimeoutException("Required Docker infrastructure (Redis/Keycloak) failed to become active within 30 seconds.");
+                throw new TimeoutException(
+                    "Required Docker infrastructure (Redis/Keycloak) failed to become active within 60 seconds.");
             }
 
             if (IsPortInUse(ApiPort))
@@ -47,12 +45,16 @@ public static class AcceptanceTestHooks
                 return;
             }
 
-            var projectPath = Path.Combine(solutionRoot, "samples", "Sentinel.Sample.MinimalApi", "Sentinel.Sample.MinimalApi.csproj");
+            var projectPath = Path.Combine(solutionRoot, "samples", "Sentinel.Sample.MinimalApi",
+                "Sentinel.Sample.MinimalApi.csproj");
+            var pubKeyBytes = TestTokenIssuer.AuthorityKey.ExportSubjectPublicKeyInfo();
+            var testPublicKeyBase64 = Convert.ToBase64String(pubKeyBytes);
 
             var startInfo = new ProcessStartInfo
             {
                 FileName = "dotnet",
-                Arguments = $"run --project \"{projectPath}\" -c Release --urls \"http://127.0.0.1:{ApiPort}\"",
+                Arguments =
+                    $"run --project \"{projectPath}\" -c Release --no-launch-profile --urls \"http://127.0.0.1:{ApiPort}\" -- --Security:TestPublicKey={testPublicKeyBase64} --environment Development",
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
@@ -60,13 +62,27 @@ public static class AcceptanceTestHooks
                 WorkingDirectory = solutionRoot
             };
 
-            var pubKeyBytes = Sentinel.Tests.Shared.Fixtures.TestTokenIssuer.AuthorityKey.ExportSubjectPublicKeyInfo();
-            startInfo.EnvironmentVariables["Security__TestPublicKey"] = Convert.ToBase64String(pubKeyBytes);
+            startInfo.EnvironmentVariables["Security__TestPublicKey"] = testPublicKeyBase64;
+            startInfo.EnvironmentVariables["ConnectionStrings__Redis"] = "127.0.0.1:6379";
+            startInfo.EnvironmentVariables["Sentinel__Redis__EndPoint"] = "127.0.0.1:6379";
+            startInfo.EnvironmentVariables["ASPNETCORE_ENVIRONMENT"] = "Development";
 
             _apiProcess = new Process { StartInfo = startInfo };
 
-            _apiProcess.OutputDataReceived += (_, e) => { if (e.Data != null) ProcessOutputBuffer.Enqueue(e.Data); };
-            _apiProcess.ErrorDataReceived += (_, e) => { if (e.Data != null) ProcessErrorBuffer.Enqueue(e.Data); };
+            _apiProcess.OutputDataReceived += (_, e) =>
+            {
+                if (e.Data != null)
+                {
+                    ProcessOutputBuffer.Enqueue(e.Data);
+                }
+            };
+            _apiProcess.ErrorDataReceived += (_, e) =>
+            {
+                if (e.Data != null)
+                {
+                    ProcessErrorBuffer.Enqueue(e.Data);
+                }
+            };
 
             if (!_apiProcess.Start())
             {
@@ -76,14 +92,15 @@ public static class AcceptanceTestHooks
             _apiProcess.BeginOutputReadLine();
             _apiProcess.BeginErrorReadLine();
 
-            var apiReady = await WaitForPortActiveAsync(ApiPort, TimeSpan.FromSeconds(30));
+            var apiReady = await WaitForPortActiveAsync(ApiPort, TimeSpan.FromSeconds(90));
 
             if (!apiReady)
             {
                 await TeardownHostAndContainersAsync(solutionRoot);
 
                 var diagnostics = CompileDiagnosticReport();
-                throw new TimeoutException($"Self-hosted Minimal API failed to bind to port {ApiPort} within 30 seconds. System state is unresolved.\n\nDiagnostics Report:\n{diagnostics}");
+                throw new TimeoutException(
+                    $"Self-hosted Minimal API failed to bind to port {ApiPort} within 90 seconds. System state is unresolved.\n\nDiagnostics Report:\n{diagnostics}");
             }
         }
         finally
@@ -99,6 +116,10 @@ public static class AcceptanceTestHooks
         try
         {
             var solutionRoot = FindSolutionRoot();
+
+            var diagnostics = CompileDiagnosticReport();
+            Console.WriteLine(diagnostics);
+
             await TeardownHostAndContainersAsync(solutionRoot);
         }
         finally
@@ -159,7 +180,7 @@ public static class AcceptanceTestHooks
         var startInfo = new ProcessStartInfo
         {
             FileName = "docker",
-            Arguments = "compose down",
+            Arguments = "compose down -v",
             UseShellExecute = false,
             CreateNoWindow = true,
             WorkingDirectory = workingDirectory
@@ -174,7 +195,7 @@ public static class AcceptanceTestHooks
                 if (process.ExitCode != 0)
                 {
                     startInfo.FileName = "docker-compose";
-                    startInfo.Arguments = "down";
+                    startInfo.Arguments = "down -v";
                     using var legacyProcess = Process.Start(startInfo);
                     if (legacyProcess != null)
                     {
@@ -202,12 +223,14 @@ public static class AcceptanceTestHooks
                 {
                     return true;
                 }
+
                 await Task.Delay(200, cts.Token);
             }
         }
         catch (OperationCanceledException)
         {
         }
+
         return false;
     }
 
@@ -260,7 +283,7 @@ public static class AcceptanceTestHooks
             catch (InvalidOperationException)
             {
             }
-            catch (System.ComponentModel.Win32Exception)
+            catch (Win32Exception)
             {
             }
         }
@@ -284,6 +307,7 @@ public static class AcceptanceTestHooks
         {
             report.AppendLine(line);
         }
+
         report.AppendLine("==================================================");
 
         return report.ToString();

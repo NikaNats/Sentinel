@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Reqnroll;
@@ -13,17 +14,11 @@ using Sentinel.Tests.Shared.Fixtures;
 namespace Sentinel.Tests.Acceptance.Steps;
 
 [Binding]
-public sealed class SessionRevocationSteps : IDisposable
+public sealed class SessionRevocationSteps(ScenarioContext scenarioContext) : IDisposable
 {
     private readonly ECDsa _ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
     private readonly HttpClient _httpClient = new();
-    private readonly ScenarioContext _scenarioContext;
     private string? _accessToken;
-
-    public SessionRevocationSteps(ScenarioContext scenarioContext)
-    {
-        _scenarioContext = scenarioContext;
-    }
 
     public void Dispose()
     {
@@ -39,7 +34,7 @@ public sealed class SessionRevocationSteps : IDisposable
         // FIX: Append a GUID to ensure the session ID is unique for this specific test execution.
         // This prevents state pollution in Redis across multiple test runs.
         var uniqueSessionId = $"{sessionId}-{Guid.NewGuid():N}";
-        _scenarioContext.Set(uniqueSessionId, "UniqueSessionId");
+        scenarioContext.Set(uniqueSessionId, "UniqueSessionId");
 
         var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(_ecdsa));
         var jkt = ComputeEcThumbprint(jwk);
@@ -48,19 +43,23 @@ public sealed class SessionRevocationSteps : IDisposable
     }
 
     [When(@"they attempt to access their secure profile")]
-    public async Task WhenAttemptToAccessProfile()
-    {
-        await ExecuteProfileRequestAsync();
-    }
+    public async Task WhenAttemptToAccessProfile() => await ExecuteProfileRequestAsync();
 
-    [Then("""
-          the API gateway must allow the request with a "(.*)" status
-          """)]
+    [Then(@"the API gateway must allow the request with a ""(.*)"" status")]
     public void ThenGatewayMustAllow(string statusCodeDescription)
     {
-        var lastResponse = _scenarioContext.Get<HttpResponseMessage>("LastResponse");
+        var lastResponse = scenarioContext.Get<HttpResponseMessage>("LastResponse");
         var expectedCode = ParseStatusCode(statusCodeDescription);
-        lastResponse.StatusCode.Should().Be(expectedCode);
+
+        if (lastResponse.StatusCode != expectedCode)
+        {
+            var body = lastResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            var authHeader = lastResponse.Headers.WwwAuthenticate.ToString();
+            throw new AssertionFailedException(
+                $"Expected status {expectedCode}, but got {lastResponse.StatusCode}.\n" +
+                $"Response Body: {body}\n" +
+                $"WWW-Authenticate: {authHeader}");
+        }
     }
 
     [When("""
@@ -71,14 +70,14 @@ public sealed class SessionRevocationSteps : IDisposable
         const string ssfUrl = "http://127.0.0.1:5260/v1/ssf/events";
 
         // FIX: Retrieve the unique session ID we generated in the Given step
-        var uniqueSessionId = _scenarioContext.Get<string>("UniqueSessionId");
+        var uniqueSessionId = scenarioContext.Get<string>("UniqueSessionId");
         var setToken = CreateSignedSsfSetToken(uniqueSessionId);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, ssfUrl);
         request.Content = JsonContent.Create(new { set = setToken });
 
         var response = await _httpClient.SendAsync(request);
-        _scenarioContext.Set(response, "LastResponse");
+        scenarioContext.Set(response, "LastResponse");
     }
 
     [Then("""
@@ -86,16 +85,13 @@ public sealed class SessionRevocationSteps : IDisposable
           """)]
     public void ThenSsfReceiverMustAccept(string statusCodeDescription)
     {
-        var lastResponse = _scenarioContext.Get<HttpResponseMessage>("LastResponse");
+        var lastResponse = scenarioContext.Get<HttpResponseMessage>("LastResponse");
         var expectedCode = ParseStatusCode(statusCodeDescription);
         lastResponse.StatusCode.Should().Be(expectedCode);
     }
 
     [When(@"they attempt to access their secure profile again with the same session")]
-    public async Task WhenAttemptToAccessProfileAgain()
-    {
-        await ExecuteProfileRequestAsync();
-    }
+    public async Task WhenAttemptToAccessProfileAgain() => await ExecuteProfileRequestAsync();
 
     // --- Private Helper Methods ---
 
@@ -108,7 +104,7 @@ public sealed class SessionRevocationSteps : IDisposable
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", _accessToken);
 
-            _scenarioContext.TryGetValue<string>("ServerNonce", out var cachedNonce);
+            scenarioContext.TryGetValue<string>("ServerNonce", out var cachedNonce);
             request.Headers.Add("DPoP", GenerateDpopProof("GET", requestUrl, cachedNonce));
         }
 
@@ -116,10 +112,10 @@ public sealed class SessionRevocationSteps : IDisposable
 
         if (response.Headers.TryGetValues("DPoP-Nonce", out var nonceValues))
         {
-            _scenarioContext.Set(nonceValues.First(), "ServerNonce");
+            scenarioContext.Set(nonceValues.First(), "ServerNonce");
         }
 
-        _scenarioContext.Set(response, "LastResponse");
+        scenarioContext.Set(response, "LastResponse");
     }
 
     private string GenerateDpopProof(string method, string url, string? nonce = null)
