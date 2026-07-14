@@ -182,7 +182,7 @@ public sealed class SdJwtPresenter : ISdJwtPresenter
             IssuerSigningKey = holderKey,
             ValidateIssuer = false,
             ValidateAudience = true,
-            ValidAudiences = new[] { expectedAudience }, // Cryptographic enforcement
+            ValidAudiences = [expectedAudience],
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromSeconds(Math.Max(0, _options.AllowedClockSkewSeconds))
         });
@@ -241,21 +241,28 @@ public sealed class SdJwtPresenter : ISdJwtPresenter
             return "Key binding 'sd_hash' doesn't match presentation.";
         }
 
-        // Validate optional cnf.jkt (holder public key thumbprint)
-        if (issuerToken.TryGetPayloadValue<JsonElement>("cnf", out var cnf)
-            && cnf.ValueKind == JsonValueKind.Object
-            && cnf.TryGetProperty("jkt", out var jkt)
-            && !string.IsNullOrWhiteSpace(jkt.GetString()))
+        if (!issuerToken.TryGetPayloadValue<JsonElement>("cnf", out var cnf)
+            || cnf.ValueKind != JsonValueKind.Object
+            || !cnf.TryGetProperty("jkt", out var jkt)
+            || string.IsNullOrWhiteSpace(jkt.GetString()))
         {
-            using var jwkDoc = JsonDocument.Parse(jwkJson);
-            var holderThumbprint = ComputeJwkThumbprint(jwkDoc.RootElement);
-            if (!string.Equals(holderThumbprint, jkt.GetString(), StringComparison.Ordinal))
-            {
-                return "Key binding holder key thumbprint doesn't match issuer's cnf.jkt.";
-            }
+            return "Issuer SD-JWT is missing required cnf.jkt holder binding.";
         }
 
-        return null; // Validation succeeded
+        var jktValue = jkt.GetString()!;
+        using var jwkDoc = JsonDocument.Parse(jwkJson);
+        var holderThumbprint = ComputeJwkThumbprint(jwkDoc.RootElement);
+
+
+        var holderThumbprintBytes = Encoding.ASCII.GetBytes(holderThumbprint);
+        var jktBytes = Encoding.ASCII.GetBytes(jktValue);
+
+        if (!CryptographicOperations.FixedTimeEquals(holderThumbprintBytes, jktBytes))
+        {
+            return "Key binding holder key thumbprint doesn't match issuer's cnf.jkt.";
+        }
+
+        return null;
     }
 
     /// <summary>
