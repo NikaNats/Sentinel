@@ -95,7 +95,11 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
                 ["Sentinel:Redis:EndPoint"] = $"localhost:{redisContainer.GetMappedPublicPort(6379)},abortConnect=false",
                 ["Sentinel:Redis:EnableInMemoryFallback"] = "true",
                 ["Sentinel:Security:Captcha:SecretKey"] = "0x4AAAAAAABB-MOCK-SECRET",
-                ["Sentinel:Security:Captcha:Enabled"] = "false"
+                ["Sentinel:Security:Captcha:Enabled"] = "false",
+                ["DPoP:AllowedAlgorithms:0"] = "PS256",
+                ["DPoP:AllowedAlgorithms:1"] = "ES256",
+                ["DPoP:AllowedClockSkewSeconds"] = "10",
+                ["DPoP:ProofLifetimeSeconds"] = "120"
             };
 
             var cryptoConfig = TestCryptographyHelper.GenerateTestCryptographyConfig();

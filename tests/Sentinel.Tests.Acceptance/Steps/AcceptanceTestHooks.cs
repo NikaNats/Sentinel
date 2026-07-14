@@ -66,6 +66,10 @@ public static class AcceptanceTestHooks
             startInfo.EnvironmentVariables["ConnectionStrings__Redis"] = "127.0.0.1:6379";
             startInfo.EnvironmentVariables["Sentinel__Redis__EndPoint"] = "127.0.0.1:6379";
             startInfo.EnvironmentVariables["ASPNETCORE_ENVIRONMENT"] = "Development";
+            startInfo.EnvironmentVariables["DPoP__AllowedAlgorithms__0"] = "PS256";
+            startInfo.EnvironmentVariables["DPoP__AllowedAlgorithms__1"] = "ES256";
+            startInfo.EnvironmentVariables["DPoP__AllowedClockSkewSeconds"] = "10";
+            startInfo.EnvironmentVariables["DPoP__ProofLifetimeSeconds"] = "60";
 
             _apiProcess = new Process { StartInfo = startInfo };
 

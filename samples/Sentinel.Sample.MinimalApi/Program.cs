@@ -73,6 +73,19 @@ builder.WebHost.ConfigureKestrel(options =>
 
 builder.Services.AddOpenApi();
 
+var allowedCorsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+if (allowedCorsOrigins.Length > 0)
+{
+    builder.Services.AddCors(options =>
+    {
+        options.AddDefaultPolicy(policy => policy
+            .WithOrigins(allowedCorsOrigins)
+            .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE")
+            .WithHeaders("Authorization", "DPoP", "Content-Type", "Idempotency-Key", "SSF-Auth-Token")
+            .WithExposedHeaders("DPoP-Nonce", "WWW-Authenticate"));
+    });
+}
+
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
@@ -272,7 +285,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = true,
             ValidAudience = keycloakSection["Audience"],
             ValidateLifetime = true,
-            ClockSkew = TimeSpan.Zero
+            ClockSkew = TimeSpan.Zero,
+            RequireSignedTokens = true,
+            ValidAlgorithms = ["PS256", "ES256"]
         };
     });
 
@@ -399,17 +414,29 @@ else
         errorApp.Run(async context =>
         {
             context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-            context.Response.ContentType = "application/problem+json";
-            var traceId = context.TraceIdentifier.Replace("\"", "\\\"", StringComparison.Ordinal);
-            var payload =
-                $"{{\"type\":\"/errors/internal\",\"title\":\"Unexpected error\",\"detail\":\"An unexpected error occurred while processing the request.\",\"status\":500,\"traceId\":\"{traceId}\"}}";
-            await context.Response.WriteAsync(payload);
+            context.Response.ContentType = "application/problem+json; charset=utf-8";
+
+            var problem = new ProblemDetails
+            {
+                Type = "/errors/internal",
+                Title = "Unexpected error",
+                Detail = "An unexpected error occurred while processing the request.",
+                Status = StatusCodes.Status500InternalServerError,
+                Extensions = { ["traceId"] = context.TraceIdentifier }
+            };
+
+            var json = JsonSerializer.Serialize(problem, SampleJsonContext.Default.ProblemDetails);
+            await context.Response.WriteAsync(json);
         });
     });
 }
 
 app.UseForwardedHeaders();
 app.UseHttpsRedirection();
+if (allowedCorsOrigins.Length > 0)
+{
+    app.UseCors();
+}
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseSentinelSecurityPipeline();

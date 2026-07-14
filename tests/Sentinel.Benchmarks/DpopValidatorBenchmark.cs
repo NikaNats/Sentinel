@@ -66,10 +66,9 @@ public class DpopValidatorBenchmark : IDisposable
         var options = Options.Create(new DPoPOptions
         {
             ProofLifetimeSeconds = 300,
-            AllowedClockSkewSeconds = 60
+            AllowedClockSkewSeconds = 60,
+            AllowedAlgorithms = [SecurityAlgorithms.EcdsaSha256]
         });
-        options.Value.AllowedAlgorithms.Clear();
-        options.Value.AllowedAlgorithms.Add(SecurityAlgorithms.EcdsaSha256);
 
         _validator = new DpopProofValidator(_replayCache, options);
         _request = new DpopValidationRequest(proof, "POST", new Uri("https://api.sentinel.io/v1/auth"));

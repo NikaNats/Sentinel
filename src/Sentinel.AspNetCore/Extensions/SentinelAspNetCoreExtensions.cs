@@ -44,17 +44,11 @@ public static class SentinelAspNetCoreExtensions
     }
 }
 
-public sealed class SentinelAspNetCoreBuilder
+public sealed class SentinelAspNetCoreBuilder(IServiceCollection services)
 {
-    private readonly IServiceCollection _services;
     private int _dpopValidationAdded;
     private int _idempotencyFiltersAdded;
     private int _mtlsBindingAdded;
-
-    public SentinelAspNetCoreBuilder(IServiceCollection services)
-    {
-        _services = services;
-    }
 
     public SentinelAspNetCoreBuilder AddDPoPValidation()
     {
@@ -63,12 +57,23 @@ public sealed class SentinelAspNetCoreBuilder
             return this;
         }
 
-        _services.AddOptions<DPoPOptions>()
+        services.AddOptions<DPoPOptions>()
             .BindConfiguration(DPoPOptions.SectionName)
-            .ValidateDataAnnotations();
+            .PostConfigure(options =>
+                options.AllowedAlgorithms = options.AllowedAlgorithms?
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray() ?? [])
+            .Validate(options =>
+                    options.AllowedAlgorithms != null &&
+                    options.AllowedAlgorithms.Length == 2 &&
+                    Array.Exists(options.AllowedAlgorithms, a => string.Equals(a, "PS256", StringComparison.Ordinal)) &&
+                    Array.Exists(options.AllowedAlgorithms, a => string.Equals(a, "ES256", StringComparison.Ordinal)),
+                "CRITICAL SECURITY INVARIANT VIOLATED: DPoP algorithms must be restricted to exactly 'PS256' and 'ES256' to comply with FAPI 2.0 Baseline constraints. Weak algorithms are prohibited.")
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
 
-        _services.AddSingleton(TimeProvider.System);
-        _services.AddSingleton(sp =>
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton(sp =>
         {
             var timeProvider = sp.GetRequiredService<TimeProvider>();
             return new L1AntiFloodCache(timeProvider, TimeSpan.FromSeconds(3));
@@ -84,7 +89,7 @@ public sealed class SentinelAspNetCoreBuilder
             return this;
         }
 
-        _services.TryAddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
+        services.TryAddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
 
         return this;
     }
@@ -96,10 +101,10 @@ public sealed class SentinelAspNetCoreBuilder
             return this;
         }
 
-        _services.AddOptions<MtlsBindingOptions>()
+        services.AddOptions<MtlsBindingOptions>()
             .BindConfiguration(MtlsBindingOptions.SectionName);
 
-        _services.AddSingleton<MtlsCertificateCache>();
+        services.AddSingleton<MtlsCertificateCache>();
 
         return this;
     }
@@ -113,17 +118,17 @@ public sealed class SentinelAspNetCoreBuilder
     {
         if (configure is not null)
         {
-            _ = _services.Configure(configure);
+            _ = services.Configure(configure);
         }
         else
         {
-            _ = _services.AddOptions<AcrRankingOptions>()
+            _ = services.AddOptions<AcrRankingOptions>()
                 .BindConfiguration(AcrRankingOptions.SectionName)
                 .ValidateDataAnnotations()
                 .ValidateOnStart();
         }
 
-        _ = _services.AddSingleton<IAuthorizationMiddlewareResultHandler, StepUpAuthorizationResultHandler>();
+        _ = services.AddSingleton<IAuthorizationMiddlewareResultHandler, StepUpAuthorizationResultHandler>();
 
         return this;
     }

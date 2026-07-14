@@ -28,8 +28,23 @@ public sealed class DpopProofValidator : IDpopProofValidator
         _thumbprintComputer = thumbprintComputer ?? new DpopThumbprintComputer();
         _timeProvider = timeProvider ?? TimeProvider.System;
 
-        _supportedAlgorithms = new HashSet<string>(_options.AllowedAlgorithms, StringComparer.OrdinalIgnoreCase);
+        if (_options.AllowedAlgorithms == null || _options.AllowedAlgorithms.Length == 0)
+        {
+            throw new CryptographicException("FAPI 2.0 violation: AllowedAlgorithms list cannot be empty.");
+        }
 
+        var hasInvalidAlgs = Array.Exists(_options.AllowedAlgorithms, alg =>
+            !string.Equals(alg, "PS256", StringComparison.Ordinal) &&
+            !string.Equals(alg, "ES256", StringComparison.Ordinal) &&
+            !string.Equals(alg, "EdDSA", StringComparison.Ordinal));
+
+        if (hasInvalidAlgs)
+        {
+            throw new CryptographicException(
+                $"FAPI 2.0 violation: Prohibited algorithms found in configuration. Allowed: PS256, ES256, EdDSA.");
+        }
+
+        _supportedAlgorithms = new HashSet<string>(_options.AllowedAlgorithms, StringComparer.OrdinalIgnoreCase);
         var verifier = mlDsaVerifier ?? new FailClosedMlDsaVerifier();
         _pqcFactory = new PqcCryptoProviderFactory(verifier);
     }
@@ -66,6 +81,25 @@ public sealed class DpopProofValidator : IDpopProofValidator
             if (string.IsNullOrWhiteSpace(jwkJson))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("invalid_jwk");
+            }
+
+            if (jwkElement.TryGetProperty("kty", out var ktyProp))
+            {
+                var kty = ktyProp.GetString();
+                var alg = dpopToken.Alg;
+
+                bool isMatched = kty switch
+                {
+                    "EC" => alg.StartsWith("ES", StringComparison.Ordinal),
+                    "RSA" => alg.StartsWith("PS", StringComparison.Ordinal),
+                    "ML-DSA" => alg.StartsWith("ML-DSA", StringComparison.Ordinal),
+                    _ => false
+                };
+
+                if (!isMatched)
+                {
+                    return SecurityResultFactory.Failure<DpopValidationSuccess>("unsupported_algorithm");
+                }
             }
 
             if (jwkElement.TryGetProperty("d", out _))

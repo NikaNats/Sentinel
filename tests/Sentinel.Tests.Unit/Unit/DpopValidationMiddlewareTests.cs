@@ -58,10 +58,11 @@ public sealed class DpopValidationMiddlewareTests : IDisposable
         _timeProvider = TimeProvider.System;
         _l1Cache = new L1AntiFloodCache(_timeProvider, TimeSpan.FromSeconds(3));
 
-        var options = new DPoPOptions();
-        options.AllowedAlgorithms.Clear();
-        options.AllowedAlgorithms.Add("ES256");
-        options.AllowedAlgorithms.Add("PS256");
+        var options = new DPoPOptions
+        {
+            AllowedAlgorithms = ["ES256", "PS256"]
+        };
+
         _dpopOptions = Microsoft.Extensions.Options.Options.Create(options);
     }
 

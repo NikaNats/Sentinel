@@ -38,10 +38,9 @@ public sealed class DpopProofValidatorTests : IDisposable
         {
             ProofLifetimeSeconds = 60,
             AllowedClockSkewSeconds = 5,
-            RequireNonce = false
+            RequireNonce = false,
+            AllowedAlgorithms = ["ES256"]
         });
-        _dpopOptions.Value.AllowedAlgorithms.Clear();
-        _dpopOptions.Value.AllowedAlgorithms.Add(SecurityAlgorithms.EcdsaSha256);
 
         _validator = new DpopProofValidator(
             _replayCache,
@@ -167,10 +166,10 @@ public sealed class DpopProofValidatorTests : IDisposable
         var options = Options.Create(new DPoPOptions
         {
             ProofLifetimeSeconds = 60,
-            AllowedClockSkewSeconds = 5
+            AllowedClockSkewSeconds = 5,
+            RequireNonce = false,
+            AllowedAlgorithms = ["ES256"]
         });
-        options.Value.AllowedAlgorithms.Clear();
-        options.Value.AllowedAlgorithms.Add(SecurityAlgorithms.EcdsaSha256);
 
         var validator = new DpopProofValidator(
             new CancellationAwareReplayCache(),
