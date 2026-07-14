@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.Keycloak;
+using Sentinel.Security.Abstractions.Exceptions;
 
 namespace Sentinel.AspNetCore.Endpoints;
 
@@ -48,7 +49,6 @@ internal static class BackchannelLogoutEndpoints
 
         if (string.IsNullOrWhiteSpace(logoutToken))
         {
-            // RFC 9413: Return 400 only for malformed requests, not for invalid tokens
             return TypedResults.BadRequest();
         }
 
@@ -56,29 +56,33 @@ internal static class BackchannelLogoutEndpoints
         {
             var sessionId = await validator.ValidateAndExtractSessionIdAsync(logoutToken, ct);
 
-            // RFC 9413: MUST handle invalid tokens silently (except malformed)
             if (string.IsNullOrWhiteSpace(sessionId))
             {
                 logger.LogWarning("Invalid backchannel logout token received. Token validation failed.");
                 return TypedResults.Ok();
             }
 
-            // Blacklist the session to force re-authentication on next access
             var keycloakOptions = options.Value;
             await blacklistCache.BlacklistSessionAsync(sessionId, keycloakOptions.ResolveSessionBlacklistTtl(), ct);
 
-            logger.LogInformation("Session {SessionId} blacklisted via backchannel logout.", sessionId);
+            logger.LogInformation("Session blacklisted via backchannel logout.");
             return TypedResults.Ok();
         }
-#pragma warning disable CA1031 // Do not catch general exception types
-        // RFC 9413 Section 4: Backchannel logout endpoints MUST return 200 even on errors
-        // to prevent attackers from using errors to determine valid session IDs
+        catch (SecurityInfrastructureException ex)
+        {
+            logger.LogError(ex, "Backchannel logout could not persist revocation state.");
+            return TypedResults.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return TypedResults.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
+#pragma warning disable CA1031
         catch (Exception ex)
         {
-            // RFC 9413: Log internal errors but always return 200 to avoid leaking validation details
             logger.LogError(ex, "Unexpected error processing backchannel logout token.");
             return TypedResults.Ok();
         }
-#pragma warning restore CA1031 // Do not catch general exception types
+#pragma warning restore CA1031
     }
 }

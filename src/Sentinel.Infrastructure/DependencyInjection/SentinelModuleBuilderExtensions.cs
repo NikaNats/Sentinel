@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Sentinel.Application.Auth.Interfaces;
@@ -42,6 +43,9 @@ public static class SentinelModuleBuilderExtensions
         _ = services.AddSingleton<IEncryptionService, AesGcmEncryptionService>();
 
         _ = services.AddSingleton<ILogoutTokenValidator, LogoutTokenValidator>();
+
+        services.TryAddSingleton<IPrivacyPreservingHasher, BypassPrivacyPreservingHasher>();
+
         _ = services.AddSingleton<ISecurityEventEmitter, SecurityEventEmitter>();
         _ = services.AddSingleton<TokenValidationService>();
 
@@ -68,8 +72,16 @@ public static class SentinelModuleBuilderExtensions
         return builder;
     }
 
-    public static ISentinelSecurityBuilder AddTelemetry(this ISentinelSecurityBuilder builder)
-    {
-        return builder.AddSecurityTelemetry();
-    }
+    public static ISentinelSecurityBuilder AddTelemetry(this ISentinelSecurityBuilder builder) =>
+        builder.AddSecurityTelemetry();
+}
+
+/// <summary>
+///     Bypass Privacy Hasher for Local/Testing environments.
+///     Avoids resolving Vault-related services when Vault hardening is skipped.
+/// </summary>
+internal sealed class BypassPrivacyPreservingHasher : IPrivacyPreservingHasher
+{
+    public string HashIpAddress(IPAddress ipAddress) => ipAddress.ToString();
+    public string Hash(string value) => value;
 }

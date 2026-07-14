@@ -1,14 +1,17 @@
 namespace Sentinel.Security.Diagnostics;
 
 /// <summary>
-/// Emits security events (authentication failures, token replays, session revocation) with structured logging and telemetry.
-/// Enables security-aware tracing across the entire distributed system.
+///     Emits security events (authentication failures, token replays, session revocation) with structured logging and
+///     telemetry.
+///     Enforces GDPR/FedRAMP privacy-preserving hashing to prevent persistent identifier leaks in logs and metrics.
 /// </summary>
-public sealed class SecurityEventEmitter(ILogger<SecurityEventEmitter> logger)
+public sealed class SecurityEventEmitter(
+    ILogger<SecurityEventEmitter> logger,
+    IPrivacyPreservingHasher privacyHasher)
     : ISecurityEventEmitter
 {
     /// <summary>
-    /// Structured log message for token replay alerts.
+    ///     Structured log message for token replay alerts.
     /// </summary>
     private static readonly Action<ILogger, string, string, string, string, string, Exception?> TokenReplayAlert =
         LoggerMessage.Define<string, string, string, string, string>(
@@ -17,8 +20,7 @@ public sealed class SecurityEventEmitter(ILogger<SecurityEventEmitter> logger)
             "TOKEN_REPLAY_ALERT: Replayed jti {Jti} detected for sub {Sub}, client {ClientId} from IP Hash {IpHash}. CorrelationId={CorrelationId}");
 
     /// <summary>
-    /// Structured log message for DPoP validation failures.
-    /// ✅ FIX: Replaces string interpolation with native template, eliminating allocation overhead.
+    ///     Structured log message for DPoP validation failures.
     /// </summary>
     private static readonly Action<ILogger, string, string, string, string, Exception?> DpopFailureEvent =
         LoggerMessage.Define<string, string, string, string>(
@@ -27,7 +29,7 @@ public sealed class SecurityEventEmitter(ILogger<SecurityEventEmitter> logger)
             "DPOP_FAILURE: Validation failed due to '{Reason}' for thumbprint {Thumbprint} from IP Hash {IpHash}. CorrelationId={CorrelationId}");
 
     /// <summary>
-    /// Structured log message for session revocation.
+    ///     Structured log message for session revocation.
     /// </summary>
     private static readonly Action<ILogger, string, string, string, Exception?> SessionRevokedEvent =
         LoggerMessage.Define<string, string, string>(
@@ -36,7 +38,7 @@ public sealed class SecurityEventEmitter(ILogger<SecurityEventEmitter> logger)
             "SESSION_REVOKED: sessionId {SessionId} for sub {Sub}. CorrelationId={CorrelationId}");
 
     /// <summary>
-    /// Structured log message for configuration changes.
+    ///     Structured log message for configuration changes.
     /// </summary>
     private static readonly Action<ILogger, string, string, string, string, Exception?> ConfigChangeEvent =
         LoggerMessage.Define<string, string, string, string>(
@@ -45,52 +47,66 @@ public sealed class SecurityEventEmitter(ILogger<SecurityEventEmitter> logger)
             "CONFIG_CHANGE: component {Component}, changeType {ChangeType}, details {Details}. CorrelationId={CorrelationId}");
 
     /// <summary>
-    /// Emits a token replay event with structured logging and metrics.
+    ///     Emits a token replay event with structured logging and metrics.
     /// </summary>
     public void EmitTokenReplay(string jti, string? sub, string? clientId, string ipHash)
     {
-        AuthTelemetry.TokenReplays.Add(1, new KeyValuePair<string, object?>("client_id", clientId));
-        TokenReplayAlert(logger, jti, sub ?? "OPAQUE", clientId ?? "UNKNOWN", ipHash, GetCorrelationId(), null);
+        AuthTelemetry.TokenReplays.Add(1);
+
+        TokenReplayAlert(
+            logger,
+            privacyHasher.Hash(jti),
+            string.IsNullOrWhiteSpace(sub) ? "OPAQUE" : privacyHasher.Hash(sub),
+            string.IsNullOrWhiteSpace(clientId) ? "UNKNOWN" : privacyHasher.Hash(clientId),
+            ipHash,
+            GetCorrelationId(),
+            null);
     }
 
     /// <summary>
-    /// Emits a DPoP validation failure event with structured logging and metrics.
-    /// ✅ FIX: Passes raw string instead of interpolated string, eliminating allocation overhead.
+    ///     Emits a DPoP validation failure event with structured logging and metrics.
     /// </summary>
     public void EmitDpopValidationFailure(string thumbprint, string reason, string ipHash)
     {
-        AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("thumbprint", thumbprint));
-        DpopFailureEvent(logger, reason, thumbprint, ipHash, GetCorrelationId(), null);
+        AuthTelemetry.DpopFailures.Add(1);
+
+        DpopFailureEvent(
+            logger,
+            reason,
+            privacyHasher.Hash(thumbprint),
+            ipHash,
+            GetCorrelationId(),
+            null);
     }
 
     /// <summary>
-    /// Emits a session revocation event.
+    ///     Emits a session revocation event.
     /// </summary>
-    public void EmitSessionRevoked(string sessionId, string? sub)
-    {
-        SessionRevokedEvent(logger, sessionId, sub ?? "OPAQUE", GetCorrelationId(), null);
-    }
+    public void EmitSessionRevoked(string sessionId, string? sub) =>
+        SessionRevokedEvent(
+            logger,
+            privacyHasher.Hash(sessionId),
+            string.IsNullOrWhiteSpace(sub) ? "OPAQUE" : privacyHasher.Hash(sub),
+            GetCorrelationId(),
+            null);
 
     /// <summary>
-    /// Emits a configuration change event for audit trails.
+    ///     Emits a configuration change event for audit trails.
     /// </summary>
-    public void EmitConfigurationChange(string component, string changeType, string details)
-    {
+    public void EmitConfigurationChange(string component, string changeType, string details) =>
         ConfigChangeEvent(logger, component, changeType, details, GetCorrelationId(), null);
-    }
 
     /// <summary>
-    /// Gets the correlation ID from the current Activity (W3C Trace Context).
-    /// ✅ FIX: Uses Activity.GetBaggageItem for O(1) lookup instead of O(n) FirstOrDefault LINQ scan.
-    /// Falls back to Activity ID if no baggage is set.
+    ///     Gets the correlation ID from the current Activity (W3C Trace Context).
     /// </summary>
     private static string GetCorrelationId()
     {
         var activity = Activity.Current;
         if (activity == null)
+        {
             return "NO_TRACE";
+        }
 
-        // ✅ FIX: O(1) lookup using GetBaggageItem instead of O(n) FirstOrDefault scan
         var correlationId = activity.GetBaggageItem("correlation.id");
 
         return correlationId ?? activity.Id ?? "NO_TRACE";

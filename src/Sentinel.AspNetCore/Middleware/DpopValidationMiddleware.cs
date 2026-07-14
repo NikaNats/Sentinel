@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
@@ -148,7 +147,6 @@ internal sealed class DpopValidationMiddleware(
 
         if (!string.IsNullOrWhiteSpace(thumbprint))
         {
-            Activity.Current?.AddBaggage("dpop.jkt", thumbprint);
             context.Items["dpop.jkt"] = thumbprint;
         }
 
@@ -295,7 +293,8 @@ internal sealed class DpopValidationMiddleware(
                 RequireSignedTokens = true,
                 ValidAlgorithms = [algorithm],
                 // nosem: csharp.lang.security.ad.jwt-tokenvalidationparameters-no-expiry-validation.jwt-tokenvalidationparameters-no-expiry-validation
-                ValidateLifetime = false, // DPoP proofs do not contain 'exp' claims; lifetime is custom-validated against 'iat' per RFC 9449 in DpopProofValidator
+                ValidateLifetime =
+                    false, // DPoP proofs do not contain 'exp' claims; lifetime is custom-validated against 'iat' per RFC 9449 in DpopProofValidator
                 // nosem: csharp.lang.security.ad.jwt-tokenvalidationparameters-no-expiry-validation.jwt-tokenvalidationparameters-no-expiry-validation
                 RequireExpirationTime = false
             };

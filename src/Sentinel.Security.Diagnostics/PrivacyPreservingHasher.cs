@@ -1,4 +1,3 @@
-using System;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -6,29 +5,32 @@ using System.Text;
 namespace Sentinel.Security.Diagnostics;
 
 /// <summary>
-/// Defines a privacy-preserving IP address hasher.
+///     Defines a privacy-preserving IP address hasher.
 /// </summary>
 public interface IPrivacyPreservingHasher
 {
-    /// <summary>
-    /// Hashes an IP address using an ephemeral daily derived key.
-    /// </summary>
     string HashIpAddress(IPAddress ipAddress);
+
+    /// <summary>
+    ///     Hashes a sensitive string (JTI, Session ID, User ID) using an ephemeral daily derived key.
+    ///     Used to prevent PII and persistent identifier leaks in logs/telemetry.
+    /// </summary>
+    string Hash(string value);
 }
 
 /// <summary>
-/// Performs zero-allocation daily-keyed HMAC-SHA256 IP address hashing.
+///     Performs zero-allocation daily-keyed HMAC-SHA256 IP address hashing.
 /// </summary>
 public sealed class PrivacyPreservingHasher : IPrivacyPreservingHasher
 {
     private readonly IPrivacyKeyManager _keyManager;
     private readonly TimeProvider _timeProvider;
-    
+
     // For safe, fast sharing between threads, we use a volatile reference
     private volatile DailyKeyCache _dailyKeyCache = new(0, new byte[32]);
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="PrivacyPreservingHasher"/> class.
+    ///     Initializes a new instance of the <see cref="PrivacyPreservingHasher" /> class.
     /// </summary>
     public PrivacyPreservingHasher(IPrivacyKeyManager keyManager, TimeProvider? timeProvider = null)
     {
@@ -42,7 +44,7 @@ public sealed class PrivacyPreservingHasher : IPrivacyPreservingHasher
         ArgumentNullException.ThrowIfNull(ipAddress);
 
         var now = _timeProvider.GetUtcNow();
-        int dateKey = (now.Year * 10000) + (now.Month * 100) + now.Day; // e.g., 20260329
+        var dateKey = now.Year * 10000 + now.Month * 100 + now.Day; // e.g., 20260329
 
         // 1. Get or generate today's ephemeral key
         var cache = _dailyKeyCache;
@@ -53,14 +55,40 @@ public sealed class PrivacyPreservingHasher : IPrivacyPreservingHasher
 
         // 2. Write IP bytes onto the stack (IPv4 = 4b, IPv6 = 16b)
         Span<byte> ipBytes = stackalloc byte[16];
-        if (!ipAddress.TryWriteBytes(ipBytes, out int bytesWritten))
+        if (!ipAddress.TryWriteBytes(ipBytes, out var bytesWritten))
+        {
             return "UNKNOWN_IP_FORMAT";
+        }
 
         // 3. Allocate memory for the hash on the stack
         Span<byte> hashBytes = stackalloc byte[32];
-        
+
         // FIPS 140-3 compliant instantaneous hashing (Zero-Allocation)
         HMACSHA256.HashData(cache.DerivedKey, ipBytes.Slice(0, bytesWritten), hashBytes);
+
+        return ConvertToHexValue(hashBytes);
+    }
+
+    public string Hash(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        var dateKey = now.Year * 10000 + now.Month * 100 + now.Day;
+
+        var cache = _dailyKeyCache;
+        if (cache.DateKey != dateKey)
+        {
+            cache = DeriveDailyKey(dateKey, now.ToString("yyyyMMdd"));
+        }
+
+        var valueBytes = Encoding.UTF8.GetBytes(value);
+        Span<byte> hashBytes = stackalloc byte[32];
+
+        HMACSHA256.HashData(cache.DerivedKey, valueBytes, hashBytes);
 
         return ConvertToHexValue(hashBytes);
     }
@@ -68,10 +96,13 @@ public sealed class PrivacyPreservingHasher : IPrivacyPreservingHasher
     private DailyKeyCache DeriveDailyKey(int dateKey, string dateString)
     {
         var masterPepper = _keyManager.GetMasterPepper();
-        if (masterPepper.Length != 32) return _dailyKeyCache;
+        if (masterPepper.Length != 32)
+        {
+            return _dailyKeyCache;
+        }
 
         Span<byte> dateBytes = stackalloc byte[8];
-        int dateBytesWritten = Encoding.UTF8.GetBytes(dateString, dateBytes);
+        var dateBytesWritten = Encoding.UTF8.GetBytes(dateString, dateBytes);
 
         var newDerivedKey = new byte[32];
         HMACSHA256.HashData(masterPepper, dateBytes.Slice(0, dateBytesWritten), newDerivedKey);
@@ -113,11 +144,12 @@ public sealed class PrivacyPreservingHasher : IPrivacyPreservingHasher
     private static char GetHexChar(int value) => value < 10 ? (char)('0' + value) : (char)('A' + (value - 10));
 
     private sealed record DailyKeyCache(int DateKey, byte[] DerivedKey);
-    private struct HashState 
-    { 
-        public ulong Part1; 
-        public ulong Part2; 
-        public ulong Part3; 
-        public ulong Part4; 
+
+    private struct HashState
+    {
+        public ulong Part1;
+        public ulong Part2;
+        public ulong Part3;
+        public ulong Part4;
     }
 }
