@@ -73,8 +73,7 @@ internal sealed class DpopValidationMiddleware(
 
         var thumbprint = TryExtractProofThumbprint(dpopProofString, thumbprintComputer);
 
-        if (thumbprint is not null && !string.IsNullOrWhiteSpace(thumbprint) &&
-            l1AntiFloodCache.IsTemporarilyBlacklisted(thumbprint))
+        if (!string.IsNullOrWhiteSpace(thumbprint) && l1AntiFloodCache.IsTemporarilyBlacklisted(thumbprint))
         {
             await EnforceConstantTimeFailureAsync(startTimestamp, context, "l1_anti_flood_blocked");
             return;
@@ -82,7 +81,7 @@ internal sealed class DpopValidationMiddleware(
 
         if (!await ValidateDpopSignatureOnlyAsync(context, dpopProofString, dpopOptions, context.RequestAborted))
         {
-            if (thumbprint is not null)
+            if (!string.IsNullOrWhiteSpace(thumbprint))
             {
                 l1AntiFloodCache.RecordFailedAttempt(thumbprint);
             }
@@ -92,7 +91,7 @@ internal sealed class DpopValidationMiddleware(
         }
 
         string? expectedNonce = null;
-        if (thumbprint is not null)
+        if (!string.IsNullOrWhiteSpace(thumbprint))
         {
             expectedNonce = await nonceStore.GetNonceAsync(thumbprint, context.RequestAborted);
         }
@@ -104,13 +103,13 @@ internal sealed class DpopValidationMiddleware(
 
         if (!result.IsValid)
         {
-            if (thumbprint is not null)
+            if (!string.IsNullOrWhiteSpace(thumbprint))
             {
                 l1AntiFloodCache.RecordFailedAttempt(thumbprint);
             }
 
             if (string.Equals(result.Error, "use_dpop_nonce", StringComparison.Ordinal) &&
-                thumbprint is not null)
+                !string.IsNullOrWhiteSpace(thumbprint))
             {
                 var challengeNonce = GenerateNonce();
                 var stored =
@@ -127,7 +126,7 @@ internal sealed class DpopValidationMiddleware(
         }
 
 
-        if (thumbprint is not null && !string.IsNullOrWhiteSpace(expectedNonce))
+        if (!string.IsNullOrWhiteSpace(thumbprint) && !string.IsNullOrWhiteSpace(expectedNonce))
         {
             var wasConsumed = await nonceStore.ConsumeNonceIfMatchesAsync(
                 thumbprint,
@@ -143,12 +142,12 @@ internal sealed class DpopValidationMiddleware(
             }
         }
 
-        if (thumbprint is not null)
+        if (!string.IsNullOrWhiteSpace(thumbprint))
         {
             context.Items["dpop.jkt"] = thumbprint;
         }
 
-        if (thumbprint is not null && !string.IsNullOrWhiteSpace(result.NewNonce))
+        if (!string.IsNullOrWhiteSpace(thumbprint) && !string.IsNullOrWhiteSpace(result.NewNonce))
         {
             context.Response.OnStarting(static async state =>
             {
