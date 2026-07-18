@@ -48,7 +48,7 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
             .UseNpgsql(_postgresContainer.GetConnectionString())
             .Options;
 
-        using (var context = new SentinelSecurityDbContext(dbOptions))
+        await using (var context = new SentinelSecurityDbContext(dbOptions))
         {
             await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
         }
@@ -68,7 +68,7 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
             _redisOptions,
             NullLogger<RedisSessionBlacklistCache>.Instance);
 
-        _memoryCache = new MemoryCache(new MemoryCacheOptions());
+        _memoryCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 1000 });
 
         _sut = new HybridSessionBlacklistCache(
             _redisCache,
@@ -102,7 +102,7 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
         var sessionId = $"session-prod-{Guid.NewGuid():N}";
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(15);
 
-        _memoryCache.Set($"active_session:{sessionId}", true);
+        _memoryCache.Set($"active_session:{sessionId}", true, new MemoryCacheEntryOptions { Size = 1 });
 
         await _sut.BlacklistSessionAsync(sessionId, expiresAt, TestContext.Current.CancellationToken);
 
@@ -195,5 +195,36 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
 
         var result = await sutWithFallback.IsBlacklistedAsync(sessionId, TestContext.Current.CancellationToken);
         result.Should().BeTrue();
+    }
+
+    [Fact(DisplayName = "❌ Fail-Closed: When Redis write fails during revocation, throw SessionBlacklistUnavailableException")]
+    public async Task Production_WriteThrough_ThrowsException_WhenRedisFails()
+    {
+        // Arrange
+        var sessionId = $"session-failing-redis-{Guid.NewGuid():N}";
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(15);
+
+        var brokenConnectionProviderMock = new Mock<IRedisConnectionProvider>(MockBehavior.Strict);
+        brokenConnectionProviderMock
+            .Setup(p => p.GetConnectionAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect, "Redis connection timed out"));
+
+        var brokenRedisCache = new RedisSessionBlacklistCache(
+            brokenConnectionProviderMock.Object,
+            _redisOptions,
+            NullLogger<RedisSessionBlacklistCache>.Instance);
+
+        var sutWithFailingRedis = new HybridSessionBlacklistCache(
+            brokenRedisCache,
+            NullLogger<HybridSessionBlacklistCache>.Instance,
+            _dbContextFactory,
+            _memoryCache);
+
+        // Act
+        var act = async () => await sutWithFailingRedis.BlacklistSessionAsync(sessionId, expiresAt, TestContext.Current.CancellationToken);
+
+        // Assert
+        await act.Should().ThrowAsync<SessionBlacklistUnavailableException>()
+            .WithMessage("Cache synchronization failed during session revocation. System is fail-closed.");
     }
 }
