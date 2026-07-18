@@ -8,6 +8,7 @@ public sealed class RedisIdempotencyStore(
     ILogger<RedisIdempotencyStore> logger) : IIdempotencyStore
 {
     private const string InProgress = "IN_PROGRESS";
+    private const int MaxAcquisitionAttempts = 3;
 
     public async Task<(IdempotencyAcquireResult State, CachedHttpResponse? Response)> TryAcquireAsync(
         string key,
@@ -19,32 +20,48 @@ public sealed class RedisIdempotencyStore(
             var multiplexer = await provider.GetConnectionAsync(cancellationToken);
             var db = multiplexer.GetDatabase();
 
-            var acquired = await db.StringSetAsync(key, InProgress, inProgressTtl, When.NotExists, CommandFlags.None);
-            if (acquired)
+            for (var attempt = 1; attempt <= MaxAcquisitionAttempts; attempt++)
             {
-                return (IdempotencyAcquireResult.Acquired, null);
+                var acquired =
+                    await db.StringSetAsync(key, InProgress, inProgressTtl, When.NotExists, CommandFlags.None);
+                if (acquired)
+                {
+                    return (IdempotencyAcquireResult.Acquired, null);
+                }
+
+                var state = await db.StringGetAsync(key);
+                if (state.IsNullOrEmpty)
+                {
+                    logger.LogWarning(
+                        "Idempotency lock race detected for key {Key}. Retrying acquisition. Attempt {Attempt}/{Max}",
+                        key, attempt, MaxAcquisitionAttempts);
+                    continue;
+                }
+
+                if (state.ToString() == InProgress)
+                {
+                    return (IdempotencyAcquireResult.InProgress, null);
+                }
+
+                try
+                {
+                    var cached =
+                        JsonSerializer.Deserialize(state.ToString(), RedisJsonContext.Default.CachedHttpResponse);
+                    return (IdempotencyAcquireResult.Completed, cached);
+                }
+                catch (JsonException)
+                {
+                    return (IdempotencyAcquireResult.Completed, null);
+                }
             }
 
-            var state = await db.StringGetAsync(key);
-            if (state.IsNullOrEmpty)
-            {
-                return (IdempotencyAcquireResult.Acquired, null);
-            }
-
-            if (state.ToString() == InProgress)
-            {
-                return (IdempotencyAcquireResult.InProgress, null);
-            }
-
-            try
-            {
-                var cached = JsonSerializer.Deserialize(state.ToString(), RedisJsonContext.Default.CachedHttpResponse);
-                return (IdempotencyAcquireResult.Completed, cached);
-            }
-            catch (JsonException)
-            {
-                return (IdempotencyAcquireResult.Completed, null);
-            }
+            logger.LogCritical(
+                "Idempotency lock acquisition exhausted all attempts due to extreme concurrency for key {Key}.", key);
+            return (IdempotencyAcquireResult.InProgress, null);
+        }
+        catch (IdempotencyStoreUnavailableException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
