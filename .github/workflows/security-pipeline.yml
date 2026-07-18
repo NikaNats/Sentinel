@@ -40,7 +40,7 @@ jobs:
           global-json-file: global.json
 
       - name: Restore strong-name key (Staging/Release Only)
-        if: ${{ env.SENTINEL_SNK_BASE64 != '' }}
+        if: ${{ secrets.SENTINEL_SNK_BASE64 != '' }}
         env:
           SENTINEL_SNK_BASE64: ${{ secrets.SENTINEL_SNK_BASE64 }}
         shell: bash
@@ -59,13 +59,13 @@ jobs:
 
       - name: Gate 3 - NuGet Dependency Audit
         run: |
-          dotnet restore Sentinel.slnx
+          dotnet restore Sentinel.slnx --locked-mode
           dotnet list Sentinel.slnx package --vulnerable --include-transitive
 
       - name: Setup NodeJS (for OpenAPI Audit)
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Gate 4 - Build & Generate OpenAPI Contract (from AdversarialTestHost)
         run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release
@@ -136,14 +136,14 @@ jobs:
           global-json-file: global.json
 
       - name: Restore strong-name key (Staging/Release Only)
-        if: ${{ env.SENTINEL_SNK_BASE64 != '' }}
+        if: ${{ secrets.SENTINEL_SNK_BASE64 != '' }}
         env:
           SENTINEL_SNK_BASE64: ${{ secrets.SENTINEL_SNK_BASE64 }}
         shell: bash
         run: echo "$SENTINEL_SNK_BASE64" | base64 -d > Sentinel.snk
 
       - name: Restore
-        run: dotnet restore ${{ matrix.test-project }}
+        run: dotnet restore ${{ matrix.test-project }} --locked-mode
 
       - name: Test
         run: dotnet test ${{ matrix.test-project }} --configuration Release --no-restore --logger "console;verbosity=detailed" -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
