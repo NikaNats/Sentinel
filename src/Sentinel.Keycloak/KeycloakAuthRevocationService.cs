@@ -39,7 +39,10 @@ public sealed class KeycloakAuthRevocationService(
                 return [];
             }
 
-            var sessions = await response.Content.ReadFromJsonAsync<List<KeycloakSessionResponse>>(ct) ?? [];
+            var sessions = await response.Content.ReadFromJsonAsync(
+                KeycloakJsonContext.Default.ListKeycloakSessionResponse,
+                ct) ?? [];
+
             return sessions
                 .Where(x => !string.IsNullOrWhiteSpace(x.Id))
                 .Select(x => new UserSessionInfo(
@@ -47,7 +50,7 @@ public sealed class KeycloakAuthRevocationService(
                     x.IpAddress,
                     FromUnixMilliseconds(x.Start),
                     FromUnixMilliseconds(x.LastAccess),
-                    x.Clients?.Keys.ToArray() ?? []))
+                    x.Clients.Keys.ToArray()))
                 .ToArray();
         }
 #pragma warning disable CA1031 // Intentional catch-all: admin API failures should fail closed and return empty session list.
@@ -61,9 +64,6 @@ public sealed class KeycloakAuthRevocationService(
 
     public async Task<bool> RevokeSessionAsync(string subjectId, string sessionId, CancellationToken ct)
     {
-        // ✅ FIX: Document the intentional discard to satisfy static analyzers and audit reviews.
-        // The IAuthRevocationService interface requires subjectId for broad compatibility,
-        // but Keycloak's specific admin API endpoint only requires the sessionId to delete it.
 #pragma warning disable IDE0060 // Remove unused parameter
         _ = subjectId;
 #pragma warning restore IDE0060
@@ -252,15 +252,6 @@ public sealed class KeycloakAuthRevocationService(
         }
 
         return DateTimeOffset.FromUnixTimeMilliseconds(unixMilliseconds.Value);
-    }
-
-    private sealed class KeycloakSessionResponse
-    {
-        public string? Id { get; set; }
-        public string? IpAddress { get; set; }
-        public long? Start { get; set; }
-        public long? LastAccess { get; set; }
-        public Dictionary<string, object>? Clients { get; set; }
     }
 
     private sealed record AdminContext(Uri AdminRealmEndpoint, string AdminToken);

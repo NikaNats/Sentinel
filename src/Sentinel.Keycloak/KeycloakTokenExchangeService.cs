@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
+using Sentinel.Application;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 
@@ -53,7 +54,9 @@ public sealed class KeycloakTokenExchangeService(
                 return null;
             }
 
-            return await response.Content.ReadFromJsonAsync<TokenExchangeResult>(ct);
+            return await response.Content.ReadFromJsonAsync(
+                ApplicationJsonContext.Default.TokenExchangeResult,
+                ct);
         }
 #pragma warning disable CA1031 // Intentional catch-all: token exchange failures return null to keep auth endpoint fail-closed.
         catch (Exception ex)
