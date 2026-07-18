@@ -344,7 +344,13 @@ internal sealed class DpopValidationMiddleware(
             }
             catch (OperationCanceledException)
             {
+                return;
             }
+        }
+
+        if (context.RequestAborted.IsCancellationRequested)
+        {
+            return;
         }
 
         var problem = new ProblemDetails
@@ -358,8 +364,17 @@ internal sealed class DpopValidationMiddleware(
             Instance = context.Request.Path
         };
 
-        var json = JsonSerializer.Serialize(problem, AspNetCoreJsonContext.Default.ProblemDetails);
-        await context.Response.WriteAsync(json, context.RequestAborted);
+        try
+        {
+            var json = JsonSerializer.Serialize(problem, AspNetCoreJsonContext.Default.ProblemDetails);
+            await context.Response.WriteAsync(json, context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (IOException)
+        {
+        }
     }
 
     private static string? TryExtractProofThumbprint(string dpopHeader, IDpopThumbprintComputer thumbprintComputer)
