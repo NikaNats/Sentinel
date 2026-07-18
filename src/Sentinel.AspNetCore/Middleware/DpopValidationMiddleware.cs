@@ -291,8 +291,7 @@ internal sealed class DpopValidationMiddleware(
                 RequireSignedTokens = true,
                 ValidAlgorithms = [algorithm],
                 // nosemgrep: csharp.lang.security.ad.jwt-tokenvalidationparameters-no-expiry-validation.jwt-tokenvalidationparameters-no-expiry-validation
-                ValidateLifetime =
-                    false, // DPoP proofs do not contain 'exp' claims; lifetime is custom-validated against 'iat' per RFC 9449 in DpopProofValidator
+                ValidateLifetime = false, // DPoP proofs do not contain 'exp' claims; lifetime is custom-validated against 'iat' per RFC 9449 in DpopProofValidator
                 // nosemgrep: csharp.lang.security.ad.jwt-tokenvalidationparameters-no-expiry-validation.jwt-tokenvalidationparameters-no-expiry-validation
                 RequireExpirationTime = false
             };
