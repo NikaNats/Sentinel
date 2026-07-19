@@ -50,8 +50,6 @@ jobs:
       - name: Gate 1 - Secret Scanning (TruffleHog)
         uses: trufflesecurity/trufflehog@v3.95.9
         with:
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
           extra_args: --only-verified
 
       - name: Gate 2 - SAST (Semgrep)
