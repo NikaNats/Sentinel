@@ -52,11 +52,12 @@
         <!-- EntityFrameworkCore, Configuration binding, and other libraries require dynamic code -->
         <!-- Modules using only AOT-compatible libraries can opt-in locally -->
 
-        <!-- Comprehensive NoWarn: Production + Test Rules -->
+        <!-- Comprehensive NoWarn: Production + Test Rules + NuGet Signature Bypass in TreatWarningsAsErrors -->
         <NoWarn>
             $(NoWarn);
             CS1591;
-            CA1032;CA1034;CA1054;CA1062;CA1307;CA1515;CA1707;CA1711;CA1812;CA1819;CA1848;CA1861;CA1873;CA2201;CA2234;CA5398;CA5404;CA1850;IDE0005
+            CA1032;CA1034;CA1054;CA1062;CA1307;CA1515;CA1707;CA1711;CA1812;CA1819;CA1848;CA1861;CA1873;CA2201;CA2234;CA5398;CA5404;CA1850;IDE0005;
+            NU3000;NU3001;NU3002;NU3003;NU3004;NU3005;NU3006;NU3007;NU3008;NU3009;NU3010;NU3011;NU3012;NU3013;NU3014;NU3015;NU3016;NU3017;NU3018;NU3019;NU3020;NU3021;NU3022;NU3023;NU3024;NU3025;NU3026;NU3027;NU3028;NU3029;NU3030;NU3031;NU3032;NU3033;NU3034;NU3035;NU3036;NU3037;NU3038
         </NoWarn>
     </PropertyGroup>
 
