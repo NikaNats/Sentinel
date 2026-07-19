@@ -39,6 +39,8 @@ jobs:
         with:
           global-json-file: global.json
           cache: true
+          cache-dependency-path: 'Directory.Packages.props'
+
 
       - name: Restore strong-name key (Staging/Release Only)
         if: ${{ env.SENTINEL_SNK_BASE64 != '' }}
@@ -148,6 +150,7 @@ jobs:
         with:
           global-json-file: global.json
           cache: true
+          cache-dependency-path: 'Directory.Packages.props'
 
       - name: Restore strong-name key (Staging/Release Only)
         if: ${{ env.SENTINEL_SNK_BASE64 != '' }}
@@ -174,6 +177,7 @@ jobs:
         with:
           global-json-file: global.json
           cache: true
+          cache-dependency-path: 'Directory.Packages.props'
 
       - name: Setup Python
         uses: actions/setup-python@v5
