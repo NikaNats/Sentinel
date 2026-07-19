@@ -6,8 +6,6 @@ on:
   pull_request:
     branches: ["main"]
 
-# ARCHITECT'S NOTE: Proactively opting into Node 24 runtime
-# to meet the June 2026 compliance deadline and address NIST 800-53 SI-2 requirements.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   SkipGetBuildVersion: true
@@ -26,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -37,19 +35,22 @@ jobs:
           git fetch --prune --unshallow --tags || true
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          cache: true
 
       - name: Restore strong-name key (Staging/Release Only)
         if: ${{ env.SENTINEL_SNK_BASE64 != '' }}
         shell: bash
         run: echo "$SENTINEL_SNK_BASE64" | base64 -d > Sentinel.snk
 
-      - name: Gate 1 - Secret Scanning
-        uses: trufflesecurity/trufflehog@main
+      # Gate 1 - TruffleHog (სასურველია კონკრეტული ვერსიის პინირება, მაგ. @v3.95.9)
+      - name: Gate 1 - Secret Scanning (TruffleHog)
+        uses: trufflesecurity/trufflehog@v3.95.9
         with:
-          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
           extra_args: --only-verified
 
       - name: Gate 2 - SAST (Semgrep)
@@ -67,7 +68,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: Gate 4 - Build & Generate OpenAPI Contract (from AdversarialTestHost)
+      - name: Gate 4 - Build & Generate OpenAPI Contract
         run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release
 
       - name: Fetch OpenAPI Schema from Running Host
@@ -93,6 +94,7 @@ jobs:
           fi
           
           echo "Fetching compiled OpenAPI schema..."
+          mkdir -p docs
           curl -s http://localhost:5000/openapi/v1.json -o docs/generated_openapi.json
           
           echo "Gracefully terminating AdversarialTestHost (PID: $HOST_PID)..."
@@ -103,6 +105,18 @@ jobs:
         run: |
           chmod +x tests/infrastructure-openapi-audit.sh
           ./tests/infrastructure-openapi-audit.sh
+
+      - name: Gate 6 - Generate SBOM
+        uses: anchore/sbom-action@v0.17.9
+        with:
+          format: 'spdx-json'
+          output-file: 'docs/sentinel-sbom.spdx.json'
+
+      - name: Gate 7 - Upload SBOM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-sbom
+          path: docs/sentinel-sbom.spdx.json
 
   test-suites:
     name: Test (${{ matrix.test-project }})
@@ -121,20 +135,13 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Ensure Full Git History For Versioning
-        run: |
-          git fetch origin main --unshallow || true
-          git fetch --prune --unshallow --tags || true
+        uses: actions/checkout@v7
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          cache: true
 
       - name: Restore strong-name key (Staging/Release Only)
         if: ${{ env.SENTINEL_SNK_BASE64 != '' }}
@@ -154,20 +161,13 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Ensure Full Git History For Versioning
-        run: |
-          git fetch origin main --unshallow || true
-          git fetch --prune --unshallow --tags || true
+        uses: actions/checkout@v7
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          cache: true
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -180,7 +180,7 @@ jobs:
       - name: Build Test Host
         run: dotnet build tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --configuration Release
 
-      - name: Start Test Host in Background (HTTP only, redirect disabled)
+      - name: Start Test Host in Background
         run: |
           nohup dotnet run --project tests/Sentinel.Tests.Load/AdversarialTestHost.csproj -c Release -p:SkipGetBuildVersion=true -p:NBGV_Disable=true --no-build --urls http://localhost:5000 > /dev/null 2>&1 &
           echo "Waiting for AdversarialTestHost to bind to http://localhost:5000..."
@@ -196,8 +196,7 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
         run: |
-          chcp 65001 2>/dev/null || true
-          export PYTHONIOENCODING=utf-8
+          # გამოიყენება რეპოზიტორიაში არსებული სტატიკური OpenAPI ფაილი
           schemathesis run docs/OPENAPI_3_1.yaml \
             --url http://localhost:5000 \
             --checks not_a_server_error \
