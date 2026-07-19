@@ -33,9 +33,6 @@ obj/
 
 tests/Sentinel.FuzzTests/corpus/crashes/
 
-# Nuget personal repository
-nuget.config
-
 # NuGet packages
 *.nupkg
 *.snupkg
