@@ -141,8 +141,8 @@ Sentinel/
 
 | Component | Version | Usage |
 |---|---|---|
-| .NET SDK | 11.0 preview | Build and runtime |
-| ASP.NET Core | 11.0 preview packages | API framework and middleware |
+| .NET SDK | 10.0 | Build and runtime |
+| ASP.NET Core | 10.0 packages | API framework and middleware |
 | Keycloak | 26.1 image in compose | Authorization server and realm management |
 | Redis | 7.4 alpine | Replay cache backing store |
 | OpenTelemetry | 1.13 to 1.14 packages | Tracing, metrics, exporter integration |
@@ -151,7 +151,7 @@ Sentinel/
 ## Prerequisites
 
 - Windows, Linux, or macOS development environment
-- .NET 11 SDK preview installed
+- .NET 10 SDK installed
 - Docker Desktop or Docker Engine
 - Optional: Trivy for image vulnerability scanning
 
@@ -505,7 +505,7 @@ All changes should:
 
 ## Known Considerations
 
-- The solution currently targets .NET 11 preview packages, which may introduce breaking changes before GA.
+- The solution currently targets .NET 10 packages, which may introduce breaking changes before GA.
 - HTTPS metadata validation is disabled in local development configuration and must be enforced in production.
 - Some OAuth orchestration steps (e.g., PAR and PKCE client choreography) are primarily handled by Keycloak and external clients rather than API endpoints in this service.
 - Redis is part of the security boundary; the service fails closed (returns 503) if Redis becomes unavailable, blocking all protected resource access until Redis recovers.
