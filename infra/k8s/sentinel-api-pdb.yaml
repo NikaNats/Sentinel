@@ -1,0 +1,15 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sentinel-api-pdb
+  namespace: sentinel-prod
+  labels:
+    app.kubernetes.io/name: sentinel-api
+    app.kubernetes.io/part-of: sentinel
+    app.kubernetes.io/component: identity-gateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sentinel-api
+      app.kubernetes.io/part-of: sentinel
