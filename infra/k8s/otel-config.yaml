@@ -73,9 +73,6 @@ data:
           cert_file: /var/run/sentinel/siem/tls.crt
           key_file: /var/run/sentinel/siem/tls.key
 
-      debug:
-        verbosity: basic
-
     service:
       telemetry:
         logs:
