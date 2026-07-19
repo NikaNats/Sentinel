@@ -45,7 +45,6 @@ jobs:
         shell: bash
         run: echo "$SENTINEL_SNK_BASE64" | base64 -d > Sentinel.snk
 
-      # Gate 1 - TruffleHog (სასურველია კონკრეტული ვერსიის პინირება, მაგ. @v3.95.9)
       - name: Gate 1 - Secret Scanning (TruffleHog)
         uses: trufflesecurity/trufflehog@v3.95.9
         with:
@@ -117,6 +116,13 @@ jobs:
         with:
           name: sentinel-sbom
           path: docs/sentinel-sbom.spdx.json
+
+      - name: Gate 10 - IaC Security Scan (Checkov)
+        uses: bridgecrewio/checkov-action@master
+        with:
+          framework: kubernetes,dockerfile
+          output_format: cli
+          soft_fail: false
 
   test-suites:
     name: Test (${{ matrix.test-project }})
@@ -196,7 +202,6 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
         run: |
-          # გამოიყენება რეპოზიტორიაში არსებული სტატიკური OpenAPI ფაილი
           schemathesis run docs/OPENAPI_3_1.yaml \
             --url http://localhost:5000 \
             --checks not_a_server_error \
