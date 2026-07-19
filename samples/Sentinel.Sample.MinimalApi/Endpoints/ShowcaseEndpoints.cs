@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
 using Sentinel.Application.Auth;
 using Sentinel.Application.Auth.Rar;
 using Sentinel.SdJwt;
@@ -66,7 +67,7 @@ internal static class ShowcaseEndpoints
 
     private static async Task<IResult> GetProfileAsync(
         HttpContext context,
-        SdJwtPresenter presenter,
+        [FromServices] SdJwtPresenter presenter,
         CancellationToken cancellationToken)
     {
         var authHeader = context.Request.Headers.Authorization.ToString();

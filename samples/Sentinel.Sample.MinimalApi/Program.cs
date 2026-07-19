@@ -12,6 +12,8 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 using Sentinel.Application.Auth.Interfaces;
@@ -41,7 +43,7 @@ var localCaPath = builder.Configuration["Security:TrustedRootCaPath"];
 
 if (isDevelopment)
 {
-    builder.WebHost.ConfigureKestrel(options =>
+    builder.Services.Configure<KestrelServerOptions>(options =>
     {
         options.ConfigureHttpsDefaults(httpsOptions =>
         {
@@ -54,12 +56,9 @@ builder.WebHost.ConfigureKestrel(options =>
 {
     if (isDevelopment)
     {
-        options.ConfigureHttpsDefaults(_ =>
+        options.ConfigureHttpsDefaults(httpsConnectionAdapterOptions =>
         {
-            options.ConfigureHttpsDefaults(httpsConnectionAdapterOptions =>
-            {
-                httpsConnectionAdapterOptions.ClientCertificateMode = ClientCertificateMode.DelayCertificate;
-            });
+            httpsConnectionAdapterOptions.ClientCertificateMode = ClientCertificateMode.DelayCertificate;
         });
     }
 
@@ -361,19 +360,34 @@ _ = builder.Services.AddHttpClient(typeof(KeycloakConfigurationManager).FullName
 _ = builder.Services.AddHttpClient(typeof(ICaptchaService).FullName!)
     .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
 
-builder.Services.AddSingleton(
-    Options.Create(new SdJwtVerificationOptions
-    {
-        RequireKeyBindingNonce = false,
-        KeyBindingMaxAgeSeconds = 300,
-        AllowedClockSkewSeconds = 60,
-        AllowedDisclosureHashAlgorithms = ["sha-256"]
-    }));
-builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<SdJwtVerificationOptions>>().Value);
+builder.Services.AddSingleton(Options.Create(new SdJwtVerificationOptions
+{
+    RequireKeyBindingNonce = false,
+    KeyBindingMaxAgeSeconds = 300,
+    AllowedClockSkewSeconds = 60,
+    AllowedDisclosureHashAlgorithms = ["sha-256"]
+}));
+builder.Services.AddSingleton<SdJwtVerificationOptions>(sp =>
+    sp.GetRequiredService<IOptions<SdJwtVerificationOptions>>().Value);
 
 builder.Services.AddTransient<SdJwtPresenter>();
-builder.Services.AddTransient<ISdJwtTokenValidator, SampleSdJwtTokenValidator>();
-builder.Services.AddSingleton<ISsfTokenValidator, BypassSsfTokenValidator>();
+
+builder.Services.AddTransient<ISdJwtTokenValidator>(sp =>
+    new SampleSdJwtTokenValidator(
+        sp.GetRequiredService<IConfiguration>(),
+        sp.GetRequiredService<IOptions<SdJwtVerificationOptions>>(),
+        sp.GetRequiredService<IWebHostEnvironment>()
+    ));
+
+builder.Services.AddSingleton<ISsfTokenValidator>(sp =>
+    new SsfTokenValidator(
+        sp.GetRequiredService<IConfiguration>(),
+        sp.GetRequiredService<IWebHostEnvironment>(),
+        sp.GetService<
+            IConfigurationManager<OpenIdConnectConfiguration>>() // GetService უსაფრთხოდ დააბრუნებს null-ს თუ არ არსებობს
+    ));
+
+
 builder.Services
     .AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, SecurityAuthRevocationServiceAdapter>();
 builder.Services.AddScoped<Sentinel.Application.Auth.Interfaces.ISsfEventProcessor, SecuritySsfEventProcessorAdapter>();
@@ -413,6 +427,11 @@ else
     {
         errorApp.Run(async context =>
         {
+            if (context.Response.HasStarted)
+            {
+                return;
+            }
+
             context.Response.StatusCode = StatusCodes.Status500InternalServerError;
             context.Response.ContentType = "application/problem+json; charset=utf-8";
 
@@ -437,6 +456,7 @@ if (allowedCorsOrigins.Length > 0)
 {
     app.UseCors();
 }
+
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseSentinelSecurityPipeline();
@@ -455,10 +475,13 @@ const string documentsPrefix = "v1/documents";
 const string financePrefix = "api/v1/finance";
 const string showcasePrefix = "v1";
 
-app.MapGet("/", () => TypedResults.Ok(
-    new SampleInfoResponse("Sentinel.Sample.MinimalApi", "/docs",
+app.MapGet("/", () => TypedResults.Ok(new SampleInfoResponse(
+        "Sentinel.Sample.MinimalApi",
+        "/docs",
         new EndpointMap("/healthz", $"/{securityPrefix}", $"/{documentsPrefix}", $"/{financePrefix}",
-            $"/{showcasePrefix}")))).AllowAnonymous();
+            $"/{showcasePrefix}"))))
+    .AllowAnonymous();
+
 app.MapGet("/healthz", () => TypedResults.Ok(new HealthResponse("ok", DateTimeOffset.UtcNow))).AllowAnonymous();
 
 app.MapSentinelSecurity();
@@ -475,16 +498,14 @@ internal sealed record EndpointMap(string Health, string Security, string Docume
 internal sealed record HealthResponse(string Status, DateTimeOffset Utc);
 
 internal sealed class SecurityAuthRevocationServiceAdapter(
-    IAuthRevocationService inner)
-    : Sentinel.Security.Abstractions.Security.IAuthRevocationService
+    IAuthRevocationService inner) : Sentinel.Security.Abstractions.Security.IAuthRevocationService
 {
     public Task RevokeAllSessionsAsync(string subject, CancellationToken cancellationToken = default) =>
         inner.RevokeAllSessionsAsync(subject, cancellationToken);
 }
 
 internal sealed class SecuritySsfEventProcessorAdapter(
-    ISsfEventProcessor inner)
-    : Sentinel.Application.Auth.Interfaces.ISsfEventProcessor
+    ISsfEventProcessor inner) : Sentinel.Application.Auth.Interfaces.ISsfEventProcessor
 {
     public async Task<SsfProcessResult> ProcessAsync(string setToken, CancellationToken ct)
     {
@@ -492,42 +513,5 @@ internal sealed class SecuritySsfEventProcessorAdapter(
         return result.IsSuccess
             ? SsfProcessResult.Success()
             : SsfProcessResult.Invalid(result.ErrorMessage ?? "SSF processing failed");
-    }
-}
-
-internal sealed class BypassSsfTokenValidator : ISsfTokenValidator
-{
-    public Task<SsfValidationResult> ValidateAsync(string setToken, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var jwt = new JsonWebToken(setToken);
-            var eventsStr = jwt.Claims.FirstOrDefault(c => c.Type == "events")?.Value;
-            var eventsElement = JsonDocument.Parse(eventsStr ?? "{}").RootElement;
-
-            var events = new Dictionary<string, JsonElement>();
-            foreach (var prop in eventsElement.EnumerateObject())
-            {
-                events[prop.Name] = prop.Value.Clone();
-            }
-
-            var token = new SsfEventToken(
-                jwt.Issuer,
-                DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                Guid.NewGuid().ToString("N"),
-                "sentinel-api",
-                jwt.Subject,
-                events);
-
-            return Task.FromResult(SsfValidationResult.Success(token));
-        }
-        catch (ArgumentException ex)
-        {
-            return Task.FromResult(SsfValidationResult.Fail(ex.Message));
-        }
-        catch (JsonException ex)
-        {
-            return Task.FromResult(SsfValidationResult.Fail(ex.Message));
-        }
     }
 }
