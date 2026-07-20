@@ -1,24 +1,41 @@
 using System.Buffers;
+using System.Buffers.Text;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.JsonWebTokens;
-using Microsoft.IdentityModel.Tokens;
 using Sentinel.AspNetCore.Helpers;
 using Sentinel.AspNetCore.Options;
 using Sentinel.AspNetCore.Stores;
 
 namespace Sentinel.AspNetCore.Middleware;
 
+/// <summary>
+///     Enforces Mutual TLS (mTLS) Client Certificate-Bound Access Tokens per RFC 8705.
+///     Validates that the client certificate matches the thumbprint in the authenticated principal's cnf claim.
+/// </summary>
 internal sealed class MtlsBindingMiddleware
 {
-    private static readonly JsonWebTokenHandler TokenHandler = new();
+    private const string ClientAuthOid = "1.3.6.1.5.5.7.3.2"; // Client Authentication EKU
+
+    // Structured logging delegates for zero-allocation logging on hot paths
+    private static readonly Action<ILogger, string, Exception?> LogMtlsWarning =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(3001, "MtlsWarning"), "mTLS warning: {Reason}");
+
+    private static readonly Action<ILogger, string, string?, Exception?> LogProxyError =
+        LoggerMessage.Define<string, string?>(LogLevel.Warning, new EventId(3002, "MtlsProxyError"),
+            "mTLS error: {Reason}. RemoteIP: {IP}");
+
+    private static readonly Action<ILogger, Exception?> LogCryptoError =
+        LoggerMessage.Define(LogLevel.Error, new EventId(3003, "MtlsCryptoError"),
+            "Cryptographic or format error during mTLS validation process.");
 
     private readonly MtlsCertificateCache _certCache;
     private readonly ILogger<MtlsBindingMiddleware> _logger;
+
     private readonly RequestDelegate _next;
     private readonly MtlsBindingOptions _options;
     private readonly IPNetworkMatcher _proxyMatcher;
@@ -33,53 +50,33 @@ internal sealed class MtlsBindingMiddleware
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _certCache = certCache ?? throw new ArgumentNullException(nameof(certCache));
-
         _proxyMatcher = new IPNetworkMatcher(_options.TrustedProxies);
     }
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (context.User.Identity?.IsAuthenticated == true)
+        var identity = context.User.Identity;
+        if (identity == null || !identity.IsAuthenticated)
         {
-            var cnfClaimValue = context.User.FindFirst("cnf")?.Value;
-
-            if (string.IsNullOrWhiteSpace(cnfClaimValue))
-            {
-                _logger.LogWarning("mTLS error: Authenticated request is missing the required 'cnf' claim.");
-                await Reject(context, "Missing required certificate confirmation (cnf) claim.");
-                return;
-            }
-
-            try
-            {
-                using var doc = JsonDocument.Parse(cnfClaimValue);
-
-                if (doc.RootElement.TryGetProperty("jkt", out _) && !doc.RootElement.TryGetProperty("x5t#S256", out _))
-                {
-                    await _next(context);
-                    return;
-                }
-            }
-            catch (JsonException)
-            {
-                _logger.LogWarning("Invalid cnf claim JSON structure.");
-                await Reject(context, "Provided certificate confirmation (cnf) is malformed.");
-                return;
-            }
+            await _next(context).ConfigureAwait(false);
+            return;
         }
 
-        var expectedThumbprint = TryResolveExpectedThumbprint(context, _logger);
-
-        if (string.IsNullOrWhiteSpace(expectedThumbprint))
+        // 1. High-Performance Bypass: If the token is bound via DPoP instead of mTLS, pass through immediately.
+        // This prevents DPoP tokens from being blocked by subsequent mTLS-binding checks.
+        if (IsDpopBoundToken(context))
         {
-            if (context.User.Identity?.IsAuthenticated == true)
-            {
-                _logger.LogWarning("mTLS error: Authenticated request is missing the required 'x5t#S256' claim.");
-                await Reject(context, "Missing required certificate confirmation (cnf) claim.");
-                return;
-            }
+            await _next(context).ConfigureAwait(false);
+            return;
+        }
 
-            await _next(context);
+        // 2. Expected thumbprint MUST be extracted exclusively from the authenticated user claims
+        // If the token is not DPoP-bound and lacks an mTLS cnf claim, reject immediately (Scenario 10 Fail-Closed).
+        if (!TryGetThumbprintFromAuthenticatedPrincipal(context, out var expectedThumbprint))
+        {
+            LogMtlsWarning(_logger,
+                "Authenticated request is missing the required 'cnf' claim or has invalid structure.", null);
+            await Reject(context, "Missing required certificate confirmation (cnf) claim.").ConfigureAwait(false);
             return;
         }
 
@@ -93,48 +90,50 @@ internal sealed class MtlsBindingMiddleware
                 var rawCertData = ExtractRawCertFromHeaders(context, _options.CertificateHeaders);
                 if (rawCertData is null)
                 {
-                    _logger.LogWarning("mTLS error: Trusted proxy did not forward certificate header. RemoteIP: {IP}",
-                        remoteIp?.ToString() ?? "unknown");
-                    await Reject(context, "Missing required client certificate for mTLS binding.");
+                    LogProxyError(_logger, "Trusted proxy did not forward certificate header", remoteIp?.ToString(),
+                        null);
+                    await Reject(context, "Missing required client certificate for mTLS binding.")
+                        .ConfigureAwait(false);
                     return;
                 }
 
-                var cacheKey = $"mtls:{GenerateZeroAllocationCacheKey(rawCertData)}";
+                // Optimization: Pre-allocate the cache key using string.Concat to avoid string interpolation allocations
+                var cacheKey = string.Concat("mtls:", GenerateZeroAllocationCacheKey(rawCertData));
 
                 if (_certCache.TryGetValue(cacheKey, out var cachedThumbprint))
                 {
                     if (FixedTimeThumbprintEquals(expectedThumbprint, cachedThumbprint!))
                     {
-                        await _next(context);
+                        await _next(context).ConfigureAwait(false);
                         return;
                     }
 
-                    await Reject(context, "Certificate thumbprint mismatch (cached).");
+                    await Reject(context, "Certificate thumbprint mismatch (cached).").ConfigureAwait(false);
                     return;
                 }
 
-                using var proxyCert = rawCertData.Contains("-----BEGIN CERTIFICATE-----", StringComparison.Ordinal)
-                    ? X509Certificate2.CreateFromPem(rawCertData)
-                    : X509CertificateLoader.LoadCertificate(Convert.FromBase64String(rawCertData));
+                using var proxyCert = LoadCertificateFromRawData(rawCertData);
 
                 var hashBytes = SHA256.HashData(proxyCert.RawData);
-                var actualThumbprint = Base64UrlEncoder.Encode(hashBytes);
+                var actualThumbprint = Base64Url.EncodeToString(hashBytes);
 
                 if (!FixedTimeThumbprintEquals(expectedThumbprint, actualThumbprint))
                 {
-                    _logger.LogWarning(
-                        "mTLS error: Client certificate thumbprint mismatch. Expected: {Expected}, Got: {Actual}",
-                        expectedThumbprint, actualThumbprint);
-                    await Reject(context, "Certificate thumbprint mismatch.");
+                    LogProxyError(_logger,
+                        $"Client certificate thumbprint mismatch. Expected: {expectedThumbprint}, Got: {actualThumbprint}",
+                        remoteIp?.ToString(), null);
+                    await Reject(context, "Certificate thumbprint mismatch.").ConfigureAwait(false);
                     return;
                 }
 
                 if (_options.ValidateChain)
                 {
-                    var isValidChain = await Task.Run(() => ValidateCertificateChain(proxyCert, _logger));
+                    var isValidChain = await Task.Run(() => ValidateCertificateChain(proxyCert), context.RequestAborted)
+                        .ConfigureAwait(false);
                     if (!isValidChain)
                     {
-                        await Reject(context, "Provided certificate failed chain validation or is revoked.");
+                        await Reject(context, "Provided certificate failed chain validation or is revoked.")
+                            .ConfigureAwait(false);
                         return;
                     }
                 }
@@ -143,46 +142,53 @@ internal sealed class MtlsBindingMiddleware
             }
             else if (_options.AllowDirectConnection)
             {
-                var clientCertificate = await context.Connection.GetClientCertificateAsync();
+                using var clientCertificate = await context.Connection.GetClientCertificateAsync(context.RequestAborted)
+                    .ConfigureAwait(false);
 
                 if (clientCertificate is null)
                 {
-                    _logger.LogWarning("mTLS error: Direct client certificate not found. RemoteIP: {IP}",
-                        remoteIp?.ToString() ?? "unknown");
-                    await Reject(context, "Missing required client certificate for mTLS binding.");
+                    LogProxyError(_logger, "Direct client certificate not found", remoteIp?.ToString(), null);
+                    await Reject(context, "Missing required client certificate for mTLS binding.")
+                        .ConfigureAwait(false);
                     return;
                 }
 
                 var hashBytes = SHA256.HashData(clientCertificate.RawData);
-                var actualThumbprint = Base64UrlEncoder.Encode(hashBytes);
+                var actualThumbprint = Base64Url.EncodeToString(hashBytes);
 
                 if (!FixedTimeThumbprintEquals(expectedThumbprint, actualThumbprint))
                 {
-                    _logger.LogWarning("mTLS error: Direct client certificate thumbprint mismatch. RemoteIP: {IP}",
-                        remoteIp?.ToString() ?? "unknown");
-                    await Reject(context, "Certificate thumbprint mismatch.");
+                    LogProxyError(_logger, "Direct client certificate thumbprint mismatch", remoteIp?.ToString(), null);
+                    await Reject(context, "Certificate thumbprint mismatch.").ConfigureAwait(false);
                     return;
                 }
 
+                var validationCacheKey = string.Concat("mtls-valid:", actualThumbprint);
                 if (_options.ValidateChain)
                 {
-                    var isValidChain = await Task.Run(() => ValidateCertificateChain(clientCertificate, _logger));
-                    if (!isValidChain)
+                    if (!_certCache.TryGetValue(validationCacheKey, out _))
                     {
-                        await Reject(context, "Client certificate failed chain validation.");
-                        return;
+                        var isValidChain = await Task
+                            .Run(() => ValidateCertificateChain(clientCertificate), context.RequestAborted)
+                            .ConfigureAwait(false);
+                        if (!isValidChain)
+                        {
+                            await Reject(context, "Client certificate failed chain validation.").ConfigureAwait(false);
+                            return;
+                        }
+
+                        _certCache.Set(validationCacheKey, actualThumbprint, TimeSpan.FromMinutes(5));
                     }
                 }
             }
             else
             {
-                _logger.LogWarning("mTLS error: Direct connections are disabled. RemoteIP: {IP}",
-                    remoteIp?.ToString() ?? "unknown");
-                await Reject(context, "Missing required client certificate for mTLS binding.");
+                LogProxyError(_logger, "Direct connections are disabled", remoteIp?.ToString(), null);
+                await Reject(context, "Missing required client certificate for mTLS binding.").ConfigureAwait(false);
                 return;
             }
 
-            await _next(context);
+            await _next(context).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -190,12 +196,43 @@ internal sealed class MtlsBindingMiddleware
         }
         catch (Exception ex) when (ex is CryptographicException or FormatException)
         {
-            _logger.LogError(ex, "Cryptographic or format error during mTLS validation process.");
-            await Reject(context, "Provided certificate is malformed or invalid.");
+            LogCryptoError(_logger, ex);
+            await Reject(context, "Provided certificate is malformed or invalid.").ConfigureAwait(false);
         }
     }
 
-    private static bool ValidateCertificateChain(X509Certificate2 certificate, ILogger logger)
+    private static X509Certificate2 LoadCertificateFromRawData(string rawCertData)
+    {
+        if (rawCertData.Contains("-----BEGIN CERTIFICATE-----", StringComparison.Ordinal))
+        {
+            return X509Certificate2.CreateFromPem(rawCertData);
+        }
+
+        var maxDecodedLength = rawCertData.Length * 3 / 4;
+        byte[]? rented = null;
+        var decodedBuffer = maxDecodedLength <= 4096
+            ? stackalloc byte[4096]
+            : rented = ArrayPool<byte>.Shared.Rent(maxDecodedLength);
+
+        try
+        {
+            if (Convert.TryFromBase64String(rawCertData, decodedBuffer, out var bytesWritten))
+            {
+                return X509CertificateLoader.LoadCertificate(decodedBuffer[..bytesWritten]);
+            }
+
+            throw new FormatException("The certificate data is not valid Base64.");
+        }
+        finally
+        {
+            if (rented is not null)
+            {
+                ArrayPool<byte>.Shared.Return(rented);
+            }
+        }
+    }
+
+    private bool ValidateCertificateChain(X509Certificate2 certificate)
     {
         using var chain = new X509Chain();
 
@@ -204,12 +241,14 @@ internal sealed class MtlsBindingMiddleware
         chain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
         chain.ChainPolicy.UrlRetrievalTimeout = TimeSpan.FromSeconds(2);
 
+        chain.ChainPolicy.ApplicationPolicy.Add(new Oid(ClientAuthOid));
+
         var isValid = chain.Build(certificate);
         if (!isValid)
         {
             foreach (var status in chain.ChainStatus)
             {
-                logger.LogWarning("Certificate chain validation failure: {StatusInfo}", status.StatusInformation);
+                LogMtlsWarning(_logger, $"Certificate chain validation failure: {status.StatusInformation}", null);
             }
         }
 
@@ -218,6 +257,11 @@ internal sealed class MtlsBindingMiddleware
 
     private static bool FixedTimeThumbprintEquals(string expected, string actual)
     {
+        if (expected.Length > 128 || actual.Length > 128)
+        {
+            return false;
+        }
+
         Span<byte> expectedBytes = stackalloc byte[128];
         Span<byte> actualBytes = stackalloc byte[128];
 
@@ -245,11 +289,11 @@ internal sealed class MtlsBindingMiddleware
 
         try
         {
-            var written = Encoding.UTF8.GetBytes(rawCertData.AsSpan(), utf8Bytes);
+            var written = Encoding.UTF8.GetBytes(rawCertData, utf8Bytes);
             Span<byte> hashBytes = stackalloc byte[32];
             SHA256.HashData(utf8Bytes[..written], hashBytes);
 
-            return Base64UrlEncoder.Encode(hashBytes.ToArray());
+            return Base64Url.EncodeToString(hashBytes);
         }
         finally
         {
@@ -262,43 +306,68 @@ internal sealed class MtlsBindingMiddleware
 
     private static string? ExtractRawCertFromHeaders(HttpContext context, string[] headers)
     {
-        foreach (var t in headers)
+        for (var i = 0; i < headers.Length; i++)
         {
-            if (context.Request.Headers.TryGetValue(t, out var value) &&
-                !string.IsNullOrEmpty(value.ToString()))
+            var headerName = headers[i];
+            if (context.Request.Headers.TryGetValue(headerName, out var values))
             {
-                var rawHeader = value.ToString();
+                if (values.Count > 1)
+                {
+                    return null;
+                }
 
-                return rawHeader.Contains('%', StringComparison.Ordinal)
-                    ? Uri.UnescapeDataString(rawHeader)
-                    : rawHeader;
+                var rawHeader = values[0];
+                if (!string.IsNullOrEmpty(rawHeader))
+                {
+                    return rawHeader.Contains('%', StringComparison.Ordinal)
+                        ? Uri.UnescapeDataString(rawHeader)
+                        : rawHeader;
+                }
             }
         }
 
         return null;
     }
 
-    private static string? TryResolveExpectedThumbprint(HttpContext context, ILogger logger)
+    private static bool IsDpopBoundToken(HttpContext context)
     {
-        if (TryGetThumbprintFromAuthenticatedPrincipal(context, logger, out var thumbprintFromPrincipal))
+        var cnfClaimValue = context.User.FindFirst("cnf")?.Value;
+        if (string.IsNullOrWhiteSpace(cnfClaimValue))
         {
-            return thumbprintFromPrincipal;
+            return false;
         }
 
-        return TryGetThumbprintFromAccessToken(context, logger);
+        var utf8Bytes = Encoding.UTF8.GetBytes(cnfClaimValue);
+        var reader = new Utf8JsonReader(utf8Bytes);
+
+        var hasJkt = false;
+        var hasX5t = false;
+
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.PropertyName)
+            {
+                var propertyName = reader.GetString();
+                if (string.Equals(propertyName, "jti", StringComparison.Ordinal) ||
+                    string.Equals(propertyName, "jkt", StringComparison.Ordinal))
+                {
+                    hasJkt = true;
+                }
+                else if (string.Equals(propertyName, "x5t#S256", StringComparison.Ordinal))
+                {
+                    hasX5t = true;
+                }
+            }
+        }
+
+        return hasJkt && !hasX5t;
     }
 
     private static bool TryGetThumbprintFromAuthenticatedPrincipal(
         HttpContext context,
-        ILogger logger,
-        out string? thumbprint)
+        [NotNullWhen(true)] out string? thumbprint)
     {
         thumbprint = null;
-
-        if (context.User.Identity?.IsAuthenticated != true)
-        {
-            return false;
-        }
 
         var cnfClaimValue = context.User.FindFirst("cnf")?.Value;
         if (string.IsNullOrWhiteSpace(cnfClaimValue))
@@ -306,73 +375,26 @@ internal sealed class MtlsBindingMiddleware
             return false;
         }
 
-        thumbprint = TryParseThumbprint(cnfClaimValue, logger, context.User.FindFirst("sub")?.Value);
-        return true;
-    }
+        var utf8Bytes = Encoding.UTF8.GetBytes(cnfClaimValue);
+        var reader = new Utf8JsonReader(utf8Bytes);
 
-    private static string? TryGetThumbprintFromAccessToken(HttpContext context, ILogger logger)
-    {
-        var authHeader = context.Request.Headers.Authorization.ToString();
-        if (string.IsNullOrWhiteSpace(authHeader))
+        while (reader.Read())
         {
-            return null;
-        }
-
-        string token;
-        if (authHeader.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase))
-        {
-            token = authHeader["DPoP ".Length..].Trim();
-        }
-        else if (authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-        {
-            token = authHeader["Bearer ".Length..].Trim();
-        }
-        else
-        {
-            return null;
-        }
-
-        if (!TokenHandler.CanReadToken(token))
-        {
-            return null;
-        }
-
-        try
-        {
-            var jwt = TokenHandler.ReadJsonWebToken(token);
-            if (jwt.TryGetPayloadValue<JsonElement>("cnf", out var cnf) &&
-                cnf.ValueKind == JsonValueKind.Object &&
-                cnf.TryGetProperty("x5t#S256", out var x5t) &&
-                !string.IsNullOrWhiteSpace(x5t.GetString()))
+            if (reader.TokenType == JsonTokenType.PropertyName)
             {
-                return x5t.GetString();
+                var propertyName = reader.GetString();
+                if (string.Equals(propertyName, "x5t#S256", StringComparison.Ordinal))
+                {
+                    if (reader.Read() && reader.TokenType == JsonTokenType.String)
+                    {
+                        thumbprint = reader.GetString();
+                        return !string.IsNullOrWhiteSpace(thumbprint);
+                    }
+                }
             }
         }
-        catch (Exception ex) when (ex is ArgumentException or SecurityTokenException or JsonException)
-        {
-            logger.LogWarning("Error reading cnf claim from token payload.");
-        }
 
-        return null;
-    }
-
-    private static string? TryParseThumbprint(string cnfClaimValue, ILogger logger, string? subject)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(cnfClaimValue);
-            if (!doc.RootElement.TryGetProperty("x5t#S256", out var thumbprintElement))
-            {
-                return null;
-            }
-
-            return thumbprintElement.GetString();
-        }
-        catch (JsonException)
-        {
-            logger.LogWarning("Invalid cnf claim JSON for subject {Subject}.", subject);
-            return null;
-        }
+        return false;
     }
 
     private static async Task Reject(HttpContext context, string detail)
@@ -390,6 +412,6 @@ internal sealed class MtlsBindingMiddleware
         };
 
         var json = JsonSerializer.Serialize(problem, AspNetCoreJsonContext.Default.ProblemDetails);
-        await context.Response.WriteAsync(json);
+        await context.Response.WriteAsync(json, context.RequestAborted).ConfigureAwait(false);
     }
 }
