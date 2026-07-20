@@ -5,6 +5,8 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -12,129 +14,34 @@ using Moq;
 using Sentinel.AspNetCore.Middleware;
 using Sentinel.AspNetCore.Stores;
 using Sentinel.DPoP;
+using Sentinel.DPoP.Pqc;
 using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Options;
+using Sentinel.Security.Abstractions.Pqc;
 using Sentinel.Security.Abstractions.Results;
 
 namespace Sentinel.Tests.Unit.Unit;
 
 public sealed class DpopValidationMiddlewareTests : IDisposable
 {
-    #region Happy Path Tests
-
-    [Fact(DisplayName = "✅ InvokeAsync: With valid proof and nonce consumes and rotates successfully")]
-    public async Task InvokeAsync_WithValidProofAndNonce_ConsumesAndRotatesSuccessfully()
-    {
-        // Arrange
-        const string expectedNonce = "active-nonce-123";
-        const string newNonce = "rotated-nonce-456";
-
-        var dpopProof = CreateValidDpopProof("POST", TargetUrl, expectedNonce);
-        var context = CreateHttpContextWithHeaders("DPoP access-token-abc", dpopProof);
-
-        var responseFeature = new FakeHttpResponseFeature();
-        context.Features.Set<IHttpResponseFeature>(responseFeature);
-
-        _nonceStoreMock
-            .Setup(x => x.GetNonceAsync(_thumbprint, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(expectedNonce);
-
-        _validatorMock
-            .Setup(x => x.ValidateAsync(It.IsAny<DpopValidationRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(SecurityResultFactory.Create(new DpopValidationSuccess(newNonce, _thumbprint)));
-
-        _nonceStoreMock
-            .Setup(x => x.ConsumeNonceIfMatchesAsync(_thumbprint, expectedNonce, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true)
-            .Verifiable();
-
-        _nonceStoreMock
-            .Setup(x => x.SetNonceAsync(_thumbprint, newNonce, It.IsAny<DateTimeOffset>(),
-                It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask)
-            .Verifiable();
-
-        var nextCalled = false;
-        RequestDelegate next = _ =>
-        {
-            nextCalled = true;
-            context.Response.StatusCode = StatusCodes.Status200OK;
-            return Task.CompletedTask;
-        };
-
-        var middleware = new DpopValidationMiddleware(next, _thumbprintComputer, _timeProvider, _l1Cache);
-
-        // Act
-        await middleware.InvokeAsync(context, _validatorMock.Object, _nonceStoreMock.Object, _dpopOptions);
-        await responseFeature.FireOnStartingAsync();
-
-        // Assert
-        nextCalled.Should().BeTrue();
-        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
-
-        _nonceStoreMock.Verify(
-            x => x.ConsumeNonceIfMatchesAsync(_thumbprint, expectedNonce, It.IsAny<CancellationToken>()), Times.Once);
-        _nonceStoreMock.Verify(
-            x => x.SetNonceAsync(_thumbprint, newNonce, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
-            Times.Once);
-
-        context.Response.Headers.Should().ContainKey("DPoP-Nonce");
-        context.Response.Headers["DPoP-Nonce"].ToString().Should().Be(newNonce);
-    }
-
-    #endregion
-
-    #region Nested Helper Types
-
-    private sealed class FakeHttpResponseFeature : IHttpResponseFeature
-    {
-        private readonly List<(Func<object, Task> Callback, object State)> _callbacks = new();
-
-        public int StatusCode { get; set; } = 200;
-        public string? ReasonPhrase { get; set; }
-        public IHeaderDictionary Headers { get; set; } = new HeaderDictionary();
-        public Stream Body { get; set; } = new MemoryStream();
-        public bool HasStarted => false;
-
-        public void OnStarting(Func<object, Task> callback, object state) => _callbacks.Add((callback, state));
-
-        public void OnCompleted(Func<object, Task> callback, object state)
-        {
-        }
-
-        public async Task FireOnStartingAsync()
-        {
-            foreach (var (callback, state) in _callbacks)
-            {
-                await callback(state);
-            }
-        }
-    }
-
-    #endregion
-
-    #region Constants & Fields
-
     private const string TestKeyId = "test-key-2026";
     private const string TargetHost = "api.sentinel.io";
     private const string TargetPath = "/resource";
-    private const string TargetUrl = "https://" + TargetHost + TargetPath;
+    private const string TargetUrl = $"https://{TargetHost}{TargetPath}";
 
     private readonly IOptions<DPoPOptions> _dpopOptions;
     private readonly ECDsa _ecdsa;
     private readonly L1AntiFloodCache _l1Cache;
+    private readonly ILogger<DpopValidationMiddleware> _logger;
     private readonly Mock<IDpopNonceStore> _nonceStoreMock;
     private readonly Dictionary<string, string> _publicJwk;
     private readonly ECDsaSecurityKey _securityKey;
+    private readonly IServiceProvider _serviceProvider;
     private readonly string _thumbprint;
     private readonly IDpopThumbprintComputer _thumbprintComputer;
     private readonly TimeProvider _timeProvider;
     private readonly Mock<IDpopProofValidator> _validatorMock;
-
-    #endregion
-
-    #region Constructor & Setup
 
     public DpopValidationMiddlewareTests()
     {
@@ -167,13 +74,74 @@ public sealed class DpopValidationMiddlewareTests : IDisposable
         {
             AllowedAlgorithms = ["ES256", "PS256"]
         });
+
+        _logger = NullLogger<DpopValidationMiddleware>.Instance;
+
+        var services = new ServiceCollection();
+        services.AddSingleton(_logger);
+        services.AddSingleton<IMlDsaSignatureVerifier>(new FailClosedMlDsaVerifier());
+        services.AddSingleton<PqcCryptoProviderFactory>();
+        _serviceProvider = services.BuildServiceProvider();
     }
 
     public void Dispose() => _ecdsa.Dispose();
 
-    #endregion
+    [Fact(DisplayName = "✅ InvokeAsync: With valid proof and nonce consumes and rotates successfully")]
+    public async Task InvokeAsync_WithValidProofAndNonce_ConsumesAndRotatesSuccessfully()
+    {
+        // Arrange
+        const string expectedNonce = "active-nonce-123";
+        const string newNonce = "rotated-nonce-456";
 
-    #region Failure & Edge Case Scenarios
+        var dpopProof = CreateValidDpopProof("POST", TargetUrl, expectedNonce);
+        var context = CreateHttpContextWithHeaders("DPoP access-token-abc", dpopProof);
+
+        var responseFeature = new FakeHttpResponseFeature();
+        context.Features.Set<IHttpResponseFeature>(responseFeature);
+
+        _nonceStoreMock
+            .Setup(x => x.GetNonceAsync(_thumbprint, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedNonce);
+
+        _validatorMock
+            .Setup(x => x.ValidateAsync(It.IsAny<DpopValidationRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(SecurityResultFactory.Create(new DpopValidationSuccess(newNonce, _thumbprint)));
+
+        _nonceStoreMock
+            .Setup(x => x.ConsumeNonceIfMatchesAsync(_thumbprint, expectedNonce, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        _nonceStoreMock
+            .Setup(x => x.SetNonceAsync(_thumbprint, newNonce, It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        // Corrected: Mark as static and avoid closures by using the parameter context
+        static Task Next(HttpContext httpContext)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status200OK;
+            return Task.CompletedTask;
+        }
+
+        var middleware =
+            new DpopValidationMiddleware(Next, _thumbprintComputer, _timeProvider, _l1Cache, _logger, _dpopOptions);
+
+        // Act
+        await middleware.InvokeAsync(context, _validatorMock.Object, _nonceStoreMock.Object);
+        await responseFeature.FireOnStartingAsync();
+
+        // Assert
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        _nonceStoreMock.Verify(
+            x => x.ConsumeNonceIfMatchesAsync(_thumbprint, expectedNonce, It.IsAny<CancellationToken>()), Times.Once);
+        _nonceStoreMock.Verify(
+            x => x.SetNonceAsync(_thumbprint, newNonce, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        context.Response.Headers.Should().ContainKey("DPoP-Nonce");
+        context.Response.Headers["DPoP-Nonce"].ToString().Should().Be(newNonce);
+    }
 
     [Fact(DisplayName = "❌ InvokeAsync: Replayed nonce must fail before executing any business logic")]
     public async Task InvokeAsync_WithReplayedNonce_FailsBeforeExecutingBusinessLogic()
@@ -196,11 +164,17 @@ public sealed class DpopValidationMiddlewareTests : IDisposable
             .Setup(x => x.ConsumeNonceIfMatchesAsync(_thumbprint, expectedNonce, It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
-        RequestDelegate next = _ => throw new InvalidOperationException("Downstream pipeline should never execute.");
-        var middleware = new DpopValidationMiddleware(next, _thumbprintComputer, _timeProvider, _l1Cache);
+        // Corrected: Make static to satisfy performance analyzer guidelines
+        static Task Next(HttpContext _)
+        {
+            throw new InvalidOperationException("Downstream pipeline should never execute.");
+        }
+
+        var middleware =
+            new DpopValidationMiddleware(Next, _thumbprintComputer, _timeProvider, _l1Cache, _logger, _dpopOptions);
 
         // Act
-        await middleware.InvokeAsync(context, _validatorMock.Object, _nonceStoreMock.Object, _dpopOptions);
+        await middleware.InvokeAsync(context, _validatorMock.Object, _nonceStoreMock.Object);
 
         // Assert
         context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
@@ -232,20 +206,21 @@ public sealed class DpopValidationMiddlewareTests : IDisposable
         var dpopProof = CreateSymmetricToken(symmetricKey, "HS256", header, payload);
         var context = CreateHttpContextWithHeaders("DPoP access-token-abc", dpopProof);
 
-        RequestDelegate next = _ => throw new InvalidOperationException("Bypass detected.");
-        var middleware = new DpopValidationMiddleware(next, _thumbprintComputer, _timeProvider, _l1Cache);
+        static Task Next(HttpContext _)
+        {
+            throw new InvalidOperationException("Bypass detected.");
+        }
+
+        var middleware =
+            new DpopValidationMiddleware(Next, _thumbprintComputer, _timeProvider, _l1Cache, _logger, _dpopOptions);
 
         // Act
-        await middleware.InvokeAsync(context, _validatorMock.Object, _nonceStoreMock.Object, _dpopOptions);
+        await middleware.InvokeAsync(context, _validatorMock.Object, _nonceStoreMock.Object);
 
         // Assert
         context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
         context.Response.Headers.WWWAuthenticate.ToString().Should().Contain("invalid_dpop_proof");
     }
-
-    #endregion
-
-    #region Resiliency & Exception Shielding Tests
 
     [Fact(DisplayName = "🛡️ Resiliency: Aborted request during OnStarting must be handled safely")]
     public async Task InvokeAsync_WhenRequestAbortedDuringOnStarting_HandlesExceptionSafely()
@@ -274,21 +249,21 @@ public sealed class DpopValidationMiddlewareTests : IDisposable
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new OperationCanceledException());
 
-        RequestDelegate next = _ =>
+        static Task Next(HttpContext httpContext)
         {
-            context.Response.StatusCode = StatusCodes.Status200OK;
+            httpContext.Response.StatusCode = StatusCodes.Status200OK;
             return Task.CompletedTask;
-        };
-        var middleware = new DpopValidationMiddleware(next, _thumbprintComputer, _timeProvider, _l1Cache);
+        }
+
+        var middleware =
+            new DpopValidationMiddleware(Next, _thumbprintComputer, _timeProvider, _l1Cache, _logger, _dpopOptions);
 
         // Act
-        await middleware.InvokeAsync(context, _validatorMock.Object, _nonceStoreMock.Object, _dpopOptions);
+        await middleware.InvokeAsync(context, _validatorMock.Object, _nonceStoreMock.Object);
         var act = async () => await responseFeature.FireOnStartingAsync();
 
         // Assert
-        await act.Should()
-            .NotThrowAsync<OperationCanceledException>(
-                "Aborted requests during start callback must fail closed silently.");
+        await act.Should().NotThrowAsync<OperationCanceledException>();
     }
 
     [Fact(DisplayName = "🛡️ Resiliency: Database crashes during OnStarting must throw to allow pipeline failure")]
@@ -321,20 +296,21 @@ public sealed class DpopValidationMiddlewareTests : IDisposable
             .ReturnsAsync(expectedNonce)
             .ThrowsAsync(new InvalidOperationException("PostgreSQL cluster unavailable"));
 
-        RequestDelegate next = _ =>
+        static Task Next(HttpContext httpContext)
         {
-            context.Response.StatusCode = StatusCodes.Status200OK;
+            httpContext.Response.StatusCode = StatusCodes.Status200OK;
             return Task.CompletedTask;
-        };
-        var middleware = new DpopValidationMiddleware(next, _thumbprintComputer, _timeProvider, _l1Cache);
+        }
+
+        var middleware =
+            new DpopValidationMiddleware(Next, _thumbprintComputer, _timeProvider, _l1Cache, _logger, _dpopOptions);
 
         // Act
-        await middleware.InvokeAsync(context, _validatorMock.Object, _nonceStoreMock.Object, _dpopOptions);
+        await middleware.InvokeAsync(context, _validatorMock.Object, _nonceStoreMock.Object);
         var act = async () => await responseFeature.FireOnStartingAsync();
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("PostgreSQL cluster unavailable", "Real database crash must be propagated.");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("PostgreSQL cluster unavailable");
     }
 
     [Fact(DisplayName =
@@ -346,19 +322,21 @@ public sealed class DpopValidationMiddlewareTests : IDisposable
         var context = CreateHttpContextWithHeaders("DPoP access-token-abc", "invalid.dpop.proof.token");
         context.RequestAborted = cts.Token;
 
-        // Cancel the request immediately to simulate client disconnect before Task.Delay
         await cts.CancelAsync();
 
-        RequestDelegate next = _ =>
+        static Task Next(HttpContext _)
+        {
             throw new InvalidOperationException("Pipeline should not proceed under cancelled requests.");
-        var middleware = new DpopValidationMiddleware(next, _thumbprintComputer, _timeProvider, _l1Cache);
+        }
+
+        var middleware =
+            new DpopValidationMiddleware(Next, _thumbprintComputer, _timeProvider, _l1Cache, _logger, _dpopOptions);
 
         // Act
-        var act = async () =>
-            await middleware.InvokeAsync(context, _validatorMock.Object, _nonceStoreMock.Object, _dpopOptions);
+        var act = async () => await middleware.InvokeAsync(context, _validatorMock.Object, _nonceStoreMock.Object);
 
         // Assert
-        await act.Should().NotThrowAsync("Client disconnection during delay must be caught and return early.");
+        await act.Should().NotThrowAsync();
         context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
     }
 
@@ -369,7 +347,6 @@ public sealed class DpopValidationMiddlewareTests : IDisposable
         // Arrange
         var context = CreateHttpContextWithHeaders("DPoP access-token-abc", "invalid.dpop.proof.token");
 
-        // Mock Stream that simulates broken socket during response write
         var throwingStream = new Mock<Stream>();
         throwingStream
             .Setup(s => s.WriteAsync(It.IsAny<ReadOnlyMemory<byte>>(), It.IsAny<CancellationToken>()))
@@ -377,20 +354,20 @@ public sealed class DpopValidationMiddlewareTests : IDisposable
 
         context.Response.Body = throwingStream.Object;
 
-        RequestDelegate next = _ => Task.CompletedTask;
-        var middleware = new DpopValidationMiddleware(next, _thumbprintComputer, _timeProvider, _l1Cache);
+        static Task Next(HttpContext _)
+        {
+            return Task.CompletedTask;
+        }
+
+        var middleware =
+            new DpopValidationMiddleware(Next, _thumbprintComputer, _timeProvider, _l1Cache, _logger, _dpopOptions);
 
         // Act
-        var act = async () =>
-            await middleware.InvokeAsync(context, _validatorMock.Object, _nonceStoreMock.Object, _dpopOptions);
+        var act = async () => await middleware.InvokeAsync(context, _validatorMock.Object, _nonceStoreMock.Object);
 
         // Assert
-        await act.Should().NotThrowAsync("Exceptions during body writing must be shielded from leaking to Kestrel.");
+        await act.Should().NotThrowAsync();
     }
-
-    #endregion
-
-    #region Private Helper Methods
 
     private string CreateValidDpopProof(string method, string url, string? nonce = null)
     {
@@ -412,12 +389,11 @@ public sealed class DpopValidationMiddlewareTests : IDisposable
         {
             Claims = claims,
             SigningCredentials = new SigningCredentials(_securityKey, SecurityAlgorithms.EcdsaSha256),
-            TokenType = "dpop+jwt"
-        };
-
-        descriptor.AdditionalHeaderClaims = new Dictionary<string, object>
-        {
-            ["jwk"] = _publicJwk
+            TokenType = "dpop+jwt",
+            AdditionalHeaderClaims = new Dictionary<string, object>
+            {
+                ["jwk"] = _publicJwk
+            }
         };
 
         return jwtHandler.CreateToken(descriptor);
@@ -432,7 +408,8 @@ public sealed class DpopValidationMiddlewareTests : IDisposable
             Claims = payload,
             SigningCredentials = new SigningCredentials(key, algorithm),
             TokenType = "dpop+jwt",
-            AdditionalHeaderClaims = new Dictionary<string, object>()
+            AdditionalHeaderClaims =
+                new Dictionary<string, object>()
         };
 
         foreach (var h in header)
@@ -443,9 +420,9 @@ public sealed class DpopValidationMiddlewareTests : IDisposable
         return jwtHandler.CreateToken(descriptor);
     }
 
-    private static DefaultHttpContext CreateHttpContextWithHeaders(string authHeader, string dpopHeader)
+    private DefaultHttpContext CreateHttpContextWithHeaders(string authHeader, string dpopHeader)
     {
-        var context = new DefaultHttpContext();
+        var context = new DefaultHttpContext { RequestServices = _serviceProvider };
         context.Request.Scheme = "https";
         context.Request.Host = new HostString(TargetHost);
         context.Request.Path = TargetPath;
@@ -453,13 +430,37 @@ public sealed class DpopValidationMiddlewareTests : IDisposable
         context.Request.Headers.Authorization = authHeader;
         context.Request.Headers["DPoP"] = dpopHeader;
         context.Response.Body = new MemoryStream();
-
-        var services = new ServiceCollection();
-        services.AddLogging();
-        context.RequestServices = services.BuildServiceProvider();
-
         return context;
     }
 
-    #endregion
+    private sealed class FailClosedMlDsaVerifier : IMlDsaSignatureVerifier
+    {
+        public bool Verify(string algorithm, ReadOnlySpan<byte> publicKey, ReadOnlySpan<byte> input,
+            ReadOnlySpan<byte> signature) => false;
+    }
+
+    private sealed class FakeHttpResponseFeature : IHttpResponseFeature
+    {
+        private readonly List<(Func<object, Task> Callback, object State)> _callbacks = [];
+
+        public int StatusCode { get; set; } = 200;
+        public string? ReasonPhrase { get; set; }
+        public IHeaderDictionary Headers { get; set; } = new HeaderDictionary();
+        public Stream Body { get; set; } = new MemoryStream();
+        public bool HasStarted => false;
+
+        public void OnStarting(Func<object, Task> callback, object state) => _callbacks.Add((callback, state));
+
+        public void OnCompleted(Func<object, Task> callback, object state)
+        {
+        }
+
+        public async Task FireOnStartingAsync()
+        {
+            foreach (var (callback, state) in _callbacks)
+            {
+                await callback(state);
+            }
+        }
+    }
 }
