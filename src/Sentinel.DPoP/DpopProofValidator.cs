@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Options;
 using Sentinel.DPoP.Pqc;
 using Sentinel.Security.Abstractions.Options;
@@ -8,7 +9,14 @@ namespace Sentinel.DPoP;
 
 public sealed class DpopProofValidator : IDpopProofValidator
 {
+    private const int MaxDpopHeaderLength = 8192;
     private static readonly JsonWebTokenHandler TokenHandler = new();
+
+    private static readonly HashSet<string> GloballyAllowedAlgorithms = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "PS256", "ES256", "EdDSA", "ML-DSA-44", "ML-DSA-65", "ML-DSA-87"
+    };
+
     private readonly DPoPOptions _options;
     private readonly PqcCryptoProviderFactory _pqcFactory;
     private readonly IJtiReplayCache _replayCache;
@@ -33,15 +41,13 @@ public sealed class DpopProofValidator : IDpopProofValidator
             throw new CryptographicException("FAPI 2.0 violation: AllowedAlgorithms list cannot be empty.");
         }
 
-        var hasInvalidAlgs = Array.Exists(_options.AllowedAlgorithms, alg =>
-            !string.Equals(alg, "PS256", StringComparison.Ordinal) &&
-            !string.Equals(alg, "ES256", StringComparison.Ordinal) &&
-            !string.Equals(alg, "EdDSA", StringComparison.Ordinal));
-
-        if (hasInvalidAlgs)
+        foreach (var alg in _options.AllowedAlgorithms)
         {
-            throw new CryptographicException(
-                $"FAPI 2.0 violation: Prohibited algorithms found in configuration. Allowed: PS256, ES256, EdDSA.");
+            if (!GloballyAllowedAlgorithms.Contains(alg))
+            {
+                throw new CryptographicException(
+                    $"FAPI 2.0 violation: Prohibited algorithm '{alg}' found in configuration.");
+            }
         }
 
         _supportedAlgorithms = new HashSet<string>(_options.AllowedAlgorithms, StringComparer.OrdinalIgnoreCase);
@@ -53,6 +59,16 @@ public sealed class DpopProofValidator : IDpopProofValidator
         DpopValidationRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (request == null)
+        {
+            return SecurityResultFactory.Failure<DpopValidationSuccess>("invalid_request");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.DpopHeader) || request.DpopHeader.Length > MaxDpopHeaderLength)
+        {
+            return SecurityResultFactory.Failure<DpopValidationSuccess>("invalid_dpop_header_size");
+        }
+
         try
         {
             if (!TokenHandler.CanReadToken(request.DpopHeader))
@@ -77,37 +93,74 @@ public sealed class DpopProofValidator : IDpopProofValidator
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("missing_jwk");
             }
 
-            var jwkJson = jwkElement.GetRawText();
-            if (string.IsNullOrWhiteSpace(jwkJson))
+            if (jwkElement.TryGetProperty("alg", out var jwkAlgProp))
             {
-                return SecurityResultFactory.Failure<DpopValidationSuccess>("invalid_jwk");
-            }
-
-            if (jwkElement.TryGetProperty("kty", out var ktyProp))
-            {
-                var kty = ktyProp.GetString();
-                var alg = dpopToken.Alg;
-
-                bool isMatched = kty switch
-                {
-                    "EC" => alg.StartsWith("ES", StringComparison.Ordinal),
-                    "RSA" => alg.StartsWith("PS", StringComparison.Ordinal),
-                    "ML-DSA" => alg.StartsWith("ML-DSA", StringComparison.Ordinal),
-                    _ => false
-                };
-
-                if (!isMatched)
+                var jwkAlg = jwkAlgProp.GetString();
+                if (!string.Equals(jwkAlg, dpopToken.Alg, StringComparison.OrdinalIgnoreCase))
                 {
                     return SecurityResultFactory.Failure<DpopValidationSuccess>("unsupported_algorithm");
                 }
             }
 
-            if (jwkElement.TryGetProperty("d", out _))
+            if (jwkElement.TryGetProperty("d", out _) ||
+                jwkElement.TryGetProperty("k", out _) ||
+                jwkElement.TryGetProperty("p", out _) ||
+                jwkElement.TryGetProperty("q", out _))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("private_jwk_rejected");
             }
 
-            if (!await ValidateDpopSignatureAsync(request.DpopHeader, jwkJson, dpopToken.Alg, cancellationToken)
+            if (!jwkElement.TryGetProperty("kty", out var ktyProp))
+            {
+                return SecurityResultFactory.Failure<DpopValidationSuccess>("invalid_jwk");
+            }
+
+            var kty = ktyProp.GetString();
+            var alg = dpopToken.Alg;
+
+            var isMatched = kty switch
+            {
+                "EC" => alg.StartsWith("ES", StringComparison.Ordinal),
+                "RSA" => alg.StartsWith("PS", StringComparison.Ordinal),
+                "OKP" => string.Equals(alg, "EdDSA", StringComparison.Ordinal),
+                "ML-DSA" => alg.StartsWith("ML-DSA", StringComparison.Ordinal),
+                _ => false
+            };
+
+            if (!isMatched)
+            {
+                return SecurityResultFactory.Failure<DpopValidationSuccess>("unsupported_algorithm");
+            }
+
+            SecurityKey signingKey;
+            if (string.Equals(kty, "ML-DSA", StringComparison.Ordinal))
+            {
+                if (!jwkElement.TryGetProperty("x", out var xProp) || string.IsNullOrWhiteSpace(xProp.GetString()))
+                {
+                    return SecurityResultFactory.Failure<DpopValidationSuccess>("invalid_jwk");
+                }
+
+                var publicKeyBytes = Base64UrlEncoder.DecodeBytes(xProp.GetString());
+
+                if (!IsValidMlDsaKeySize(alg, publicKeyBytes.Length))
+                {
+                    return SecurityResultFactory.Failure<DpopValidationSuccess>("invalid_jwk");
+                }
+
+                signingKey = new MlDsaSecurityKey(publicKeyBytes, alg);
+            }
+            else
+            {
+                var jwkRawText = jwkElement.GetRawText();
+                if (string.IsNullOrWhiteSpace(jwkRawText))
+                {
+                    return SecurityResultFactory.Failure<DpopValidationSuccess>("invalid_jwk");
+                }
+
+                signingKey = JsonWebKey.Create(jwkRawText);
+            }
+
+            if (!await ValidateDpopSignatureAsync(request.DpopHeader, signingKey, alg, cancellationToken)
                     .ConfigureAwait(false))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("invalid_signature");
@@ -119,14 +172,20 @@ public sealed class DpopProofValidator : IDpopProofValidator
             }
 
             if (!dpopToken.TryGetPayloadValue<string>("htm", out var htm)
-                || !string.Equals(htm, request.HttpMethod, StringComparison.Ordinal))
+                || !string.Equals(htm, request.HttpMethod,
+                    StringComparison.OrdinalIgnoreCase)) // RFC 9449: case-insensitive matching
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("htm_mismatch");
             }
 
-            if (!dpopToken.TryGetPayloadValue<string>("htu", out var htu)
-                || !string.Equals(NormalizeUri(htu), NormalizeUri(request.HttpUri.AbsoluteUri),
-                    StringComparison.Ordinal))
+            if (!dpopToken.TryGetPayloadValue<string>("htu", out var htu))
+            {
+                return SecurityResultFactory.Failure<DpopValidationSuccess>("htu_mismatch");
+            }
+
+            if (!TryNormalizeUri(htu, out var normalizedHtu) ||
+                !TryNormalizeUri(request.HttpUri.AbsoluteUri, out var normalizedRequestUri) ||
+                !string.Equals(normalizedHtu, normalizedRequestUri, StringComparison.Ordinal))
             {
                 return SecurityResultFactory.Failure<DpopValidationSuccess>("htu_mismatch");
             }
@@ -205,9 +264,11 @@ public sealed class DpopProofValidator : IDpopProofValidator
                 }
             }
 
+            var cacheExpiration = iatTime.AddSeconds(_options.ProofLifetimeSeconds).Add(skew);
+
             var stored = await _replayCache.TryMarkUsedAsync(
                 $"dpop:{jti}",
-                now.AddSeconds(_options.ProofLifetimeSeconds),
+                cacheExpiration,
                 cancellationToken).ConfigureAwait(false);
 
             if (!stored)
@@ -219,27 +280,8 @@ public sealed class DpopProofValidator : IDpopProofValidator
             var success = new DpopValidationSuccess(newNonce, thumbprint);
             return SecurityResultFactory.Create(success);
         }
-        catch (JsonException)
-        {
-            return SecurityResultFactory.Failure<DpopValidationSuccess>("validation_error");
-        }
-        catch (SecurityTokenException)
-        {
-            return SecurityResultFactory.Failure<DpopValidationSuccess>("validation_error");
-        }
-        catch (CryptographicException)
-        {
-            return SecurityResultFactory.Failure<DpopValidationSuccess>("validation_error");
-        }
-        catch (FormatException)
-        {
-            return SecurityResultFactory.Failure<DpopValidationSuccess>("validation_error");
-        }
-        catch (ArgumentException)
-        {
-            return SecurityResultFactory.Failure<DpopValidationSuccess>("validation_error");
-        }
-        catch (InvalidOperationException)
+        catch (Exception ex) when (ex is JsonException or SecurityTokenException or CryptographicException
+                                       or FormatException or ArgumentException or InvalidOperationException)
         {
             return SecurityResultFactory.Failure<DpopValidationSuccess>("validation_error");
         }
@@ -247,38 +289,10 @@ public sealed class DpopProofValidator : IDpopProofValidator
 
     private async Task<bool> ValidateDpopSignatureAsync(
         string token,
-        string jwkJson,
+        SecurityKey signingKey,
         string algorithm,
         CancellationToken cancellationToken)
     {
-        SecurityKey signingKey;
-
-        try
-        {
-            using var jwkDoc = JsonDocument.Parse(jwkJson);
-            var root = jwkDoc.RootElement;
-
-            if (root.TryGetProperty("kty", out var kty) &&
-                string.Equals(kty.GetString(), "ML-DSA", StringComparison.Ordinal))
-            {
-                if (!root.TryGetProperty("x", out var xProp) || string.IsNullOrWhiteSpace(xProp.GetString()))
-                {
-                    return false;
-                }
-
-                var publicKeyBytes = Base64UrlEncoder.DecodeBytes(xProp.GetString());
-                signingKey = new MlDsaSecurityKey(publicKeyBytes, algorithm);
-            }
-            else
-            {
-                signingKey = JsonWebKey.Create(jwkJson);
-            }
-        }
-        catch (Exception ex) when (ex is JsonException or ArgumentException or FormatException)
-        {
-            return false;
-        }
-
         const bool validateLifetime = false;
 
         var validationParameters = new TokenValidationParameters
@@ -298,8 +312,14 @@ public sealed class DpopProofValidator : IDpopProofValidator
         return validationResult.IsValid;
     }
 
-    private static string NormalizeUri(string uri)
+    private static bool TryNormalizeUri(string uri, [NotNullWhen(true)] out string? normalizedUri)
     {
+        normalizedUri = null;
+        if (string.IsNullOrWhiteSpace(uri))
+        {
+            return false;
+        }
+
         try
         {
             var parsed = new Uri(uri, UriKind.Absolute);
@@ -309,13 +329,28 @@ public sealed class DpopProofValidator : IDpopProofValidator
                 Fragment = string.Empty
             };
 
-            return builder.Uri.AbsoluteUri.TrimEnd('/');
+            if (parsed.IsDefaultPort)
+            {
+                builder.Port = -1;
+            }
+
+            normalizedUri = builder.Uri.AbsoluteUri.TrimEnd('/');
+            return true;
         }
         catch (UriFormatException)
         {
-            return string.Empty;
+            return false;
         }
     }
+
+    private static bool IsValidMlDsaKeySize(string algorithm, int sizeInBytes) =>
+        algorithm switch
+        {
+            "ML-DSA-44" => sizeInBytes == 1312,
+            "ML-DSA-65" => sizeInBytes == 1952,
+            "ML-DSA-87" => sizeInBytes == 2592,
+            _ => false
+        };
 
     private static string GenerateNewNonce()
     {

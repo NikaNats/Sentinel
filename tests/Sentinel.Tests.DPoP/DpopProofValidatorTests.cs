@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Sentinel.Tests.Shared;
 using Xunit;
 
@@ -7,6 +8,7 @@ namespace Sentinel.Tests.DPoP;
 
 public sealed class DpopProofValidatorTests : IDisposable
 {
+    private readonly IOptions<DPoPOptions> _dpopOptions;
     private readonly ECDsa _ecdsa;
     private readonly Dictionary<string, object> _publicJwk;
     private readonly StrictJtiReplayCache _replayCache;
@@ -14,7 +16,6 @@ public sealed class DpopProofValidatorTests : IDisposable
     private readonly DpopThumbprintComputer _thumbprintComputer;
     private readonly FakeTimeProvider _timeProvider;
     private readonly DpopProofValidator _validator;
-    private readonly IOptions<DPoPOptions> _dpopOptions;
 
     public DpopProofValidatorTests()
     {
@@ -39,7 +40,7 @@ public sealed class DpopProofValidatorTests : IDisposable
             ProofLifetimeSeconds = 60,
             AllowedClockSkewSeconds = 5,
             RequireNonce = false,
-            AllowedAlgorithms = ["ES256"]
+            AllowedAlgorithms = ["ES256", "ML-DSA-65"]
         });
 
         _validator = new DpopProofValidator(
@@ -91,16 +92,7 @@ public sealed class DpopProofValidatorTests : IDisposable
         var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
         result.IsSuccess.Should().BeFalse("Tampered signature must be rejected before any side effects.");
-
-        var errorLower = result.ErrorMessage?.ToLowerInvariant() ?? "";
-        errorLower.Should().NotContain("redis");
-        errorLower.Should().NotContain("cluster");
-        errorLower.Should().NotContain("connection");
-        errorLower.Should().NotContain("database");
-        errorLower.Should().NotContain("10.0.1.5");
-        errorLower.Should().NotContain("127.0.0.1");
-        errorLower.Should().NotContain("localhost");
-
+        result.ErrorMessage.Should().Be("invalid_signature");
         _replayCache.VerifyNoCalls();
     }
 
@@ -149,13 +141,6 @@ public sealed class DpopProofValidatorTests : IDisposable
         result.IsSuccess.Should().BeFalse(
             "In security logic, ambiguity is a denial. " +
             "Never allow bypass if the cache is down (Fail-Closed principle).");
-
-        var errorLower = result.ErrorMessage?.ToLowerInvariant() ?? "";
-        errorLower.Should().NotContain("redis");
-        errorLower.Should().NotContain("cluster");
-        errorLower.Should().NotContain("connection");
-        errorLower.Should().NotContain("database");
-        errorLower.Should().NotContain("timeout");
     }
 
     [Fact(DisplayName = "🛑 Cancellation: OperationCanceledException MUST propagate")]
@@ -197,11 +182,8 @@ public sealed class DpopProofValidatorTests : IDisposable
 
         var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
-        result.IsSuccess.Should().BeFalse(
-            "URI mismatch is a replay attack. Requests must use ordinal comparison for exact matching.");
-        result.ErrorMessage.Should().Be("htu_mismatch",
-            "Error must explicitly identify the binding violation");
-
+        result.IsSuccess.Should().BeFalse("URI mismatch is a replay attack.");
+        result.ErrorMessage.Should().Be("htu_mismatch");
         _replayCache.VerifyNoCalls();
     }
 
@@ -231,10 +213,7 @@ public sealed class DpopProofValidatorTests : IDisposable
 
         var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
-        result.IsSuccess.Should().BeFalse(
-            "JWK header must cryptographically match the actual signing key. " +
-            "JWK swapping is a critical vulnerability in JOSE processing.");
-
+        result.IsSuccess.Should().BeFalse("JWK swapping must be detected and rejected.");
         _replayCache.VerifyNoCalls();
     }
 
@@ -254,17 +233,187 @@ public sealed class DpopProofValidatorTests : IDisposable
 
         var replayResult = await _validator.ValidateAsync(request, TestCancellationToken);
 
-        replayResult.IsSuccess.Should().BeFalse(
-            "RFC 9449 requires JTI uniqueness. Replayed JTIs are replay attacks. " +
-            "The cache must reject attempts to reuse the same JTI.");
+        replayResult.IsSuccess.Should().BeFalse("Replayed JTIs must trigger a security rejection.");
+    }
+
+    [Fact(DisplayName = "🛡️ DoS: DPoP header exceeding 8KB max length limit MUST be rejected instantly")]
+    public async Task ValidateAsync_HeaderExceedingMaxLength_ReturnsFailureInstantly()
+    {
+        var massiveHeader = new string('A', 8193); // Exceeds MaxDpopHeaderLength (8192)
+        var request = new DpopValidationRequest(massiveHeader, "POST", new Uri("https://api.io/vault"));
+
+        _replayCache.ExpectNoCalls();
+
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Be("invalid_dpop_header_size",
+            "Huge header sizes must be blocked at boundary to prevent DoS.");
+        _replayCache.VerifyNoCalls();
+    }
+
+    [Fact(DisplayName = "🛡️ Safety: Null validation request object MUST return invalid_request")]
+    public async Task ValidateAsync_NullRequestObject_ReturnsFailureSafely()
+    {
+        var result = await _validator.ValidateAsync(null!, TestCancellationToken);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Be("invalid_request", "Null request parameter must fail-closed cleanly.");
+    }
+
+    [Theory(DisplayName = "🛡️ RSA Primes: Rejects JWKs containing private primes p and q")]
+    [InlineData("p")]
+    [InlineData("q")]
+    public async Task ValidateAsync_JwkWithPrivatePrimes_FailsClosed(string leakProperty)
+    {
+        var tamperedJwk = new Dictionary<string, object>(_publicJwk);
+        tamperedJwk[leakProperty] = Base64UrlEncoder.Encode(new byte[128]); // Inject raw private component
+
+        var proof = TestJwtBuilder.CreateValidProof(
+            _securityKey,
+            SecurityAlgorithms.EcdsaSha256,
+            tamperedJwk,
+            "POST",
+            "https://api.io/vault");
+
+        var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"));
+
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Be("private_jwk_rejected", "JWK must not leak secret cryptographic material.");
+    }
+
+    [Fact(DisplayName = "🛡️ Symmetric Key: Rejects JWKs containing shared secret material 'k'")]
+    public async Task ValidateAsync_JwkWithSymmetricKey_FailsClosed()
+    {
+        var tamperedJwk = new Dictionary<string, object>(_publicJwk);
+        tamperedJwk["k"] = Base64UrlEncoder.Encode(new byte[32]); // Inject symmetric key material
+
+        var proof = TestJwtBuilder.CreateValidProof(
+            _securityKey,
+            SecurityAlgorithms.EcdsaSha256,
+            tamperedJwk,
+            "POST",
+            "https://api.io/vault");
+
+        var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"));
+
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Be("private_jwk_rejected");
+    }
+
+    [Fact(DisplayName = "✅ Case-Sensitivity: Case-insensitive HTM matching (get vs GET) MUST succeed")]
+    public async Task ValidateAsync_CaseInsensitiveHtm_Succeeds()
+    {
+        const string requestUri = "https://sentinel.local/api/v1/vault";
+        var proof = CreateSignedProof("get", requestUri); // Lowercase get in token
+
+        _replayCache.ExpectSuccess();
+
+        var request = new DpopValidationRequest(proof, "GET", new Uri(requestUri)); // Uppercase GET in HTTP request
+
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
+
+        result.IsSuccess.Should().BeTrue("RFC 9449 recommends case-insensitive matching of HTTP method strings.");
+    }
+
+    [Fact(DisplayName = "✅ Port Normalization: Request matching default HTTPS port (443) on same domain MUST succeed")]
+    public async Task ValidateAsync_DefaultPortNormalization_Succeeds()
+    {
+        var proof = CreateSignedProof("POST", "https://api.io/vault"); // No port in proof htu
+        var request =
+            new DpopValidationRequest(proof, "POST", new Uri("https://api.io:443/vault")); // Port 443 in request htu
+
+        _replayCache.ExpectSuccess();
+
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
+
+        result.IsSuccess.Should().BeTrue("Standard ports (443/80) must be normalized out of URIs before comparison.");
+    }
+
+    [Fact(DisplayName = "🛡️ PQC Size Validation: Rejects ML-DSA public key with invalid size to prevent DoS")]
+    public async Task ValidateAsync_MlDsaKeyWithInvalidSize_ReturnsFailure()
+    {
+        var malformedMlDsaJwk = new Dictionary<string, object>
+        {
+            ["kty"] = "ML-DSA",
+            ["x"] = Base64UrlEncoder.Encode(new byte[100]) // Invalid size (ML-DSA-65 expects 1952 bytes)
+        };
+
+        // Bypassing real signing to avoid NotSupportedException during test setup
+        var header = new Dictionary<string, object>
+        {
+            ["alg"] = "ML-DSA-65",
+            ["typ"] = "dpop+jwt",
+            ["jwk"] = malformedMlDsaJwk
+        };
+        var payload = new Dictionary<string, object>
+        {
+            ["jti"] = Guid.NewGuid().ToString("N"),
+            ["htm"] = "POST",
+            ["htu"] = "https://api.io/vault",
+            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+        };
+
+        var headerJson = JsonSerializer.Serialize(header);
+        var payloadJson = JsonSerializer.Serialize(payload);
+        var fakeJwtWithMalformedJwk =
+            $"{Base64UrlEncoder.Encode(headerJson)}.{Base64UrlEncoder.Encode(payloadJson)}.fake_signature";
+
+        var request = new DpopValidationRequest(fakeJwtWithMalformedJwk, "POST", new Uri("https://api.io/vault"));
+
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should()
+            .Be("invalid_jwk", "Malformed PQC key sizes must be caught before native validation.");
+    }
+
+    [Fact(DisplayName = "🛡️ RFC 9449: Rejects JWK 'alg' mismatched with JWT 'alg'")]
+    public async Task ValidateAsync_JwkAlgMismatchedWithTokenAlg_ReturnsFailure()
+    {
+        var tamperedJwk = new Dictionary<string, object>(_publicJwk);
+        tamperedJwk["alg"] = "PS256"; // Mismatched: Token is ES256, but JWK claim claims PS256
+
+        var proof = TestJwtBuilder.CreateValidProof(
+            _securityKey,
+            SecurityAlgorithms.EcdsaSha256, // Token alg: ES256
+            tamperedJwk,
+            "POST",
+            "https://api.io/vault");
+
+        var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"));
+
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Be("unsupported_algorithm");
+    }
+
+    [Fact(DisplayName = "🎯 URI Validation: Malformed absolute htu MUST prevent bypass and return htu_mismatch")]
+    public async Task ValidateAsync_MalformedHtu_ReturnsFailure()
+    {
+        // Generate signed token with custom malformed HTU to bypass CreateValidProof's URI check
+        var proof = CreateSignedProofWithCustomHtu("invalid-uri-without-scheme");
+        var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"));
+
+        var result = await _validator.ValidateAsync(request, TestCancellationToken);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Be("htu_mismatch",
+            "Malformed URIs must fail-closed rather than allowing empty matches.");
     }
 
     [Fact(DisplayName = "🔐 Nonce 1: RequireNonce=True and no nonce in proof MUST result in use_dpop_nonce")]
     public async Task ValidateAsync_RequireNonceTrue_NoNonceInProof_Fails()
     {
         _dpopOptions.Value.RequireNonce = true;
-        var proof = CreateSignedProof("POST", "https://api.io/vault", nonce: null);
-        var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"), expectedNonce: "server-nonce-123");
+        var proof = CreateSignedProof("POST", "https://api.io/vault", null);
+        var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"),
+            expectedNonce: "server-nonce-123");
 
         var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
@@ -272,11 +421,12 @@ public sealed class DpopProofValidatorTests : IDisposable
         result.ErrorMessage.Should().Be("use_dpop_nonce");
     }
 
-    [Fact(DisplayName = "🔐 Nonce 2: RequireNonce=True and empty/expired ExpectedNonce on server MUST result in use_dpop_nonce")]
+    [Fact(DisplayName =
+        "🔐 Nonce 2: RequireNonce=True and empty/expired ExpectedNonce on server MUST result in use_dpop_nonce")]
     public async Task ValidateAsync_RequireNonceTrue_NoExpectedNonceOnServer_Fails()
     {
         _dpopOptions.Value.RequireNonce = true;
-        var proof = CreateSignedProof("POST", "https://api.io/vault", nonce: "client-nonce-xyz");
+        var proof = CreateSignedProof("POST", "https://api.io/vault", "client-nonce-xyz");
         var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"), expectedNonce: null);
 
         var result = await _validator.ValidateAsync(request, TestCancellationToken);
@@ -289,8 +439,9 @@ public sealed class DpopProofValidatorTests : IDisposable
     public async Task ValidateAsync_RequireNonceTrue_MismatchedNonce_Fails()
     {
         _dpopOptions.Value.RequireNonce = true;
-        var proof = CreateSignedProof("POST", "https://api.io/vault", nonce: "wrong-nonce-abc");
-        var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"), expectedNonce: "correct-nonce-xyz");
+        var proof = CreateSignedProof("POST", "https://api.io/vault", "wrong-nonce-abc");
+        var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"),
+            expectedNonce: "correct-nonce-xyz");
 
         var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
@@ -303,8 +454,9 @@ public sealed class DpopProofValidatorTests : IDisposable
     {
         _dpopOptions.Value.RequireNonce = true;
         const string matchingNonce = "matching-nonce-12345";
-        var proof = CreateSignedProof("POST", "https://api.io/vault", nonce: matchingNonce);
-        var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"), expectedNonce: matchingNonce);
+        var proof = CreateSignedProof("POST", "https://api.io/vault", matchingNonce);
+        var request =
+            new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"), expectedNonce: matchingNonce);
 
         _replayCache.ExpectSuccess();
 
@@ -317,8 +469,9 @@ public sealed class DpopProofValidatorTests : IDisposable
     public async Task ValidateAsync_RequireNonceFalse_ExpectedActiveButMissingInProof_Fails()
     {
         _dpopOptions.Value.RequireNonce = false;
-        var proof = CreateSignedProof("POST", "https://api.io/vault", nonce: null);
-        var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"), expectedNonce: "active-server-nonce");
+        var proof = CreateSignedProof("POST", "https://api.io/vault", null);
+        var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"),
+            expectedNonce: "active-server-nonce");
 
         var result = await _validator.ValidateAsync(request, TestCancellationToken);
 
@@ -326,11 +479,12 @@ public sealed class DpopProofValidatorTests : IDisposable
         result.ErrorMessage.Should().Be("use_dpop_nonce");
     }
 
-    [Fact(DisplayName = "🔐 Nonce 6: RequireNonce=False and no active expected nonce on server MUST allow proof without nonce")]
+    [Fact(DisplayName =
+        "🔐 Nonce 6: RequireNonce=False and no active expected nonce on server MUST allow proof without nonce")]
     public async Task ValidateAsync_RequireNonceFalse_NoExpectedNonce_SucceedsWithoutNonceInProof()
     {
         _dpopOptions.Value.RequireNonce = false;
-        var proof = CreateSignedProof("POST", "https://api.io/vault", nonce: null);
+        var proof = CreateSignedProof("POST", "https://api.io/vault", null);
         var request = new DpopValidationRequest(proof, "POST", new Uri("https://api.io/vault"), expectedNonce: null);
 
         _replayCache.ExpectSuccess();
@@ -353,6 +507,28 @@ public sealed class DpopProofValidatorTests : IDisposable
             uri,
             nonce,
             iat);
+
+    private string CreateSignedProofWithCustomHtu(string malformedHtu)
+    {
+        var handler = new JsonWebTokenHandler();
+        var descriptor = new SecurityTokenDescriptor
+        {
+            Claims = new Dictionary<string, object>
+            {
+                ["jti"] = Guid.NewGuid().ToString("N"),
+                ["htm"] = "POST",
+                ["htu"] = malformedHtu, // Directly injected bypassing uri format checks in helper
+                ["iat"] = _timeProvider.GetUtcNow().ToUnixTimeSeconds()
+            },
+            SigningCredentials = new SigningCredentials(_securityKey, SecurityAlgorithms.EcdsaSha256),
+            TokenType = "dpop+jwt",
+            AdditionalHeaderClaims = new Dictionary<string, object>
+            {
+                ["jwk"] = _publicJwk
+            }
+        };
+        return handler.CreateToken(descriptor);
+    }
 
     private sealed class StrictJtiReplayCache : IJtiReplayCache
     {

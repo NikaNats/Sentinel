@@ -46,6 +46,11 @@ public static class SentinelAspNetCoreExtensions
 
 public sealed class SentinelAspNetCoreBuilder(IServiceCollection services)
 {
+    private static readonly HashSet<string> GloballyAllowedAlgorithms = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "PS256", "ES256", "EdDSA", "ML-DSA-44", "ML-DSA-65", "ML-DSA-87"
+    };
+
     private int _dpopValidationAdded;
     private int _idempotencyFiltersAdded;
     private int _mtlsBindingAdded;
@@ -64,11 +69,15 @@ public sealed class SentinelAspNetCoreBuilder(IServiceCollection services)
                     .Distinct(StringComparer.Ordinal)
                     .ToArray() ?? [])
             .Validate(options =>
-                    options.AllowedAlgorithms != null &&
-                    options.AllowedAlgorithms.Length == 2 &&
-                    Array.Exists(options.AllowedAlgorithms, a => string.Equals(a, "PS256", StringComparison.Ordinal)) &&
-                    Array.Exists(options.AllowedAlgorithms, a => string.Equals(a, "ES256", StringComparison.Ordinal)),
-                "CRITICAL SECURITY INVARIANT VIOLATED: DPoP algorithms must be restricted to exactly 'PS256' and 'ES256' to comply with FAPI 2.0 Baseline constraints. Weak algorithms are prohibited.")
+                {
+                    if (options.AllowedAlgorithms == null || options.AllowedAlgorithms.Length == 0)
+                    {
+                        return false;
+                    }
+
+                    return options.AllowedAlgorithms.All(alg => GloballyAllowedAlgorithms.Contains(alg));
+                },
+                "CRITICAL SECURITY INVARIANT VIOLATED: Configured DPoP algorithms must be restricted only to secure FAPI 2.0 Baseline/Advanced or FIPS 204 PQC profiles (PS256, ES256, EdDSA, ML-DSA). Weak algorithms (RS256, HS256, none) are strictly prohibited.")
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
