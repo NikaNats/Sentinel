@@ -1,4 +1,7 @@
-﻿using FluentAssertions;
+﻿using System.Buffers;
+using System.Security.Cryptography;
+using System.Text;
+using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -30,12 +33,12 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
     private IRedisConnectionProvider _connectionProvider = null!;
 
     private IDbContextFactory<SentinelSecurityDbContext> _dbContextFactory = null!;
+    private MemoryCache _memoryCache = null!;
     private RedisSessionBlacklistCache _redisCache = null!;
     private ConnectionMultiplexer? _redisConnection;
-    private MemoryCache _memoryCache = null!;
     private HybridSessionBlacklistCache _sut = null!;
 
-    async ValueTask IAsyncLifetime.InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         await Task.WhenAll(
             _postgresContainer.StartAsync(TestContext.Current.CancellationToken),
@@ -74,11 +77,15 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
             _redisCache,
             NullLogger<HybridSessionBlacklistCache>.Instance,
             _dbContextFactory,
-            _memoryCache); // Passes concrete MemoryCache via IMemoryCache parameters
+            TimeProvider.System,
+            _memoryCache,
+            _redisConnection);
     }
 
-    async ValueTask IAsyncDisposable.DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
+        _sut.Dispose();
+
         if (_redisConnection != null)
         {
             await _redisConnection.DisposeAsync();
@@ -96,16 +103,21 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
             _redisContainer.DisposeAsync().AsTask());
     }
 
-    [Fact(DisplayName = "✅ Write-Through: Session successfully writes to real Postgres, propagates to Redis, and evicts L1")]
+    [Fact(DisplayName =
+        "✅ Write-Through: Session successfully writes to real Postgres, propagates to Redis, and evicts L1")]
     public async Task Production_WriteThrough_PersistsToPostgres_AndCachesInRedis_AndClearsL1()
     {
+        // Arrange
         var sessionId = $"session-prod-{Guid.NewGuid():N}";
+        var hashedId = ComputeSha256(sessionId);
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(15);
 
-        _memoryCache.Set($"active_session:{sessionId}", true, new MemoryCacheEntryOptions { Size = 1 });
+        _memoryCache.Set($"active_session:{hashedId}", true, new MemoryCacheEntryOptions { Size = 1 });
 
+        // Act
         await _sut.BlacklistSessionAsync(sessionId, expiresAt, TestContext.Current.CancellationToken);
 
+        // Assert
         var dbOptions = new DbContextOptionsBuilder<SentinelSecurityDbContext>()
             .UseNpgsql(_postgresContainer.GetConnectionString())
             .Options;
@@ -113,23 +125,24 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
         await using (var dbContext = new SentinelSecurityDbContext(dbOptions))
         {
             var dbRecord = await dbContext.SessionBlacklist
-                .SingleOrDefaultAsync(e => e.SessionId == sessionId, TestContext.Current.CancellationToken);
+                .SingleOrDefaultAsync(e => e.SessionId == hashedId, TestContext.Current.CancellationToken);
 
             dbRecord.Should().NotBeNull();
-            dbRecord!.SessionId.Should().Be(sessionId);
+            dbRecord!.SessionId.Should().Be(hashedId);
         }
 
         var db = _redisConnection!.GetDatabase();
-        var redisKey = $"test_blacklist:session:{sessionId}";
+        var redisKey = $"test_blacklist:session:{hashedId}";
         var isCached = await db.KeyExistsAsync(redisKey);
         isCached.Should().BeTrue();
 
-        _memoryCache.TryGetValue($"active_session:{sessionId}", out _).Should().BeFalse();
+        _memoryCache.TryGetValue($"active_session:{hashedId}", out _).Should().BeFalse();
     }
 
     [Fact(DisplayName = "⚡ Fast-Path: When session is active, subsequent checks bypass DB and Redis via L1 barrier")]
     public async Task IsBlacklistedAsync_BypassesDbAndRedis_ViaL1Barrier()
     {
+        // Arrange
         var crashingDbFactoryMock = new Mock<IDbContextFactory<SentinelSecurityDbContext>>(MockBehavior.Strict);
         var crashingRedisMock = new Mock<IRedisConnectionProvider>(MockBehavior.Strict);
 
@@ -138,28 +151,36 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
             _redisOptions,
             NullLogger<RedisSessionBlacklistCache>.Instance);
 
-        var sutWithBypass = new HybridSessionBlacklistCache(
+        // FIX: Wrap local test service instance in a using declaration to satisfy CA2000
+        using var sutWithBypass = new HybridSessionBlacklistCache(
             localRedisCache,
             NullLogger<HybridSessionBlacklistCache>.Instance,
             crashingDbFactoryMock.Object,
+            TimeProvider.System,
             _memoryCache);
 
         var sessionId = $"session-bypass-{Guid.NewGuid():N}";
 
+        // Act
         var result1 = await _sut.IsBlacklistedAsync(sessionId, TestContext.Current.CancellationToken);
         result1.Should().BeFalse();
 
         var act = async () => await sutWithBypass.IsBlacklistedAsync(sessionId, TestContext.Current.CancellationToken);
+
+        // Assert
         await act.Should().NotThrowAsync("L1 Memory Barrier must intercept and bypass database and cache.");
 
         var result2 = await act();
         result2.Should().BeFalse();
     }
 
-    [Fact(DisplayName = "🔄 Read-Through Fallback: On Redis outage, system falls back to PostgreSQL and validates state")]
+    [Fact(DisplayName =
+        "🔄 Read-Through Fallback: On Redis outage, system falls back to PostgreSQL and validates state")]
     public async Task Production_ReadThrough_FallbackToPostgres_DuringRedisOutage()
     {
+        // Arrange
         var sessionId = $"session-fallback-{Guid.NewGuid():N}";
+        var hashedId = ComputeSha256(sessionId);
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
 
         var dbOptions = new DbContextOptionsBuilder<SentinelSecurityDbContext>()
@@ -170,7 +191,7 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
         {
             dbContext.SessionBlacklist.Add(new SessionBlacklistEntry
             {
-                SessionId = sessionId,
+                SessionId = hashedId,
                 ExpiresAt = expiresAt,
                 CreatedAt = DateTimeOffset.UtcNow
             });
@@ -187,17 +208,23 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
             _redisOptions,
             NullLogger<RedisSessionBlacklistCache>.Instance);
 
-        var sutWithFallback = new HybridSessionBlacklistCache(
+        // FIX: Wrap local test service instance in a using declaration to satisfy CA2000
+        using var sutWithFallback = new HybridSessionBlacklistCache(
             brokenRedisCache,
             NullLogger<HybridSessionBlacklistCache>.Instance,
             _dbContextFactory,
+            TimeProvider.System,
             _memoryCache);
 
+        // Act
         var result = await sutWithFallback.IsBlacklistedAsync(sessionId, TestContext.Current.CancellationToken);
+
+        // Assert
         result.Should().BeTrue();
     }
 
-    [Fact(DisplayName = "❌ Fail-Closed: When Redis write fails during revocation, throw SessionBlacklistUnavailableException")]
+    [Fact(DisplayName =
+        "❌ Fail-Closed: When Redis write fails during revocation, throw SessionBlacklistUnavailableException")]
     public async Task Production_WriteThrough_ThrowsException_WhenRedisFails()
     {
         // Arrange
@@ -207,24 +234,36 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
         var brokenConnectionProviderMock = new Mock<IRedisConnectionProvider>(MockBehavior.Strict);
         brokenConnectionProviderMock
             .Setup(p => p.GetConnectionAsync(It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect, "Redis connection timed out"));
+            .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect,
+                "Redis connection timed out"));
 
         var brokenRedisCache = new RedisSessionBlacklistCache(
             brokenConnectionProviderMock.Object,
             _redisOptions,
             NullLogger<RedisSessionBlacklistCache>.Instance);
 
-        var sutWithFailingRedis = new HybridSessionBlacklistCache(
+        // FIX: Wrap local test service instance in a using declaration to satisfy CA2000
+        using var sutWithFailingRedis = new HybridSessionBlacklistCache(
             brokenRedisCache,
             NullLogger<HybridSessionBlacklistCache>.Instance,
             _dbContextFactory,
+            TimeProvider.System,
             _memoryCache);
 
         // Act
-        var act = async () => await sutWithFailingRedis.BlacklistSessionAsync(sessionId, expiresAt, TestContext.Current.CancellationToken);
+        var act = async () =>
+            await sutWithFailingRedis.BlacklistSessionAsync(sessionId, expiresAt,
+                TestContext.Current.CancellationToken);
 
         // Assert
         await act.Should().ThrowAsync<SessionBlacklistUnavailableException>()
             .WithMessage("Cache synchronization failed during session revocation. System is fail-closed.");
+    }
+
+    private static string ComputeSha256(string input)
+    {
+        var bytes = Encoding.UTF8.GetBytes(input);
+        var hash = SHA256.HashData(bytes);
+        return Convert.ToHexString(hash);
     }
 }

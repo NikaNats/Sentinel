@@ -52,7 +52,7 @@ public sealed class MlDsaSignatureVerifierTests
         // Corrupt the signature by flipping the last byte (Simulation of data corruption / attack)
         signature[^1] ^= 0xFF;
 
-        // Act
+        // Act: Verify modified payload
         var result = _sut.Verify("ML-DSA-44", publicKey, input, signature);
 
         // Assert: Must reject (Fail-Closed)
@@ -67,7 +67,7 @@ public sealed class MlDsaSignatureVerifierTests
             return;
         }
 
-        // Generate two separate key pairs
+        // Arrange: Generate two separate key pairs
         using var mldsa1 = MLDsa.GenerateKey(MLDsaAlgorithm.MLDsa44);
         using var mldsa2 = MLDsa.GenerateKey(MLDsaAlgorithm.MLDsa44);
 
@@ -75,17 +75,54 @@ public sealed class MlDsaSignatureVerifierTests
         var input = "secure-data"u8.ToArray();
         var signature = mldsa1.SignData(input); // Signed by key 1
 
-        // Act
+        // Act: Verify against mismatched public key
         var result = _sut.Verify("ML-DSA-44", publicKey2, input, signature);
 
         // Assert
         result.Should().BeFalse("Signature verified against the wrong public key must be rejected.");
     }
 
+    [Fact(DisplayName = "🛡️ Dimension Check: Rejects public key or signature with invalid FIPS 204 dimensions")]
+    public void Verify_InvalidKeyOrSignatureDimensions_ReturnsFalse()
+    {
+        if (!MLDsa.IsSupported)
+        {
+            return;
+        }
+
+        // Arrange: Generate correct ML-DSA-44 key and signature (NIST Level 1)
+        using var mldsa = MLDsa.GenerateKey(MLDsaAlgorithm.MLDsa44);
+        var publicKey = mldsa.ExportMLDsaPublicKey();
+        var input = "secure-data"u8.ToArray();
+        var signature = mldsa.SignData(input);
+
+        // Act: Attempt to verify using ML-DSA-65 algorithm (size dimension mismatch!)
+        var result = _sut.Verify("ML-DSA-65", publicKey, input, signature);
+
+        // Assert: Must reject instantly without calling native cryptographic verification
+        result.Should().BeFalse("Dimension mismatch between ML-DSA-44 key dimensions and ML-DSA-65 parameters must fail closed.");
+    }
+
+    [Theory(DisplayName = "❌ Boundary: Null, empty, or whitespace algorithm identifiers must fail closed")]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Verify_NullOrEmptyAlgorithm_ReturnsFalse(string? invalidAlgorithm)
+    {
+        // Act
+        var result = _sut.Verify(invalidAlgorithm!, [1, 2, 3], [4, 5], [6, 7]);
+
+        // Assert
+        result.Should().BeFalse("Null, empty, or whitespace algorithm identifiers must fail-closed safely.");
+    }
+
     [Fact(DisplayName = "❌ Boundary: Unsupported algorithm names must be rejected gracefully")]
     public void Verify_UnsupportedAlgorithm_ReturnsFalse()
     {
+        // Act
         var result = _sut.Verify("INVALID-ALGORITHM-NAME", [1, 2, 3], [4, 5], [6, 7]);
+
+        // Assert
         result.Should().BeFalse("Unsupported algorithm names must fail-closed without crashing.");
     }
 }
