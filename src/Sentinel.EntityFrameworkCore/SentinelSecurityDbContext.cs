@@ -5,13 +5,8 @@ namespace Sentinel.EntityFrameworkCore;
 /// <summary>
 ///     Entity Framework context for Sentinel security caches.
 /// </summary>
-public sealed class SentinelSecurityDbContext : DbContext
+public sealed class SentinelSecurityDbContext(DbContextOptions<SentinelSecurityDbContext> options) : DbContext(options)
 {
-    public SentinelSecurityDbContext(DbContextOptions<SentinelSecurityDbContext> options)
-        : base(options)
-    {
-    }
-
     public DbSet<JtiReplayCacheEntry> JtiReplayCache { get; set; } = null!;
     public DbSet<DpopNonceEntry> DpopNonceStore { get; set; } = null!;
     public DbSet<SessionBlacklistEntry> SessionBlacklist { get; set; } = null!;
@@ -19,6 +14,8 @@ public sealed class SentinelSecurityDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.HasDefaultSchema("security_cache");
 
         // JTI Replay Cache entity configuration
         modelBuilder.Entity<JtiReplayCacheEntry>()

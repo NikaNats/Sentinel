@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using Sentinel.EntityFrameworkCore;
 using Sentinel.Infrastructure.Persistence;
 using Sentinel.Redis;
 using Sentinel.Redis.Extensions;
@@ -72,8 +73,12 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
 
         // 4. ARCHITECT'S FIX: Run migrations AFTER CreateClient (Services container exists)
         using var scope = Services.CreateScope();
+
         var dbContext = scope.ServiceProvider.GetRequiredService<SentinelDbContext>();
         await dbContext.Database.MigrateAsync();
+
+        var securityDbContext = scope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
+        await securityDbContext.Database.MigrateAsync();
     }
 
     public override async ValueTask DisposeAsync()
@@ -114,7 +119,36 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<DbContextOptions<SentinelDbContext>>();
-            services.AddDbContext<SentinelDbContext>(options => { options.UseNpgsql(postgresConnectionString); });
+            services.AddDbContext<SentinelDbContext>(options =>
+            {
+                options.UseNpgsql(postgresConnectionString, builder =>
+                {
+                    builder.MigrationsAssembly(typeof(SentinelDbContext).Assembly.GetName().Name);
+
+                    builder.EnableRetryOnFailure(
+                        maxRetryCount: 5,
+                        maxRetryDelay: TimeSpan.FromSeconds(10),
+                        errorCodesToAdd: null);
+                });
+            });
+
+            services.RemoveAll<DbContextOptions<SentinelSecurityDbContext>>();
+            services.AddDbContextFactory<SentinelSecurityDbContext>(options =>
+            {
+                options.UseNpgsql(postgresConnectionString, builder =>
+                {
+                    builder.MigrationsAssembly(typeof(SentinelSecurityDbContext).Assembly.GetName().Name);
+
+                    builder.EnableRetryOnFailure(
+                        maxRetryCount: 5,
+                        maxRetryDelay: TimeSpan.FromSeconds(10),
+                        errorCodesToAdd: null);
+                });
+            });
+
+            services.RemoveAll<SentinelSecurityDbContext>();
+            services.AddScoped<SentinelSecurityDbContext>(sp =>
+                sp.GetRequiredService<IDbContextFactory<SentinelSecurityDbContext>>().CreateDbContext());
 
             services.RemoveAll<IDistributedCache>();
             services.RemoveAll<IConnectionMultiplexer>();
@@ -147,7 +181,6 @@ public sealed class SentinelApiFactory : WebApplicationFactory<Program>, IAsyncL
             services.AddTransient<ISdJwtTokenValidator, TestSdJwtTokenValidator>();
             services.AddSingleton<ISsfTokenValidator, TestSsfTokenValidator>();
 
-            // Successfully registers SsfEventProcessorAdapter against Application layer interface
             services.AddScoped<ISsfEventProcessor, SsfEventProcessorAdapter>();
             services.AddScoped<IAuthRevocationService, AuthRevocationServiceAdapter>();
 

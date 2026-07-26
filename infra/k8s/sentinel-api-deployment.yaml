@@ -66,6 +66,60 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
+      
+      initContainers:
+        # Running the sessions and security database migration
+        - name: init-security-migrations
+          image: ghcr.io/acme/sentinel-migrations:v1.0.0
+          imagePullPolicy: IfNotPresent
+          command: ["./sentinel-security-migrate-bundle"]
+          env:
+            - name: ConnectionStrings__Postgres
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-runtime-secrets
+                  key: postgres-connection-string
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+
+        # Running the business domain database migration
+        - name: init-domain-migrations
+          image: ghcr.io/acme/sentinel-migrations:v1.0.0
+          imagePullPolicy: IfNotPresent
+          command: ["./sentinel-domain-migrate-bundle"]
+          env:
+            - name: ConnectionStrings__Postgres
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-runtime-secrets
+                  key: postgres-connection-string
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+
       containers:
         - name: sentinel-api
           image: ghcr.io/acme/sentinel-api:v1.0.0
@@ -91,6 +145,14 @@ spec:
               value: http://otel-collector.observability.svc.cluster.local:4317
             - name: OTEL_SERVICE_NAME
               value: sentinel-api
+            
+            # Added Postgres connection for the main application
+            - name: ConnectionStrings__Postgres
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-runtime-secrets
+                  key: postgres-connection-string
+            
             - name: ConnectionStrings__Redis
               valueFrom:
                 secretKeyRef:
