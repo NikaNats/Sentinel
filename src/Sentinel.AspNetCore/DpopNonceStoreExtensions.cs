@@ -5,13 +5,25 @@ namespace Sentinel.AspNetCore;
 /// <summary>
 ///     Internal extensions for IDpopNonceStore to bridge between legacy convenience methods
 ///     and new abstraction APIs. For use by AspNetCore middleware only.
+///     SECURITY INVARIANT: Infrastructure exceptions are deliberately NOT swallowed here.
+///     A store outage (<see cref="Sentinel.Security.Abstractions.Exceptions.NonceStoreUnavailableException" />)
+///     propagates to <c>DpopValidationMiddleware</c>, which fails closed with HTTP 503 + Retry-After
+///     instead of being misinterpreted as a benign client-side nonce mismatch (HTTP 401).
 /// </summary>
 internal static class DpopNonceStoreExtensions
 {
     /// <summary>
     ///     Stores a nonce for a given thumbprint with a specified TTL.
     /// </summary>
-#pragma warning disable CA1031 // Intentionally catches all exceptions from nonce storage to provide safe fallback
+    /// <param name="store">The DPoP nonce store instance.</param>
+    /// <param name="thumbprint">JWK thumbprint identifying the client.</param>
+    /// <param name="nonce">The cryptographic nonce to store.</param>
+    /// <param name="ttl">Time-to-live duration for the nonce.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>True if storage completed successfully.</returns>
+    /// <exception cref="Sentinel.Security.Abstractions.Exceptions.NonceStoreUnavailableException">
+    ///     Thrown when the backing store is unreachable; caller MUST fail closed.
+    /// </exception>
     public static async Task<bool> TryStoreNonceAsync(
         this IDpopNonceStore store,
         string thumbprint,
@@ -19,44 +31,11 @@ internal static class DpopNonceStoreExtensions
         TimeSpan ttl,
         CancellationToken ct)
     {
-        try
-        {
-            await store.SetNonceAsync(thumbprint, nonce, DateTimeOffset.UtcNow.Add(ttl), ct);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-#pragma warning restore CA1031
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbprint);
+        ArgumentException.ThrowIfNullOrWhiteSpace(nonce);
 
-    /// <summary>
-    ///     Retrieves and validates a stored nonce, clearing it if it matches.
-    /// </summary>
-#pragma warning disable CA1031 // Intentionally catches all exceptions from nonce retrieval to provide safe fallback
-    public static async Task<bool> ConsumeNonceIfMatchesAsync(
-        this IDpopNonceStore store,
-        string thumbprint,
-        string expectedNonce,
-        CancellationToken ct)
-    {
-        try
-        {
-            var nonce = await store.GetNonceAsync(thumbprint, ct);
-            if (nonce == expectedNonce)
-            {
-                // Clear the nonce by setting it to empty
-                await store.SetNonceAsync(thumbprint, string.Empty, DateTimeOffset.UtcNow, ct);
-                return true;
-            }
-
-            return false;
-        }
-        catch
-        {
-            return false;
-        }
+        await store.SetNonceAsync(thumbprint, nonce, DateTimeOffset.UtcNow.Add(ttl), ct).ConfigureAwait(false);
+        return true;
     }
-#pragma warning restore CA1031
 }

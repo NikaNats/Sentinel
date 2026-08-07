@@ -164,6 +164,12 @@ public sealed class DpopValidationMiddlewareTests : IDisposable
             .Setup(x => x.ConsumeNonceIfMatchesAsync(_thumbprint, expectedNonce, It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
+        // The middleware stores the retry nonce after a replay is detected.
+        _nonceStoreMock
+            .Setup(x => x.SetNonceAsync(_thumbprint, It.IsAny<string>(), It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
         // Corrected: Make static to satisfy performance analyzer guidelines
         static Task Next(HttpContext _)
         {

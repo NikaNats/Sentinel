@@ -11,6 +11,7 @@ using Microsoft.IdentityModel.Tokens;
 using Sentinel.AspNetCore.Stores;
 using Sentinel.DPoP.Pqc;
 using Sentinel.Security.Abstractions.DPoP;
+using Sentinel.Security.Abstractions.Exceptions;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Options;
 using Sentinel.Security.Abstractions.Pqc;
@@ -43,6 +44,10 @@ internal sealed class DpopValidationMiddleware
     private static readonly Action<ILogger, string, Exception?> LogAttackBlocked =
         LoggerMessage.Define<string>(LogLevel.Critical, new EventId(2002, "DpopAttackBlocked"),
             "SECURITY ALERT: {Reason}");
+
+    private static readonly Action<ILogger, Exception?> LogInfrastructureUnavailable =
+        LoggerMessage.Define(LogLevel.Error, new EventId(2003, "DpopInfrastructureUnavailable"),
+            "Security infrastructure unavailable during DPoP proof validation; failing closed with HTTP 503.");
 
     private readonly HashSet<string> _allowedAlgorithms;
     private readonly L1AntiFloodCache _l1AntiFloodCache;
@@ -78,6 +83,25 @@ internal sealed class DpopValidationMiddleware
     }
 
     public async Task InvokeAsync(
+        HttpContext context,
+        IDpopProofValidator validator,
+        IDpopNonceStore nonceStore)
+    {
+        try
+        {
+            await InvokeCoreAsync(context, validator, nonceStore).ConfigureAwait(false);
+        }
+        catch (SecurityInfrastructureException ex)
+        {
+            // SRE Fail-Closed mandate: an infrastructure outage (e.g. Redis cluster
+            // offline) must surface as a transient 503 + Retry-After, never as a
+            // benign 401 use_dpop_nonce that would trigger an infinite client retry loop.
+            LogInfrastructureUnavailable(_logger, ex);
+            await EnforceServiceUnavailableAsync(context, ex).ConfigureAwait(false);
+        }
+    }
+
+    private async Task InvokeCoreAsync(
         HttpContext context,
         IDpopProofValidator validator,
         IDpopNonceStore nonceStore)
@@ -243,6 +267,11 @@ internal sealed class DpopValidationMiddleware
                 }
                 catch (OperationCanceledException)
                 {
+                }
+                catch (SecurityInfrastructureException)
+                {
+                    // Response has already started; the fail-closed 503 was handled
+                    // in InvokeAsync when the store outage first surfaced.
                 }
             }, rotationState);
         }
@@ -492,6 +521,42 @@ internal sealed class DpopValidationMiddleware
         Span<byte> bytes = stackalloc byte[32];
         RandomNumberGenerator.Fill(bytes);
         return Base64Url.EncodeToString(bytes);
+    }
+
+    /// <summary>
+    ///     Fails the request closed with HTTP 503 Service Unavailable and a Retry-After
+    ///     header so client SDKs back off instead of retrying an 401 and exhausting retries.
+    /// </summary>
+    private static async Task EnforceServiceUnavailableAsync(
+        HttpContext context,
+        SecurityInfrastructureException ex)
+    {
+        AuthTelemetry.DpopFailures.Add(1, new KeyValuePair<string, object?>("reason", "infrastructure_unavailable"));
+
+        context.Response.Headers.Append("Retry-After", "5");
+        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        context.Response.ContentType = "application/problem+json; charset=utf-8";
+
+        var problem = new ProblemDetails
+        {
+            Type = "/errors/service-unavailable",
+            Title = "Security infrastructure unavailable",
+            Status = StatusCodes.Status503ServiceUnavailable,
+            Detail = "A required security infrastructure service is temporarily unavailable. Please retry after the specified interval.",
+            Instance = context.Request.Path
+        };
+
+        try
+        {
+            var json = JsonSerializer.Serialize(problem, AspNetCoreJsonContext.Default.ProblemDetails);
+            await context.Response.WriteAsync(json, context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (IOException)
+        {
+        }
     }
 
     private sealed record NonceRotationState(
