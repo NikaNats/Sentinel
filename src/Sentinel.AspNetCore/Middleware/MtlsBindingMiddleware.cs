@@ -20,6 +20,7 @@ namespace Sentinel.AspNetCore.Middleware;
 internal sealed class MtlsBindingMiddleware
 {
     private const string ClientAuthOid = "1.3.6.1.5.5.7.3.2"; // Client Authentication EKU
+    private const string DpopJktItemKey = "dpop.jkt";
 
     // Structured logging delegates for zero-allocation logging on hot paths
     private static readonly Action<ILogger, string, Exception?> LogMtlsWarning =
@@ -62,16 +63,25 @@ internal sealed class MtlsBindingMiddleware
             return;
         }
 
-        // 1. High-Performance Bypass: If the token is bound via DPoP instead of mTLS, pass through immediately.
-        // This prevents DPoP tokens from being blocked by subsequent mTLS-binding checks.
+        // 1. DPoP-bound tokens (cnf claim carries 'jkt' and no 'x5t#S256') are
+        // covered by DpoPValidationMiddleware. Pass through ONLY if a valid DPoP
+        // proof was actually validated upstream (recorded in context.Items).
         if (IsDpopBoundToken(context))
         {
+            if (!context.Items.ContainsKey(DpopJktItemKey))
+            {
+                LogMtlsWarning(_logger,
+                    "Authenticated token is DPoP-bound (cnf.jkt) but no validated DPoP proof was presented.", null);
+                await RejectDpopUnbound(context).ConfigureAwait(false);
+                return;
+            }
+
             await _next(context).ConfigureAwait(false);
             return;
         }
 
         // 2. Expected thumbprint MUST be extracted exclusively from the authenticated user claims
-        // If the token is not DPoP-bound and lacks an mTLS cnf claim, reject immediately (Scenario 10 Fail-Closed).
+        // If the token is not DPoP-bound and lacks an mTLS cnf claim, reject (Scenario 10 Fail-Closed).
         if (!TryGetThumbprintFromAuthenticatedPrincipal(context, out var expectedThumbprint))
         {
             LogMtlsWarning(_logger,
@@ -408,6 +418,25 @@ internal sealed class MtlsBindingMiddleware
             Title = "Certificate Binding Error",
             Detail = detail,
             Status = StatusCodes.Status403Forbidden,
+            Instance = context.Request.Path
+        };
+
+        var json = JsonSerializer.Serialize(problem, AspNetCoreJsonContext.Default.ProblemDetails);
+        await context.Response.WriteAsync(json, context.RequestAborted).ConfigureAwait(false);
+    }
+
+    private static async Task RejectDpopUnbound(HttpContext context)
+    {
+        context.Response.Headers.Append("WWW-Authenticate", "DPoP error=\"invalid_dpop_proof\"");
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        context.Response.ContentType = "application/problem+json; charset=utf-8";
+
+        var problem = new ProblemDetails
+        {
+            Type = "/errors/dpop-binding-required",
+            Title = "DPoP Binding Required",
+            Detail = "The access token is bound to a DPoP proof key, but no validated DPoP proof was attached to this request.",
+            Status = StatusCodes.Status401Unauthorized,
             Instance = context.Request.Path
         };
 

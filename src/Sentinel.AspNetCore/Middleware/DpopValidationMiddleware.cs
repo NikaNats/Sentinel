@@ -29,7 +29,6 @@ internal sealed class DpopValidationMiddleware
 {
     private const long TargetFailureFloorMs = 100;
     private const string DpopSchemePrefix = "DPoP ";
-    private const string BearerSchemePrefix = "Bearer ";
     private const string DpopTypValue = "dpop+jwt";
     private const string DpopJktItemKey = "dpop.jkt";
     private const string DpopNonceHeader = "DPoP-Nonce";
@@ -100,16 +99,12 @@ internal sealed class DpopValidationMiddleware
             return;
         }
 
-        // Isolate the ReadOnlySpan in a synchronous helper to prevent state-machine lifting errors (CS4007)
-        if (!TryValidateAuthHeader(authHeader, out var isBearerDowngrade, out var accessToken))
+        // Only requests that explicitly opt into the DPoP scheme get DPoP
+        // proof validation. Bearer-presented tokens are delegated to JWT/SD-JWT
+        // authentication; binding invariants are then enforced downstream by
+        // MtIsBindingMiddleware (fail-closed 401 when a proof is missing).
+        if (!TryValidateAuthHeader(authHeader, out var accessToken))
         {
-            if (isBearerDowngrade)
-            {
-                await EnforceConstantTimeFailureAsync(startTimestamp, context, "bearer_downgrade_attempt")
-                    .ConfigureAwait(false);
-                return;
-            }
-
             await _next(context).ConfigureAwait(false);
             return;
         }
@@ -257,13 +252,12 @@ internal sealed class DpopValidationMiddleware
 
     /// <summary>
     ///     Synchronous stack isolation helper to keep Ref Structs (ReadOnlySpan) out of the async state machine.
+    ///     Only the DPoP scheme enters DPoP proof validation; all other schemes pass through.
     /// </summary>
     private static bool TryValidateAuthHeader(
         string authHeader,
-        out bool isBearerDowngrade,
         [NotNullWhen(true)] out string? accessToken)
     {
-        isBearerDowngrade = false;
         accessToken = null;
 
         var span = authHeader.AsSpan();
@@ -272,15 +266,6 @@ internal sealed class DpopValidationMiddleware
         {
             accessToken = authHeader.Substring(DpopSchemePrefix.Length).Trim();
             return true;
-        }
-
-        if (span.StartsWith(BearerSchemePrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            var bearerPayload = span[BearerSchemePrefix.Length..].Trim();
-            if (!bearerPayload.Contains('~'))
-            {
-                isBearerDowngrade = true;
-            }
         }
 
         return false;

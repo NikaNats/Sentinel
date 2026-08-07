@@ -314,6 +314,50 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
     }
 
+    [Fact(DisplayName = "Scenario 9.5: DPoP-bound token with validated proof passes through")]
+    public async Task InvokeAsync_DpopBoundToken_WithValidatedProof_PassesThrough()
+    {
+        // Arrange
+        var context = CreateHttpContextWithJkt("dpop-thumbprint-abc");
+        context.Items["dpop.jkt"] = "dpop-thumbprint-abc";
+
+        static Task Next(HttpContext httpContext)
+        {
+            httpContext.Items["next_called"] = true;
+            return Task.CompletedTask;
+        }
+
+        var middleware = new MtlsBindingMiddleware(Next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor,
+            _certCache);
+
+        // Act
+        await middleware.InvokeAsync(context);
+
+        // Assert
+        context.Items.ContainsKey("next_called").Should().BeTrue("validated DPoP-bound token should proceed");
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
+    [Fact(DisplayName = "Scenario 9.4: DPoP-bound token without validated proof is rejected 401 (Fail-Closed)")]
+    public async Task InvokeAsync_DpopBoundToken_WithoutValidatedProof_IsRejected()
+    {
+        // Arrange
+        var context = CreateHttpContextWithJkt("dpop-jwk-abc");
+
+        RequestDelegate next = _ => throw new InvalidOperationException("DPoP downgrade must be blocked!");
+
+        var middleware = new MtlsBindingMiddleware(next, NullLogger<MtlsBindingMiddleware>.Instance, _optionsAccessor,
+            _certCache);
+
+        // Act
+        await middleware.InvokeAsync(context);
+
+        // Assert
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        context.Response.Headers.WWWAuthenticate.ToString().Should().Contain("invalid_dpop_proof",
+            because: "a DPoP-bound token presented without its proof is a binding downgrade");
+    }
+
     [Fact(DisplayName = "Scenario 10: Authenticated request without 'cnf' claim is strictly rejected (Fail-Closed)")]
     public async Task InvokeAsync_AuthenticatedButNoCnfClaim_IsRejected()
     {
@@ -348,6 +392,20 @@ public sealed class MtlsBindingMiddlewareTests : IDisposable
         {
             new Claim("sub", "test-workload-user"),
             new Claim("cnf", $"{{\"x5t#S256\":\"{thumbprint}\"}}")
+        };
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "test"));
+        return context;
+    }
+
+    private static DefaultHttpContext CreateHttpContextWithJkt(string jkt)
+    {
+        var context = new DefaultHttpContext();
+        context.Response.Body = new MemoryStream();
+
+        var claims = new[]
+        {
+            new Claim("sub", "test-workload-user"),
+            new Claim("cnf", $"{{\"jkt\":\"{jkt}\"}}")
         };
         context.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "test"));
         return context;

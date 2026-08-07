@@ -211,12 +211,20 @@ public sealed class DpopValidationMiddlewareSecurityTests
         context.Response.Headers.WWWAuthenticate.ToString().Should().Contain("invalid_dpop_proof");
     }
 
-    [Fact(DisplayName = "🛡️ Security: Bearer Token on DPoP-protected endpoint is rejected as Downgrade Attempt")]
-    public async Task InvokeAsync_WithBearerToken_TriggersConstantTimeFailure()
+    [Fact(DisplayName =
+        "✅ Security: Bearer token passes through DPoP middleware (binding enforced by MtlsBindingMiddleware)")]
+    public async Task InvokeAsync_WithBearerToken_PassesThroughToNext()
     {
+        var nextCalled = false;
+
+        RequestDelegate next = _ =>
+        {
+            nextCalled = true;
+            return Task.CompletedTask;
+        };
+
         var context = CreateHttpContextWithHeaders("Bearer raw-bearer-token-value", string.Empty);
 
-        RequestDelegate next = _ => throw new InvalidOperationException("Bypass allowed!");
         var middleware = new DpopValidationMiddleware(next, _thumbprintComputer, _timeProvider, _l1Cache,
             NullLogger<DpopValidationMiddleware>.Instance, _dpopOptions);
 
@@ -224,8 +232,8 @@ public sealed class DpopValidationMiddlewareSecurityTests
         await middleware.InvokeAsync(context, _validatorMock.Object, _nonceStoreMock.Object);
 
         // Assert
-        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
-        context.Response.Headers.WWWAuthenticate.ToString().Should().Contain("error=\"invalid_dpop_proof\"");
+        nextCalled.Should().BeTrue("Bearer-presented tokens must be delegated to JWT authentication.");
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
     }
 
     [Fact(DisplayName =
