@@ -1,4 +1,4 @@
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Options;
 using Sentinel.DPoP.Pqc;
 using Sentinel.Security.Abstractions.Options;
@@ -303,7 +303,13 @@ public sealed class DpopProofValidator : IDpopProofValidator
             ValidateAudience = false,
             RequireSignedTokens = true,
             ValidAlgorithms = [algorithm],
+            // RFC 9449 DPoP proofs carry iat/jti/htm/htu/nonce - exp is NOT part
+            // of the proof claim set. Freshness is enforced via the iat_out_of_bounds
+            // check below (ProofLifetimeSeconds + clock skew) and single-use via the
+            // JTI replay cache. Lifetime validation would reject every valid proof.
+            // nosemgrep: csharp.lang.security.ad.jwt-tokenvalidationparameters-no-expiry-validation.jwt-tokenvalidationparameters-no-expiry-validation
             ValidateLifetime = validateLifetime,
+            // nosemgrep: csharp.lang.security.ad.jwt-tokenvalidationparameters-no-expiry-validation.jwt-tokenvalidationparameters-no-expiry-validation
             RequireExpirationTime = validateLifetime,
             CryptoProviderFactory = _pqcFactory
         };
