@@ -12,6 +12,9 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.Configuration;
@@ -79,6 +82,7 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
             .WithEnvironment("KC_HTTPS_PROTOCOLS", "TLSv1.3")
             .WithEnvironment("KC_HTTPS_CERTIFICATE_FILE", KeycloakCertContainerPath)
             .WithEnvironment("KC_HTTPS_CERTIFICATE_KEY_FILE", KeycloakKeyContainerPath)
+            .WithEnvironment("KC_FEATURES", "dpop")
             .WithBindMount(keycloakCertPath, KeycloakCertContainerPath)
             .WithBindMount(keycloakKeyPath, KeycloakKeyContainerPath)
             .WithPortBinding(KeycloakHttpsPort, true)
@@ -235,6 +239,14 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
                 options.Authority = Authority;
                 options.MetadataAddress = $"{Authority}/.well-known/openid-configuration";
                 options.Backchannel = CreateKeycloakHttpClient();
+
+                options.ConfigurationManager = new ConfigurationManager<OpenIdConnectConfiguration>(
+                    options.MetadataAddress,
+                    new OpenIdConnectConfigurationRetriever(),
+                    new HttpDocumentRetriever(options.Backchannel)
+                    {
+                        RequireHttps = options.RequireHttpsMetadata,
+                    });
 
                 options.TokenValidationParameters.IssuerSigningKey = null;
                 options.TokenValidationParameters.IssuerSigningKeys = null;
@@ -399,6 +411,19 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
                 },
                 protocolMappers = new object[]
                 {
+                    new
+                    {
+                        name = "audience-sentinel-api",
+                        protocol = "openid-connect",
+                        protocolMapper = "oidc-audience-mapper",
+                        consentRequired = false,
+                        config = new Dictionary<string, string>
+                        {
+                            ["access.token.claim"] = "true",
+                            ["id.token.claim"] = "false",
+                            ["included.client.audience"] = ClientId
+                        }
+                    },
                     new
                     {
                         name = "acr-hardcoded",

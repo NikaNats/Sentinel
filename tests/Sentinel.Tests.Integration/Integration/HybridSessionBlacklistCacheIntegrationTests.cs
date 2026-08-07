@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using Sentinel.EntityFrameworkCore;
 using Sentinel.EntityFrameworkCore.Models;
@@ -34,6 +35,7 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
 
     private IDbContextFactory<SentinelSecurityDbContext> _dbContextFactory = null!;
     private MemoryCache _memoryCache = null!;
+    private IOptions<MemoryCacheOptions> _memoryCacheOptions = null!;
     private RedisSessionBlacklistCache _redisCache = null!;
     private ConnectionMultiplexer? _redisConnection;
     private HybridSessionBlacklistCache _sut = null!;
@@ -72,14 +74,17 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
             NullLogger<RedisSessionBlacklistCache>.Instance);
 
         _memoryCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 1000 });
+        _memoryCacheOptions = Options.Create(new MemoryCacheOptions { SizeLimit = 1000 });
 
         _sut = new HybridSessionBlacklistCache(
             _redisCache,
             NullLogger<HybridSessionBlacklistCache>.Instance,
             _dbContextFactory,
             TimeProvider.System,
+            Options.Create(_redisOptions),
             _memoryCache,
-            _redisConnection);
+            _memoryCacheOptions,
+            redisMultiplexer: _redisConnection);
     }
 
     public async ValueTask DisposeAsync()
@@ -104,15 +109,13 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
     }
 
     [Fact(DisplayName =
-        "✅ Write-Through: Session successfully writes to real Postgres, propagates to Redis, and evicts L1")]
-    public async Task Production_WriteThrough_PersistsToPostgres_AndCachesInRedis_AndClearsL1()
+        "✅ Write-Through: Session persists to real Postgres, propagates to Redis, and sets L1 revoked marker")]
+    public async Task Production_WriteThrough_PersistsToPostgres_AndCachesInRedis_AndSetsL1Revoked()
     {
         // Arrange
         var sessionId = $"session-prod-{Guid.NewGuid():N}";
         var hashedId = ComputeSha256(sessionId);
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(15);
-
-        _memoryCache.Set($"active_session:{hashedId}", true, new MemoryCacheEntryOptions { Size = 1 });
 
         // Act
         await _sut.BlacklistSessionAsync(sessionId, expiresAt, TestContext.Current.CancellationToken);
@@ -136,13 +139,22 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
         var isCached = await db.KeyExistsAsync(redisKey);
         isCached.Should().BeTrue();
 
+        // SECURITY INVARIANT: L1 stores a CONFIRMED revocation (fail-closed), never an "active" state.
+        _memoryCache.TryGetValue($"revoked_session:{hashedId}", out _).Should().BeTrue();
         _memoryCache.TryGetValue($"active_session:{hashedId}", out _).Should().BeFalse();
     }
 
-    [Fact(DisplayName = "⚡ Fast-Path: When session is active, subsequent checks bypass DB and Redis via L1 barrier")]
-    public async Task IsBlacklistedAsync_BypassesDbAndRedis_ViaL1Barrier()
+    [Fact(DisplayName =
+        "❌ Fail-Closed Fast-Path: Locally confirmed revocation is rejected without touching Redis or PostgreSQL")]
+    public async Task IsBlacklistedAsync_L1RevokedMarker_FailsClosed_WithoutRedisOrDb()
     {
         // Arrange
+        var sessionId = $"session-revoked-{Guid.NewGuid():N}";
+        var hashedId = ComputeSha256(sessionId);
+
+        // Pre-populate the shared L1 with a CONFIRMED revocation.
+        _memoryCache.Set($"revoked_session:{hashedId}", true, new MemoryCacheEntryOptions().SetSize(1));
+
         var crashingDbFactoryMock = new Mock<IDbContextFactory<SentinelSecurityDbContext>>(MockBehavior.Strict);
         var crashingRedisMock = new Mock<IRedisConnectionProvider>(MockBehavior.Strict);
 
@@ -151,27 +163,22 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
             _redisOptions,
             NullLogger<RedisSessionBlacklistCache>.Instance);
 
-        // FIX: Wrap local test service instance in a using declaration to satisfy CA2000
         using var sutWithBypass = new HybridSessionBlacklistCache(
             localRedisCache,
             NullLogger<HybridSessionBlacklistCache>.Instance,
             crashingDbFactoryMock.Object,
             TimeProvider.System,
-            _memoryCache);
-
-        var sessionId = $"session-bypass-{Guid.NewGuid():N}";
+            Options.Create(_redisOptions),
+            _memoryCache,
+            _memoryCacheOptions);
 
         // Act
-        var result1 = await _sut.IsBlacklistedAsync(sessionId, TestContext.Current.CancellationToken);
-        result1.Should().BeFalse();
-
-        var act = async () => await sutWithBypass.IsBlacklistedAsync(sessionId, TestContext.Current.CancellationToken);
+        var result = await sutWithBypass.IsBlacklistedAsync(sessionId, TestContext.Current.CancellationToken);
 
         // Assert
-        await act.Should().NotThrowAsync("L1 Memory Barrier must intercept and bypass database and cache.");
-
-        var result2 = await act();
-        result2.Should().BeFalse();
+        result.Should().BeTrue("a locally confirmed revocation must fail closed without reaching L2/L3");
+        Assert.False(_memoryCache.TryGetValue($"active_session:{hashedId}", out _),
+            "L1 must never cache a positive 'session is active' decision.");
     }
 
     [Fact(DisplayName =
@@ -214,7 +221,9 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
             NullLogger<HybridSessionBlacklistCache>.Instance,
             _dbContextFactory,
             TimeProvider.System,
-            _memoryCache);
+            Options.Create(_redisOptions),
+            _memoryCache,
+            _memoryCacheOptions);
 
         // Act
         var result = await sutWithFallback.IsBlacklistedAsync(sessionId, TestContext.Current.CancellationToken);
@@ -248,7 +257,9 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
             NullLogger<HybridSessionBlacklistCache>.Instance,
             _dbContextFactory,
             TimeProvider.System,
-            _memoryCache);
+            Options.Create(_redisOptions),
+            _memoryCache,
+            _memoryCacheOptions);
 
         // Act
         var act = async () =>

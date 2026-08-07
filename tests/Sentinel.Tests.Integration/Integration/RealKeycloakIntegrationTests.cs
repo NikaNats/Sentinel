@@ -85,6 +85,6 @@ public sealed class RealKeycloakIntegrationTests(RealKeycloakApiFactory factory)
         using var response = await apiClient.SendAsync(request, CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.Contains("invalid_dpop_proof", response.Headers.WwwAuthenticate.ToString());
+        Assert.Contains("invalid_dpop_proof", response.Headers.WwwAuthenticate.ToString(), StringComparison.Ordinal);
     }
 }

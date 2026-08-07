@@ -3,6 +3,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
@@ -18,6 +19,7 @@ using Sentinel.Application.Auth.Options;
 using Sentinel.Application.Common.Abstractions;
 using Sentinel.AspNetCore.Endpoints;
 using Sentinel.AspNetCore.Errors;
+using Sentinel.DPoP;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Security.Abstractions.Identity;
 
@@ -82,7 +84,7 @@ public sealed class ChangePasswordIntegrationTests : IClassFixture<SentinelApiFa
         });
     }
 
-    private static string MintTestToken(string subject, string username, string sid, string acr)
+    private static string MintTestToken(string subject, string username, string sid, string acr, string jkt)
     {
         var handler = new JsonWebTokenHandler();
         var now = DateTimeOffset.UtcNow;
@@ -100,7 +102,7 @@ public sealed class ChangePasswordIntegrationTests : IClassFixture<SentinelApiFa
             ["acr"] = acr,
             ["scope"] = "profile",
             ["realm_access.roles"] = JsonSerializer.Serialize(new[] { "user" }),
-            ["cnf"] = new Dictionary<string, string> { ["jkt"] = "mock-jkt" },
+            ["cnf"] = new Dictionary<string, string> { ["jkt"] = jkt },
             ["auth_time"] = now.ToUnixTimeSeconds()
         };
 
@@ -117,6 +119,43 @@ public sealed class ChangePasswordIntegrationTests : IClassFixture<SentinelApiFa
         return handler.CreateToken(descriptor);
     }
 
+    private static (string AccessToken, string DpopProof, Dictionary<string, string> Jwk) CreateBoundCredentials(
+        string subject, string username, string sid, string acr, string requestUrl)
+    {
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ecdsa));
+
+        var jwkObject = new Dictionary<string, string>
+        {
+            ["crv"] = jwk.Crv!,
+            ["kty"] = jwk.Kty!,
+            ["x"] = jwk.X!,
+            ["y"] = jwk.Y!
+        };
+
+        var thumbprintComputer = new DpopThumbprintComputer();
+        using var jwkDoc = JsonDocument.Parse(JsonSerializer.Serialize(jwkObject));
+        var jkt = thumbprintComputer.Compute(jwkDoc.RootElement);
+
+        var accessToken = MintTestToken(subject, username, sid, acr, jkt);
+
+        var dpopProof = new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+        {
+            Claims = new Dictionary<string, object>
+            {
+                ["jti"] = Guid.NewGuid().ToString("N"),
+                ["htm"] = "POST",
+                ["htu"] = requestUrl,
+                ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            },
+            SigningCredentials = new SigningCredentials(new ECDsaSecurityKey(ecdsa), SecurityAlgorithms.EcdsaSha256),
+            TokenType = "dpop+jwt",
+            AdditionalHeaderClaims = new Dictionary<string, object> { ["jwk"] = jwkObject }
+        });
+
+        return (accessToken, dpopProof, jwkObject);
+    }
+
     [Fact(DisplayName =
         "✅ Integration: Entering a strong password updates the database and revokes sessions (204 NoContent)")]
     public async Task ChangePassword_WithValidStrongPassword_ExecutesFullFlowAndReturns204()
@@ -124,9 +163,9 @@ public sealed class ChangePasswordIntegrationTests : IClassFixture<SentinelApiFa
         // Arrange
         var client = _factory.CreateClient();
 
-        var testToken = MintTestToken("user-secure-123", "enterprise_user", "session-active-456", "acr3");
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme", testToken);
-        client.DefaultRequestHeaders.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var requestUrl = new Uri(client.BaseAddress!, "/v1/auth/change-password").ToString();
+        var (accessToken, dpopProof, _) =
+            CreateBoundCredentials("user-secure-123", "enterprise_user", "session-active-456", "acr3", requestUrl);
 
         var requestPayload = new AuthEndpoints.ChangePasswordRequest("Strong$SecurePass9513");
 
@@ -145,8 +184,15 @@ public sealed class ChangePasswordIntegrationTests : IClassFixture<SentinelApiFa
             .Returns(() => Task.CompletedTask);
 
         // Act
-        using var response = await client.PostAsJsonAsync("/v1/auth/change-password", requestPayload,
-            TestContext.Current.CancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUrl)
+        {
+            Content = JsonContent.Create(requestPayload)
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken);
+        request.Headers.Add("DPoP", dpopProof);
+        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
@@ -168,15 +214,22 @@ public sealed class ChangePasswordIntegrationTests : IClassFixture<SentinelApiFa
         // Arrange
         var client = _factory.CreateClient();
 
-        var testToken = MintTestToken("user-secure-123", "enterprise_user", "session-active-456", "acr3");
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("TestScheme", testToken);
-        client.DefaultRequestHeaders.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var requestUrl = new Uri(client.BaseAddress!, "/v1/auth/change-password").ToString();
+        var (accessToken, dpopProof, _) =
+            CreateBoundCredentials("user-secure-123", "enterprise_user", "session-active-456", "acr3", requestUrl);
 
         var requestPayload = new AuthEndpoints.ChangePasswordRequest("weak123");
 
         // Act
-        using var response = await client.PostAsJsonAsync("/v1/auth/change-password", requestPayload,
-            TestContext.Current.CancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUrl)
+        {
+            Content = JsonContent.Create(requestPayload)
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken);
+        request.Headers.Add("DPoP", dpopProof);
+        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
