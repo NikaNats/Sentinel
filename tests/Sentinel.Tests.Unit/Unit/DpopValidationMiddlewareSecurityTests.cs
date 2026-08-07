@@ -28,7 +28,7 @@ public sealed class DpopValidationMiddlewareSecurityTests
     private readonly L1AntiFloodCache _l1Cache;
     private readonly Mock<IDpopNonceStore> _nonceStoreMock;
     private readonly IServiceProvider _serviceProvider;
-    private readonly IDpopThumbprintComputer _thumbprintComputer;
+    private readonly DpopThumbprintComputer _thumbprintComputer;
     private readonly TimeProvider _timeProvider;
     private readonly Mock<IDpopProofValidator> _validatorMock;
 
