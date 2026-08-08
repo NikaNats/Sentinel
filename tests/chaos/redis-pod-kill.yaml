@@ -1,0 +1,47 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Chaos Scenario 1: Redis Split-Brain / Pod Kill under Extreme Load
+# ------------------------------------------------------------------
+# Threat model: while the Sentinel API devours ~5,000 DPoP nonces/sec, the Redis
+# master dies. Expectation per Sentinel's fail-closed invariant:
+#   - DPoP nonce store  -> NonceStoreUnavailableException      -> HTTP 503
+#   - JTI replay cache  -> ReplayCacheUnavailableException     -> HTTP 503
+#   - Session blacklist -> SessionBlacklistUnavailableException -> HTTP 401/503
+#   - NO request may be processed against an unlocked/unknown nonce (P0).
+#
+# Mapping to source:
+#   src/Sentinel.Redis/Stores/RedisDpopNonceStore.cs           (503)
+#   src/Sentinel.Redis/Stores/RedisJtiReplayCache.cs           (503)
+#   src/Sentinel.Redis/Stores/RedisSessionBlacklistCache.cs    (401/503)
+#   src/Sentinel.AspNetCore/Middleware/DpopValidationMiddleware.cs
+#
+# Apply:  kubectl apply -f tests/chaos/redis-pod-kill.yaml
+# Remove: kubectl delete -f tests/chaos/redis-pod-kill.yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: redis-master-kill
+  namespace: sentinel-prod
+spec:
+  action: pod-kill
+  mode: fixed
+  value: "1" # Kills exactly 1 pod (the Redis master)
+  selector:
+    labelSelectors:
+      app.kubernetes.io/name: redis
+      redis-role: master # Targets the read-write master specifically
+  duration: "30s" # Keeps re-killing the master as it restarts within 30s
+---
+# Telemetry surface for the fail-closed gate. The API pods record the exact
+# exception that must appear in OTel logs during the outage window:
+#   "Redis is unavailable; nonce store is Fail-Closed."  (NonceStoreUnavailableException)
+#   "Redis is unavailable; session blacklist is Fail-Closed." (SessionBlacklistUnavailableException)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chaos-1-fail-closed-anchor
+  namespace: sentinel-prod
+data:
+  invariant: >-
+    0 HTTP 200 during Redis outage; HTTP 503 (or 401 for session-bound paths) mandatory.
+    Unhandled exception of type SecurityInfrastructureException signals a fail-open regression.

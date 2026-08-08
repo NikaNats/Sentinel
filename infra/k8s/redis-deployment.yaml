@@ -1,0 +1,66 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Redis deployment for the chaos gate. Labels are the chaos-mesh selection
+# contract:
+#   app.kubernetes.io/name: redis  +  redis-role: master
+# These exact labels are matched by tests/chaos/redis-pod-kill.yaml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: sentinel-prod
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: sentinel
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis
+        redis-role: master
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          args: ["redis-server", "--save", "", "--appendonly", "no"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: sentinel-prod
+  labels:
+    app.kubernetes.io/name: redis
+spec:
+  selector:
+    app.kubernetes.io/name: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379

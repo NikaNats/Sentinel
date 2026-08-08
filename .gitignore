@@ -86,7 +86,6 @@ PublishProfiles/
 
 # Package files
 packages/
-packages.lock.json
 
 # SQL Server files
 *.mdf

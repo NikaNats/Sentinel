@@ -1,0 +1,50 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Chaos Scenario 3: DNS Latency Injection (Keycloak OIDC Discovery / JWKS)
+# -----------------------------------------------------------------------
+# Threat model: DNS resolution for the Keycloak OIDC metadata + JWKS endpoint
+# takes 5 seconds, so JWKS fetch operations hang.
+#
+# Expected behavior per implementation:
+#   - The JwtBearer backchannel (Program.cs tls13HandlerFactory ->
+#     SocketsHttpHandler) applies .NET's default DNS/connect timeouts; a
+#     TaskCanceledException inside the OIDC ConfigurationManager is housed by
+#     JwtBearer's exception interception and must NEVER crash the process.
+#   - The ConfigurationManager caches metadata + signing keys (capped by
+#     RefreshOn / MaxRefreshDelay). While cached keys are valid, traffic
+#     continues (200 or 401/403 depending on scope/ACR).
+#   - When the JWKS cache has expired and the refresh cannot complete, token
+#     validation fails closed -> HTTP 401 with the standard challenge.
+#   - No unhandled TaskCanceledException may surface as HTTP 500 or kill the
+#     Native AOT worker.
+#
+# Apply:  kubectl apply -f tests/chaos/dns-latency-keycloak.yaml
+# Remove: kubectl delete -f tests/chaos/dns-latency-keycloak.yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: DNSChaos
+metadata:
+  name: keycloak-dns-delay
+  namespace: sentinel-prod
+spec:
+  action: random
+  mode: all
+  patterns:
+    - keycloak.keycloak.svc.cluster.local
+    - keycloak.*
+  selector:
+    labelSelectors:
+      app.kubernetes.io/name: sentinel-api # Inject DNS delay INTO the API pods
+  duration: "45s"
+---
+# OTel validation surface: an unhandled System.Net.Http TaskCanceledException
+# (or InvalidOperationException from the ConfigurationManager) in sentinel-api
+# logs during this window is a FAIL-CLOSED REGRESSION and fails the gate.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chaos-3-fail-closed-anchor
+  namespace: sentinel-prod
+data:
+  invariant: >-
+    0 TaskCanceledException escaping to process boundary; 0 x HTTP 500;
+    HTTP 200 with cached JWKS or HTTP 401 fail-closed. Never fail-open on 403.

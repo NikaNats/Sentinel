@@ -1,0 +1,58 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Chaos Scenario 2: PostgreSQL Network Partition (Hybrid Cache Resilience)
+# ------------------------------------------------------------------------
+# Threat model: the durable database (PostgreSQL) is fully isolated for 30s while
+# the Redis fast-path remains alive.
+#
+# DESIGN REALITY CHECK (read before tuning expectations):
+# Sentinel's HybridSessionBlacklistCache (src/Sentinel.Infrastructure/Cache/
+# HybridSessionBlacklistCache.cs) is FAIL-CLOSED by construction:
+#   - L1 MemoryCache stores ONLY confirmed revocations (never "active").
+#   - L2 Redis holds revocations; a cache miss is NOT a positive decision.
+#   - L3 PostgreSQL is the source of truth and is ALWAYS consulted on an L2 miss.
+#   - When PG becomes unreachable, IsBlacklistedAsync() throws
+#     SessionBlacklistUnavailableException -> TokenValidationService fail-closed
+#     -> HTTP 401/503. Session revocation writes also fail-closed (503).
+#
+# Therefore the guide's original hypothesis ("API stays fully operational and
+# returns 200 because Redis sustains the ephemeral state") does NOT hold for the
+# current implementation. Redis shields the API from PG read storms, but the
+# API must NEVER answer a session check it cannot verify. The correct 2026
+# invariant for THIS stack is:
+#   * 0 x HTTP 200 for authenticated requests during the isolation window
+#   * HTTP 401 / 503 are the ONLY acceptable success-masking responses
+#   * 0 x HTTP 500 (no unhandled exception escapes the resilience boundary)
+#
+# Apply:  kubectl apply -f tests/chaos/postgres-network-partition.yaml
+# Remove: kubectl delete -f tests/chaos/postgres-network-partition.yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: postgres-network-partition
+  namespace: sentinel-prod
+spec:
+  action: loss
+  mode: all
+  selector:
+    labelSelectors:
+      app.kubernetes.io/name: postgres
+  loss:
+    loss: "100" # 100% packet loss (total isolation)
+    correlation: "0"
+  duration: "30s"
+---
+# Expected OTel fail-closed surfacing during the partition window:
+#   TokenValidationService: "Fail-closed triggered due to session store unavailability."
+#   HybridSessionBlacklistCache: "The system was unable to verify the session status."
+# These exact strings are grepped by tests/scripts/validate-fail-closed.sh.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chaos-2-fail-closed-anchor
+  namespace: sentinel-prod
+data:
+  invariant: >-
+    PG isolation => 401/503 ONLY on authenticated paths; 0 x HTTP 200; 0 x HTTP 500.
+    If the stack is later changed to allow degraded active processing, update
+    validate-fail-closed.sh accordingly - never weaken the invariant silently.

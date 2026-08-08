@@ -1,0 +1,69 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# PostgreSQL deployment for the chaos gate. Label contract for
+# tests/chaos/postgres-network-partition.yaml: app.kubernetes.io/name: postgres.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: sentinel-prod
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: sentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          env:
+            - name: POSTGRES_DB
+              value: sentinel_dev
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              value: postgres
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "sentinel_dev"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "sentinel_dev"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: sentinel-prod
+  labels:
+    app.kubernetes.io/name: postgres
+spec:
+  selector:
+    app.kubernetes.io/name: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
