@@ -1,0 +1,103 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# SRE Load / Soak / Capacity Gate (2026 Enterprise Best Practice, corrected).
+#
+# Reproducible Daily Batter: soak (2m smoke), spike (2m smoke), capacity
+# breakpoint probe on the deployed Sentinel stack, then the SRE validator
+# (tests/scripts/validate-sre-soak.sh) asserts the REAL OTel metric names:
+#   - auth_dpop_failures_total / auth_redis_degraded_mode_activations_total
+#     (NOT the guide's fictional sentinel_redis_connection_failed_total)
+#   - auth_token_validation_duration_seconds_bucket (OTel histogram, seconds)
+#   - container_memory_working_set_bytes (cAdvisor)
+#
+# NOTE: this gate RUNS against the live cluster's Prometheus
+# (sentinel-prod). The 48h soak CRD (infra/k8s/sre/crd-soak-48h.yaml) is a
+# scheduled on-cluster workload, not part of this CI job.
+name: SRE Load Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "infra/k8s/sre/**"
+      - "infra/monitoring/sre-alerts.yaml"
+      - "tests/load/sentinel-sre-suite.js"
+      - "tests/scripts/validate-sre-soak.sh"
+      - ".github/workflows/sre-load-gate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  sre-gate:
+    name: SRE Gate (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [soak-smoke, spike-smoke, capacity]
+        include:
+          - mode: soak-smoke
+            test-mode: soak
+            rate: "3500"
+            duration: "2m"
+          - mode: spike-smoke
+            test-mode: spike
+            duration: "2m"
+          - mode: capacity-smoke
+            test-mode: capacity
+            duration: "10m"
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Mint DPoP pool
+        shell: bash
+        run: |
+          node tests/scripts/mint-dpop-pool.mjs \
+            --count 120 --out tests/load/dpop-pool-gate.json
+
+      - name: Install k6 CLI
+        shell: bash
+        run: |
+          wget -q https://github.com/grafana/k6/releases/download/v0.52.0/k6-v0.52.0-linux-amd64.tar.gz -O /tmp/k6.tar.gz
+          tar -xzf /tmp/k6.tar.gz -C /tmp
+          chmod +x /tmp/k6-v0.52.0-linux-amd64/k6
+
+      - name: Run ${{ matrix.mode }} scenario
+        shell: bash
+        run: |
+          /tmp/k6-v0.52.0-linux-amd64/k6 run \
+            --quiet \
+            --summary-export tests/load/sre-summary-${{ matrix.mode }}.json \
+            -e TARGET_URL=${{ vars.SENTINEL_LOAD_URL }} \
+            -e TEST_MODE=${{ matrix.test-mode }} \
+            -e SOAK_RPS=${{ matrix.rate }} \
+            -e SPIKE_MAX_RPS=${{ vars.SRE_SPIKE_RPS }} \
+            -e CAPACITY_MAX_RPS=${{ vars.SRE_CAPACITY_RPS }} \
+            -e K6_POOL_FILE=tests/load/dpop-pool-gate.json \
+            -e K6_BEARER="${{ secrets.SENTINEL_GATE_TOKEN }}" \
+            -e SOAK_DURATION=${{ matrix.duration }} \
+            -e K6_NONCE=1 \
+            -e K6_INSECURE=1 \
+            tests/load/sentinel-sre-suite.js
+
+      - name: Validate SRE invariants (memory / sockets / latency / DPoP)
+        shell: bash
+        run: |
+          chmod +x tests/scripts/validate-sre-soak.sh
+          PROM_URL=${{ vars.SENTINEL_PROM_URL }} \
+            tests/scripts/validate-sre-soak.sh \
+            tests/load/sre-summary-${{ matrix.mode }}.json
+
+      - name: Upload SRE summary artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sre-summary-${{ matrix.mode }}
+          path: tests/load/sre-summary-${{ matrix.mode }}.json

@@ -15,6 +15,7 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
+using OpenTelemetry.Metrics;
 using Scalar.AspNetCore;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
@@ -462,6 +463,7 @@ app.UseAuthentication();
 app.UseSentinelSecurityPipeline();
 app.UseAuthorization();
 app.MapOpenApi();
+app.MapPrometheusScrapingEndpoint(); // GET /metrics - scraped by Prometheus (SRE soak/spike/capacity gates, sre-alerts.yaml)
 app.MapScalarApiReference("/docs", options =>
 {
     options.Title = "Sentinel API Documentation";

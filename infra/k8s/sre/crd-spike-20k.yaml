@@ -1,0 +1,32 @@
+apiVersion: k6.io/v1alpha1
+kind: K6
+metadata:
+  name: sentinel-spike-20k
+  namespace: sentinel-prod
+spec:
+  parallelism: 10
+  script:
+    configMap:
+      name: sentinel-sre-script
+      file: sentinel-sre-suite.js
+  arguments: "-e TEST_MODE=spike -e SPIKE_MAX_RPS=20000 -e K6_PARALLELISM=10 -e K6_POOL_FILE=/pool/dpop-pool.json --summary-export=/test/summary.json"
+  runner:
+    image: grafana/k6:0.52.0
+    env:
+      - name: K6_POOL_FILE
+        value: /pool/dpop-pool.json
+    volumeMounts:
+      - name: dpop-pool
+        mountPath: /pool
+        readOnly: true
+    volumes:
+      - name: dpop-pool
+        secret:
+          secretName: sentinel-dpop-pool
+    resources:
+      limits:
+        cpu: "4"
+        memory: 4Gi
+      requests:
+        cpu: "2"
+        memory: 2Gi

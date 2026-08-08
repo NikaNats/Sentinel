@@ -46,6 +46,15 @@
         "resolved": "3.10.91",
         "contentHash": "9MtEXm/um2lQAEoek1EkF4CXNH4JuXxv2jV3Ew2XlzP0LXxFaFiECS7ji8zf1ZaMnPGYbbom+Nm6y4ADc5HNHQ=="
       },
+      "OpenTelemetry.Exporter.Prometheus.AspNetCore": {
+        "type": "Direct",
+        "requested": "[1.13.1-beta.1, )",
+        "resolved": "1.13.1-beta.1",
+        "contentHash": "Z7EJ410kLvY+BjV/8RgK30QHdKPmNOR8KtAkPmdrAFZuMylKCmTJqVOYyv8EyB4m4kDTN7sRzDlKQ6V4Mh+6dg==",
+        "dependencies": {
+          "OpenTelemetry": "[1.13.1, 2.0.0)"
+        }
+      },
       "Scalar.AspNetCore": {
         "type": "Direct",
         "requested": "[2.16.15, )",
@@ -512,15 +521,6 @@
         "contentHash": "R1omQOrQpGlS0Cp5UIr/TAiuEA48JrPlgr1NPV5gESiTU7HhWU+ILe2EBSYb1fKdsSavZ7nZkHcUxAzofPqr2A==",
         "dependencies": {
           "OpenTelemetry": "1.17.0"
-        }
-      },
-      "OpenTelemetry.Exporter.Prometheus.AspNetCore": {
-        "type": "CentralTransitive",
-        "requested": "[1.13.1-beta.1, )",
-        "resolved": "1.13.1-beta.1",
-        "contentHash": "Z7EJ410kLvY+BjV/8RgK30QHdKPmNOR8KtAkPmdrAFZuMylKCmTJqVOYyv8EyB4m4kDTN7sRzDlKQ6V4Mh+6dg==",
-        "dependencies": {
-          "OpenTelemetry": "[1.13.1, 2.0.0)"
         }
       },
       "OpenTelemetry.Extensions.Hosting": {

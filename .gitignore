@@ -54,6 +54,12 @@ TestResults/
 coverage/
 *.coverage
 
+# SRE / load-test artifacts (generated; never commit)
+# dpop-pool*.json contains LIVE P-256 private keys - do not ignore the ignore!
+tests/load/dpop-pool*.json
+tests/load/sre-summary-*.json
+tests/load/chaos-summary-*.json
+
 # Application files
 *.log
 *.log.*

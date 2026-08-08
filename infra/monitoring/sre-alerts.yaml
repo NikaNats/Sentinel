@@ -1,0 +1,83 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# SRE alerting rules for Sentinel (Prometheus).
+#
+# CORRECTED metric names vs the 2026 Enterprise guide:
+#   - the guide queried nonexistent series (sentinel_redis_connection_failed_total,
+#     http_request_duration_seconds{app=...}). Sentinel emits OTel metrics via
+#     OpenTelemetry.AddPrometheusExporter (src/Sentinel.Security.Diagnostics),
+#     so the real Prometheus names here are the OTel-derived forms:
+#       auth_dpop_failures_total            (Counter auth.dpop.failures)
+#       auth_jti_replays_total              (Counter auth.jti.replays_total)
+#       auth_token_issued_total             (Counter auth.token.issued)
+#       auth_redis_degraded_mode_activations_total
+#       auth_token_validation_duration_seconds (Histogram auth.token.validation.duration, seconds!)
+#       http_server_request_duration_seconds_bucket   (OTel ASP.NET Core instrumentation)
+#   - NOTICE: OTel histogram buckets are emitted as _bucket with "le" labels,
+#     so histogram_quantile(0.99, ... by (le)) is the correct form.
+#   - container_memory_working_set_bytes / node_sockstat_* / node_netstat_*
+#     are node-exporter / kubelet metrics (unchanged from the guide).
+groups:
+  - name: sentinel-sre-native-aot-alerts
+    rules:
+      # 1. Native AOT Unmanaged Memory Leak Alert
+      - alert: NativeAotMemoryLeakDetected
+        expr: |
+          deriv(container_memory_working_set_bytes{container="sentinel-api"}[6h]) > 0
+          and
+          predict_linear(container_memory_working_set_bytes{container="sentinel-api"}[1h], 86400) > container_spec_memory_limit_bytes{container="sentinel-api"}
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Native AOT Memory Leak detected in {{ $labels.pod }}"
+          description: "Container RSS has been rising for 6h and will breach the limit within 1h. Possible unmanaged native allocation or GC handle accumulation."
+
+      # 2. Socket Exhaustion Warning (SocketsHttpHandler / ephemeral port pool)
+      - alert: SocketExhaustionImminent
+        expr: |
+          sum(node_sockstat_TCP_tw) > 20000
+          or
+          sum(rate(node_netstat_Tcp_PassiveOpens[5m])) > 5000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Socket Exhaustion Warning on node {{ $labels.node }}"
+          description: "High TIME_WAIT/CLOSE_WAIT socket count. Check SocketsHttpHandler pooling and ephemeral port limits."
+
+      # 3. Redis degradation (replay protection fallback = connection pool issue)
+      # Sentinel moves to degraded mode when Redis ops fail (AuthTelemetry):
+      # this is the REAL signal emitted by the code, replacing the fictional
+      # sentinel_redis_connection_failed_total.
+      - alert: RedisDegradedModeActivated
+        expr: |
+          increase(auth_redis_degraded_mode_activations_total[2m]) > 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis degraded-mode activations detected"
+          description: "Sentinel switched to node-local replay protection - Redis connection pool or availability degraded under load."
+
+      # 4. p99 latency SLA breach (DPoP+auth pipeline; OTel seconds histogram).
+      - alert: LatencySlaBreached
+        expr: |
+          histogram_quantile(0.99, sum(rate(auth_token_validation_duration_seconds_bucket[2m])) by (le)) > 0.050
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "p99 DPoP/token validation latency breached 50ms SLA"
+          description: "p99 token validation {{ $value | humanizeDuration }}. Check signing CPU, nonce store, and cache hit rate."
+
+      # ---- DPoP pressure / lockout detection (SRE hygiene) ----
+      - alert: DpopFailureSurge
+        expr: |
+          sum(increase(auth_dpop_failures_total[5m])) > 1000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DPoP validation failures surged"
+          description: "High DPoP failure rate suggests mis-configures proof generation or replay attempts."

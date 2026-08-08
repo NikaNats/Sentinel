@@ -691,6 +691,7 @@
           "NikaNats.Sentinel.SSF": "[1.0.0, )",
           "NikaNats.Sentinel.SdJwt": "[1.0.0, )",
           "NikaNats.Sentinel.Security.Abstractions": "[1.0.0, )",
+          "OpenTelemetry.Exporter.Prometheus.AspNetCore": "[1.13.1-beta.1, )",
           "Scalar.AspNetCore": "[2.16.15, )"
         }
       },

@@ -93,4 +93,34 @@ chaos-clean:
 chaos-gate: chaos-up chaos-inject chaos-load chaos-clean chaos-validate
 	@echo "Chaos gate passed for scenario=$(CHAOS_SCENARIO)"
 
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# SRE Load / Soak / Capacity (k6-operator CRDs + real DPoP pool)
+# Requires: node, k6, kubectl, jq on PATH. Uses the REAL OTel metric names
+# (see sre-alerts.yaml); run make sre-gate after k6-operator is installed.
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+SRE_POOL ?= tests/load/dpop-pool.json
+SRE_MODE ?= soak
+SRE_RPS ?= 3500
+SRE_DURATION ?= 90s
+
+sre-mint:
+	node tests/scripts/mint-dpop-pool.mjs --output $(SRE_POOL) --count 120
+
+sre-run:
+	k6 run --quiet \
+		--summary-export tests/load/sre-summary.json \
+		-e TARGET_URL=$${SRE_URL:-https://sentinel-api.sentinel-prod.svc.cluster.local} \
+		-e TEST_MODE=$(SRE_MODE) -e SOAK_RPS=$(SRE_RPS) \
+		-e SOAK_DURATION=$(SRE_DURATION) \
+		-e K6_POOL_FILE=$(SRE_POOL) \
+		-e K6_NONCE=1 -e K6_INSECURE=1 \
+		tests/load/sentinel-sre-suite.js
+
+sre-validate:
+	bash tests/scripts/validate-sre-soak.sh tests/load/sre-summary.json
+
+sre-gate: sre-mint sre-run sre-validate
+	@echo "SRE gate passed (mode=$(SRE_MODE))"
+
 all: build lint test sec-scan infra-audit
