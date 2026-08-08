@@ -94,9 +94,14 @@
       "config": {}
     }
   ],
-  "defaultRoles": [ "user" ],
+  "defaultRoles": [
+    "user"
+  ],
   "eventsEnabled": true,
-  "eventsListeners": [ "jboss-logging", "event-queue" ],
+  "eventsListeners": [
+    "jboss-logging",
+    "event-queue"
+  ],
   "adminEventsEnabled": true,
   "adminEventsDetailsEnabled": true,
   "identityProviders": [],
@@ -130,7 +135,9 @@
             "configuration": {}
           }
         ],
-        "profiles": [ "fapi2-security-profile" ]
+        "profiles": [
+          "fapi2-security-profile"
+        ]
       }
     ],
     "profiles": [
@@ -140,7 +147,9 @@
           {
             "executor": "pkce-enforcer",
             "configuration": {
-              "allow-method": [ "S256" ]
+              "allow-method": [
+                "S256"
+              ]
             }
           },
           {
@@ -158,7 +167,10 @@
           {
             "executor": "secure-signing-algorithm",
             "configuration": {
-              "algorithm": [ "PS256", "ES256" ]
+              "algorithm": [
+                "PS256",
+                "ES256"
+              ]
             }
           },
           {
@@ -204,7 +216,7 @@
         "id.token.signed.response.alg": "PS256",
         "access.token.signed.response.alg": "PS256",
         "access.token.lifespan": "300",
-        "client.session.idle.timeout": "28800",
+        "client.session.idle.timeout": "1800",
         "client.session.max.lifespan": "28800",
         "use.refresh.tokens": "true",
         "refresh.token.max.reuse": "0",

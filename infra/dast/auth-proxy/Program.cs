@@ -182,7 +182,10 @@ static SocketsHttpHandler CreateTlsHandler(string caPath)
     // cert is disposed while the handler is still serving TLS handshakes
     // (verified live: 500s on every forwarded request). It is process-lifetime
     // like `handler`, held alive by the validation callback closure.
+    // caCert is process-lifetime like `handler` (intentionally undisposed).
+#pragma warning disable CA2000
     var caCert = X509Certificate2.CreateFromPem(File.ReadAllText(caPath));
+#pragma warning restore CA2000
 
     var handler = new SocketsHttpHandler
     {

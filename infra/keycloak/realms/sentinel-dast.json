@@ -235,7 +235,9 @@
             "defaultClientScopes": [
                 "roles",
                 "profile",
-                "email"
+                "email",
+                "documents:read",
+                "documents:write"
             ],
             "optionalClientScopes": [
                 "offline_access"
@@ -271,7 +273,8 @@
             ],
             "optionalClientScopes": [
                 "offline_access"
-            ]
+            ],
+            "protocolMappers": []
         },
         {
             "clientId": "sentinel-api",
@@ -285,7 +288,8 @@
             "redirectUris": [],
             "webOrigins": [],
             "defaultClientScopes": [],
-            "optionalClientScopes": []
+            "optionalClientScopes": [],
+            "protocolMappers": []
         }
     ],
     "clientScopes": [
@@ -389,6 +393,24 @@
             "attributes": {
                 "consent.screen.text": "${offlineAccessScopeConsentText}",
                 "display.on.consent.screen": "true"
+            }
+        },
+        {
+            "name": "documents:read",
+            "description": "Read access to documents",
+            "protocol": "openid-connect",
+            "attributes": {
+                "include.in.token.scope": "true",
+                "include.in.token.audience": "false"
+            }
+        },
+        {
+            "name": "documents:write",
+            "description": "Write access to documents",
+            "protocol": "openid-connect",
+            "attributes": {
+                "include.in.token.scope": "true",
+                "include.in.token.audience": "false"
             }
         }
     ],

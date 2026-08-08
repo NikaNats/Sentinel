@@ -27,6 +27,11 @@ services:
       Keycloak__Audience: sentinel-api
       Keycloak__RequireHttpsMetadata: "true"
       Sentinel__Ssf__Enabled: "true"
+      # Sentinel redis security caches bind Sentinel:Redis:* (RedisOptions reads
+      # "EndPoint", NOT ConnectionStrings); without this the app falls back to
+      # localhost:6379 inside its own container and fails closed with 503 on
+      # every DPoP check.
+      Sentinel__Redis__EndPoint: "redis:6379"
 
   # Test-only. Never deploy outside an ephemeral DAST environment.
   dast-auth-proxy:
