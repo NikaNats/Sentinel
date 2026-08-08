@@ -1,0 +1,39 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Sentinel - Security header baseline (Constitution §III.5 / PLAN-0001 §4.5).
+# Verifies the exact hardened header set is present AND that version-leaking
+# headers are absent. Runs against /healthz (anonymous endpoint) so it works
+# both directly against the API and through the DPoP auth proxy.
+id: sentinel-security-headers-baseline
+info:
+  name: Sentinel - Security header baseline
+  author: sentinel-sec
+  severity: medium
+  description: Asserts the hardened security header set from PLAN-0001 §4.5 is present and version banners are absent.
+  reference:
+    - https://owasp.org/www-project-secure-headers/
+  tags: sentinel,headers,security
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/healthz"
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: header
+        condition: and
+        words:
+          - "Strict-Transport-Security: max-age=63072000"
+          - "X-Content-Type-Options: nosniff"
+          - "X-Frame-Options: DENY"
+          - "Referrer-Policy: no-referrer"
+          - "Cache-Control: no-store"
+      - type: word
+        part: header
+        condition: or
+        negative: true
+        words:
+          - "Server:"
+          - "X-Powered-By:"
+          - "X-AspNet-Version:"

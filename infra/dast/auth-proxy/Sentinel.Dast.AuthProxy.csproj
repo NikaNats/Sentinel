@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Sentinel.Dast.AuthProxy</RootNamespace>
+    <AssemblyName>Sentinel.Dast.AuthProxy</AssemblyName>
+  </PropertyGroup>
+
+  <!-- TEST-ONLY DAST component. Consumes the repository's central package
+       management (Directory.Packages.props) exactly like src/ projects. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" />
+  </ItemGroup>
+
+</Project>

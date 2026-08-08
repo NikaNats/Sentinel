@@ -1,0 +1,21 @@
+{
+  "governance": {
+    "owner": "Security Working Group",
+    "approval_required": "ANY change to this file or the alertFilter job in zap-automation-plan.yaml requires Security Working Group PR approval (Constitution §X).",
+    "last_reviewed": "2026-08-08"
+  },
+  "filters": [
+    {
+      "ruleId": "10021",
+      "url": ".*",
+      "newRisk": -2,
+      "comment": "X-Content-Type-Options is verified out-of-band by the custom Nuclei baseline template (sentinel-security-headers.yaml). Kept here so ZAP's passive scanner does not double-report noise while the assertion stays enforced by a test that actually fails loudly."
+    },
+    {
+      "ruleId": "10038",
+      "url": ".*",
+      "newRisk": 0,
+      "comment": "CSP is default-src 'none' for the API surface (no browser-rendered content); ZAP reports a false-positive on JSON API bodies."
+    }
+  ]
+}

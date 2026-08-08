@@ -145,3 +145,7 @@ Migrations/
 # Azure
 azure-pipelines.yml.bak
 local.settings.json
+
+# DAST run artifacts (local scans generate SARIF/txt under artifacts/)
+infra/dast/artifacts/
+

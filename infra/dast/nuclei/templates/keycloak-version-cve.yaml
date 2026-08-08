@@ -1,0 +1,31 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Keycloak version regression screening.
+# Sentinel pins quay.io/keycloak/keycloak:26.1 (docker-compose.yml). This
+# template fingerprints any running Keycloak OLDER than 26.1 - the always-fire
+# "is this Keycloak" check is out of scope (that is done by Trivy on the image
+# registry + the image digest pin). A positive here means a server downgraded
+# from the pinned baseline and the CVE alerting must be re-run.
+id: keycloak-version-cve
+info:
+  name: Keycloak - pre-26.1 fingerprint (pinned baseline regression)
+  author: sentinel-sec
+  severity: high
+  description: Detects a Keycloak instance running a version older than the Sentinel-pinned 26.1 baseline (quay.io/keycloak/keycloak:26.1).
+  reference:
+    - https://www.keycloak.org/security
+  tags: keycloak,version-cve,regression
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/realms/master/login"
+      - "{{BaseURL}}/resources/admin/resources/partials/welcome.html"
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - "version\\s*[:=]\\s*[\"']?(?:2[0-5])[.]\\d+(?:[.]\\d+)?"
+          - "(?:Keycloak|kc_version)[^0-9]*((?:2[0-5]))[.]\\d+"

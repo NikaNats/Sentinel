@@ -1,0 +1,42 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Sentinel - DPoP-bound request WITHOUT a DPoP proof must be rejected.
+# A bound-access-token request cannot omit the proof. Sentinel must answer
+# 401/400 with a ProblemDetails body carrying "/errors/missing-dpop-proof" or
+# "/errors/invalid-dpop-proof" (src/Sentinel.AspNetCore/Errors/ErrorCodes.cs).
+#
+# Detection semantics: this template FIRES ONLY ON VULNERABILITY, i.e. when the
+# request is ACCEPTED (2xx with a non-error body) despite the missing proof.
+# Correct rejections (401/400 + error URI) do NOT match, so the release gate
+# stays green on a hardened pipeline.
+id: sentinel-dpop-missing-proof
+info:
+  name: Sentinel - DPoP proof missing must be rejected
+  author: sentinel-sec
+  severity: high
+  description: A DPoP-bound access token presented without the DPoP proof header must be rejected (RFC 9449 section 5); acceptance indicates a DPoP binding failure.
+  reference:
+    - https://datatracker.ietf.org/doc/html/rfc9449#section-5
+  tags: sentinel,dpop,missing-proof
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/v1/documents"
+    headers:
+      Authorization: "Bearer attacker-controlled-but-unbound-jwt"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+          - 201
+          - 202
+          - 203
+          - 204
+      - type: word
+        part: body
+        words:
+          - "/errors/missing-dpop-proof"
+          - "/errors/invalid-dpop-proof"
+        negative: true

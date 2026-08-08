@@ -1,0 +1,110 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Sentinel DAST Release Gate (Constitution Gate 5).
+#
+# Boots the FULL Sentinel stack (compose, `dast` profile: DPoP auth proxy +
+# sentinel-dast realm), then runs:
+#   1. OWASP ZAP 2.x Automation: OpenAPI import + authenticated active scan
+#      THROUGH the DPoP signing proxy (scanner stays DPoP-unaware; the real
+#      FAPI 2.0 pipeline is exercised).
+#   2. Nuclei twice: unauthenticated surface (direct to API) + authenticated
+#      surface (through the proxy).
+#   3. evaluate-gates.sh asserts zero HIGH/CRITICAL dynamic findings
+#      (Constitution Gate 5).
+#
+# Cadence: release branches + workflow_dispatch (staging-dast), plus a
+# weekly full scan on main (schedule below). First adoption step is
+# non-blocking (baseline), then enforce after Security Working Group has
+# reviewed the alert-filter exceptions.
+name: Sentinel DAST Release Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag being validated
+        required: false
+  push:
+    branches: ["release/**"]
+  schedule:
+    - cron: "0 3 * * 1" # weekly full scan on main (best effort, non-gating)
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  dast:
+    name: DAST vs live stack (Gate 5)
+    runs-on: ubuntu-latest
+    environment: staging-dast
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Inject DAST secrets
+        shell: bash
+        run: |
+          echo "DAST_CLIENT_SECRET=${{ secrets.DAST_CLIENT_SECRET }}" >> "$GITHUB_ENV"
+
+      - name: Boot DAST stack
+        shell: bash
+        run: |
+          docker compose -f docker-compose.yml -f infra/dast/docker-compose.dast.yml \
+            --profile dast up -d --build
+          bash infra/dast/scripts/wait-for-stack.sh
+          bash infra/dast/scripts/seed-test-data.sh
+
+      - name: ZAP active scan (through DPoP proxy)
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          docker run --rm --network sentinel-fapi2-stack_default \
+            -v "$PWD/infra/dast/zap:/zap/wrk/zap:ro" \
+            -v "$PWD/docs:/zap/wrk/docs:ro" \
+            -v "$PWD/artifacts:/zap/wrk/artifacts" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap.sh -cmd \
+              -autorun /zap/wrk/zap/zap-automation-plan.yaml
+
+      - name: Nuclei (unauthenticated surface)
+        shell: bash
+        run: |
+          docker run --rm --network sentinel-fapi2-stack_default \
+            -v "$PWD/infra/dast/nuclei:/nuclei/cfg:ro" -v "$PWD/artifacts:/artifacts" \
+            projectdiscovery/nuclei:latest \
+            -config /nuclei/cfg/nuclei-config.yaml \
+            -t /nuclei/cfg/templates -u http://sentinel-api:8080 \
+            -se /artifacts/nuclei-unauth.sarif -o /artifacts/nuclei-unauth.txt
+
+      - name: Nuclei (authenticated surface via DPoP proxy)
+        shell: bash
+        run: |
+          docker run --rm --network sentinel-fapi2-stack_default \
+            -v "$PWD/infra/dast/nuclei:/nuclei/cfg:ro" -v "$PWD/artifacts:/artifacts" \
+            projectdiscovery/nuclei:latest \
+            -config /nuclei/cfg/nuclei-config.yaml \
+            -t /nuclei/cfg/templates -u http://dast-auth-proxy:8080 \
+            -se /artifacts/nuclei-auth.sarif -o /artifacts/nuclei-auth.txt
+
+      - name: Evaluate release gates (zero HIGH/CRITICAL)
+        shell: bash
+        run: bash infra/dast/scripts/evaluate-gates.sh
+
+      - name: Upload SARIF to GitHub code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: artifacts
+          category: dast
+
+      - name: Archive DAST evidence pack
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dast-evidence-${{ github.sha }}
+          path: artifacts/
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml -f infra/dast/docker-compose.dast.yml --profile dast down -v --remove-orphans

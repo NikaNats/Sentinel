@@ -125,6 +125,8 @@ This matrix maps international security standards, regulatory frameworks, and co
 
 1.  **OpenAPI Contract Synchronization:** The OpenAPI specification (`docs/OPENAPI_3_1.yaml`) is currently maintained manually. Automated CI drift detection against active route mapping remains a future enhancement.
 2.  **Keycloak Flow Orchestration:** Some FAPI 2.0 orchestration steps (such as PAR and PKCE authorization code exchanges) are natively handled by the Keycloak identity provider, while the API acts strictly as the validating Resource Server.
+3.  **DAST realm Redis runs unauthenticated** inside the virtual network (mirrors dev compose) — guarded by the `redis-unauthenticated.yaml` Nuclei template so over-exposure fails the gate.
+4.  **DAST scanner auth is client_secret-based** (no x509/MTLS scanner identity) — the proxy holds the secret; the mTLS path is covered by the integration suites.
 
 ---
 
@@ -135,4 +137,5 @@ This matrix maps international security standards, regulatory frameworks, and co
 - [x] Automate systematic concurrency and network chaos engineering verification in the test suite.
 - [x] Implement FIPS 204 compliant post-quantum cryptographic signature validation using .NET 10 native APIs.
 - [x] Optimize persistent vs ephemeral cache mapping to prevent RDBMS-based Denial of Service and index fragmentation in production environments.
+- [x] **Dynamic Application Security Testing (DAST):** release-gate pipeline (`.github/workflows/dast-release-gate.yml`) runs OWASP ZAP + Nuclei against the live compose stack (DPoP Signing Proxy `infra/dast/auth-proxy`, `sentinel-dast` realm), blocking on HIGH/CRITICAL findings; Program + RoE + ML-DSA audit checklists documented (`docs/DAST_AND_PENTEST_PROGRAM.md`, `docs/PENTEST_ROE_TEMPLATE.md`, `docs/MLDSA_AUDIT_CHECKLIST.md`). First CI runs should be used non-blockingly to baseline alert-filter exceptions (see §5 step 6).
 - [ ] Implement CI-based automated OpenAPI drift detection to verify contract alignment with route mappings.

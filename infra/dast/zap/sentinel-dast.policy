@@ -1,0 +1,25 @@
+# ZAP Scan Policy for the Sentinel DAST gate (sentinel-dast)
+#
+# Format: <rule-id>  <threshold>  <strength/click-se>  ON/OFF  (description)
+# Active rules carry a strength column (LOW/MEDIUM/HIGH/INSANE);
+# passive rules carry threshold only.
+#
+# RAISE thresholds / disable rules that cannot fire (or are meaningless) on a
+# JSON-only, cookieless, DPoP-authenticated API - WITHOUT touching any rule
+# that still applies. Keep <90033> VERIFIED OFF so the cookie rules are loud
+# on accidental regressions.
+FORMAT: 1
+TYPE       Default
+90027   1      OFF      (Cookie Slack Detector - API issues no cookies; cookieless by design)
+10010   0      OFF      (Cookie No HttpOnly - no cookies issued)
+10054   0      OFF      (SameSite Cookie Attribute - no cookies issued)
+90033   0      OFF      (Loosely Scoped Cookie - no cookies issued)
+40018   0      LOW      (SQL Injection - EF Core fully parameterized; keep LOW for gray-box)
+10020   0      OFF      (X-Frame-Options Header Scanner - sender headers verified by Nuclei baseline)
+10021   0      OFF      (X-Content-Type-Options Header Missing - verified by Nuclei baseline)
+10036   0      OFF      (HTTP Server Response Header - removed by design in Kestrel)
+
+# Active scan tuning: payloads keep reasonable volume so throttled targets
+# (2 rps via the auth proxy) are still fully covered.
+10043   0      MEDIUM   ON   (JSON Content-Type header validation)
+10045   0      LOW      ON   (Source Code Disclosure - low value but harmless)

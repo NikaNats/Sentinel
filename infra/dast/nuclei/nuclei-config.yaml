@@ -1,0 +1,8 @@
+# Nuclei configuration for the Sentinel DAST gate.
+# Conservative rates: the target stack enforces real rate limits and constant-
+# time failure padding; over-speeding produces 429s and false fatigue.
+rate-limit: 10
+bulk-size: 5
+concurrency: 5
+timeout: 30
+severity: [critical, high, medium, low, info]

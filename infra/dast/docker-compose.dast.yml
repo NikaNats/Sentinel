@@ -1,0 +1,55 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# DAST compose overlay - runs the REAL Sentinel stack (no control relaxed)
+# with an ephemeral test-only DPoP Signing Proxy in front, plus a dedicated
+# sentinel-dast realm (synthetic identities only).
+#
+# Usage (from the repository root, matching the base project name):
+#   docker compose -f docker-compose.yml -f infra/dast/docker-compose.dast.yml \
+#     --profile dast up -d --build
+#
+# ONLY differences vs the production compose profile:
+#   1. sentinel-api is pointed at the sentinel-dast realm (same pipeline,
+#      FAPI 2.0 executors identical - see infra/keycloak/realms/sentinel-dast.json)
+#   2. the all-new dast-auth-proxy service (DPoP-unaware scanners go through it)
+#   3. every control stays: rate limits, jti replay cache, nonce rotation,
+#      constant-time padding, mTLS/x509 binding paths - unchanged.
+name: sentinel-fapi2-stack
+
+services:
+  sentinel-api:
+    profiles: ["dast"]
+    environment:
+      ASPNETCORE_ENVIRONMENT: Staging
+      # DAST realm supplies its own JWKS + FAPI 2.0 executors; audience stays
+      # sentinel-api (the realm defines the matching audience client below).
+      Keycloak__Authority: https://keycloak:8443/realms/sentinel-dast
+      Keycloak__Audience: sentinel-api
+      Keycloak__RequireHttpsMetadata: "true"
+      Sentinel__Ssf__Enabled: "true"
+
+  # Test-only. Never deploy outside an ephemeral DAST environment.
+  dast-auth-proxy:
+    profiles: ["dast"]
+    build:
+      context: .
+      dockerfile: infra/dast/auth-proxy/Dockerfile
+    container_name: sentinel-dast-auth-proxy
+    depends_on:
+      keycloak:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      sentinel-api:
+        condition: service_started
+    ports:
+      - "8081:8080"
+    environment:
+      Dast__Target: "http://sentinel-api:8080"
+      Dast__RequestsPerSecond: "2"          # stay under ConcurrencyLimiter policies
+      Keycloak__TokenEndpoint: "https://keycloak:8443/realms/sentinel-dast/protocol/openid-connect/token"
+      Keycloak__ClientId: "sentinel-dast-scanner"
+      Keycloak__ClientSecret: "${DAST_CLIENT_SECRET}"
+      Keycloak__TrustedCaPath: "/app/ca.crt"
+    volumes:
+      - ./infra/certs/ca.crt:/app/ca.crt:ro

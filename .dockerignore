@@ -1,0 +1,14 @@
+# Sentinel root build context ignore rules.
+# Used by compose builds whose context is the repository root
+# (infra/dast/docker-compose.dast.yml -> infra/dast/auth-proxy/Dockerfile).
+
+**/bin/
+**/obj/
+.git/
+.vs/
+.idea/
+**/*.user
+TestResults/
+artifacts/
+infra/dast/artifacts/
+*.snk

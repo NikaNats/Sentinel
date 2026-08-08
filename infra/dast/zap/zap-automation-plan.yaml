@@ -1,0 +1,86 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# ZAP Automation Framework plan for the Sentinel DAST gate.
+#
+# Design notes (rationale, not accidents):
+#  - Scans run THROUGH sentinel-dast-auth-proxy so ZAP exercises the REAL
+#    FAPI 2.0 pipeline (DPoP, nonce rotation, jti replay cache, idempotency)
+#    instead of 401-ing on every request.
+#  - Timeout is raised to 120s: constant-time failure padding (100-115ms per
+#    failure) is intentional Sentinel behavior - scanners probing failure
+#    paths are slow by design.
+#  - The alertFilter job mirrors infra/dast/zap/alert-filters.json; that file
+#    is the governance record - ANY change to either requires a Security
+#    Working Group PR review (Constitution §X).
+env:
+  contexts:
+    - name: sentinel-dast
+      urls:
+        - "http://dast-auth-proxy:8080"
+      includePaths:
+        - "http://dast-auth-proxy:8080.*"
+      excludePaths:
+        - ".*\\.svg"
+  parameters:
+    timeout: 120
+    failOnError: false
+    failOnWarning: false
+
+jobs:
+  - type: openapi
+    parameters:
+      apiFile: /zap/wrk/docs/OPENAPI_3_1.yaml
+      targetUrl: http://dast-auth-proxy:8080
+      context: sentinel-dast
+
+  - type: spider
+    parameters:
+      context: sentinel-dast
+      maxDuration: 10
+      maxChildren: 20
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 15
+
+  - type: alertFilter
+    parameters:
+      action: add
+    rules:
+      - ruleId: 10021
+        url: ".*"
+        newRisk: -2
+        reason: "X-Content-Type-Options verified by the custom Nuclei baseline template instead"
+      - ruleId: 10038
+        url: ".*"
+        newRisk: 0
+        reason: "CSP is default-src 'none'; ZAP false-positive on API JSON bodies"
+
+  - type: activeScan
+    parameters:
+      context: sentinel-dast
+      policy: sentinel-dast
+      maxRuleDurationInMins: 5
+      maxScanDurationInMins: 45
+
+  - type: outputSummary
+    parameters:
+      format: long
+
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: /zap/wrk/artifacts
+      reportFile: zap-report.html
+
+  - type: report
+    parameters:
+      template: sarif-json
+      reportDir: /zap/wrk/artifacts
+      reportFile: zap-report.sarif
+
+  - type: report
+    parameters:
+      template: traditional-json
+      reportDir: /zap/wrk/artifacts
+      reportFile: zap-report.json

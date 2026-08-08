@@ -11,6 +11,10 @@
     <ServerGarbageCollection>true</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <GCLargeObjectHeapCompactionMode>CompactOnce</GCLargeObjectHeapCompactionMode>
+    <!-- AOT/ILCompiler packages are RID-specific: keep the committed lock file
+         portable so BOTH the Windows dev box and the Linux release container
+         can restore in locked mode (NU1004 prevention). -->
+    <RuntimeIdentifiers>linux-x64;win-x64</RuntimeIdentifiers>
 
     <OpenApiGenerateDocumentsOnBuild>true</OpenApiGenerateDocumentsOnBuild>
     <OpenApiDocumentName>v1</OpenApiDocumentName>

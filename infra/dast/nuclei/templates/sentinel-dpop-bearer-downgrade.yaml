@@ -1,0 +1,39 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Sentinel - Bearer downgrade on a DPoP-bound API MUST be rejected.
+# Sentinel's DPoP validation rejects Bearer presentation of DPoP-bound tokens
+# with 401/400/403. This template FIRES ONLY ON VULNERABILITY: any response
+# that is NOT a rejection (i.e. the request was accepted) is a finding.
+# Correct 401/403 rejections never match, so the gate stays green on a
+# hardened pipeline.
+id: sentinel-dpop-bearer-downgrade
+info:
+  name: Sentinel - Bearer downgrade on DPoP-bound API must be rejected
+  author: sentinel-sec
+  severity: critical
+  description: A plain Bearer token presented against a DPoP-bound endpoint must be rejected with 401/403 (RFC 9449); any non-rejection response indicates DPoP binding failure and possible data exposure.
+  reference:
+    - https://datatracker.ietf.org/doc/html/rfc9449
+    - https://datatracker.ietf.org/doc/html/rfc8705
+  tags: sentinel,dpop,bearer-downgrade
+
+http:
+  - raw:
+      - |
+        GET /v1/documents HTTP/1.1
+        Host: {{Hostname}}
+        Authorization: Bearer forged-token-value
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 401
+          - 400
+          - 403
+        negative: true
+      - type: word
+        part: body
+        words:
+          - "\"sub\""
+          - "documents"
+        negative: true

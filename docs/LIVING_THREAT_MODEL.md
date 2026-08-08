@@ -112,3 +112,30 @@ Review and update this threat model:
 1. `docs/ARCHITECTURE.md` (Design and pipeline changes)
 2. `docs/COMPLIANCE_AUDIT_MATRIX.md` (Evidence paths and standards mapping)
 3. `docs/BUILD_CONFIGURATION_GUIDE.md` (Build baselines and release gates)
+
+---
+
+## 10. Dynamic Verification (DAST) Mapping
+
+The automated DAST gate (`.github/workflows/dast-release-gate.yml`) exercises the
+live stack through the test-only DPoP Signing Proxy (`infra/dast/auth-proxy`) —
+scanners remain DPoP-unaware while the real FAPI 2.0 pipeline is verified. See
+`docs/DAST_AND_PENTEST_PROGRAM.md` for tooling, posture, and exceptions.
+
+| T-ID | Dynamic verification that must run before release | Gate evidence |
+|---|---|---|
+| T-01 | Authenticated token replay fixtures (jti consumed per request; proxy mints fresh per request) | Seed fixtures; ZAP authc; gate blocks High+ |
+| T-02 | DPoP proof replay/MITM negative (duplicate proof, rotated nonce) | Sentinel DPoP negative Nuclei templates |
+| T-03 | Nonce race loops under load | k6 SRE load suites + FAPI conformance |
+| T-04 | RAR transfer tampering attempts | ZAP active scan over RAR-protected endpoints |
+| T-05 | SSF webhook forgery/replay probes | Nuclei unauth direct surface |
+| T-06 | Timing oracle characterization (padding 100-115 ms expected) | ZAP timing rules; RoE §3.5 |
+| T-07 | Malformed/unparsable token fuzzing | Nuclei malformed-token cases + ZAP fuzzer |
+| T-08 | Concurrent nonce consumption correctness | Coyote suite + conformance under load |
+| T-09 | Header/session data leakage probes | Nuclei headers baseline template |
+| T-10 | Cache-outage fail-closed behavior (Redis down → all 401) | Negative integration suites + gate forensics |
+| T-11 | ML-DSA verification correctness (FIPS 204) | `docs/MLDSA_AUDIT_CHECKLIST.md` independent review |
+
+The DAST gate is a release blocker (Gate 5); HIGH/CRITICAL findings must be
+fixed or formally risk-accepted before the release branch ships (per
+Constitution §X.2).
