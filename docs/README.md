@@ -2,7 +2,7 @@
 
 > **Document ID**: DOC-0001
 > **Last Updated**: 2026-06-16
-> **Code Baseline**: .NET 10.0 (SDK 10.0.300)
+> **Code Baseline**: .NET 10.0 (SDK 10.0.302)
 > **Architecture**: Modular security platform with decoupled Hexagonal (Ports & Adapters) integration surface
 
 This folder serves as the authoritative, FAPI 2.0-compliant documentation suite for Sentinel's runtime behavior, cryptographic security controls, integration contracts, and SRE operations.
@@ -14,7 +14,7 @@ This folder serves as the authoritative, FAPI 2.0-compliant documentation suite 
 If you are new to the repository, read these documents in the recommended order of onboarding:
 
 1.  **[ARCHITECTURE.md](ARCHITECTURE.md):** Deep-dive into system design, module boundaries, concrete adapter decoupling, and the defensive-in-depth request pipeline.
-2.  **[SDK_LESS_INTEGRATION_GUIDE.md](SDK_LESS_INTEGRATION_GUIDE.md):** Complete HTTP/REST integration guide with DPoP proof generation wire-formats in 5 languages (no proprietary SDK required).
+2.  **[SDK_LESS_INTEGRATION_GUIDE.md](SDK_LESS_INTEGRATION_GUIDE.md):** Complete language-agnostic HTTP/REST integration guide with DPoP proof wire-formats (no proprietary SDK required).
 3.  **[OPENAPI_3_1.yaml](OPENAPI_3_1.yaml):** Formal, machine-readable OpenAPI 3.1 specification for SDK generation and gateway routing.
 4.  **[SRE_SOC_RUNBOOKS.md](SRE_SOC_RUNBOOKS.md):** Operational monitoring, alerting, incident response playbooks, and cache-degradation recovery checklists.
 
@@ -27,6 +27,7 @@ If you are new to the repository, read these documents in the recommended order 
 | **[ARCHITECTURE.md](ARCHITECTURE.md)** | Architects, Senior Engineers | System topology, dependency inversion model, request pipeline, and ADRs. | Verified |
 | **[BUILD_CONFIGURATION_GUIDE.md](BUILD_CONFIGURATION_GUIDE.md)** | Platform Engineers, CI/CD | MSBuild configurations, CPM versioning, strong-name signing, and AOT setup. | Verified |
 | **[COMPLIANCE_AUDIT_MATRIX.md](COMPLIANCE_AUDIT_MATRIX.md)** | GRC, Security Auditors | Mapping of international standards (RFC/NIST) to concrete code evidence. | Verified |
+| **[KEYCLOAK_FAPI_ENFORCEMENT.md](KEYCLOAK_FAPI_ENFORCEMENT.md)** | IAM Operators, Platform Engineers | Keycloak 26.6.4 realm policy structure, 26.x executor IDs, DPoP runtime support, and documented enforcement gaps. | Verified |
 | **[CONTAINER_BUILD_READINESS.md](CONTAINER_BUILD_READINESS.md)** | DevOps, SRE | Multi-stage, rootless, and hardened Docker container release readiness. | **RELEASE-READY** |
 | **[LIVING_THREAT_MODEL.md](LIVING_THREAT_MODEL.md)** | Security Engineers, SOC | Threat inventory (STRIDE/DREAD), mitigations, and residual risks. | Active |
 | **[OPENAPI_3_1.yaml](OPENAPI_3_1.yaml)** | API Consumers, Gateway | Machine-readable API contracts and schemas for gateway routing. | Active |

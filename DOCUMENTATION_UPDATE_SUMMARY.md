@@ -3,7 +3,7 @@
 **Date:** 2026-03-25
 **Status:** ✅ COMPLETE
 **Build Verified:** 0 errors, 0 warnings
-**Tests Verified:** 141/141 PASSING
+**Tests Verified:** 496/496 PASSING (8 suites)
 
 ## Updated Documentation Files
 
@@ -131,7 +131,7 @@
 |-------|--------|------|-------|------------|
 | Timestamp | ✅ 2026-03-25 | ✅ 2026-03-25 | ✅ 2026-03-25 | ✅ 2026-03-25 |
 | AOT Status | ✅ Mentioned | ✅ Featured | ✅ Primary | ✅ Evidence |
-| Test Count | ✅ 141 | ✅ Referenced | ✅ Commands | ✅ Audit notes |
+| Test Count | ✅ 496 | ✅ Referenced | ✅ Commands | ✅ Audit notes |
 | RFC Compliance | ✅ Listed | ✅ Examples | ✅ Commands | ✅ Detailed matrix |
 | Sample App | ✅ Featured | ✅ Referenced | ✅ AOT build guide | ✅ Evidence |
 | Performance | ✅ Summary | ✅ Benefits | ✅ Metrics | ✅ Improvement stated |
@@ -139,8 +139,8 @@
 ## Files NOT Updated (Historical References)
 
 The following files remain as historical snapshots per original guidance:
-- `docs/GATE_5_FINAL_REPORT.md` - Archived audit context
-- `docs/GATE_5_PACKAGING_HARDENING.md` - Historical security gate
+- `docs/archive/GATE_5_FINAL_REPORT.md` - Archived audit context
+- `docs/archive/GATE_5_PACKAGING_HARDENING.md` - Historical security gate
 - `docs/CONTAINER_BUILD_READINESS.md` - Known issues documented
 - `docs/LIVING_THREAT_MODEL.md` - Threat inventory (still valid)
 - `docs/SDK_LESS_INTEGRATION_GUIDE.md` - HTTP client guidance (still valid)
@@ -149,9 +149,9 @@ The following files remain as historical snapshots per original guidance:
 ## Related Deliverables from This Session
 
 - ✅ **Sentinel.Sample.MinimalApi** - Production-ready reference app
-- ✅ **docs/MINIMAL_APIS_MIGRATION_GUIDE.md** - 450+ line architecture guide
+- ❌ **docs/MINIMAL_APIS_MIGRATION_GUIDE.md** - Planned; **not shipped** (file does not exist in the repo)
 - ✅ **SAMPLE_IMPLEMENTATION_COMPLETE.md** - Implementation status report
-- ✅ **141 unit tests** - All passing, zero regressions
+- ✅ **496 unit/integration/contract tests** - All passing, zero regressions
 
 ## Next Steps (v1.1 Release Readiness)
 

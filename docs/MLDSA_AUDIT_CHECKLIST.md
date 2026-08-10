@@ -27,7 +27,7 @@ Reference surface:
 | # | Check | Status | Evidence |
 |---|---|---|---|
 | 1 | Only FIPS 204 ML-DSA parameter sets used: **ML-DSA-44 / 65 / 87** (exactly those in the `AlgorithmMap`) | | |
-| 2 | Key sizes enforced by the native `MLDsa.ImportMldsaPublicKey` layer (size/format failure → `CryptographicException` → fail closed) | | |
+| 2 | Key sizes enforced by the native `MLDsa.ImportMLDsaPublicKey` layer (size/format failure → `CryptographicException` → fail closed) | | |
 | 3 | Verification uses native platform oracle only — no managed reimplementation | | |
 | 4 | Known-answer / independent test vectors for at least ML-DSA-65 (or the deployed parameter set) | | |
 

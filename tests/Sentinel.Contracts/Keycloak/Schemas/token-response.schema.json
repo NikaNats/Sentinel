@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinel.local/contracts/keycloak/token-response.schema.json",
+  "title": "Keycloak Token Endpoint Response",
+  "description": "CONTRACT-001: pins the RFC 6749 token response shape the sample consumes.",
+  "type": "object",
+  "required": ["access_token", "expires_in", "token_type"],
+  "properties": {
+    "access_token": { "type": "string", "minLength": 1 },
+    "token_type": { "type": "string", "enum": ["Bearer", "DPoP"] },
+    "expires_in": { "type": "integer", "exclusiveMinimum": 0 },
+    "refresh_token": { "type": "string" },
+    "scope": { "type": "string" },
+    "refresh_expires_in": { "type": "integer" }
+  }
+}

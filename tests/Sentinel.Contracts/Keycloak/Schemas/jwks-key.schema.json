@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinel.local/contracts/keycloak/jwks-key.schema.json",
+  "title": "Keycloak JWKS Key Representation",
+  "description": "CONTRACT-001: pins the RFC 7517 key shape Microsoft.IdentityModel resolves.",
+  "type": "object",
+  "required": ["kty", "kid", "use", "alg"],
+  "properties": {
+    "kty": { "type": "string", "enum": ["RSA", "EC", "OKP"] },
+    "kid": { "type": "string", "minLength": 1 },
+    "use": { "type": "string", "enum": ["sig"] },
+    "alg": { "type": "string", "pattern": "^(RS|PS|ES|EdDSA|HS)" },
+    "x5c": { "type": "array", "items": { "type": "string" } },
+    "n": { "type": "string" },
+    "e": { "type": "string" },
+    "x": { "type": "string" },
+    "y": { "type": "string" },
+    "crv": { "type": "string" },
+    "d": { "type": "string" },
+    "p": { "type": "string" },
+    "q": { "type": "string" },
+    "dp": { "type": "string" },
+    "dq": { "type": "string" },
+    "qi": { "type": "string" },
+    "key_ops": { "type": "array", "items": { "type": "string" } }
+  }
+}

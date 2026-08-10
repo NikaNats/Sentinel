@@ -58,20 +58,20 @@ flowchart TD
 ```
 
 ### 2.1 Core Assemblies (Stateless & Abstract)
-- **Sentinel.Security.Abstractions:** Zero-dependency assembly containing all cross-module interfaces, models, options, and error contracts.
+- **Sentinel.Security.Abstractions:** Assembly containing all cross-module interfaces, models, options, and error contracts (depends only on `Microsoft.Extensions.DependencyInjection.Abstractions`, `Microsoft.IdentityModel.Tokens`, `System.ComponentModel.Annotations`).
 - **Sentinel.Domain:** Enterprise domain models, entities, and business invariants (e.g. `UserRegistration`, `ConsentInfo`).
-- **Sentinel.Application:** Core business logic, CQRS commands/queries, and service coordinators (e.g. `SsfEventProcessor`, `TokenRefreshService`).
+- **Sentinel.Application:** Core business logic, CQRS commands/queries, and service coordinators.
 - **Sentinel.DPoP:** Cryptographic DPoP validator engine and RFC 7638 JWK thumbprint computer.
 - **Sentinel.Session:** Session lifecycle, state machine, and in-memory context definitions.
-- **Sentinel.SSF:** Security Event Token (SET) validator and CAEP processor.
+- **Sentinel.SSF:** Security Event Token (SET) validator and CAEP processor, incl. the `SsfEventProcessor` service coordinator.
 - **Sentinel.Rar:** RFC 9396 Rich Authorization Request parser and validator.
 - **Sentinel.Security.Diagnostics:** High-precision telemetry metrics, OpenTelemetry tracing, and HMAC-based privacy-preserving context hashers.
 
 ### 2.2 Integration Assemblies (Concrete Adapters - Decoupled)
 - **Sentinel.Redis:** Optional adapter implementing `IDpopNonceStore`, `IJtiReplayCache`, `ISessionBlacklistCache`, and `IIdempotencyStore` using high-speed StackExchange.Redis.
 - **Sentinel.EntityFrameworkCore:** Optional relational database adapter implementing security stores using EF Core.
-- **Sentinel.Keycloak:** Integration adapter for Keycloak authority endpoints, OIDC token exchange, and backchannel logout.
-- **Sentinel.Infrastructure:** Cross-cutting composition services (cryptography, notifications, template rendering). **Strictly decoupled — has NO compile-time dependency on Sentinel.Redis.**
+- **Sentinel.Keycloak:** Integration adapter for Keycloak authority endpoints, OIDC token exchange, and backchannel logout, incl. `KeycloakTokenRefreshService` (implements `ITokenRefreshService`).
+- **Sentinel.Infrastructure:** Cross-cutting composition services (cryptography, notifications, template rendering) and the concrete Redis/EF Core adapter registrations. Note: it currently retains direct project references to `Sentinel.Redis` and `Sentinel.EntityFrameworkCore` (see ADR-2026-002).
 
 ### 2.3 Host Integration & Composition
 - **Sentinel.AspNetCore:** Minimal API mapping extensions, request/response JSON serialization contexts, and core security middlewares.
@@ -114,7 +114,7 @@ sequenceDiagram
 To prevent timing side-channel attacks (where attackers measure sub-millisecond differences between early syntactic failures and late cryptographic signature failures), the ASP.NET Core middleware implements **Constant-Time Failure Padding with Jitter Injection**:
 - All failed request paths are intercepted by `EnforceConstantTimeFailureAsync`.
 - If the request processing time is below `TargetFailureFloorMs` (e.g. 100ms), it is padded.
-- Additionally, a cryptographically secure random delay of **0-15 milliseconds** (`RandomNumberGenerator.GetInt32(0, 15)`) is added to every failure.
+- Additionally, a cryptographically secure random delay of **0-15 milliseconds** (`RandomNumberGenerator.GetInt32(0, 16)`) is added to every failure.
 - This high-entropy noise completely washes out sub-millisecond cryptographic execution deltas, making statistical timing attacks (Welch's T-Test verified: $p\text{-value} > 0.05$) mathematically impossible.
 
 ### 4.2 Exception Shielding (DoS Prevention)
@@ -137,21 +137,21 @@ Redis and database backends are treated as part of the security boundary. If the
 
 ### ADR-2026-002: Pure Decoupled Hexagonal Architecture
 - **Context:** The previous infrastructure layer was tightly coupled to Redis, making it impossible for enterprise users to substitute other caching technologies without modifying the core codebase.
-- **Decision:** Removed all direct project references to `Sentinel.Redis` and `Sentinel.EntityFrameworkCore` from `Sentinel.Infrastructure`. Core modules depend strictly on abstract ports defined in `Sentinel.Security.Abstractions`.
+- **Decision:** Core modules depend strictly on abstract ports defined in `Sentinel.Security.Abstractions`. Note: `Sentinel.Infrastructure` **still retains** project references to `Sentinel.Redis` and `Sentinel.EntityFrameworkCore` (`Sentinel.Infrastructure.csproj:33-34`) — the adapter decoupling intent is partially realized and remains tracked work.
 - **Consequences:**
-  - *Positive:* Perfect adherence to the Dependency Inversion Principle (DIP). Complete flexibility to swap adapters without touching the core.
-  - *Negative:* The host application (Composition Root) must now take explicit responsibility for registering the chosen concrete adapter during startup.
+  - *Positive:* Core modules can reference the adapter interfaces without compile-time coupling, enabling adapter substitution at the composition root.
+  - *Negative:* The remaining `Sentinel.Infrastructure` → `Sentinel.Redis`/`Sentinel.EntityFrameworkCore` references mean the composition layer is not yet fully DIP-clean; the host (Composition Root) registers the chosen concrete adapter during startup.
 
 ### ADR-2026-003: Timing Attack Jitter Injection
 - **Context:** Sub-millisecond execution deltas (0.8ms) between syntax checks and cryptographic signature verifications leak internal state, creating a timing oracle. Standard `Task.Delay` is bypassed by OS thread scheduling quantum jitter (15.6ms on Windows).
-- **Decision:** Introduced a high-resolution `Stopwatch` padding of 100ms combined with a cryptographically secure random delay of 0-15ms (`RandomNumberGenerator.GetInt32(0, 15)`) on all failed paths.
+- **Decision:** Introduced a high-resolution `Stopwatch` padding of 100ms combined with a cryptographically secure random delay of 0-15ms (`RandomNumberGenerator.GetInt32(0, 16)`) on all failed paths.
 - **Consequences:**
   - *Positive:* Mathematically destroys the timing side-channel ($p\text{-value} > 0.05$ under Welch's T-Test). Slows down automated brute-force attacks.
   - *Negative:* Failed requests are intentionally delayed by a maximum of 115ms (imperceptible to humans, but measurable).
 
 ### ADR-2026-004: Safe Exception Shielding
 - **Context:** Malformed or poisoned tokens can cause deep parsing exceptions inside the Jose/JWT libraries, escaping the middleware pipeline and crashing the process or returning unhandled 500 errors.
-- **Decision:** Wrapped all token/proof parsing entries (specifically `TryExtractProofThumbprint`) in strict `try-catch` blocks catching `ArgumentException` and `SecurityTokenException` and returning `null` safely.
+- **Decision:** Wrapped all token/proof parsing entries (specifically `TryExtractProofDetails`) in strict `try-catch` blocks catching `ArgumentException` and `SecurityTokenException` and returning `null` safely.
 - **Consequences:**
   - *Positive:* Protects the Kestrel web server from process-crashing Denial of Service (DoS) exploits on malformed headers.
   - *Negative:* Hides deep parsing errors from the client; debug-level logging must be used internally for triage.

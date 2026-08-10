@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Sentinel.AspNetCore.Infrastructure;
 using Sentinel.AspNetCore.Middleware;
 using Sentinel.AspNetCore.Options;
 using Sentinel.AspNetCore.Stores;
@@ -17,6 +19,12 @@ public static class SentinelAspNetCoreExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddMemoryCache();
+
+        // G4: production guardrails are now enforced, not merely documented.
+        // Blocks InMemoryIdempotencyStore and EF-backed nonce+JTI stores outside Development.
+        // TryAddEnumerable keeps registration idempotent when AddSentinelAspNetCore is called twice.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupFilter, SecurityInvariantsStartupFilter>());
 
         services.Configure<JsonOptions>(options =>
         {

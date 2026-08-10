@@ -169,7 +169,7 @@ paths:
         '401':
           $ref: '#/components/responses/Problem401'
         '404':
-          description: Session not found
+          $ref: '#/components/responses/Problem404'
         '409':
           $ref: '#/components/responses/Problem409'
         '503':
@@ -237,7 +237,7 @@ paths:
         '401':
           $ref: '#/components/responses/Problem401'
         '501':
-          description: MFA management not configured
+          $ref: '#/components/responses/Problem501'
 
   /api/system/security/auth/mfa/totp/verify:
     post:
@@ -257,7 +257,7 @@ paths:
         '401':
           $ref: '#/components/responses/Problem401'
         '501':
-          description: MFA management not configured
+          $ref: '#/components/responses/Problem501'
 
   /api/system/security/auth/mfa/totp:
     delete:
@@ -271,7 +271,7 @@ paths:
         '401':
           $ref: '#/components/responses/Problem401'
         '501':
-          description: MFA management not configured
+          $ref: '#/components/responses/Problem501'
 
   /api/system/security/auth/mfa/recovery-codes:
     get:
@@ -285,7 +285,7 @@ paths:
         '401':
           $ref: '#/components/responses/Problem401'
         '501':
-          description: MFA management not configured
+          $ref: '#/components/responses/Problem501'
 
   /api/system/security/auth/mfa/recovery-codes/regenerate:
     post:
@@ -299,7 +299,7 @@ paths:
         '401':
           $ref: '#/components/responses/Problem401'
         '501':
-          description: MFA management not configured
+          $ref: '#/components/responses/Problem501'
 
   /api/system/security/auth/token-exchange:
     post:
@@ -346,7 +346,7 @@ paths:
         '200':
           description: Logout callback accepted (always returned for token-validation outcomes)
         '400':
-          description: Malformed request payload
+          $ref: '#/components/responses/Problem400'
 
   /api/system/security/ssf/events:
     post:
@@ -372,7 +372,7 @@ paths:
         '401':
           $ref: '#/components/responses/Problem401'
         '404':
-          description: SSF endpoint disabled
+          $ref: '#/components/responses/Problem404'
 
   /api/v1/documents:
     get:
@@ -447,7 +447,7 @@ paths:
         '401':
           $ref: '#/components/responses/Problem401'
         '404':
-          description: Document not found
+          $ref: '#/components/responses/Problem404'
 
     delete:
       tags: [Documents]
@@ -464,9 +464,9 @@ paths:
         '401':
           $ref: '#/components/responses/Problem401'
         '403':
-          description: Forbidden by policy
+          $ref: '#/components/responses/Problem403'
         '404':
-          description: Document not found
+          $ref: '#/components/responses/Problem404'
 
   /api/v1/finance/transfer:
     post:
@@ -544,7 +544,7 @@ paths:
         '401':
           $ref: '#/components/responses/Problem401'
         '403':
-          description: Forbidden by scope or policy
+          $ref: '#/components/responses/Problem403'
 
   /api/v1/showcase/test/protected:
     get:
@@ -655,6 +655,18 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
+    Problem404:
+      description: Not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Problem403:
+      description: Forbidden by policy
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
     Problem409:
       description: Conflict
       content:
@@ -669,6 +681,12 @@ components:
             $ref: '#/components/schemas/ProblemDetails'
     Problem503:
       description: Dependency unavailable (fail-closed)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Problem501:
+      description: MFA management not configured
       content:
         application/problem+json:
           schema:

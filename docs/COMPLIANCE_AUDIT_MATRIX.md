@@ -46,12 +46,12 @@ This matrix maps international security standards, regulatory frameworks, and co
 | **Event-Driven Risk Response** | Implemented | Real-time SSF event intake, token validation, and session termination (`SsfEventProcessor.cs`). |
 | **Payload-Bound Authorization** | Implemented | Precision-safe RAR validation matching JSON payloads against signed bounds (`FinancialAuthorizationMatcher.cs`). |
 | **Timing Attack Mitigation** | Implemented | Constant-Time Failure Padding + Cryptographic Jitter Injection (0-15ms) in `DpopValidationMiddleware.cs` ($p\text{-value} > 0.05$). |
-| **Exception Shielding (DoS Protection)** | Implemented | Robust `try-catch` boundaries on token/proof parsers preventing unhandled crashes on malformed headers (`DpopValidationMiddleware.TryExtractProofThumbprint`). |
-| **Systematic Concurrency Verification** | Implemented | Concurrency race tests simulated 1000-fold using Microsoft Coyote task scheduler (`IdempotencyConcurrencyTests.cs`). |
+| **Exception Shielding (DoS Protection)** | Implemented | Robust `try-catch` boundaries on token/proof parsers preventing unhandled crashes on malformed headers (`DpopValidationMiddleware.TryExtractProofDetails`). |
+| **Systematic Concurrency Verification** | Implemented | Concurrency race tests explored 1000-fold using the Microsoft Coyote task scheduler, enforced through the programmatic `TestingEngine` integration (`IdempotencyConcurrencyTests.cs`), executed IL-rewritten in CI (`.github/workflows/security-pipeline.yml` `test-suites` matrix). |
 | **Network Chaos Resilience** | Implemented | Docker-based Testcontainers + Toxiproxy tests simulating packet loss, timeouts, and network latency jitter (`RedisResilienceChaosTests.cs`). |
-| **Production Container Hardening** | Implemented | Multi-stage, distroless `Dockerfile` running as unprivileged user `sentinel` (UID 1000) with `DOTNET_EnableDiagnostics=0` (`src/Sentinel.AspNetCore/Dockerfile`). |
+| **Production Container Hardening** | Implemented | Multi-stage, distroless `Dockerfile` running as the chiseled base image's pre-configured non-privileged user `app` (UID 1654) with `DOTNET_EnableDiagnostics=0` (`src/Sentinel.AspNetCore/Dockerfile`). |
 | **Post-Quantum Cryptography** | Implemented | Native .NET 10 FIPS 204 `MLDsa` cryptographic signature verification (`MlDsaSignatureVerifier.cs`), mathematically verified via `MlDsaSignatureVerifierTests.cs`. |
-| **Persistent vs Ephemeral State** | Implemented | Safe multi-tier mapping: RDBMS (PostgreSQL) is restricted to persistent writes via Write-Through `HybridSessionBlacklistCache.cs`, while ephemeral caches (Nonces, JTIs) are strictly blocked from RDBMS in production via `SecurityInvariantsStartupFilter` to prevent DB DoS. |
+| **Persistent vs Ephemeral State** | Implemented | Safe multi-tier mapping: RDBMS (PostgreSQL) is restricted to persistent writes via Write-Through `HybridSessionBlacklistCache.cs`, while ephemeral caches (Nonces, JTIs) are strictly blocked from RDBMS in production via `SecurityInvariantsStartupFilter` to prevent DB DoS. The filter is now registered in every host through `SentinelAspNetCoreExtensions.AddSentinelAspNetCore` (`TryAddEnumerable`). |
 
 ---
 
@@ -102,8 +102,10 @@ This matrix maps international security standards, regulatory frameworks, and co
     ```
 3.  **Systematic Concurrency Verification (Coyote):**
     ```powershell
-    cd tests/Sentinel.Tests.Concurrency/bin/Release/net10.0
-    dotnet coyote test Sentinel.Tests.Concurrency.dll -m Sentinel.Tests.Concurrency.IdempotencyConcurrencyTests.TestConcurrentIdempotencyAcquisition -i 1000 -ms 200 --portfolio-mode fair
+    # IL-rewrite the candidate assemblies, then run the programmatic TestingEngine suites (1000 iterations).
+    dotnet tool restore
+    dotnet build tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj -c Release -p:RunCoyoteRewrite=true
+    dotnet test tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj -c Release --no-build -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
     ```
 4.  **Network Chaos & Timing Side-Channel Verification:**
     ```powershell
@@ -138,4 +140,7 @@ This matrix maps international security standards, regulatory frameworks, and co
 - [x] Implement FIPS 204 compliant post-quantum cryptographic signature validation using .NET 10 native APIs.
 - [x] Optimize persistent vs ephemeral cache mapping to prevent RDBMS-based Denial of Service and index fragmentation in production environments.
 - [x] **Dynamic Application Security Testing (DAST):** release-gate pipeline (`.github/workflows/dast-release-gate.yml`) runs OWASP ZAP + Nuclei against the live compose stack (DPoP Signing Proxy `infra/dast/auth-proxy`, `sentinel-dast` realm), blocking on HIGH/CRITICAL findings; Program + RoE + ML-DSA audit checklists documented (`docs/DAST_AND_PENTEST_PROGRAM.md`, `docs/PENTEST_ROE_TEMPLATE.md`, `docs/MLDSA_AUDIT_CHECKLIST.md`). First CI runs should be used non-blockingly to baseline alert-filter exceptions (see §5 step 6).
+- [x] **Container Image Scanning (Trivy):** `security-pipeline.yml` Gate 9 (in `build-scan`) builds the container and blocks on HIGH/CRITICAL image CVEs, emitting a SARIF artifact.
+- [x] **Image Signing (Sigstore / cosign):** `sign-publish` job (release branches) attaches the SPDX SBOM and keylessly signs the container image (Fulcio), then cosign-verifies its certificate identity as the release gate.
+- [x] **Test Suite Matrix Completeness:** `test-suites` now executes all registered unit/integration test projects (including `DPoP`, `Session`, `SSF`, `Concurrency`) plus the Docker-enabled `acceptance-e2e` (Reqnroll FAPI/CAEP evidence) job.
 - [ ] Implement CI-based automated OpenAPI drift detection to verify contract alignment with route mappings.

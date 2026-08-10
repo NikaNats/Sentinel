@@ -42,8 +42,8 @@ builder.Services
     .AddInfrastructureLayer(builder.Configuration);
 
 // 2. Mount endpoints (HOST controls the prefix!)
-app.MapSentinelSecurity("api/system/security");      // Framework endpoints
-app.MapDocumentEndpoints("api/v1/documents");        // Your business endpoints
+app.MapSentinelSecurity();                     // Framework endpoints (default prefix "v1")
+app.MapDocumentEndpoints("v1/documents");      // Your business endpoints
 app.MapFinanceEndpoints("api/v1/finance");
 ```
 
@@ -72,20 +72,24 @@ app.MapFinanceEndpoints("api/v1/finance");
 
 ## 🔒 Security Pipeline Demonstrations
 
-### 1. Document Endpoints (`/api/v1/documents`)
+### 1. Document Endpoints (`/v1/documents`)
 
 **Demonstrates:** Envelope Cryptography + Idempotency
 
 ```csharp
-// GET all documents (requires JWT + DPoP)
-app.MapGet("/api/v1/documents", ListDocuments);
+// GET all documents (requires JWT + DPoP + ScopeDocumentsRead)
+app.MapGet("/v1/documents", ListDocuments);
 
-// POST create document (requires Idempotency-Key UUID)
-app.MapPost("/api/v1/documents", CreateDocument)
+// GET single document (requires ScopeDocumentsRead)
+app.MapGet("/v1/documents/{id:guid}", GetDocument);
+
+// POST create document (requires ScopeDocumentsWrite + Idempotency-Key UUID)
+app.MapPost("/v1/documents", CreateDocument)
     .RequireIdempotency();  // RFC 9110 deduplication
 
-// DELETE document
-app.MapDelete("/api/v1/documents/{id:guid}", DeleteDocument);
+// DELETE document (requires ScopeDocumentsWrite + idempotency + mTLS client cert)
+app.MapDelete("/v1/documents/{id:guid}", DeleteDocument)
+    .RequireIdempotency();
 ```
 
 **Security Guarantees:**
@@ -119,9 +123,8 @@ curl -X POST https://api.example.com/api/v1/documents \
 
 ```csharp
 app.MapPost("/api/v1/finance/transfer", ExecuteTransfer)
-    // Layer 1: Require Hardware MFA (NIST AAL 3)
-    .RequireAuthorization(policy =>
-        policy.RequireClaim("acr", "acr3"))
+    // Layer 1: Require Hardware MFA (NIST AAL 3) via ACR step-up
+    .RequireAcrStepUp("acr3", TimeSpan.FromMinutes(5))
     // Layer 2: Prevent duplicate transfers
     .RequireIdempotency()
     // Layer 3: Surgical RAR validation
@@ -254,11 +257,18 @@ public sealed record TransferRequest(
     string Currency,             // ISO 4217
     string DestinationAccount);  // Account identifier
 
-public sealed record DocumentDto(
+public sealed record DocumentSummaryDto(
     Guid Id,
     string Title,
-    string Status,              // Always "Encrypted" to user
-    DateTime CreatedUtc);       // Never expose UpdatedUtc (leaks data age)
+    int EncryptedBytes,          // ciphertext size, never the plaintext
+    DateTimeOffset CreatedUtc);
+
+public sealed record DocumentDetailDto(
+    Guid Id,
+    string Title,
+    string ContentPreview,       // 120-char preview of decrypted content
+    int EncryptedBytes,
+    DateTimeOffset CreatedUtc);
 ```
 
 ---
@@ -277,28 +287,24 @@ dotnet build -c Release
 ```bash
 dotnet run --project samples/Sentinel.Sample.MinimalApi -c Release
 
-# Output:
+# Output (development launch profile from Properties/launchSettings.json):
 # info: Microsoft.Hosting.Lifetime[14]
-#       Now listening on: https://localhost:5001
-#       Now listening on: http://localhost:5000
+#       Now listening on: https://localhost:50341
+#       Now listening on: http://localhost:50342
 ```
 
-### 3. Test Endpoint Discovery
+### 3. Service Endpoint Discovery
 
 ```bash
-# List all endpoints
-curl https://localhost:5001/endpoints
+# GET / returns the mounted endpoint map (no /endpoints route exists)
+curl https://localhost:50341/
 
-# Sample output (Minimal API discoverable endpoints)
-[
-  { "method": "GET", "path": "/api/v1/documents", "name": "ListDocuments" },
-  { "method": "POST", "path": "/api/v1/documents", "name": "CreateDocument" },
-  { "method": "DELETE", "path": "/api/v1/documents/{id}", "name": "DeleteDocument" },
-  { "method": "POST", "path": "/api/v1/finance/transfer", "name": "ExecuteTransfer" },
-  { "method": "POST", "path": "/api/system/security/auth/refresh", "name": internal },
-  { "method": "POST", "path": "/api/system/security/ssf/events", "name": internal },
-]
+# Sample output:
+# {"service":"Sentinel.Sample.MinimalApi","docs":"/docs",
+#  "endpoints":{"health":"/healthz","security":"/v1","documents":"/v1/documents",
+#               "finance":"/api/v1/finance","showcase":"/v1"}}
 ```
+The interactive API reference lives at `https://localhost:50341/docs`. Security endpoints are mounted under `/v1` (e.g. `POST /v1/auth/refresh`); mapped endpoint names are `ListDocuments:v1/documents`, `CreateDocument:v1/documents`, `ExecuteTransfer`, etc.
 
 ### 4. Test with Bearer Token (Requires Keycloak)
 
@@ -310,12 +316,12 @@ TOKEN=$(curl https://keycloak.example.com/realms/MyRealm/protocol/openid-connect
   -d grant_type=client_credentials | jq -r .access_token)
 
 # Generate DPoP proof (RFC 9449)
-# This requires: DPoP.GenerateProof(token, "POST", "https://localhost:5001/api/v1/documents")
+# This requires: DPoP.GenerateProof(token, "POST", "https://localhost:50341/v1/documents")
 
 PROOF=$(dotnet user-secrets get DpopProof --project samples/Sentinel.Sample.MinimalApi)
 
 # Call endpoint with both Bearer + DPoP
-curl -X POST https://localhost:5001/api/v1/documents \
+curl -X POST https://localhost:50341/v1/documents \
   -H "Authorization: Bearer $TOKEN" \
   -H "DPoP: $PROOF" \
   -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
@@ -350,7 +356,7 @@ curl -X POST https://localhost:5001/api/v1/documents \
 ### Unit Tests for DocumentEndpoints
 
 ```bash
-dotnet test tests/Sentinel.Tests.Unit -c Release --filter "Document"
+dotnet test tests/Sentinel.Tests.Unit/Sentinel.Tests.Unit.csproj -c Release --filter "Document"
 ```
 
 ### Integration Tests
@@ -372,11 +378,11 @@ This sample proves compliance with modern security standards:
 | **7231** | HTTP Semantics | `Location` header on 201 Created |
 | **6750** | Bearer Tokens | Authorization header validation |
 | **7807** | Problem Details | Error responses structure |
-| **8693** | Token Exchange | `/api/system/security/auth/token-exchange` |
-| **8936** | Shared Signals | `/api/system/security/ssf/events` |
+| **8693** | Token Exchange | `/v1/auth/token-exchange` |
+| **8936** | Shared Signals | `/v1/ssf/events` |
 | **9110** | Idempotent Requests | `Idempotency-Key` deduplication (Redis) |
 | **9396** | Rich Auth Requests | `authorization_details` claim validation |
-| **9413** | Backchannel Logout | `/api/system/security/auth/backchannel-logout` |
+| **9413** | Backchannel Logout | `/v1/auth/backchannel-logout` |
 | **9449** | DPoP | `DPoP` header binding (OAuth 2.0 proof) |
 
 ---
@@ -406,7 +412,7 @@ This sample proves compliance with modern security standards:
 ## 🔗 Related Files
 
 - [Sentinel Framework Overview](../docs/ARCHITECTURE.md)
-- [Minimal APIs Migration Guide](../docs/MINIMAL_APIS_MIGRATION_GUIDE.md)
+- [Sample Implementation Report](../../SAMPLE_IMPLEMENTATION_COMPLETE.md)
 - [Security Tests](../tests/Sentinel.Tests.Unit/)
 - [Endpoint Implementations](../src/Sentinel.AspNetCore/Endpoints/)
 

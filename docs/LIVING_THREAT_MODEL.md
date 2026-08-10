@@ -61,7 +61,7 @@ Sentinel protects API access using high-performance, sender-constrained tokens, 
 - **DPoP Proof Validation:** Strict signature, type (`dpop+jwt`), `htm`, `htu`, and `iat` window (±60s) validation in `DpopProofValidator.cs`.
 - **Post-Quantum Cryptography (FIPS 204):** Native .NET 10 `MLDsa` lattice-based signature verification (`MlDsaSignatureVerifier.cs`) with platform-level `IsSupported` safety gates, protecting transitively against quantum-level cryptanalysis.
 - **Constant-Time Failure Padding:** All failed requests in `DpopValidationMiddleware` are padded up to a minimum floor (100ms) and randomized with **0-15ms of cryptographic jitter** to fully wash out sub-millisecond cryptographic execution deltas.
-- **Exception Shielding:** Localized `try-catch` blocks on JSON/JWT parsing entries (specifically `TryExtractProofThumbprint`) catch `ArgumentException` and `SecurityTokenException` and return `null`, preventing process-crashing DoS exploits on malformed headers.
+- **Exception Shielding:** Localized `try-catch` blocks on JSON/JWT parsing entries (specifically `TryExtractProofDetails`) catch `ArgumentException` and `SecurityTokenException` and return `null`, preventing process-crashing DoS exploits on malformed headers.
 
 ### 5.2 Session and Revocation
 - **Continuous Session Blacklisting:** In-request authorization paths check `ISessionBlacklistCache`. SSF webhooks and local logout paths converge on session invalidation.

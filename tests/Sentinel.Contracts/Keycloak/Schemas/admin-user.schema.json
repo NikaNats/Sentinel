@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinel.local/contracts/keycloak/admin-user.schema.json",
+  "title": "Keycloak Admin API User Representation",
+  "description": "CONTRACT-001: pins the Admin API user shape KeycloakUserService maps.",
+  "type": "object",
+  "required": ["id", "username", "enabled"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "username": { "type": "string" },
+    "enabled": { "type": "boolean" },
+    "email": { "type": ["string", "null"] },
+    "emailVerified": { "type": "boolean" },
+    "firstName": { "type": ["string", "null"] },
+    "lastName": { "type": ["string", "null"] },
+    "createdTimestamp": { "type": "integer" }
+  }
+}

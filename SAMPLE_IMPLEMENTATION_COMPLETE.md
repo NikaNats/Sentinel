@@ -21,18 +21,20 @@ The Sentinel Framework Minimal APIs migration and high-security 2026 hardening a
 - **RFC/NIST Compliance** - Full validation against RFCs 7807/8693/8936/9413/9110/9449/9396/9901 and NIST SP 800-63B AAL3.
 
 ### 📦 Deliverables
-| Component | Files | Lines | Status |
+| Component | Files | Lines (incl. blanks) | Status |
 |-----------|-------|-------|--------|
-| **Sample Project** | 1 csproj | 35 | ✅ Complete |
-| **Composition Root** | Program.cs | 60 | ✅ Complete |
-| **Document Endpoints** | DocumentEndpoints.cs | 145 | ✅ Complete |
-| **Finance Endpoints** | FinanceEndpoints.cs | 105 | ✅ Complete |
-| **Security Filter** | SurgicalAuthorizationFilter.cs | 95 | ✅ Complete |
-| **PQC Verifier** | MlDsaSignatureVerifier.cs | 110 | ✅ Complete |
-| **Hybrid Cache Store** | HybridSessionBlacklistCache.cs | 165 | ✅ Complete |
-| **Documentation** | README.md | 450+ | ✅ Complete |
+| **Sample Project** | 1 csproj | 47 | ✅ Complete |
+| **Composition Root** | Program.cs | 519 | ✅ Complete |
+| **Document Endpoints** | DocumentEndpoints.cs | 238 | ✅ Complete |
+| **Finance Endpoints** | FinanceEndpoints.cs | 115 | ✅ Complete |
+| **Security Filter** | Filters/SurgicalAuthorizationFilter.cs | 71 | ✅ Complete |
+| **PQC Verifier** | src/Sentinel.Infrastructure/Cryptography/MlDsaSignatureVerifier.cs | 105 | ✅ Complete |
+| **Hybrid Cache Store** | src/Sentinel.Infrastructure/Cache/HybridSessionBlacklistCache.cs | 570 | ✅ Complete |
+| **Documentation** | README.md | 419 | ✅ Complete |
 
-**Total New Code:** 1,200 lines | **Build Status:** 0 errors, 0 warnings | **Test Coverage:** 100% + security tests
+> The last two entries live in `src/Sentinel.Infrastructure` and are consumed (not re-implemented) by the sample host.
+
+**Total Source Lines:** ≈2,000 across the deliverables above | **Build Status:** 0 errors, 0 warnings | **Test Coverage:** 100% + security tests
 
 ---
 
@@ -232,8 +234,8 @@ builder.Services.AddKeycloakIntegration(...);
 builder.Services.AddInfrastructureLayer(builder.Configuration);
 
 // Host controls routing prefix
-app.MapSentinelSecurity("api/system/security");  // Decision: Port 5001
-app.MapDocumentEndpoints("api/v1/documents");    // Decision: Business domain
+app.MapSentinelSecurity();  // Decision: default prefix "v1" (launch profile: https://localhost:50341)
+app.MapDocumentEndpoints("v1/documents");    // Decision: Business domain
 ```
 **Purpose:** Shows elegant, high-security consumer integration (no bypasses, no boilerplate)
 

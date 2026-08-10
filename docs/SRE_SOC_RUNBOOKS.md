@@ -15,7 +15,7 @@ The SOC and SRE teams must track and alert on the following security-critical me
 | `auth.jti.replays_total` | Counter | > 5 replays / 1 minute | **Sev-1** (Possible active attack) |
 | `auth.dpop.failures` | Counter | > 50 failures / 5 minutes | **Sev-2** (Client config error / Downgrade attempt) |
 | `auth.token.validation.duration` | Histogram | p99 > 50 ms (Normal baseline: <15ms) | **Sev-2** (Redis cache degradation) |
-| `security:rate_limit_exceeded` | Event | > 100 events / 1 minute | **Sev-2** (DDoS / Automated scraping) |
+| `security:acr_stepup_triggered` | Event | > 100 events / 1 minute | **Sev-2** (DDoS / Automated scraping) |
 | `auth.redis.degraded_mode_activations` | Counter | > 1 activation | **Sev-1** (Loss of Redis cluster quorum) |
 
 ---
@@ -46,8 +46,9 @@ Alert `auth.jti.replays_total > 5/min` fires.
 1.  **Keep Fail-Closed Active:** Under no circumstances should the JTI replay cache be bypassed.
 2.  **Identify Compromised Subject:** If a specific `sub` is identified, invoke Keycloak Admin API to revoke all active sessions for that subject immediately:
     ```bash
-    # Revoke all sessions for compromised user
-    dotnet coyote ... # Or invoke Keycloak global logout API
+    # Revoke all sessions for compromised user (Keycloak Admin API, admin token required)
+    curl -X POST "https://keycloak:8443/admin/realms/sentinel/users/{userId}/logout" \
+      -H "Authorization: Bearer $ADMIN_TOKEN"
     ```
 3.  **Block Attacker IP:** If the attack is centralized, block the offending `ipHash` at the WAF / Ingress Gateway layer.
 
@@ -56,7 +57,7 @@ Alert `auth.jti.replays_total > 5/min` fires.
 ## 4. Runbook: Malformed Token Scans (Exception Shielding Logs)
 
 ### Trigger
-Surge in `DpopValidationMiddleware` warnings with message: `TryExtractProofThumbprint caught expected parsing exception...`
+Surge in `DpopValidationMiddleware` warnings with message: `TryExtractProofDetails caught expected parsing exception...`
 
 ### Triage & Analysis
 This warning indicates that Sentinel's **Exception Shielding** is successfully intercepting malformed, corrupted, or poisoned DPoP headers (preventing process-crashing DoS attacks) and safely returning `401 Unauthorized`.
@@ -83,7 +84,7 @@ Sentinel is strictly **fail-closed**. All protected routes will reject requests 
 2.  Check Redis Cluster health. Verify if the cluster lost quorum.
 3.  If memory is exhausted, perform a safe Redis memory eviction or restart the degraded nodes.
 4.  Once Redis is back online, verify connection restoration logs:
-    `Redis connection restored. Endpoint: 127.0.0.1:6379`
+    `Redis connection restored. Active Endpoint: ...`
 
 ## 6. Post-Incident Validation Checklist
 
@@ -94,9 +95,11 @@ After any security incident or emergency infrastructure restoration, run the fol
   ```powershell
   dotnet test tests/Sentinel.Tests.Security/Sentinel.Tests.Security.csproj --filter "FullyQualifiedName~Timing" -c Release
   ```
-- [ ] **Verify Concurrency & Lock Safety:** Run the Microsoft Coyote systematic concurrency tests (1000 iterations) to prove there are no race conditions in the restored cluster:
+- [ ] **Verify Concurrency & Lock Safety:** Run the Microsoft Coyote systematic concurrency tests (1000 iterations) to prove there are no race conditions in the restored cluster. The suite is IL-rewritten and executed through the programmatic `TestingEngine` (the standalone `coyote test` CLI cannot run the private test entry point on .NET 10):
   ```powershell
-  dotnet coyote test Sentinel.Tests.Concurrency.dll -m Sentinel.Tests.Concurrency.IdempotencyConcurrencyTests.TestConcurrentIdempotencyAcquisition -i 1000 -ms 200 --portfolio-mode fair
+  dotnet tool restore
+  dotnet build tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj -c Release -p:RunCoyoteRewrite=true
+  dotnet test tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj -c Release --no-build -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
   ```
 - [ ] **Verify Network Chaos Resilience:** Run the Toxiproxy chaos tests to ensure the system degrades gracefully under remaining packet loss or latencies:
   ```powershell
@@ -104,7 +107,7 @@ After any security incident or emergency infrastructure restoration, run the fol
   ```
 - [ ] **Verify Acceptance & E2E Behavior (Reqnroll):** Run the Reqnroll acceptance suite against the active gateway endpoint to mathematically prove that FAPI 2.0 financial transfer validations, RAR constraints, and continuous CAEP session revocations are fully operational:
   ```powershell
-  dotnet test Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release
+  dotnet test tests/Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release
   ```
 
 

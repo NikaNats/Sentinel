@@ -34,7 +34,7 @@ The current implementation provides:
 | Document | Audience | Purpose |
 |----------|----------|---------|
 | [ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Architects, Engineers | 10 Architecture Decision Records (ADRs) explaining DPoP, replay cache, rate limiting, nonce management, middleware ordering, idempotency, and operational design |
-| [SDK_LESS_INTEGRATION_GUIDE.md](./docs/SDK_LESS_INTEGRATION_GUIDE.md) | Client Developers | Complete HTTP/REST integration guide with DPoP proof generation in 5 languages (JS, Python, Java, C#, Go) and full end-to-end examples |
+| [SDK_LESS_INTEGRATION_GUIDE.md](./docs/SDK_LESS_INTEGRATION_GUIDE.md) | Client Developers | Complete language-agnostic HTTP/REST integration guide with DPoP proof wire-formats and full end-to-end examples |
 | [LIVING_THREAT_MODEL.md](./docs/LIVING_THREAT_MODEL.md) | Security Teams, Auditors | 21 identified threats across 7 categories with mitigation analysis, likelihood × impact matrix, and residual risk assessment |
 | [SRE_SOC_RUNBOOKS.md](./docs/SRE_SOC_RUNBOOKS.md) | SRE, SOC, On-Call | Monitoring, alerting, incident response procedures, troubleshooting guides, and maintenance checklists with bash/PowerShell commands |
 | [COMPLIANCE_AUDIT_MATRIX.md](./docs/COMPLIANCE_AUDIT_MATRIX.md) | Compliance, Auditors | Compliance framework mapping (OAuth 2.0, JWT, DPoP RFC 9449, FAPI 2.0 Baseline) with 40+ audit checklist items |
@@ -62,7 +62,7 @@ The current implementation provides:
 | Idempotency enforcement | Implemented | Logout idempotency with state machine (IN_PROGRESS→409, COMPLETED→204) |
 | Session management | Implemented | Refresh token rotation; session blacklist on logout; TTL aligned with Keycloak (8h default) |
 | OpenTelemetry and metrics endpoint | Implemented | Tracing, metrics counters/histograms, Prometheus scrape endpoint; security event telemetry |
-| Integration and unit testing | Implemented | 50/50 tests passing with full security scenario coverage |
+| Integration and unit testing | Implemented | 496 tests across 8 suites (Unit 290, Contracts 77, Security 63, Integration 46, DPoP 29, Session 22, SSF 7, Concurrency 3) — 100% pass rate |
 | Full OAuth PAR and PKCE orchestration endpoint set | Planned/Externalized | Keycloak-driven flow orchestration remains infrastructure and client-driven |
 
 ## Architecture Overview
@@ -131,10 +131,15 @@ Sentinel/
 |  |- Sentinel.Infrastructure/
 |  |- Sentinel.AspNetCore/
 |- tests/
-|  |- Sentinel.Tests/
-|     |- Integration/
-|     |- Unit/
-|- artifacts/                          ← Build output (bin/obj centralized)
+|  |- Sentinel.Tests.Unit/
+|  |- Sentinel.Tests.Integration/
+|  |- Sentinel.Tests.Security/
+|  |- Sentinel.Tests.DPoP/
+|  |- Sentinel.Tests.Session/
+|  |- Sentinel.Tests.SSF/
+|  |- Sentinel.Tests.Concurrency/
+|  |- Sentinel.Tests.Acceptance/
+|  |- Sentinel.Contracts/
 ```
 
 ## Technology Stack
@@ -143,9 +148,9 @@ Sentinel/
 |---|---|---|
 | .NET SDK | 10.0 | Build and runtime |
 | ASP.NET Core | 10.0 packages | API framework and middleware |
-| Keycloak | 26.1 image in compose | Authorization server and realm management |
+| Keycloak | 26.6.4 image in compose | Authorization server and realm management |
 | Redis | 7.4 alpine | Replay cache backing store |
-| OpenTelemetry | 1.13 to 1.14 packages | Tracing, metrics, exporter integration |
+| OpenTelemetry | 1.17.0 packages (Prometheus exporter 1.13.1-beta.1) | Tracing, metrics, exporter integration |
 | xUnit + Testcontainers | Current project references | Unit and integration validation |
 
 ## Prerequisites
@@ -161,9 +166,8 @@ Sentinel/
 
 | Feature | Setting | Purpose |
 |---------|---------|---------|
-| **Artifacts Layout** | `UseArtifactsOutput: true` | Centralized bin/obj → artifacts/ folder (no tree pollution) |
-| **Framework** | `TargetFramework: net11.0` | .NET 11 preview (latest) |
-| **Code Analysis** | `AnalysisLevel: latest-all` | Aggressive code quality checks (catch issues early) |
+| **Framework** | `TargetFramework: net10.0` | .NET 10 (LTS), pinned SDK 10.0.302 via global.json |
+| **Code Analysis** | `AnalysisMode: All` | Aggressive code quality checks (catch issues early) |
 | **Warnings as Errors** | Release/CI only | Zero-warning policy; enforced at CI stage |
 | **AOT Compatibility** | Enabled for executables | Native AOT readiness; trim-safe code analysis |
 | **Security** | NuGetAudit, ControlFlowGuard | Block vulnerable packages; enable Control Flow Guard |
@@ -176,7 +180,7 @@ All projects inherit these settings automatically; overrides in individual .cspr
 ## Quick Start
 
 Interactive API Reference (Development only):
-http://localhost:5260/scalar
+http://localhost:5260/docs
 
 ### 1. Restore, Build, Test
 
@@ -193,14 +197,14 @@ docker-compose up --build -d
 ```
 
 Services:
-- Keycloak: https://localhost:8443 and http://localhost:8080
+- Keycloak: https://localhost:8443 (HTTPS only; `KC_HTTP_ENABLED=false`)
 - Redis: localhost:6379
 - Sentinel API: http://localhost:5260
 
 ### 3. Run API Directly (Without Compose)
 
 ```powershell
-cd src/Sentinel.AspNetCore
+cd samples/Sentinel.Sample.MinimalApi
 dotnet run
 ```
 
@@ -297,26 +301,22 @@ Notes:
 
 ## API Surface
 
-### Protected Endpoint
+### Profile Endpoint
 
-- GET /v1/Profile
+- GET /v1/profile (mounted under the `v1` security prefix in the sample host)
 
-Requirements:
-- Authenticated JWT passed in Authorization header with DPoP scheme
-- Matching DPoP proof in DPoP header
-- Policy ReadProfile satisfied:
-    - scope includes profile
-    - acr claim meets minimum acr2
-
-Example response model:
+Behavior:
+- `AllowAnonymous` + IP rate-limited via the `profile` limiter, so it is reachable without authentication — not a protected policy endpoint. Be aware also uses the SD-JWT presenter for presentation-format bearer tokens.
+- With a valid authenticated JWT carrying the `profile` scope: returns:
 
 ```json
 {
     "sub": "subject-id",
-    "displayName": "display name",
-    "roles": ["user"]
+    "acr": "acr2"
 }
 ```
+
+- Unauthenticated: `401`; authenticated without `profile` scope: `403`.
 
 ## Security Controls
 
@@ -345,7 +345,7 @@ Implemented RFC 9449 (DPoP) + FAPI 2.0 Baseline hardening controls:
 - Server-issued nonce included in `DPoP-Nonce` response header
 - Nonce tied to client's JWK thumbprint; per-identity nonce sequence
 - Nonce lifetime: 60 seconds; expiration triggers challenge re-issuance
-- Initial unauthenticated request returns 400 Bad Request + nonce challenge
+- Initial unauthenticated request returns 401 Unauthorized + nonce challenge (`WWW-Authenticate: DPoP error="use_dpop_nonce"`)
 - Client includes nonce in next proof; server validates before consumption
 - Stale/consumed nonce triggers new challenge issuance with fresh nonce
 - Client must update cached nonce from every response header
@@ -389,7 +389,7 @@ Implemented RFC 9449 (DPoP) + FAPI 2.0 Baseline hardening controls:
 
 **OpenTelemetry Security Telemetry:**
 - Security events emitted as Activity events with structured attributes
-- Events: `security:authentication_success`, `security:invalid_dpop_proof`, `security:use_dpop_nonce`, `security:token_reuse_detected`, `security:rate_limit_exceeded`, `security:session_revoked`
+- Events: `security:ssf_auth_failed`, `security:acr_stepup_triggered`, `security:fips_mode_enabled`
 - W3C Trace Context for correlation across distributed components
 - Sensitive data excluded from attributes (PII masking)
 
@@ -408,7 +408,7 @@ Implemented RFC 9449 (DPoP) + FAPI 2.0 Baseline hardening controls:
     - auth.jti.replays_total
     - auth.token.issued
 - Histogram:
-    - auth.token.validation.duration_ms
+    - auth.token.validation.duration
 
 ### Operational Signals
 
@@ -446,9 +446,7 @@ Focus areas:
 - Real Keycloak integration (non-DPoP binding tests)
 
 **Current Test Status:**
-- **50/50 tests passing** (100% pass rate)
-- Integration test suites: AuthFlow (2), SecurityScenarios (6), RealKeycloak (2)
-- Unit test suites: JtiReplayCache (2), DpopProofValidator (3), Idempotency (3), Auth (4), Backchannel (2), Services (2)
+- **496 tests passing** (100% pass rate) across 8 suites: Unit (290), Contracts (77), Security (63), Integration (46), DPoP (29), Session (22), SSF (7), Concurrency (3)
 - All security scenario paths exercised (DPoP nonce, token replay, proof replay, rate limits, ACR, scope validation)
 
 ### Acceptance Tests (Reqnroll E2E)
@@ -479,7 +477,7 @@ This project follows a spec-driven workflow with comprehensive documentation:
 2. Plan implementation scope in PLAN-0001
 3. Track execution in TASK-0001
 4. Implement code and tests together (unit + integration)
-5. Validate with full test suite (target: 50/50+ tests passing)
+5. Validate with full test suite (496 tests across 8 suites, 100% passing)
 6. Security scan for vulnerabilities (Trivy)
 7. Update architecture documentation ([ARCHITECTURE.md](./docs/ARCHITECTURE.md)) when decisions change
 8. Update operational runbooks ([SRE_SOC_RUNBOOKS.md](./docs/SRE_SOC_RUNBOOKS.md)) when behavior changes

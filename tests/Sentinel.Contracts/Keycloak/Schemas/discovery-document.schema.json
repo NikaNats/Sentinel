@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinel.local/contracts/keycloak/discovery-document.schema.json",
+  "title": "Keycloak OIDC Discovery Document",
+  "description": "CONTRACT-001: pins the discovery shape Microsoft.IdentityModel.Protocols.OpenIdConnect parses.",
+  "type": "object",
+  "required": [
+    "issuer",
+    "authorization_endpoint",
+    "token_endpoint",
+    "jwks_uri",
+    "userinfo_endpoint",
+    "end_session_endpoint",
+    "introspection_endpoint",
+    "revocation_endpoint",
+    "response_types_supported",
+    "subject_types_supported",
+    "id_token_signing_alg_values_supported",
+    "scopes_supported",
+    "token_endpoint_auth_methods_supported",
+    "code_challenge_methods_supported",
+    "grant_types_supported",
+    "backchannel_logout_supported",
+    "backchannel_logout_session_supported",
+    "pushed_authorization_request_endpoint"
+  ],
+  "properties": {
+    "issuer": { "type": "string", "format": "uri" },
+    "authorization_endpoint": { "type": "string", "format": "uri" },
+    "token_endpoint": { "type": "string", "format": "uri" },
+    "jwks_uri": { "type": "string", "format": "uri" },
+    "userinfo_endpoint": { "type": "string", "format": "uri" },
+    "end_session_endpoint": { "type": "string", "format": "uri" },
+    "introspection_endpoint": { "type": "string", "format": "uri" },
+    "revocation_endpoint": { "type": "string", "format": "uri" },
+    "pushed_authorization_request_endpoint": { "type": "string" },
+    "dpop_signing_alg_values_supported": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "response_types_supported": { "type": "array", "items": { "type": "string" } },
+    "subject_types_supported": { "type": "array", "items": { "type": "string" } },
+    "id_token_signing_alg_values_supported": { "type": "array", "items": { "type": "string" } },
+    "scopes_supported": { "type": "array", "items": { "type": "string" } },
+    "token_endpoint_auth_methods_supported": { "type": "array", "items": { "type": "string" } },
+    "code_challenge_methods_supported": { "type": "array", "items": { "type": "string" } },
+    "grant_types_supported": { "type": "array", "items": { "type": "string" } },
+    "backchannel_logout_supported": { "type": "boolean" },
+    "backchannel_logout_session_supported": { "type": "boolean" }
+  }
+}

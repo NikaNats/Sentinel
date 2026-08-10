@@ -86,9 +86,7 @@ To exclude these non-executable business artifacts, add the following `<Property
 
 ## 5. CI/CD Quality Gating (GitHub Actions)
 
-In staging and production pipelines, coverage validation is enforced automatically. If code coverage drops below the required security baseline (**80% line coverage**), the pipeline fails immediately.
-
-Snippet from `.github/workflows/security-pipeline.yml`:
+Coverage is collected locally on demand (see §3). Coverage is **not currently enforced as a CI gate**: `.github/workflows/*.yml` contains no `CollectCoverage`/`Threshold` steps and no Codecov upload. The compliance target (documented in the header) is >80% global line coverage, and CI-based coverage gating is a roadmap item — the snippet below is the *intended* future gate, not current pipeline behavior:
 
 ```yaml
 - name: Execute High-Assurance Test Suite with Coverage Gating

@@ -149,3 +149,7 @@ local.settings.json
 # DAST run artifacts (local scans generate SARIF/txt under artifacts/)
 infra/dast/artifacts/
 
+# Python (contract tooling bytecode cache)
+__pycache__/
+*.pyc
+

@@ -10,9 +10,12 @@ This guide provides instructions and raw HTTP wire-format examples to integrate 
 
 ## 1. Integration Model
 
-Sentinel endpoints are mounted dynamically by the hosting application. In the reference sample, the endpoints are mapped under the following prefixes:
-- **Security & Identity Endpoints:** `http://localhost:5260/api/system/security/auth/*`
-- **Business/Profile Endpoints:** `http://localhost:5260/api/v1/*`
+Sentinel endpoints are mounted dynamically by the hosting application — the host controls the routing prefix, so the active paths must be read from each deployment's configuration. Two known surfaces:
+
+- **Canonical contract paths** (`docs/OPENAPI_3_1.yaml`), verified in CI by Gate 5 against the AdversarialTestHost's generated schema:
+  - **Security & Identity Endpoints:** `/api/system/security/auth/*`
+  - **SSF Events:** `/api/system/security/ssf/events`
+- **The reference sample** (`samples/Sentinel.Sample.MinimalApi`) intentionally mounts the same framework endpoints under a different prefix via `app.MapSentinelSecurity()` (default `v1`, e.g. `/v1/auth/*`, `/v1/ssf/*`); its documents endpoints live under `/v1/documents` and finance under `/api/v1/finance` (local dev ports: `https://localhost:50341` / compose: `http://localhost:5260`).
 
 *Always verify the active routing prefix and ports from the host's configuration before starting development.*
 
@@ -47,7 +50,7 @@ A DPoP proof is a high-entropy, short-lived JWT signed by the client's private k
 {
   "jti": "550e8400-e29b-41d4-a716-446655440000",
   "htm": "GET",
-  "htu": "http://localhost:5260/api/v1/profile",
+  "htu": "http://localhost:50342/v1/profile",
   "iat": 1774880000,
   "nonce": "server-issued-nonce-value"
 }

@@ -27,7 +27,8 @@ internal sealed class AcrValidationMiddleware(RequestDelegate next)
 
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 context.Response.ContentType = "application/problem+json; charset=utf-8";
-                await context.Response.WriteAsync(JsonSerializer.Serialize(problem));
+                await context.Response.WriteAsync(
+                    JsonSerializer.Serialize(problem, AspNetCoreJsonContext.Default.ProblemDetails));
                 return;
             }
         }

@@ -3,19 +3,19 @@
 > **Document ID**: CFG-0001
 > **Status**: APPROVED
 > **Scope**: Repository build, compilation-safety, and secure release gates
-> **Target Baseline**: .NET 10.0 (SDK 10.0.300+)
+> **Target Baseline**: .NET 10.0 (SDK 10.0.302)
 
 ## 1. Build Baseline & compiler Enforcements
 
 The Sentinel repository enforces a strict, zero-warning cryptographic build baseline. All projects transitively inherit these compiler policies through central configuration files.
 
 ### Global Invariants:
-- **SDK Pinned:** .NET SDK `10.0.300+` (enforced via `global.json`).
+- **SDK Pinned:** .NET SDK `10.0.302` (enforced via `global.json`, `rollForward: latestPatch`).
 - **Target Framework Monoculture (TFM):** `net10.0` (with multi-targeting ready).
 - **Null Safety:** `Nullable: enabled` strictly checked (warnings treated as errors).
 - **Modern C# Compiler:** `ImplicitUsings: enabled` with C# 13/14 language features active.
-- **Strict Quality Gate:** `TreatWarningsAsErrors: true` across all configurations.
-- **Static Analysis:** `AnalysisLevel: latest-all` (Roslyn analyzers active on every build).
+- **Strict Quality Gate:** `TreatWarningsAsErrors: true` in Release and CI builds (local Debug builds are explicitly `false`).
+- **Static Analysis:** `AnalysisMode: All` (Roslyn analyzers active on every build).
 - **Documentation:** `GenerateDocumentationFile: true` (all public/internal APIs must be fully documented).
 
 These settings are centralized in three primary files in the repository root:
@@ -30,8 +30,8 @@ Ensures that all local developer environments and CI/CD runners build the soluti
 ```json
 {
   "sdk": {
-    "version": "10.0.300",
-    "rollForward": "latestFeature"
+    "version": "10.0.302",
+    "rollForward": "latestPatch"
   }
 }
 ```
@@ -131,8 +131,8 @@ The reference Minimal API host (`Sentinel.Sample.MinimalApi`) is configured with
 The repository contains a production-ready, highly secure multi-stage Docker build located at `src/Sentinel.AspNetCore/Dockerfile`.
 
 ### Hardening Controls Deployed:
-- **Distroless Runtime:** Uses `mcr.microsoft.com/dotnet/aspnet:10.0` as the minimal execution layer (no shell, no package manager, minimizing attack surface).
-- **Non-Root Execution:** Runs under a dedicated unprivileged user (`USER sentinel` / UID 1654) to mitigate container escape exploits.
+- **Distroless Runtime:** Uses `mcr.microsoft.com/dotnet/aspnet:10.0.10-noble-chiseled` as the minimal execution layer (no shell, no package manager, minimizing attack surface).
+- **Non-Root Execution:** Runs under a dedicated unprivileged user (`USER app` / UID 1654) to mitigate container escape exploits.
 - **Disabled Diagnostics:** `DOTNET_EnableDiagnostics=0` is set to block runtime profiling, heap dumps, and memory scanning vectors.
 - **TLS 1.3 & mTLS Ready:** Hardened to negotiate TLS 1.3 exclusively for service-to-service secure mesh topologies.
 

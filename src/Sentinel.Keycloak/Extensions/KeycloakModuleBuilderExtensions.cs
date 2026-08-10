@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
+using Sentinel.Keycloak.Dpop;
 using Sentinel.Keycloak.Handlers;
 using Sentinel.Keycloak.Services;
 using Sentinel.Security.Abstractions.DependencyInjection;
@@ -49,11 +50,16 @@ public static class KeycloakModuleBuilderExtensions
 
         builder.Services.TryAddSingleton<KeycloakAdminCircuitBreakerState>();
         _ = builder.Services.AddSingleton<KeycloakAdminTokenProvider>();
+        _ = builder.Services.AddSingleton<KeycloakDpopProofFactory>();
+        _ = builder.Services.AddTransient<DpopProofDelegatingHandler>();
         _ = builder.Services.AddTransient<KeycloakAdminCircuitBreakerHandler>();
         _ = builder.Services.AddTransient<KeycloakAdminAuthHandler>();
-        _ = builder.Services.AddHttpClient<IUmaPermissionService, KeycloakUmaPermissionService>();
-        _ = builder.Services.AddHttpClient<ITokenRefreshService, KeycloakTokenRefreshService>();
-        _ = builder.Services.AddHttpClient<ITokenExchangeService, KeycloakTokenExchangeService>();
+        _ = builder.Services.AddHttpClient<IUmaPermissionService, KeycloakUmaPermissionService>()
+            .AddHttpMessageHandler<DpopProofDelegatingHandler>();
+        _ = builder.Services.AddHttpClient<ITokenRefreshService, KeycloakTokenRefreshService>()
+            .AddHttpMessageHandler<DpopProofDelegatingHandler>();
+        _ = builder.Services.AddHttpClient<ITokenExchangeService, KeycloakTokenExchangeService>()
+            .AddHttpMessageHandler<DpopProofDelegatingHandler>();
         _ = builder.Services.AddHttpClient<IIdentityRegistry, KeycloakUserService>((sp, client) =>
             {
                 var keycloakOptions = sp.GetRequiredService<IOptions<KeycloakOptions>>().Value;
@@ -96,7 +102,8 @@ public static class KeycloakModuleBuilderExtensions
             .AddHttpMessageHandler<KeycloakAdminCircuitBreakerHandler>()
             .AddHttpMessageHandler<KeycloakAdminAuthHandler>();
         _ = builder.Services.AddHttpClient("keycloak-admin")
-            .AddHttpMessageHandler<KeycloakAdminCircuitBreakerHandler>();
+            .AddHttpMessageHandler<KeycloakAdminCircuitBreakerHandler>()
+            .AddHttpMessageHandler<DpopProofDelegatingHandler>();
         _ = builder.Services.AddHttpClient<ApplicationAuthRevocationService, KeycloakAuthRevocationService>();
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, SocialFederationConfiguratorHostedService>());

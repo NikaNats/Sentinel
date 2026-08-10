@@ -99,15 +99,61 @@
   ],
   "eventsEnabled": true,
   "eventsListeners": [
-    "jboss-logging",
-    "event-queue"
+    "jboss-logging"
   ],
   "adminEventsEnabled": true,
   "adminEventsDetailsEnabled": true,
   "identityProviders": [],
   "identityProviderMappers": [],
   "protocolMappers": [],
-  "components": {},
+  "components": {
+    "org.keycloak.keys.KeyProvider": [
+      {
+        "name": "ps256-primary",
+        "providerId": "rsa-generated",
+        "subType": "private",
+        "config": {
+          "priority": [
+            "200"
+          ],
+          "enabled": [
+            "true"
+          ],
+          "active": [
+            "true"
+          ],
+          "algorithm": [
+            "PS256"
+          ],
+          "keySize": [
+            "2048"
+          ]
+        }
+      },
+      {
+        "name": "rsa-oaep-enc",
+        "providerId": "rsa-enc-generated",
+        "subType": "enc",
+        "config": {
+          "priority": [
+            "100"
+          ],
+          "enabled": [
+            "true"
+          ],
+          "active": [
+            "true"
+          ],
+          "algorithm": [
+            "RSA-OAEP"
+          ],
+          "keySize": [
+            "2048"
+          ]
+        }
+      }
+    ]
+  },
   "internationalizationEnabled": false,
   "supportedLocales": [],
   "browserSecurityHeaders": {
@@ -139,7 +185,9 @@
           "fapi2-security-profile"
         ]
       }
-    ],
+    ]
+  },
+  "clientProfiles": {
     "profiles": [
       {
         "name": "fapi2-security-profile",
@@ -147,26 +195,20 @@
           {
             "executor": "pkce-enforcer",
             "configuration": {
-              "allow-method": [
-                "S256"
-              ]
+              "auto-configure": "true"
             }
           },
           {
-            "executor": "dpop-enforcer",
+            "executor": "dpop-bind-enforcer",
             "configuration": {
-              "dpop-bound-access-tokens": "true"
+              "auto-configure": "true",
+              "allow-only-refresh-token-binding": "false"
             }
           },
           {
-            "executor": "par-enforcer",
+            "executor": "secure-signature-algorithm",
             "configuration": {
-              "par-required": "true"
-            }
-          },
-          {
-            "executor": "secure-signing-algorithm",
-            "configuration": {
+              "default-algorithm": "PS256",
               "algorithm": [
                 "PS256",
                 "ES256"
@@ -175,14 +217,18 @@
           },
           {
             "executor": "secure-session",
+            "configuration": {}
+          },
+          {
+            "executor": "reject-implicit-grant",
             "configuration": {
-              "max-sessions": "3"
+              "auto-configure": "true"
             }
           },
           {
-            "executor": "hold-of-key-enforcer",
+            "executor": "reject-ropc-grant",
             "configuration": {
-              "every-endpoint": "true"
+              "auto-configure": "true"
             }
           }
         ]
@@ -231,6 +277,19 @@
       ],
       "optionalClientScopes": [
         "offline_access"
+      ],
+      "protocolMappers": [
+        {
+          "name": "audience-sentinel-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "sentinel-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
       ]
     },
     {
@@ -253,7 +312,20 @@
       "defaultClientScopes": [
         "roles"
       ],
-      "optionalClientScopes": []
+      "optionalClientScopes": [],
+      "protocolMappers": [
+        {
+          "name": "audience-sentinel-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "sentinel-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
     }
   ],
   "clientScopes": [

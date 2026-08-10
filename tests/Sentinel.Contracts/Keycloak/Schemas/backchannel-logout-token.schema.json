@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinel.local/contracts/keycloak/backchannel-logout-token.schema.json",
+  "title": "Keycloak Back-Channel Logout Token (RFC 9413)",
+  "description": "CONTRACT-001: pins the RFC 9413 logout-token requirements (SHA-256 hashing caveats excluded; enforced in test code).",
+  "type": "object",
+  "required": ["iss", "aud", "iat", "jti", "events", "sub", "sid"],
+  "properties": {
+    "iss": { "type": "string", "format": "uri" },
+    "aud": { "type": [ "string", "array" ], "items": { "type": "string" } },
+    "iat": { "type": "integer" },
+    "jti": { "type": "string", "minLength": 1 },
+    "sub": { "type": "string" },
+    "sid": { "type": "string", "minLength": 1 },
+    "nonce": { "type": "string" },
+    "events": {
+      "type": "object",
+      "required": ["http://schemas.openid.net/event/backchannel-logout"],
+      "properties": {
+        "http://schemas.openid.net/event/backchannel-logout": {
+          "type": "object",
+          "properties": { "logout_token": { "type": "boolean" } }
+        }
+      }
+    }
+  }
+}

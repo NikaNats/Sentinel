@@ -1,0 +1,482 @@
+{
+  "contract": {
+    "id": "CONTRACT-001",
+    "version": "1.0"
+  },
+  "format": "SentinelOpenApiBaseline",
+  "formatVersion": 1,
+  "generatedFrom": "OPENAPI_3_1.yaml",
+  "paths": {
+    "/": {
+      "get": {
+        "parameters": [],
+        "requestRequired": [],
+        "responses": [
+          "200"
+        ],
+        "security": []
+      }
+    },
+    "/api/system/security/auth/account": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key"
+          }
+        ],
+        "requestRequired": [],
+        "responses": [
+          "204",
+          "401",
+          "409",
+          "500",
+          "503"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/api/system/security/auth/backchannel-logout": {
+      "post": {
+        "parameters": [],
+        "requestRequired": [
+          "logout_token"
+        ],
+        "responses": [
+          "200",
+          "400"
+        ],
+        "security": []
+      }
+    },
+    "/api/system/security/auth/change-password": {
+      "post": {
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key"
+          }
+        ],
+        "requestRequired": [
+          "newPassword"
+        ],
+        "responses": [
+          "204",
+          "400",
+          "401",
+          "409",
+          "500",
+          "503"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/api/system/security/auth/logout": {
+      "post": {
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key"
+          }
+        ],
+        "requestRequired": [
+          "refreshToken"
+        ],
+        "responses": [
+          "204",
+          "400",
+          "401",
+          "409",
+          "503"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/api/system/security/auth/logout-all": {
+      "post": {
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key"
+          }
+        ],
+        "requestRequired": [],
+        "responses": [
+          "204",
+          "401",
+          "409",
+          "500",
+          "503"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/api/system/security/auth/mfa/recovery-codes": {
+      "get": {
+        "parameters": [],
+        "requestRequired": [],
+        "responses": [
+          "401",
+          "501"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/api/system/security/auth/mfa/recovery-codes/regenerate": {
+      "post": {
+        "parameters": [],
+        "requestRequired": [],
+        "responses": [
+          "401",
+          "501"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/api/system/security/auth/mfa/totp": {
+      "delete": {
+        "parameters": [],
+        "requestRequired": [],
+        "responses": [
+          "401",
+          "501"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/api/system/security/auth/mfa/totp/setup": {
+      "post": {
+        "parameters": [],
+        "requestRequired": [
+          "deviceName"
+        ],
+        "responses": [
+          "401",
+          "501"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/api/system/security/auth/mfa/totp/verify": {
+      "post": {
+        "parameters": [],
+        "requestRequired": [
+          "code"
+        ],
+        "responses": [
+          "401",
+          "501"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/api/system/security/auth/refresh": {
+      "post": {
+        "parameters": [
+          {
+            "in": "header",
+            "name": "DPoP"
+          }
+        ],
+        "requestRequired": [
+          "refreshToken"
+        ],
+        "responses": [
+          "200",
+          "400",
+          "401"
+        ],
+        "security": []
+      }
+    },
+    "/api/system/security/auth/sessions": {
+      "get": {
+        "parameters": [],
+        "requestRequired": [],
+        "responses": [
+          "200",
+          "401"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/api/system/security/auth/sessions/{sessionId}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key"
+          },
+          {
+            "in": "path",
+            "name": "sessionId"
+          }
+        ],
+        "requestRequired": [],
+        "responses": [
+          "204",
+          "400",
+          "401",
+          "404",
+          "409",
+          "503"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/api/system/security/auth/token-exchange": {
+      "post": {
+        "parameters": [
+          {
+            "in": "header",
+            "name": "DPoP"
+          }
+        ],
+        "requestRequired": [
+          "codeVerifier",
+          "externalToken",
+          "providerName"
+        ],
+        "responses": [
+          "200",
+          "400",
+          "401"
+        ],
+        "security": []
+      }
+    },
+    "/api/system/security/ssf/events": {
+      "post": {
+        "parameters": [],
+        "requestRequired": [
+          "set"
+        ],
+        "responses": [
+          "202",
+          "400",
+          "401",
+          "404"
+        ],
+        "security": []
+      }
+    },
+    "/api/v1/documents": {
+      "get": {
+        "parameters": [],
+        "requestRequired": [],
+        "responses": [
+          "200",
+          "401"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      },
+      "post": {
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key"
+          }
+        ],
+        "requestRequired": [
+          "content",
+          "title"
+        ],
+        "responses": [
+          "201",
+          "204",
+          "400",
+          "401",
+          "409",
+          "503"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/api/v1/documents/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id"
+          }
+        ],
+        "requestRequired": [],
+        "responses": [
+          "204",
+          "401",
+          "403",
+          "404"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      },
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id"
+          }
+        ],
+        "requestRequired": [],
+        "responses": [
+          "200",
+          "401",
+          "404"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/api/v1/finance/transfer": {
+      "post": {
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key"
+          }
+        ],
+        "requestRequired": [
+          "amount",
+          "currency",
+          "destinationAccount",
+          "transactionId"
+        ],
+        "responses": [
+          "200",
+          "204",
+          "400",
+          "401",
+          "403",
+          "409",
+          "503"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/api/v1/showcase/profile": {
+      "get": {
+        "parameters": [],
+        "requestRequired": [],
+        "responses": [
+          "200",
+          "401",
+          "403"
+        ],
+        "security": [
+          "BearerAuth"
+        ]
+      }
+    },
+    "/api/v1/showcase/security-context": {
+      "get": {
+        "parameters": [],
+        "requestRequired": [],
+        "responses": [
+          "200",
+          "401"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/api/v1/showcase/test/protected": {
+      "get": {
+        "parameters": [],
+        "requestRequired": [],
+        "responses": [
+          "200",
+          "401"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/api/v1/showcase/test/step-up": {
+      "get": {
+        "parameters": [],
+        "requestRequired": [],
+        "responses": [
+          "200",
+          "401"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "parameters": [],
+        "requestRequired": [],
+        "responses": [
+          "200"
+        ],
+        "security": []
+      }
+    }
+  },
+  "securitySchemes": {
+    "BearerAuth": {
+      "bearerFormat": "JWT",
+      "scheme": "bearer",
+      "type": "http"
+    },
+    "DPoPProof": {
+      "in": "header",
+      "name": "DPoP",
+      "type": "apiKey"
+    }
+  },
+  "specVersion": "2026-06-16"
+}
