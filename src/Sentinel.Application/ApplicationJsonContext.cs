@@ -9,6 +9,8 @@ namespace Sentinel.Application;
 /// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(TokenExchangeResult))]
+[JsonSerializable(typeof(UserSessionInfo))]
+[JsonSerializable(typeof(IReadOnlyCollection<UserSessionInfo>))]
 [JsonSerializable(typeof(Dictionary<string, object>))]
 public sealed partial class ApplicationJsonContext : JsonSerializerContext
 {

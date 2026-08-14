@@ -1,0 +1,79 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>Sentinel.DPoP</name>
+    </assembly>
+    <members>
+        <member name="P:Sentinel.DPoP.DpopJsonContext.DictionaryStringString">
+            <summary>
+            Defines the source generated JSON serialization contract metadata for a given type.
+            </summary>
+        </member>
+        <member name="P:Sentinel.DPoP.DpopJsonContext.String">
+            <summary>
+            Defines the source generated JSON serialization contract metadata for a given type.
+            </summary>
+        </member>
+        <member name="P:Sentinel.DPoP.DpopJsonContext.Default">
+            <summary>
+            The default <see cref="T:System.Text.Json.Serialization.JsonSerializerContext"/> associated with a default <see cref="T:System.Text.Json.JsonSerializerOptions"/> instance.
+            </summary>
+        </member>
+        <member name="P:Sentinel.DPoP.DpopJsonContext.GeneratedSerializerOptions">
+            <summary>
+            The source-generated options associated with this context.
+            </summary>
+        </member>
+        <member name="M:Sentinel.DPoP.DpopJsonContext.#ctor">
+            <inheritdoc/>
+        </member>
+        <member name="M:Sentinel.DPoP.DpopJsonContext.#ctor(System.Text.Json.JsonSerializerOptions)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Sentinel.DPoP.DpopJsonContext.GetTypeInfo(System.Type)">
+            <inheritdoc/>
+        </member>
+        <member name="T:Sentinel.DPoP.DpopThumbprintComputer">
+            <summary>
+                Computes RFC 7638 JWK thumbprints for DPoP key binding per RFC 9449.
+            </summary>
+        </member>
+        <member name="M:Sentinel.DPoP.DpopThumbprintComputer.Compute(System.Text.Json.JsonElement)">
+            <summary>
+                Computes the RFC 7638 thumbprint from a JsonElement representing a public key.
+            </summary>
+            <remarks>
+                ✅ FIX: Uses source-generated context to guarantee Native AOT compliance.
+                Reflection-based serialization is blocked in trimmed environments.
+            </remarks>
+            <param name="jwk">JsonElement containing a JWK (e.g., from a JWT header).</param>
+            <returns>Base64url-encoded thumbprint string, or empty string if JWK is unsupported.</returns>
+        </member>
+        <member name="T:Sentinel.DPoP.Extensions.DependencyInjectionExtensions">
+            <summary>
+                Dependency injection extensions for Sentinel.DPoP module.
+            </summary>
+        </member>
+        <member name="M:Sentinel.DPoP.Extensions.DependencyInjectionExtensions.AddSentinelDPoP(Microsoft.Extensions.DependencyInjection.IServiceCollection,Microsoft.Extensions.Configuration.IConfiguration)">
+            <summary>
+                Registers DPoP-related services in the dependency injection container.
+            </summary>
+            <remarks>
+                ✅ FIX: Transient registration prevents Captive Dependency.
+                If IJtiReplayCache is Scoped (e.g., EF Core DbContext), Singleton would capture it globally,
+                causing DbContext concurrency exceptions in production.
+                IMPORTANT: The consumer MUST register an implementation of <see cref="T:Sentinel.Security.Abstractions.Replay.IJtiReplayCache" />
+                prior to calling this method. Failure to do so will result in a DI resolution exception at runtime.
+            </remarks>
+        </member>
+        <member name="M:Microsoft.Extensions.Configuration.Binder.SourceGeneration.BindingExtensions.Get``1(Microsoft.Extensions.Configuration.IConfiguration)">
+            <summary>Attempts to bind the configuration instance to a new instance of type T.</summary>
+        </member>
+        <member name="M:Microsoft.Extensions.Configuration.Binder.SourceGeneration.BindingExtensions.TryGetConfigurationValue(Microsoft.Extensions.Configuration.IConfiguration,System.String,System.String@)">
+            <summary>Tries to get the configuration value for the specified key.</summary>
+        </member>
+        <member name="M:Microsoft.Extensions.Configuration.Binder.SourceGeneration.BindingExtensions.ValidateConfigurationKeys(System.Type,System.Lazy{System.Collections.Generic.HashSet{System.String}},Microsoft.Extensions.Configuration.IConfiguration,Microsoft.Extensions.Configuration.BinderOptions)">
+            <summary>If required by the binder options, validates that there are no unknown keys in the input configuration object.</summary>
+        </member>
+    </members>
+</doc>

@@ -69,7 +69,7 @@ public sealed class SsfEventProcessorTests
         const string targetSid = "sess-7890-abc";
         var events = new Dictionary<string, JsonElement>
         {
-            [SessionRevokedUri] = MockSsfTokenValidator.CreateCaepPayload(new { sid = targetSid })
+            [SessionRevokedUri] = MockSsfTokenValidator.CreateCaepPayload(new SidPayload(targetSid))
         };
 
         _validator.CustomResult = SsfValidationResult.Success(CreateToken(events));
@@ -95,7 +95,7 @@ public sealed class SsfEventProcessorTests
         const string targetSub = "user-auth0|5e3b9c88-1234";
         var events = new Dictionary<string, JsonElement>
         {
-            [SessionRevokedUri] = MockSsfTokenValidator.CreateCaepPayload(new { sub = targetSub })
+            [SessionRevokedUri] = MockSsfTokenValidator.CreateCaepPayload(new SubPayload(targetSub))
         };
 
         _validator.CustomResult = SsfValidationResult.Success(CreateToken(events, targetSub));
@@ -152,7 +152,7 @@ public sealed class SsfEventProcessorTests
         // Arrange: Valid event, but the cache will throw during blacklist
         var events = new Dictionary<string, JsonElement>
         {
-            [SessionRevokedUri] = MockSsfTokenValidator.CreateCaepPayload(new { sid = "test-sess" })
+            [SessionRevokedUri] = MockSsfTokenValidator.CreateCaepPayload(new SidPayload("test-sess"))
         };
         _validator.CustomResult = SsfValidationResult.Success(CreateToken(events));
 
@@ -221,8 +221,8 @@ public sealed class SsfEventProcessorTests
 
         var events = new Dictionary<string, JsonElement>
         {
-            [SessionRevokedUri] = MockSsfTokenValidator.CreateCaepPayload(new { sid = targetSid }),
-            [UserStatusChangedUri] = MockSsfTokenValidator.CreateCaepPayload(new { sub = targetSub })
+            [SessionRevokedUri] = MockSsfTokenValidator.CreateCaepPayload(new SidPayload(targetSid)),
+            [UserStatusChangedUri] = MockSsfTokenValidator.CreateCaepPayload(new SubPayload(targetSub))
         };
 
         _validator.CustomResult = SsfValidationResult.Success(CreateToken(events, targetSub));

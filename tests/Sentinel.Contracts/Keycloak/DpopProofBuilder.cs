@@ -18,27 +18,21 @@ internal static class DpopProofBuilder
     {
         var parameters = Key.ExportParameters(false);
 
-        var header = JsonSerializer.Serialize(new
-        {
-            typ = "dpop+jwt",
-            alg = "RS256",
-            jwk = new
-            {
-                kty = "RSA",
-                n = Base64Url(parameters.Modulus!),
-                e = Base64Url(parameters.Exponent!),
-                alg = "RS256",
-                use = "sig"
-            }
-        });
+        var header = JsonSerializer.Serialize(new DpopProofHeaderContract(
+            "dpop+jwt",
+            "RS256",
+            new DpopProofJwkContract(
+                "RSA",
+                Base64Url(parameters.Modulus!),
+                Base64Url(parameters.Exponent!),
+                "RS256",
+                "sig")), KeycloakContractJsonContext.Default.DpopProofHeaderContract);
 
-        var payload = JsonSerializer.Serialize(new
-        {
-            htm = "POST",
+        var payload = JsonSerializer.Serialize(new DpopProofPayloadContract(
+            "POST",
             htu,
-            jti = Guid.NewGuid().ToString(),
-            iat = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-        });
+            Guid.NewGuid().ToString(),
+            DateTimeOffset.UtcNow.ToUnixTimeSeconds()), KeycloakContractJsonContext.Default.DpopProofPayloadContract);
 
         var header64 = Base64Url(Encoding.UTF8.GetBytes(header));
         var payload64 = Base64Url(Encoding.UTF8.GetBytes(payload));

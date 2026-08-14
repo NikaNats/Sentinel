@@ -6,6 +6,14 @@
 
         <!-- Security Enforcement -->
         <AnalysisMode>All</AnalysisMode>
+
+        <!-- Kill the JIT reflection fallback: System.Text.Json throws instead of silently
+             using DefaultJsonTypeInfoResolver when a type is missing from a JsonSerializerContext.
+             This makes dotnet test behave like Native AOT for serialization.
+             NOTE: EnableAotAnalyzer/EnableTrimAnalyzer/EnableSingleFileAnalyzer are intentionally
+             NOT enabled repo-wide - they flag legitimate JIT-only code (EF Core storage,
+             ConfigurationBinder, minimal-API routing) that is not AOT-published. -->
+        <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
         
         <TreatWarningsAsErrors Condition="'$(CI)' == 'true' or '$(Configuration)' == 'Release'">true</TreatWarningsAsErrors>
         <TreatWarningsAsErrors Condition="'$(CI)' != 'true' and '$(Configuration)' != 'Release'">false</TreatWarningsAsErrors>

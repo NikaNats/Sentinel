@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Security.Abstractions.Options;
+using System.Text.Json;
 
 namespace Sentinel.AspNetCore.Middleware;
 
@@ -56,7 +57,7 @@ public sealed class StepUpAuthorizationResultHandler : IAuthorizationMiddlewareR
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 context.Response.Headers.Append("WWW-Authenticate", wwwAuthenticateHeader);
 
-                await context.Response.WriteAsJsonAsync(new ProblemDetails
+                var problem = new ProblemDetails
                 {
                     Type = "/errors/insufficient-acr",
                     Title = "Step-up Authentication Required",
@@ -66,7 +67,11 @@ public sealed class StepUpAuthorizationResultHandler : IAuthorizationMiddlewareR
                     {
                         ["required_acr"] = requiredAcr
                     }
-                });
+                };
+
+                var json = JsonSerializer.Serialize(problem, AspNetCoreJsonContext.Default.ProblemDetails);
+                context.Response.ContentType = "application/problem+json";
+                await context.Response.WriteAsync(json, context.RequestAborted);
 
                 return;
             }

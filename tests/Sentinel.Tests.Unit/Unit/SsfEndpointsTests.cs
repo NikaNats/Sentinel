@@ -1,7 +1,6 @@
 ﻿using System.Net;
 using System.Net.Http.Json;
 using System.Text;
-using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -11,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Moq;
 using Sentinel.AspNetCore.Endpoints;
+using Sentinel.SSF;
 using Sentinel.Security.Abstractions.Options;
 using Sentinel.Security.Abstractions.Results;
 using Sentinel.Security.Abstractions.Session;
@@ -62,10 +62,10 @@ public sealed class SsfEndpointsTests : IClassFixture<SsfEndpointsTests.LocalTes
         // Arrange
         using var client = _factory.CreateClient();
         const string setToken = "eyJhbGciOiJQUzI1NiIsInR5cCI6InNlY2V2ZW50K2p3dCJ9.eyJqdGkiOiIxMjMifQ.sig";
-        var payload = new { set = setToken };
+        var payload = new SsfSetPayload(setToken);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/ssf/events");
-        request.Content = JsonContent.Create(payload, typeof(object), null, LocalTestFactory.SerializerOptions);
+        request.Content = JsonContent.Create(payload, SsfJsonContext.Default.SsfSetPayload);
         request.Headers.Add("SSF-Auth-Token", ValidAuthToken);
 
         _factory.ProcessorMock
@@ -148,11 +148,6 @@ public sealed class SsfEndpointsTests : IClassFixture<SsfEndpointsTests.LocalTes
     // --- Isolated WebApplicationFactory ---
     public sealed class LocalTestFactory : WebApplicationFactory<Program>
     {
-        public static readonly JsonSerializerOptions SerializerOptions = new()
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        };
-
         public Mock<ISsfEventProcessor> ProcessorMock { get; } = new(MockBehavior.Strict);
         public SsfOptions SsfOptionsValue { get; set; } = new();
 

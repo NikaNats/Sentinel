@@ -115,6 +115,13 @@ dotnet pack Sentinel.slnx -c Release -p:SignSentinelRelease=true -o ./artifacts
 
 The reference Minimal API host (`Sentinel.Sample.MinimalApi`) is configured with `<PublishAot>true</PublishAot>` to prove Native AOT compatibility.
 
+### CI Gate: `tests/scripts/validate-native-aot.sh`
+CI publishes `Sentinel.Tests.Load/AdversarialTestHost` as a **true Native AOT** binary (the host wires the full `Sentinel.AspNetCore`/DPoP/Redis/SSF/SdJwt pipeline and deliberately avoids EF Core) and sweeps its endpoint matrix at runtime, failing on any HTTP 5xx, on a `NotSupportedException` or "Reflection-based serialization has been disabled" entry in the host log, and on a failed boot:
+```bash
+./tests/scripts/validate-native-aot.sh linux-x64   # also: win-x64, linux-arm64
+```
+The `native-aot-gate` job in `.github/workflows/security-pipeline.yml` runs this gate on every push. Note the PowerShell/`.cmd` shim caveat: `-p:` values containing semicolons must escape them as `%3B`.
+
 ### Architectural Rules for Trimming:
 1.  **No Reflection-based Serialization:** All HTTP request/response DTOs, collection types, and framework error models (e.g. `ProblemDetails`) **must** be registered inside a dedicated `JsonSerializerContext` (e.g., `AspNetCoreJsonContext` and `SampleJsonContext`).
 2.  **Registering JSON Contexts:** Ensure all contexts are registered in the DI serializer options at startup:
@@ -125,6 +132,13 @@ The reference Minimal API host (`Sentinel.Sample.MinimalApi`) is configured with
     });
     ```
 3.  **No Anonymous Types:** Returning anonymous objects (`new { token = "..." }`) inside route handlers is **strictly prohibited**. It requires runtime reflection and crashes under AOT with `NotSupportedException`. Always use named C# records registered in your JSON context.
+4.  **Options classes must not use `init` accessors:** the `Microsoft.Extensions.Configuration` binder **silently skips** scalar `init`-only properties under Native AOT (collections are mutated in place and appear bound, which masks the bug). Every options type bound from configuration must use `{ get; set; }`. Collection properties then require a documented `CA2227` suppression (the binder needs a settable collection):
+    ```csharp
+    [SuppressMessage("Design", "CA2227:CollectionPropertiesShouldBeReadOnly",
+        Justification = "Configuration binding requires a settable collection; init-only setters are silently skipped by the NativeAOT configuration binder.")]
+    public Dictionary<string, string> KeyRing { get; set; } = new();
+    ```
+5.  **Known, deliberate scope limit:** the full Sentinel graph is not yet true-AOT-clean end to end. EF Core (`Sentinel.EntityFrameworkCore`) cannot run under Native AOT (documented `RequiresDynamicCode` limitation), and `Options.ValidateDataAnnotations` uses reflection. The gate downgrades exactly `IL2026`/`IL3050` (`-p:WarningsNotAsErrors=IL2026;IL3050` — never `-p:NoWarn`, which would override the repo-wide suppressions and re-surface `CA1848`/`CA2234` errors). Neither path is exercised by the gated host at runtime.
 
 ## 6. Hardened Container Packaging
 

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -9,6 +10,12 @@ using Moq;
 using Sentinel.SdJwt;
 
 namespace Sentinel.Tests.Unit.Unit;
+
+[JsonSerializable(typeof(string[]))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
+internal sealed partial class SdJwtTestJsonContext : JsonSerializerContext
+{
+}
 
 public sealed class SdJwtPresenterTests : IDisposable
 {
@@ -287,7 +294,7 @@ public sealed class SdJwtPresenterTests : IDisposable
 
     private static string CreateDisclosure(string salt, string claimName, string claimValue)
     {
-        var json = JsonSerializer.Serialize(new object[] { salt, claimName, claimValue });
+        var json = JsonSerializer.Serialize(new[] { salt, claimName, claimValue }, SdJwtTestJsonContext.Default.StringArray);
         return Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(json));
     }
 
@@ -309,7 +316,7 @@ public sealed class SdJwtPresenterTests : IDisposable
             ["kty"] = jwk.Kty!,
             ["x"] = jwk.X!,
             ["y"] = jwk.Y!
-        });
+        }, SdJwtTestJsonContext.Default.DictionaryStringString);
         return Base64UrlEncoder.Encode(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 }

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Sentinel.Tests.Shared;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Sentinel.DPoP;
@@ -36,7 +37,7 @@ public sealed class AuthFlowIntegrationTests(SentinelApiFactory factory)
         };
 
         var thumbprintComputer = new DpopThumbprintComputer();
-        using var jwkDoc = JsonDocument.Parse(JsonSerializer.Serialize(jwkObject));
+        using var jwkDoc = JsonDocument.Parse(JsonSerializer.Serialize(jwkObject, TestJsonContext.Default.DictionaryStringString));
         var jkt = thumbprintComputer.Compute(jwkDoc.RootElement);
 
         var accessToken = TestTokenIssuer.MintAccessToken(jkt);

@@ -13,6 +13,8 @@ namespace Sentinel.AspNetCore;
 [JsonSerializable(typeof(AuthEndpoints.ChangePasswordRequest))]
 [JsonSerializable(typeof(AuthEndpoints.TotpSetupRequest))]
 [JsonSerializable(typeof(AuthEndpoints.TotpVerifyRequest))]
+[JsonSerializable(typeof(AuthEndpoints.TokenResponseDto))]
+[JsonSerializable(typeof(TokenExchangeEndpoints.TokenExchangeResponseDto))]
 [JsonSerializable(typeof(TokenExchangeEndpoints.TokenExchangeRequest))]
 [JsonSerializable(typeof(ProblemDetails))]
 [JsonSerializable(typeof(ValidationProblemDetails))]

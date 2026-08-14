@@ -2,10 +2,60 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using DotNet.Testcontainers.Builders;
 using Testcontainers.Keycloak;
 
 namespace Sentinel.Contracts.Keycloak;
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(KeycloakContractClientPayload))]
+[JsonSerializable(typeof(KeycloakAudienceMapper))]
+[JsonSerializable(typeof(KeycloakContractUserPayload))]
+[JsonSerializable(typeof(KeycloakContractCredential))]
+[JsonSerializable(typeof(DpopProofHeaderContract))]
+[JsonSerializable(typeof(DpopProofJwkContract))]
+[JsonSerializable(typeof(DpopProofPayloadContract))]
+[JsonSerializable(typeof(TokenResponseContract))]
+internal sealed partial class KeycloakContractJsonContext : JsonSerializerContext
+{
+}
+
+internal sealed record KeycloakContractClientPayload(
+    string ClientId,
+    string Protocol,
+    bool Enabled,
+    bool PublicClient,
+    bool ServiceAccountsEnabled,
+    bool DirectAccessGrantsEnabled,
+    bool StandardFlowEnabled,
+    string[] RedirectUris,
+    string ClientAuthenticatorType,
+    string Secret,
+    Dictionary<string, string> Attributes,
+    KeycloakAudienceMapper[] ProtocolMappers);
+
+internal sealed record KeycloakAudienceMapper(
+    string Name,
+    string Protocol,
+    string ProtocolMapper,
+    bool ConsentRequired,
+    Dictionary<string, string> Config);
+
+internal sealed record KeycloakContractUserPayload(
+    string Username,
+    bool Enabled,
+    bool EmailVerified,
+    string Email,
+    KeycloakContractCredential[] Credentials);
+
+internal sealed record KeycloakContractCredential(string Type, string Value, bool Temporary);
+
+internal sealed record DpopProofHeaderContract(string Typ, string Alg, DpopProofJwkContract Jwk);
+
+internal sealed record DpopProofJwkContract(string Kty, string N, string E, string Alg, string Use);
+
+internal sealed record DpopProofPayloadContract(string Htm, string Htu, string Jti, long Iat);
 
 /// <summary>
 ///     Contract test fixture: boots a REAL Keycloak 26.6.4 container (the image
@@ -231,43 +281,40 @@ public sealed class KeycloakContractFixture : IAsyncLifetime
 
     private async Task CreateContractClientAsync()
     {
-        var payload = JsonSerializer.Serialize(new Dictionary<string, object?>
-        {
-            ["clientId"] = ContractClientId,
-            ["protocol"] = "openid-connect",
-            ["enabled"] = true,
-            ["publicClient"] = false,
-            ["serviceAccountsEnabled"] = true,
-            ["directAccessGrantsEnabled"] = false,
-            ["standardFlowEnabled"] = true,
-            ["redirectUris"] = new[] { "https://contract.sentinel.local/callback" },
-            ["clientAuthenticatorType"] = "client-secret",
-            ["secret"] = ContractClientSecret,
-            ["attributes"] = new Dictionary<string, string>
-            {
-                ["use.refresh.tokens"] = "true",
-                ["refresh.token.max.reuse"] = "0",
-                ["access.token.lifespan"] = "300",
-                ["client.session.idle.timeout"] = "1800",
-                ["client.session.max.lifespan"] = "28800"
-            },
-            ["protocolMappers"] = new[]
-            {
-                new Dictionary<string, object?>
+        var payload = JsonSerializer.Serialize(
+            new KeycloakContractClientPayload(
+                ContractClientId,
+                "openid-connect",
+                true,
+                false,
+                true,
+                false,
+                true,
+                ["https://contract.sentinel.local/callback"],
+                "client-secret",
+                ContractClientSecret,
+                new Dictionary<string, string>
                 {
-                    ["name"] = "audience-sentinel-api",
-                    ["protocol"] = "openid-connect",
-                    ["protocolMapper"] = "oidc-audience-mapper",
-                    ["consentRequired"] = false,
-                    ["config"] = new Dictionary<string, string>
-                    {
-                        ["included.custom.audience"] = "sentinel-api",
-                        ["access.token.claim"] = "true",
-                        ["id.token.claim"] = "false"
-                    }
-                }
-            }
-        });
+                    ["use.refresh.tokens"] = "true",
+                    ["refresh.token.max.reuse"] = "0",
+                    ["access.token.lifespan"] = "300",
+                    ["client.session.idle.timeout"] = "1800",
+                    ["client.session.max.lifespan"] = "28800"
+                },
+                [
+                    new KeycloakAudienceMapper(
+                        "audience-sentinel-api",
+                        "openid-connect",
+                        "oidc-audience-mapper",
+                        false,
+                        new Dictionary<string, string>
+                        {
+                            ["included.custom.audience"] = "sentinel-api",
+                            ["access.token.claim"] = "true",
+                            ["id.token.claim"] = "false"
+                        })
+                ]),
+            KeycloakContractJsonContext.Default.KeycloakContractClientPayload);
 
         using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
         var response = await SendAdminAsync(HttpMethod.Post, "/clients", content);
@@ -355,7 +402,7 @@ public sealed class KeycloakContractFixture : IAsyncLifetime
 
             exchange.StatusCode.Should().Be(HttpStatusCode.OK, "DPoP-bound code exchange must succeed");
             var json = await exchange.Content.ReadAsStringAsync();
-            return JsonSerializer.Deserialize<TokenResponseContract>(json)
+            return JsonSerializer.Deserialize(json, KeycloakContractJsonContext.Default.TokenResponseContract)
                 ?? throw new InvalidOperationException("Token response was not parseable.");
         }
     }
@@ -415,17 +462,14 @@ public sealed class KeycloakContractFixture : IAsyncLifetime
 
     private async Task CreateContractUserAsync()
     {
-        var payload = JsonSerializer.Serialize(new
-        {
-            username = "contract-user",
-            enabled = true,
-            emailVerified = true,
-            email = "contract-user@contract-test.local",
-            credentials = new[]
-            {
-                new { type = "password", value = "ContractTest123!", temporary = false }
-            }
-        });
+        var payload = JsonSerializer.Serialize(
+            new KeycloakContractUserPayload(
+                "contract-user",
+                true,
+                true,
+                "contract-user@contract-test.local",
+                [new KeycloakContractCredential("password", "ContractTest123!", false)]),
+            KeycloakContractJsonContext.Default.KeycloakContractUserPayload);
 
         using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
         var response = await SendAdminAsync(HttpMethod.Post, "/users", content);

@@ -1,9 +1,11 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Sentinel.SSF;
+using Sentinel.Tests.Shared;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -74,7 +76,7 @@ public sealed class SessionRevocationSteps(ScenarioContext scenarioContext) : ID
         var setToken = CreateSignedSsfSetToken(uniqueSessionId);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, ssfUrl);
-        request.Content = JsonContent.Create(new { set = setToken });
+        request.Content = JsonContent.Create(new SsfSetPayload(setToken), AcceptanceJsonContext.Default.SsfSetPayload);
 
         var response = await _httpClient.SendAsync(request);
         scenarioContext.Set(response, "LastResponse");
@@ -164,7 +166,7 @@ public sealed class SessionRevocationSteps(ScenarioContext scenarioContext) : ID
             ["kty"] = jwk.Kty!,
             ["x"] = jwk.X!,
             ["y"] = jwk.Y!
-        });
+        }, AcceptanceJsonContext.Default.DictionaryStringString);
         return Base64UrlEncoder.Encode(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 

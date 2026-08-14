@@ -108,26 +108,20 @@ internal static class ShowcaseEndpoints
             return TypedResults.Forbid();
         }
 
-        return TypedResults.Ok(new
-        {
-            sub = context.User.FindFirst("sub")?.Value,
-            acr = context.User.FindFirst("acr")?.Value
-        });
+        return TypedResults.Ok(new UserProfileDto(
+            context.User.FindFirst("sub")?.Value,
+            context.User.FindFirst("acr")?.Value));
     }
 
     private static IResult GetProtected(HttpContext context) =>
-        TypedResults.Ok(new
-        {
-            subject = context.User.FindFirst("sub")?.Value,
-            assuranceLevel = context.User.FindFirst("acr")?.Value
-        });
+        TypedResults.Ok(new ProtectedTestResponseDto(
+            context.User.FindFirst("sub")?.Value,
+            context.User.FindFirst("acr")?.Value));
 
     private static IResult GetStepUp(HttpContext context) =>
-        TypedResults.Ok(new
-        {
-            subject = context.User.FindFirst("sub")?.Value,
-            assuranceLevel = "acr3"
-        });
+        TypedResults.Ok(new ProtectedTestResponseDto(
+            context.User.FindFirst("sub")?.Value,
+            "acr3"));
 
     private static bool HasScope(ClaimsPrincipal user, string scope)
     {
@@ -151,3 +145,11 @@ public sealed record SecurityContextDto(
     string DpopJkt,
     int AuthorizationDetailsCount,
     string TraceId);
+
+public sealed record UserProfileDto(
+    [property: System.Text.Json.Serialization.JsonPropertyName("sub")] string? Sub,
+    [property: System.Text.Json.Serialization.JsonPropertyName("acr")] string? Acr);
+
+public sealed record ProtectedTestResponseDto(
+    [property: System.Text.Json.Serialization.JsonPropertyName("subject")] string? Subject,
+    [property: System.Text.Json.Serialization.JsonPropertyName("assuranceLevel")] string? AssuranceLevel);

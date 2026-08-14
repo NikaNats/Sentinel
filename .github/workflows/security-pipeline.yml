@@ -124,10 +124,60 @@ jobs:
           soft_fail: true 
           skip_check: CKV_DOCKER_4,CKV_K8S_43
 
+      - name: Build Container Image For Scanning
+        run: docker build -t sentinel-api:ci -f src/Sentinel.AspNetCore/Dockerfile .
+
+      - name: Gate 9 - Container Image Scan (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: sentinel-api:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: sarif
+          output: artifacts/trivy-image.sarif
+
+      - name: Upload Trivy SARIF
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-image-sarif
+          path: artifacts/trivy-image.sarif
+          if-no-files-found: error
+
+  contract-gate:
+    name: Contract Compliance Gate
+    runs-on: ubuntu-latest
+    needs: build-scan
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: 'Directory.Packages.props'
+
+      - name: Restore
+        run: dotnet restore tests/Sentinel.Contracts/Sentinel.Contracts.csproj --locked-mode
+
+      - name: Run All Contract Tests
+        run: >
+          dotnet test tests/Sentinel.Contracts/Sentinel.Contracts.csproj
+          --configuration Release --no-restore
+          --logger "console;verbosity=detailed"
+          -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
+
   test-suites:
     name: Test (${{ matrix.test-project }})
     runs-on: ubuntu-latest
-    needs: build-scan
+    needs: [build-scan, contract-gate]
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       SENTINEL_SNK_BASE64: ${{ secrets.SENTINEL_SNK_BASE64 }}
@@ -138,6 +188,10 @@ jobs:
           - tests/Sentinel.Tests.Unit/Sentinel.Tests.Unit.csproj
           - tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj
           - tests/Sentinel.Tests.Security/Sentinel.Tests.Security.csproj
+          - tests/Sentinel.Tests.DPoP/Sentinel.Tests.DPoP.csproj
+          - tests/Sentinel.Tests.Session/Sentinel.Tests.Session.csproj
+          - tests/Sentinel.Tests.SSF/Sentinel.Tests.SSF.csproj
+          - tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj
 
     steps:
       - name: Checkout Repository
@@ -161,7 +215,19 @@ jobs:
         run: dotnet restore ${{ matrix.test-project }} --locked-mode
 
       - name: Test
+        if: matrix.test-project != 'tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj'
         run: dotnet test ${{ matrix.test-project }} --configuration Release --no-restore --logger "console;verbosity=detailed" -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
+
+      - name: Coyote Systematic Concurrency Proof (1000 iterations, IL-rewritten)
+        if: matrix.test-project == 'tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj'
+        run: |
+          dotnet tool restore
+          dotnet build tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj \
+            --configuration Release -p:RunCoyoteRewrite=true --no-restore --nologo
+          dotnet test tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj \
+            --configuration Release --no-build --no-restore \
+            --logger "console;verbosity=detailed" \
+            -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
 
   schemathesis-fuzzing:
     name: Dynamic OpenAPI Schema Fuzzing
@@ -213,3 +279,126 @@ jobs:
             --checks not_a_server_error \
             --workers 4
         continue-on-error: false
+
+  native-aot-gate:
+    name: Native AOT Serialization Gate
+    runs-on: ubuntu-latest
+    needs: build-scan
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: 'Directory.Packages.props'
+
+      - name: Install Native AOT prerequisites (clang, zlib)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang zlib1g-dev
+
+      - name: Restore
+        run: dotnet restore tests/Sentinel.Tests.Load/AdversarialTestHost.csproj --locked-mode
+
+      - name: Publish Native AOT and sweep endpoint matrix
+        run: |
+          chmod +x tests/scripts/validate-native-aot.sh
+          ./tests/scripts/validate-native-aot.sh linux-x64
+
+      - name: Upload host log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-aot-host-log
+          path: artifacts/aot/host.log
+          if-no-files-found: ignore
+
+  acceptance-e2e:
+    name: Acceptance / E2E (FAPI + CAEP Evidence)
+    runs-on: ubuntu-latest
+    needs: [build-scan, contract-gate]
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      SENTINEL_SNK_BASE64: ${{ secrets.SENTINEL_SNK_BASE64 }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: 'Directory.Packages.props'
+
+      - name: Restore strong-name key (Staging/Release Only)
+        if: ${{ env.SENTINEL_SNK_BASE64 != '' }}
+        shell: bash
+        run: echo "$SENTINEL_SNK_BASE64" | base64 -d > Sentinel.snk
+
+      - name: Restore
+        run: dotnet restore tests/Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj --locked-mode
+
+      - name: Run Reqnroll Acceptance Suite (self-managed Redis/Keycloak via Docker)
+        run: dotnet test tests/Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj --configuration Release --no-restore --logger "console;verbosity=detailed" -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
+
+  sign-publish:
+    name: Sign & Publish Image (release branches)
+    runs-on: ubuntu-latest
+    needs: [build-scan, test-suites]
+    if: startsWith(github.ref, 'refs/heads/release/')
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      IMAGE_NAME: ghcr.io/${{ github.repository }}/sentinel-api
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download SBOM Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sentinel-sbom
+
+      - name: Install cosign (keyless Sigstore)
+        uses: sigstore/cosign-installer@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Push Container Image
+        run: |
+          docker build -t "$IMAGE_NAME:$IMAGE_TAG" -f src/Sentinel.AspNetCore/Dockerfile .
+          docker push "$IMAGE_NAME:$IMAGE_TAG"
+
+      - name: Attach SBOM and sign (keyless)
+        run: |
+          cosign attach sbom --sbom docs/sentinel-sbom.spdx.json --type spdxjson "$IMAGE_NAME:$IMAGE_TAG"
+          cosign sign --yes "$IMAGE_NAME:$IMAGE_TAG"
+
+      - name: Verify signature (gate)
+        run: |
+          cosign verify "$IMAGE_NAME:$IMAGE_TAG" \
+            --certificate-identity-regexp "https://github.com/${{ github.repository }}/.github/workflows/.*" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com

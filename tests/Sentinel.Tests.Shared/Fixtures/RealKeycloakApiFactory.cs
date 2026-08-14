@@ -7,6 +7,7 @@ using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using Sentinel.Tests.Shared;
 using DotNet.Testcontainers.Builders;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
@@ -386,76 +387,67 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
             return;
         }
 
-        var createRealm = await http.PostAsJsonAsync($"{keycloakBaseAddress}/admin/realms", new
-        {
-            realm = RealmName,
-            enabled = true,
-            sslRequired = "none"
-        });
+        var createRealm = await http.PostAsJsonAsync(
+            $"{keycloakBaseAddress}/admin/realms",
+            new KeycloakRealmPayload(RealmName, true, "none"),
+            TestJsonContext.Default.Options);
         createRealm.EnsureSuccessStatusCode();
 
         var createClient = await http.PostAsJsonAsync(
-            $"{keycloakBaseAddress}/admin/realms/{RealmName}/clients", new
-            {
-                clientId = ClientId,
-                protocol = "openid-connect",
-                publicClient = false,
-                secret = ClientSecret,
-                directAccessGrantsEnabled = false,
-                standardFlowEnabled = false,
-                serviceAccountsEnabled = true,
-                attributes = new Dictionary<string, string>
+            $"{keycloakBaseAddress}/admin/realms/{RealmName}/clients",
+            new KeycloakClientPayload(
+                ClientId,
+                "openid-connect",
+                false,
+                ClientSecret,
+                false,
+                false,
+                true,
+                new Dictionary<string, string>
                 {
                     ["dpop.bound.access.tokens"] = "true",
                     ["access.token.signed.response.alg"] = "ES256"
                 },
-                protocolMappers = new object[]
-                {
-                    new
-                    {
-                        name = "audience-sentinel-api",
-                        protocol = "openid-connect",
-                        protocolMapper = "oidc-audience-mapper",
-                        consentRequired = false,
-                        config = new Dictionary<string, string>
+                [
+                    new KeycloakProtocolMapper(
+                        "audience-sentinel-api",
+                        "openid-connect",
+                        "oidc-audience-mapper",
+                        false,
+                        new Dictionary<string, string>
                         {
                             ["access.token.claim"] = "true",
                             ["id.token.claim"] = "false",
                             ["included.client.audience"] = ClientId
-                        }
-                    },
-                    new
-                    {
-                        name = "acr-hardcoded",
-                        protocol = "openid-connect",
-                        protocolMapper = "oidc-hardcoded-claim-mapper",
-                        consentRequired = false,
-                        config = new Dictionary<string, string>
+                        }),
+                    new KeycloakProtocolMapper(
+                        "acr-hardcoded",
+                        "openid-connect",
+                        "oidc-hardcoded-claim-mapper",
+                        false,
+                        new Dictionary<string, string>
                         {
                             ["access.token.claim"] = "true",
                             ["id.token.claim"] = "false",
                             ["claim.name"] = "acr",
                             ["claim.value"] = "acr3",
                             ["jsonType.label"] = "String"
-                        }
-                    },
-                    new
-                    {
-                        name = "profile-scope-hardcoded",
-                        protocol = "openid-connect",
-                        protocolMapper = "oidc-hardcoded-claim-mapper",
-                        consentRequired = false,
-                        config = new Dictionary<string, string>
+                        }),
+                    new KeycloakProtocolMapper(
+                        "profile-scope-hardcoded",
+                        "openid-connect",
+                        "oidc-hardcoded-claim-mapper",
+                        false,
+                        new Dictionary<string, string>
                         {
                             ["access.token.claim"] = "true",
                             ["id.token.claim"] = "false",
                             ["claim.name"] = "scope",
                             ["claim.value"] = "profile",
                             ["jsonType.label"] = "String"
-                        }
-                    }
-                }
-            });
+                        })
+                ]),
+            TestJsonContext.Default.Options);
         createClient.EnsureSuccessStatusCode();
     }
 

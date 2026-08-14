@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Sentinel.Tests.Shared;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -109,7 +110,7 @@ public sealed class SdJwtFlowIntegrationTests(SdJwtFlowIntegrationTests.SdJwtApi
 
     private static string CreateDisclosure(string salt, string claimName, string claimValue)
     {
-        var json = JsonSerializer.Serialize(new object[] { salt, claimName, claimValue });
+        var json = JsonSerializer.Serialize(new object[] { salt, claimName, claimValue }, TestJsonContext.Default.ObjectArray);
         return Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(json));
     }
 
@@ -142,7 +143,7 @@ public sealed class SdJwtFlowIntegrationTests(SdJwtFlowIntegrationTests.SdJwtApi
             ["kty"] = jwkObject["kty"],
             ["x"] = jwkObject["x"],
             ["y"] = jwkObject["y"]
-        });
+        }, TestJsonContext.Default.DictionaryStringString);
 
         return Base64UrlEncoder.Encode(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }

@@ -32,7 +32,7 @@ public static class TestTokenIssuer
             [JwtRegisteredClaimNames.Exp] = exp.ToUnixTimeSeconds(),
             ["acr"] = acr,
             ["scope"] = scope,
-            ["realm_access.roles"] = JsonSerializer.Serialize(new[] { "user" }),
+            ["realm_access.roles"] = JsonSerializer.Serialize(new[] { "user" }, TestJsonContext.Default.StringArray),
             ["cnf"] = new Dictionary<string, string> { ["jkt"] = jkt }
         };
 

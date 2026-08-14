@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using Sentinel.Tests.Shared;
 
 namespace Sentinel.Tests.Security.Chaos;
 
@@ -154,13 +155,13 @@ public sealed class RedisResilienceChaosTests : IClassFixture<ChaosSentinelApiFa
 
     private static string ComputeEcThumbprint(Dictionary<string, string> jwk)
     {
-        var canonical = JsonSerializer.Serialize(new Dictionary<string, string>
+var canonical = JsonSerializer.Serialize(new Dictionary<string, string>
         {
             ["crv"] = jwk["crv"],
             ["kty"] = jwk["kty"],
             ["x"] = jwk["x"],
             ["y"] = jwk["y"]
-        });
+        }, TestJsonContext.Default.DictionaryStringString);
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
         return Base64UrlEncoder.Encode(hash);
     }

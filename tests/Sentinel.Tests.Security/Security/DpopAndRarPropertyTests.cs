@@ -8,6 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using Sentinel.Domain.Auth.Rar;
 using Sentinel.DPoP;
 using Sentinel.RAR;
+using Sentinel.Tests.Shared;
 
 namespace Sentinel.Tests.Security.Security;
 
@@ -92,12 +93,9 @@ public sealed class DpopAndRarPropertyTests
                 Amount: authAmount,
                 Currency: "USD");
 
-            var payload = JsonSerializer.Serialize(new
-            {
-                transactionId = "txn-property-test",
-                amount = exceededAmount,
-                currency = "USD"
-            });
+            var payload = JsonSerializer.Serialize(
+                new RarTransferPayload("txn-property-test", exceededAmount, "USD"),
+                TestJsonContext.Default.RarTransferPayload);
 
             var result = _rarValidator.Validate(detail, payload);
             return !result.IsValid;

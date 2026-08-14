@@ -1,0 +1,410 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>Sentinel.Rar</name>
+    </assembly>
+    <members>
+        <member name="T:Sentinel.RAR.IRarExtractor">
+            <summary>
+                Extracts and parses Rich Authorization Request (RAR) authorization details from a claims principal.
+            </summary>
+        </member>
+        <member name="M:Sentinel.RAR.IRarExtractor.Extract(System.String)">
+            <summary>
+                Extracts authorization details from a claims principal's authorization_details claim.
+            </summary>
+            <remarks>
+                The authorization_details claim should contain a JSON array of authorization detail objects.
+                If the claim is missing, malformed, or empty, defaults to an empty array.
+            </remarks>
+            <param name="claimsJson">The JSON string from the authorization_details claim.</param>
+            <returns>Extraction result containing parsed details or error information.</returns>
+        </member>
+        <member name="T:Sentinel.RAR.IRarValidator">
+            <summary>
+                Validates payloads against Rich Authorization Request (RAR) authorization details.
+            </summary>
+        </member>
+        <member name="M:Sentinel.RAR.IRarValidator.Validate(Sentinel.Domain.Auth.Rar.AuthorizationDetail,System.String)">
+            <summary>
+                Validates a request payload against the given authorization detail.
+            </summary>
+            <remarks>
+                The validation checks that the request payload satisfies the constraints
+                specified in the authorization detail. For example:
+                - Authorization detail specifies amount=100, currency=USD, transactionId=abc123
+                - Request payload must have matching amount, currency, and transaction ID
+                The specific validation rules depend on the authorization detail type and
+                the payload structure.
+            </remarks>
+            <param name="detail">The authorization detail to validate against.</param>
+            <param name="payloadJson">The request payload as a JSON string.</param>
+            <returns>Validation result indicating success or describing the failure.</returns>
+        </member>
+        <member name="M:Sentinel.RAR.IRarValidator.ValidateByType(Sentinel.Domain.Auth.Rar.AuthorizationDetail[],System.String,System.String)">
+            <summary>
+                Validates a request payload against a set of authorization details.
+            </summary>
+            <remarks>
+                Searches for an authorization detail that matches the payload.
+                Returns success on the first match or failure if no match is found.
+            </remarks>
+            <param name="details">The authorization details to validate against.</param>
+            <param name="detailType">The authorization detail type to find and validate.</param>
+            <param name="payloadJson">The request payload as a JSON string.</param>
+            <returns>Validation result indicating success (with matched detail) or failure.</returns>
+        </member>
+        <member name="T:Sentinel.RAR.IAuthorizationDetailMatcher">
+            <summary>
+                Matches authorization detail constraints against request payload properties.
+                Provides extensibility for custom authorization detail types.
+            </summary>
+        </member>
+        <member name="M:Sentinel.RAR.IAuthorizationDetailMatcher.Matches(Sentinel.Domain.Auth.Rar.AuthorizationDetail,System.Text.Json.JsonElement,Sentinel.RAR.RarValidationOptions)">
+            <summary>
+                Matches the authorization detail constraints against the request payload.
+            </summary>
+            <remarks>
+                Implementations should check that all non-null constraints in the authorization detail
+                are satisfied by the corresponding values in the payload.
+                ✅ FIX: Accepts RarValidationOptions to enable case sensitivity and precision settings.
+            </remarks>
+            <param name="detail">The authorization detail with constraints.</param>
+            <param name="payload">The request payload as a JsonElement.</param>
+            <param name="options">RAR validation options (case sensitivity, precision tolerance, etc.).</param>
+            <returns>True if the payload satisfies all constraints, false otherwise.</returns>
+        </member>
+        <member name="M:Sentinel.RAR.IAuthorizationDetailMatcher.GetSupportWeight(System.String)">
+            <summary>
+                Gets the supportability weight for a given authorization detail type.
+                Higher weights are preferred; lower weights indicate less preferred implementations.
+            </summary>
+            <remarks>
+                Used to allow multiple matchers to compete based on specificity.
+                For example:
+                - Generic matcher: weight = 0
+                - Financial transfer matcher: weight = 10 (more specific)
+                - Custom order matcher: weight = 20 (most specific)
+                ✅ FIX: Polymorphic router uses this to select the best matcher for each detail type.
+            </remarks>
+            <param name="detailType">The authorization detail type to match.</param>
+            <returns>Weight indicating preference; 0 if not supported.</returns>
+        </member>
+        <member name="T:Sentinel.RAR.Extensions.RarServiceExtensions">
+            <summary>
+                Extension methods for registering Rich Authorization Request (RAR) services with high-assurance configuration.
+            </summary>
+        </member>
+        <member name="M:Sentinel.RAR.Extensions.RarServiceExtensions.AddRarValidation(Microsoft.Extensions.DependencyInjection.IServiceCollection,Microsoft.Extensions.Configuration.IConfiguration)">
+            <summary>
+                Registers the Rich Authorization Request (RAR) validation pipeline with high-assurance configuration.
+            </summary>
+            <remarks>
+                ✅ FIX: Strictly binds options so IOptions{RarValidationOptions} is resolvable.
+                Replaces the anti-pattern of nullable options in constructors with hard DI guarantees.
+                Configuration Section: "Sentinel:Rar"
+                Example appsettings.json:
+                {
+                "Sentinel": {
+                "Rar": {
+                "MaxAuthorizationDetailsCount": 10,
+                "MonetaryPrecisionTolerance": 0.01,
+                "CaseSensitiveComparison": true
+                }
+                }
+                }
+                Services Registered:
+                - IRarExtractor (transient)
+                - IRarValidator (transient)
+                - IAuthorizationDetailMatcher implementations (transient)
+                - IOptions{RarValidationOptions} (from configuration)
+                Pre-requisites:
+                - IConfiguration must be available
+                - appsettings.Rar section must exist (or provide default values)
+                Usage in Program.cs:
+                services.AddRarValidation(builder.Configuration);
+                RarValidator will then perform polymorphic matcher routing:
+                - Each matcher declares its support weight for authorization detail types
+                - RarValidator selects the highest-weight matcher for each detail type
+                - Enables extensibility without modifying RarValidator
+            </remarks>
+            <param name="services">The service collection to register into.</param>
+            <param name="configuration">The application configuration (typically from Host/Program.cs).</param>
+            <returns>The service collection for chaining.</returns>
+            <exception cref="T:System.ArgumentNullException">Thrown if services or configuration is null.</exception>
+        </member>
+        <member name="T:Sentinel.RAR.FinancialAuthorizationMatcher">
+            <summary>
+                High-assurance financial authorization matcher.
+                Matches financial transaction authorization constraints against request payloads.
+                Supports transaction ID, amount, and currency bounds per RFC 9396.
+            </summary>
+        </member>
+        <member name="F:Sentinel.RAR.FinancialAuthorizationMatcher.FinancialTransferType">
+            <summary>Sentinel's canonical financial transfer type (primary).</summary>
+        </member>
+        <member name="M:Sentinel.RAR.FinancialAuthorizationMatcher.#ctor(Microsoft.Extensions.Options.IOptions{Sentinel.RAR.RarValidationOptions},Microsoft.Extensions.Logging.ILogger{Sentinel.RAR.FinancialAuthorizationMatcher})">
+            <summary>
+                Initializes a new instance of the FinancialAuthorizationMatcher.
+            </summary>
+            <param name="options">Configuration for RAR validation (from DI).</param>
+            <param name="logger">Logger for diagnostic messages.</param>
+            <remarks>
+                ✅ FIX: Strict DI injection via IOptions{RarValidationOptions}.
+                Replaces the anti-pattern of nullable options with hard DI guarantees.
+            </remarks>
+        </member>
+        <member name="M:Sentinel.RAR.FinancialAuthorizationMatcher.Matches(Sentinel.Domain.Auth.Rar.AuthorizationDetail,System.Text.Json.JsonElement,Sentinel.RAR.RarValidationOptions)">
+            <summary>
+                Matches financial authorization constraints against a request payload.
+            </summary>
+            <remarks>
+                Checks that:
+                - transaction_id (if present in detail) matches payload.transactionId
+                - amount (if present in detail) matches payload.amount (with precision tolerance)
+                - currency (if present in detail) matches payload.currency
+                ✅ FIX: Accepts RarValidationOptions to enable case sensitivity and precision settings.
+            </remarks>
+        </member>
+        <member name="M:Sentinel.RAR.FinancialAuthorizationMatcher.GetSupportWeight(System.String)">
+            <summary>
+                Gets the support weight for authorization detail types.
+            </summary>
+            <remarks>
+                Returns high weight for known financial transfer types, 0 for unsupported types.
+                Used by RarValidator to route to the most specific matcher implementation.
+                ✅ FIX: Only returns non-zero for Sentinel's canonical type.
+                Placeholder RFC example URIs are rejected (production safety).
+            </remarks>
+        </member>
+        <member name="M:Sentinel.RAR.FinancialAuthorizationMatcher.TryGetPayloadString(System.Text.Json.JsonElement,System.String,System.String@)">
+            <summary>
+                Extracts a string value from the payload JSON object.
+            </summary>
+        </member>
+        <member name="M:Sentinel.RAR.FinancialAuthorizationMatcher.TryGetPayloadDecimal(System.Text.Json.JsonElement,System.String,System.Decimal@)">
+            <summary>
+                Extracts a decimal value from the payload JSON object.
+                Handles both JSON number and string representations of numbers.
+            </summary>
+        </member>
+        <member name="T:Sentinel.RAR.RarExtractor">
+            <summary>
+                High-assurance RAR extractor with Native AOT compatibility.
+                Extracts and parses Rich Authorization Request (RAR) authorization_details claims
+                using source-generated JSON deserialization (zero reflection, zero recursion).
+            </summary>
+        </member>
+        <member name="M:Sentinel.RAR.RarExtractor.#ctor(Microsoft.Extensions.Options.IOptions{Sentinel.RAR.RarValidationOptions},Microsoft.Extensions.Logging.ILogger{Sentinel.RAR.RarExtractor})">
+            <summary>
+                Initializes a new instance of the RarExtractor.
+            </summary>
+            <param name="options">Configuration for RAR validation (from DI).</param>
+            <param name="logger">Logger for diagnostic messages.</param>
+            <remarks>
+                ✅ FIX: Strict DI injection via IOptions{RarValidationOptions}.
+                Replaces the anti-pattern of nullable options with hard DI guarantees.
+            </remarks>
+        </member>
+        <member name="M:Sentinel.RAR.RarExtractor.Extract(System.String)">
+            <summary>
+                Extracts and parses authorization details from the JSON claim value.
+            </summary>
+            <remarks>
+                ✅ FIX: Use Native AOT Source-Generated deserialization.
+                Eliminates the manual, recursive-prone JsonElement traversal.
+                Deserializes AuthorizationDetail[] directly from JSON string using RarJsonContext.
+            </remarks>
+            <param name="claimsJson">The JSON string from the authorization_details claim.</param>
+            <returns>Extraction result containing parsed details or error information.</returns>
+        </member>
+        <member name="T:Sentinel.RAR.RarJsonContext">
+            <summary>
+                JSON serialization context for RAR types (RFC 9396).
+                Supports source-generated JSON serialization for Native AOT compatibility.
+            </summary>
+        </member>
+        <member name="P:Sentinel.RAR.RarJsonContext.Decimal">
+            <summary>
+            Defines the source generated JSON serialization contract metadata for a given type.
+            </summary>
+        </member>
+        <member name="P:Sentinel.RAR.RarJsonContext.NullableDecimal">
+            <summary>
+            Defines the source generated JSON serialization contract metadata for a given type.
+            </summary>
+        </member>
+        <member name="P:Sentinel.RAR.RarJsonContext.AuthorizationDetail">
+            <summary>
+            Defines the source generated JSON serialization contract metadata for a given type.
+            </summary>
+        </member>
+        <member name="P:Sentinel.RAR.RarJsonContext.AuthorizationDetailArray">
+            <summary>
+            Defines the source generated JSON serialization contract metadata for a given type.
+            </summary>
+        </member>
+        <member name="P:Sentinel.RAR.RarJsonContext.JsonElement">
+            <summary>
+            Defines the source generated JSON serialization contract metadata for a given type.
+            </summary>
+        </member>
+        <member name="P:Sentinel.RAR.RarJsonContext.NullableJsonElement">
+            <summary>
+            Defines the source generated JSON serialization contract metadata for a given type.
+            </summary>
+        </member>
+        <member name="P:Sentinel.RAR.RarJsonContext.String">
+            <summary>
+            Defines the source generated JSON serialization contract metadata for a given type.
+            </summary>
+        </member>
+        <member name="P:Sentinel.RAR.RarJsonContext.StringArray">
+            <summary>
+            Defines the source generated JSON serialization contract metadata for a given type.
+            </summary>
+        </member>
+        <member name="P:Sentinel.RAR.RarJsonContext.Default">
+            <summary>
+            The default <see cref="T:System.Text.Json.Serialization.JsonSerializerContext"/> associated with a default <see cref="T:System.Text.Json.JsonSerializerOptions"/> instance.
+            </summary>
+        </member>
+        <member name="P:Sentinel.RAR.RarJsonContext.GeneratedSerializerOptions">
+            <summary>
+            The source-generated options associated with this context.
+            </summary>
+        </member>
+        <member name="M:Sentinel.RAR.RarJsonContext.#ctor">
+            <inheritdoc/>
+        </member>
+        <member name="M:Sentinel.RAR.RarJsonContext.#ctor(System.Text.Json.JsonSerializerOptions)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Sentinel.RAR.RarJsonContext.GetTypeInfo(System.Type)">
+            <inheritdoc/>
+        </member>
+        <member name="T:Sentinel.RAR.RarValidationOptions">
+            <summary>
+                Configuration options for Rich Authorization Request (RAR) validation.
+            </summary>
+        </member>
+        <member name="P:Sentinel.RAR.RarValidationOptions.MonetaryPrecisionTolerance">
+            <summary>
+                Gets or sets the token precision tolerance for monetary amount comparisons.
+                Used when validating financial transactions to account for rounding differences.
+                Default: 0.0001m (one tenth of a cent for most currencies).
+            </summary>
+        </member>
+        <member name="P:Sentinel.RAR.RarValidationOptions.CaseSensitiveComparison">
+            <summary>
+                Gets or sets a value indicating whether string comparisons are case-sensitive.
+                Affects authorization_details type matching and currency code matching.
+                Default: false (case-insensitive for flexibility).
+            </summary>
+        </member>
+        <member name="P:Sentinel.RAR.RarValidationOptions.RequireExactMatch">
+            <summary>
+                Gets or sets a value indicating whether to require an exact match for authorization details.
+                When false, allows for additional properties in requests not mentioned in auth details.
+                Default: false (allows flexible request payloads).
+            </summary>
+        </member>
+        <member name="P:Sentinel.RAR.RarValidationOptions.MaxAuthorizationDetailsCount">
+            <summary>
+                Gets or sets the maximum number of authorization details expected in a claim.
+                Helps prevent DoS attacks with excessively large authorization detail arrays.
+                Default: 100.
+            </summary>
+        </member>
+        <member name="T:Sentinel.RAR.RarValidationResult">
+            <summary>
+                Result of validating a payload against RAR authorization details.
+            </summary>
+        </member>
+        <member name="M:Sentinel.RAR.RarValidationResult.#ctor(System.Boolean,Sentinel.Domain.Auth.Rar.AuthorizationDetail,System.String)">
+            <summary>
+                Result of validating a payload against RAR authorization details.
+            </summary>
+        </member>
+        <member name="M:Sentinel.RAR.RarValidationResult.Success(Sentinel.Domain.Auth.Rar.AuthorizationDetail)">
+            <summary>
+                Creates a successful validation result with the matched authorization detail.
+            </summary>
+            <param name="detail">The authorization detail that matched the payload.</param>
+            <returns>A successful validation result.</returns>
+        </member>
+        <member name="M:Sentinel.RAR.RarValidationResult.Failure(System.String)">
+            <summary>
+                Creates a failed validation result with an error message.
+            </summary>
+            <param name="error">Description of the validation failure.</param>
+            <returns>A failed validation result.</returns>
+        </member>
+        <member name="T:Sentinel.RAR.RarExtractionResult">
+            <summary>
+                Result of extracting and parsing RAR authorization details from a claims principal.
+            </summary>
+        </member>
+        <member name="M:Sentinel.RAR.RarExtractionResult.#ctor(System.Boolean,Sentinel.Domain.Auth.Rar.AuthorizationDetail[],System.String)">
+            <summary>
+                Result of extracting and parsing RAR authorization details from a claims principal.
+            </summary>
+        </member>
+        <member name="M:Sentinel.RAR.RarExtractionResult.Success(Sentinel.Domain.Auth.Rar.AuthorizationDetail[])">
+            <summary>
+                Creates a successful extraction result with the parsed authorization details.
+            </summary>
+            <param name="details">The parsed authorization details.</param>
+            <returns>A successful extraction result.</returns>
+        </member>
+        <member name="M:Sentinel.RAR.RarExtractionResult.Failure(System.String)">
+            <summary>
+                Creates a failed extraction result with an error message.
+            </summary>
+            <param name="error">Description of the extraction failure.</param>
+            <returns>A failed extraction result.</returns>
+        </member>
+        <member name="T:Sentinel.RAR.RarValidator">
+            <summary>
+                High-assurance RAR validator with polymorphic matcher routing.
+                Validates request payloads against Rich Authorization Request (RAR) constraints
+                using a priority-weighted matcher selection strategy.
+            </summary>
+        </member>
+        <member name="M:Sentinel.RAR.RarValidator.#ctor(System.Collections.Generic.IEnumerable{Sentinel.RAR.IAuthorizationDetailMatcher},Microsoft.Extensions.Options.IOptions{Sentinel.RAR.RarValidationOptions},Microsoft.Extensions.Logging.ILogger{Sentinel.RAR.RarValidator})">
+            <summary>
+                Initializes a new instance of the RarValidator.
+            </summary>
+            <param name="matchers">Collection of matchers supporting different authorization detail types.</param>
+            <param name="options">Configuration for RAR validation (from DI).</param>
+            <param name="logger">Logger for diagnostic messages.</param>
+            <remarks>
+                ✅ FIX: Accept a collection of matchers to support polymorphic evaluation.
+                Replaces the anti-pattern of single-matcher injection with proper routing.
+            </remarks>
+        </member>
+        <member name="M:Sentinel.RAR.RarValidator.Validate(Sentinel.Domain.Auth.Rar.AuthorizationDetail,System.String)">
+            <summary>
+                Validates a request payload against an authorization detail.
+            </summary>
+            <remarks>
+                Uses polymorphic routing to select the highest-weight matcher capable of handling
+                the authorization detail type. This enables extensibility without modifying RarValidator.
+            </remarks>
+        </member>
+        <member name="M:Sentinel.RAR.RarValidator.ValidateByType(Sentinel.Domain.Auth.Rar.AuthorizationDetail[],System.String,System.String)">
+            <summary>
+                Validates a payload by finding and matching a specific authorization detail type.
+            </summary>
+        </member>
+        <member name="M:Microsoft.Extensions.Configuration.Binder.SourceGeneration.BindingExtensions.Bind_RarValidationOptions(Microsoft.Extensions.Configuration.IConfiguration,System.Object)">
+            <summary>Attempts to bind the given object instance to configuration values by matching property names against configuration keys recursively.</summary>
+        </member>
+        <member name="M:Microsoft.Extensions.Configuration.Binder.SourceGeneration.BindingExtensions.TryGetConfigurationValue(Microsoft.Extensions.Configuration.IConfiguration,System.String,System.String@)">
+            <summary>Tries to get the configuration value for the specified key.</summary>
+        </member>
+        <member name="M:Microsoft.Extensions.Configuration.Binder.SourceGeneration.BindingExtensions.ValidateConfigurationKeys(System.Type,System.Lazy{System.Collections.Generic.HashSet{System.String}},Microsoft.Extensions.Configuration.IConfiguration,Microsoft.Extensions.Configuration.BinderOptions)">
+            <summary>If required by the binder options, validates that there are no unknown keys in the input configuration object.</summary>
+        </member>
+    </members>
+</doc>

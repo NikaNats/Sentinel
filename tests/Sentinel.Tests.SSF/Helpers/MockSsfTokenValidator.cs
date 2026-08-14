@@ -1,6 +1,20 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using Sentinel.SSF;
 
 namespace Sentinel.Tests.SSF.Helpers;
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(SidPayload))]
+[JsonSerializable(typeof(SubPayload))]
+[JsonSerializable(typeof(int))]
+public sealed partial class SsfTestPayloadsJsonContext : JsonSerializerContext
+{
+}
+
+public sealed record SidPayload(string Sid);
+
+public sealed record SubPayload(string Sub);
 
 /// <summary>
 ///     High-assurance mock ISsfTokenValidator for security-focused testing.
@@ -41,5 +55,5 @@ public sealed class MockSsfTokenValidator : ISsfTokenValidator
     ///     See: https://tools.ietf.org/html/draft-ietf-caep-core
     /// </remarks>
     public static JsonElement CreateCaepPayload(object payload)
-        => JsonSerializer.SerializeToElement(payload);
+        => JsonSerializer.SerializeToElement(payload, SsfTestPayloadsJsonContext.Default.Options);
 }

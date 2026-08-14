@@ -14,6 +14,8 @@ namespace Sentinel.Sample.MinimalApi;
 [JsonSerializable(typeof(TransferRequest))]
 [JsonSerializable(typeof(TransferResponse))]
 [JsonSerializable(typeof(SecurityContextDto))]
+[JsonSerializable(typeof(UserProfileDto))]
+[JsonSerializable(typeof(ProtectedTestResponseDto))]
 [JsonSerializable(typeof(SampleInfoResponse))]
 [JsonSerializable(typeof(EndpointMap))]
 [JsonSerializable(typeof(HealthResponse))]
@@ -21,6 +23,7 @@ namespace Sentinel.Sample.MinimalApi;
 [JsonSerializable(typeof(ValidationProblemDetails))]
 [JsonSerializable(typeof(IEnumerable<DocumentSummaryDto>))]
 [JsonSerializable(typeof(List<DocumentSummaryDto>))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
 internal sealed partial class SampleJsonContext : JsonSerializerContext
 {
 }

@@ -85,7 +85,8 @@ public sealed class TokenResponseContractTests(KeycloakContractFixture fixture)
     public async Task TokenEndpoint_RefreshGrant_ReturnsRotatedRefreshToken()
     {
         var initialResponse = await PostWithDpopAsync(Credentials());
-        var initialJson = await initialResponse.Content.ReadFromJsonAsync<TokenResponseContract>(TestContext.Current.CancellationToken);
+        var initialJson = await initialResponse.Content.ReadFromJsonAsync(
+            KeycloakContractJsonContext.Default.TokenResponseContract, TestContext.Current.CancellationToken);
 
         if (initialJson?.RefreshToken is null)
         {
@@ -108,7 +109,8 @@ public sealed class TokenResponseContractTests(KeycloakContractFixture fixture)
 
         refreshResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var refreshJson = await refreshResponse.Content.ReadFromJsonAsync<TokenResponseContract>(TestContext.Current.CancellationToken);
+        var refreshJson = await refreshResponse.Content.ReadFromJsonAsync(
+            KeycloakContractJsonContext.Default.TokenResponseContract, TestContext.Current.CancellationToken);
 
         refreshJson!.RefreshToken.Should().NotBe(initialJson.RefreshToken,
             "refresh token MUST rotate per use (§II.4)");

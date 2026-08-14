@@ -1,6 +1,7 @@
 ﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +22,11 @@ using Sentinel.Security.Abstractions.Pqc;
 using Sentinel.Security.Abstractions.Results;
 
 namespace Sentinel.Tests.Unit.Unit;
+
+[JsonSerializable(typeof(Dictionary<string, object>))]
+internal sealed partial class DpopMiddlewareTestJsonContext : JsonSerializerContext
+{
+}
 
 public sealed class DpopValidationMiddlewareSecurityTests
 {
@@ -196,7 +202,8 @@ public sealed class DpopValidationMiddlewareSecurityTests
         var dpopProof = CreateAsymmetricToken(key, SecurityAlgorithms.EcdsaSha256, header, payload);
         var context = CreateHttpContextWithHeaders("DPoP access-token", dpopProof);
 
-        using var jwkDoc = JsonDocument.Parse(JsonSerializer.Serialize(header["jwk"]));
+        using var jwkDoc = JsonDocument.Parse(
+            JsonSerializer.Serialize(header["jwk"], DpopMiddlewareTestJsonContext.Default.DictionaryStringObject));
         var thumbprint = _thumbprintComputer.Compute(jwkDoc.RootElement);
         _l1Cache.RecordFailedAttempt(thumbprint);
 
@@ -266,7 +273,8 @@ public sealed class DpopValidationMiddlewareSecurityTests
         var dpopProof = CreateAsymmetricToken(key, SecurityAlgorithms.EcdsaSha256, header, payload);
         var context = CreateHttpContextWithHeaders("DPoP access-token", dpopProof);
 
-        using var jwkDoc = JsonDocument.Parse(JsonSerializer.Serialize(header["jwk"]));
+        using var jwkDoc = JsonDocument.Parse(
+            JsonSerializer.Serialize(header["jwk"], DpopMiddlewareTestJsonContext.Default.DictionaryStringObject));
         var thumbprint = _thumbprintComputer.Compute(jwkDoc.RootElement);
 
         _nonceStoreMock

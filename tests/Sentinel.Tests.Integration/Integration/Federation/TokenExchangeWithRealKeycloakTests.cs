@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using Sentinel.Tests.Shared;
 
 namespace Sentinel.Tests.Integration.Federation;
 
@@ -18,7 +19,8 @@ public sealed class TokenExchangeWithRealKeycloakTests(RealKeycloakApiFactory fa
     {
         var response = await apiClient.PostAsJsonAsync(
             "/v1/auth/token-exchange",
-            new { externalToken = "fake-google-token", providerName = "google", codeVerifier = "pkce-verifier-123" },
+            new TokenExchangeRequestPayload("fake-google-token", "google", "pkce-verifier-123"),
+            TestJsonContext.Default.Options,
             CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -32,8 +34,9 @@ public sealed class TokenExchangeWithRealKeycloakTests(RealKeycloakApiFactory fa
         var requestUrl = new Uri(apiClient.BaseAddress!, "/v1/auth/token-exchange").ToString();
         using var request = new HttpRequestMessage(HttpMethod.Post, requestUrl)
         {
-            Content = JsonContent.Create(new
-                { externalToken = "fake-google-token", providerName = "google", codeVerifier = "pkce-verifier-123" })
+            Content = JsonContent.Create(
+                new TokenExchangeRequestPayload("fake-google-token", "google", "pkce-verifier-123"),
+                TestJsonContext.Default.TokenExchangeRequestPayload)
         };
         request.Headers.Add("DPoP", CreateDpopProof(requestUrl));
 
@@ -52,29 +55,27 @@ public sealed class TokenExchangeWithRealKeycloakTests(RealKeycloakApiFactory fa
         using var adminClient = factory.CreateKeycloakHttpClient();
         adminClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
 
-        var payload = new
-        {
-            alias = "google",
-            displayName = "Google",
-            providerId = "google",
-            enabled = true,
-            trustEmail = true,
-            storeToken = true,
-            firstBrokerLoginFlowAlias = "first broker login",
-            config = new Dictionary<string, string>
+        var payload = new KeycloakIdentityProviderPayload(
+            "google",
+            "Google",
+            "google",
+            true,
+            true,
+            true,
+            "first broker login",
+            new Dictionary<string, string>
             {
                 ["clientId"] = "test-client-id",
                 ["clientSecret"] = "test-client-secret",
                 ["defaultScope"] = "openid profile email",
                 ["useJwksUrl"] = "true",
                 ["syncMode"] = "IMPORT"
-            }
-        };
+            });
 
         using var upsert =
             new HttpRequestMessage(HttpMethod.Post, $"{host}/admin/realms/{realmName}/identity-provider/instances")
             {
-                Content = JsonContent.Create(payload)
+                Content = JsonContent.Create(payload, TestJsonContext.Default.KeycloakIdentityProviderPayload)
             };
 
         var result = await adminClient.SendAsync(upsert, CancellationToken.None);
@@ -107,7 +108,8 @@ public sealed class TokenExchangeWithRealKeycloakTests(RealKeycloakApiFactory fa
         using var response = await client.SendAsync(request, CancellationToken.None);
         response.EnsureSuccessStatusCode();
 
-        var json = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>(CancellationToken.None);
+        var json = await response.Content.ReadFromJsonAsync(
+            TestJsonContext.Default.DictionaryStringObject, CancellationToken.None);
         return json?["access_token"]?.ToString() ?? throw new InvalidOperationException("Missing access_token");
     }
 

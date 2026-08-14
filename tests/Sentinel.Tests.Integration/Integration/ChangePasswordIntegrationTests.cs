@@ -1,10 +1,11 @@
-﻿// Sentinel Security API - FAPI 2.0 Compliant
+// Sentinel Security API - FAPI 2.0 Compliant
 
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Sentinel.Tests.Shared;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -101,7 +102,7 @@ public sealed class ChangePasswordIntegrationTests : IClassFixture<SentinelApiFa
             ["sid"] = sid,
             ["acr"] = acr,
             ["scope"] = "profile",
-            ["realm_access.roles"] = JsonSerializer.Serialize(new[] { "user" }),
+            ["realm_access.roles"] = JsonSerializer.Serialize(new[] { "user" }, TestJsonContext.Default.StringArray),
             ["cnf"] = new Dictionary<string, string> { ["jkt"] = jkt },
             ["auth_time"] = now.ToUnixTimeSeconds()
         };
@@ -134,7 +135,7 @@ public sealed class ChangePasswordIntegrationTests : IClassFixture<SentinelApiFa
         };
 
         var thumbprintComputer = new DpopThumbprintComputer();
-        using var jwkDoc = JsonDocument.Parse(JsonSerializer.Serialize(jwkObject));
+        using var jwkDoc = JsonDocument.Parse(JsonSerializer.Serialize(jwkObject, TestJsonContext.Default.DictionaryStringString));
         var jkt = thumbprintComputer.Compute(jwkDoc.RootElement);
 
         var accessToken = MintTestToken(subject, username, sid, acr, jkt);
@@ -157,7 +158,7 @@ public sealed class ChangePasswordIntegrationTests : IClassFixture<SentinelApiFa
     }
 
     [Fact(DisplayName =
-        "✅ Integration: Entering a strong password updates the database and revokes sessions (204 NoContent)")]
+        "? Integration: Entering a strong password updates the database and revokes sessions (204 NoContent)")]
     public async Task ChangePassword_WithValidStrongPassword_ExecutesFullFlowAndReturns204()
     {
         // Arrange
@@ -167,7 +168,7 @@ public sealed class ChangePasswordIntegrationTests : IClassFixture<SentinelApiFa
         var (accessToken, dpopProof, _) =
             CreateBoundCredentials("user-secure-123", "enterprise_user", "session-active-456", "acr3", requestUrl);
 
-        var requestPayload = new AuthEndpoints.ChangePasswordRequest("Strong$SecurePass9513");
+        var requestPayload = new ChangePasswordRequestPayload("Strong$SecurePass9513");
 
         _identityProviderMock
             .Setup(x => x.UpdatePasswordAsync("enterprise_user", requestPayload.NewPassword,
@@ -186,7 +187,7 @@ public sealed class ChangePasswordIntegrationTests : IClassFixture<SentinelApiFa
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Post, requestUrl)
         {
-            Content = JsonContent.Create(requestPayload)
+            Content = JsonContent.Create(requestPayload, TestJsonContext.Default.ChangePasswordRequestPayload)
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken);
         request.Headers.Add("DPoP", dpopProof);
@@ -208,7 +209,7 @@ public sealed class ChangePasswordIntegrationTests : IClassFixture<SentinelApiFa
     }
 
     [Fact(DisplayName =
-        "❌ Integration: Entering a weak password blocks the request and nothing is written to the database (400 BadRequest)")]
+        "? Integration: Entering a weak password blocks the request and nothing is written to the database (400 BadRequest)")]
     public async Task ChangePassword_WithWeakPassword_Returns400ProblemDetails()
     {
         // Arrange
@@ -218,12 +219,12 @@ public sealed class ChangePasswordIntegrationTests : IClassFixture<SentinelApiFa
         var (accessToken, dpopProof, _) =
             CreateBoundCredentials("user-secure-123", "enterprise_user", "session-active-456", "acr3", requestUrl);
 
-        var requestPayload = new AuthEndpoints.ChangePasswordRequest("weak123");
+        var requestPayload = new ChangePasswordRequestPayload("weak123");
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Post, requestUrl)
         {
-            Content = JsonContent.Create(requestPayload)
+            Content = JsonContent.Create(requestPayload, TestJsonContext.Default.ChangePasswordRequestPayload)
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken);
         request.Headers.Add("DPoP", dpopProof);
@@ -234,7 +235,8 @@ public sealed class ChangePasswordIntegrationTests : IClassFixture<SentinelApiFa
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
-        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(TestContext.Current.CancellationToken);
+        var problem = await response.Content.ReadFromJsonAsync(
+            TestJsonContext.Default.ProblemDetails, TestContext.Current.CancellationToken);
         Assert.NotNull(problem);
         Assert.Equal(ErrorCodes.WeakPassword, problem.Type);
 

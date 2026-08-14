@@ -13,11 +13,19 @@ namespace Sentinel.Keycloak;
 [JsonSerializable(typeof(KeycloakSubject))]
 [JsonSerializable(typeof(KeycloakAdminDisablePayload))]
 [JsonSerializable(typeof(Dictionary<string, JsonElement>))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(List<KeycloakSessionResponse>))]
 [JsonSerializable(typeof(KeycloakSessionResponse))]
+[JsonSerializable(typeof(DpopProofHeaderDto))]
+[JsonSerializable(typeof(DpopProofJwkDto))]
+[JsonSerializable(typeof(Dictionary<string, object>))]
 public sealed partial class KeycloakJsonContext : JsonSerializerContext
 {
 }
+
+public sealed record DpopProofHeaderDto(string Typ, string Alg, DpopProofJwkDto Jwk);
+
+public sealed record DpopProofJwkDto(string Kty, string N, string E, string Alg, string Use);
 
 public sealed class KeycloakUserResponse
 {

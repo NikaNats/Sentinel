@@ -112,8 +112,8 @@ public static class TestJwtBuilder
             ["iat"] = now
         };
 
-        var headerJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(header));
-        var payloadJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(payload));
+        var headerJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(header, TestJsonContext.Default.DictionaryStringObject));
+        var payloadJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(payload, TestJsonContext.Default.DictionaryStringObject));
         return $"{headerJson}.{payloadJson}.malformed-signature";
     }
 
@@ -148,8 +148,8 @@ public static class TestJwtBuilder
             ["iat"] = now
         };
 
-        var headerJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(header));
-        var payloadJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(payload));
+        var headerJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(header, TestJsonContext.Default.DictionaryStringObject));
+        var payloadJson = Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(payload, TestJsonContext.Default.DictionaryStringObject));
         return $"{headerJson}.{payloadJson}.hmac-signature";
     }
 

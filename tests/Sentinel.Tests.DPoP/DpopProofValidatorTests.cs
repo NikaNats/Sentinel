@@ -1,10 +1,17 @@
 using System.Collections.Concurrent;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Sentinel.Tests.Shared;
 using Xunit;
 
 namespace Sentinel.Tests.DPoP;
+
+[JsonSerializable(typeof(Dictionary<string, object>))]
+[JsonSerializable(typeof(long))]
+internal sealed partial class DpopTestJsonContext : JsonSerializerContext
+{
+}
 
 public sealed class DpopProofValidatorTests : IDisposable
 {
@@ -358,8 +365,8 @@ public sealed class DpopProofValidatorTests : IDisposable
             ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
         };
 
-        var headerJson = JsonSerializer.Serialize(header);
-        var payloadJson = JsonSerializer.Serialize(payload);
+        var headerJson = JsonSerializer.Serialize(header, DpopTestJsonContext.Default.DictionaryStringObject);
+        var payloadJson = JsonSerializer.Serialize(payload, DpopTestJsonContext.Default.DictionaryStringObject);
         var fakeJwtWithMalformedJwk =
             $"{Base64UrlEncoder.Encode(headerJson)}.{Base64UrlEncoder.Encode(payloadJson)}.fake_signature";
 

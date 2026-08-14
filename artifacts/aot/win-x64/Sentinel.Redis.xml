@@ -1,0 +1,208 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>Sentinel.Redis</name>
+    </assembly>
+    <members>
+        <member name="T:Sentinel.Redis.Extensions.RedisServiceExtensions">
+            <summary>
+                Dependency injection extensions for strict Redis-backed security cache implementations.
+            </summary>
+        </member>
+        <member name="M:Sentinel.Redis.Extensions.RedisServiceExtensions.AddRedisSecurityCaches(Microsoft.Extensions.DependencyInjection.IServiceCollection,Microsoft.Extensions.Configuration.IConfiguration)">
+            <summary>
+                Adds Redis-backed security caches to DI in fail-closed mode.
+            </summary>
+        </member>
+        <member name="M:Sentinel.Redis.Extensions.RedisServiceExtensions.AddRedisSecurityCaches(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.Action{Sentinel.Redis.RedisOptions})">
+            <summary>
+                Adds Redis-backed security caches with explicit options.
+            </summary>
+        </member>
+        <member name="T:Sentinel.Redis.IRedisConnectionProvider">
+            <summary>
+                Provides asynchronous, lazy-initialized access to a Redis connection multiplexer.
+                This abstraction decouples connection initialization from application startup,
+                enabling graceful Kubernetes pod startup and zero-downtime deployments.
+                The connection is established on first demand via GetConnectionAsync, not during
+                DI container construction, preventing CrashLoopBackOff if Redis is not yet ready.
+            </summary>
+        </member>
+        <member name="M:Sentinel.Redis.IRedisConnectionProvider.GetConnectionAsync(System.Threading.CancellationToken)">
+            <summary>
+                Asynchronously retrieves the connection multiplexer.
+                On first call, establishes the connection with background reconnection logic enabled.
+                On subsequent calls, returns the cached instance.
+                Thread-safe via internal SemaphoreSlim to prevent thundering herd during startup.
+            </summary>
+            <param name="cancellationToken">Cancellation token for the async operation.</param>
+            <returns>An initialized IConnectionMultiplexer instance.</returns>
+        </member>
+        <member name="M:Sentinel.Redis.RedisConnectionProvider.GetConnectionAsync(System.Threading.CancellationToken)">
+            <summary>
+                Asynchronously retrieves the lazy-initialized, resilient connection multiplexer.
+                Employs SemaphoreSlim to prevent the 'Thundering Herd' problem under concurrent request load.
+            </summary>
+        </member>
+        <member name="P:Sentinel.Redis.RedisJsonContext.ByteArray">
+            <summary>
+            Defines the source generated JSON serialization contract metadata for a given type.
+            </summary>
+        </member>
+        <member name="P:Sentinel.Redis.RedisJsonContext.CachedHttpResponse">
+            <summary>
+            Defines the source generated JSON serialization contract metadata for a given type.
+            </summary>
+        </member>
+        <member name="P:Sentinel.Redis.RedisJsonContext.DictionaryStringString">
+            <summary>
+            Defines the source generated JSON serialization contract metadata for a given type.
+            </summary>
+        </member>
+        <member name="P:Sentinel.Redis.RedisJsonContext.Int32">
+            <summary>
+            Defines the source generated JSON serialization contract metadata for a given type.
+            </summary>
+        </member>
+        <member name="P:Sentinel.Redis.RedisJsonContext.String">
+            <summary>
+            Defines the source generated JSON serialization contract metadata for a given type.
+            </summary>
+        </member>
+        <member name="P:Sentinel.Redis.RedisJsonContext.Default">
+            <summary>
+            The default <see cref="T:System.Text.Json.Serialization.JsonSerializerContext"/> associated with a default <see cref="T:System.Text.Json.JsonSerializerOptions"/> instance.
+            </summary>
+        </member>
+        <member name="P:Sentinel.Redis.RedisJsonContext.GeneratedSerializerOptions">
+            <summary>
+            The source-generated options associated with this context.
+            </summary>
+        </member>
+        <member name="M:Sentinel.Redis.RedisJsonContext.#ctor">
+            <inheritdoc/>
+        </member>
+        <member name="M:Sentinel.Redis.RedisJsonContext.#ctor(System.Text.Json.JsonSerializerOptions)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Sentinel.Redis.RedisJsonContext.GetTypeInfo(System.Type)">
+            <inheritdoc/>
+        </member>
+        <member name="T:Sentinel.Redis.RedisOptions">
+            <summary>
+                Configuration options for Redis cache implementations.
+            </summary>
+        </member>
+        <member name="P:Sentinel.Redis.RedisOptions.EndPoint">
+            <summary>
+                Redis connection endpoint (e.g., "redis-master.redis.svc.cluster.local:6379").
+            </summary>
+        </member>
+        <member name="P:Sentinel.Redis.RedisOptions.UseSsl">
+            <summary>
+                Whether to use SSL for Redis connection.
+            </summary>
+        </member>
+        <member name="P:Sentinel.Redis.RedisOptions.Password">
+            <summary>
+                Redis password (basic auth).
+            </summary>
+        </member>
+        <member name="P:Sentinel.Redis.RedisOptions.SyncTimeout">
+            <summary>
+                Timeout for Redis operations (milliseconds).
+            </summary>
+        </member>
+        <member name="P:Sentinel.Redis.RedisOptions.KeyPrefix">
+            <summary>
+                Prefix for Redis keys (e.g., "sentinel_prod:").
+            </summary>
+        </member>
+        <member name="T:Sentinel.Redis.Stores.RedisDpopNonceStore">
+            <summary>
+                Redis-backed implementation of IDpopNonceStore with Fail-Closed semantics.
+                Stores per-client DPoP nonces (keyed by JWK thumbprint).
+                SECURITY INVARIANT: If Redis is unavailable, all nonce operations throw an exception.
+                DPoP proof validation fails if nonce state cannot be verified atomically.
+            </summary>
+        </member>
+        <member name="M:Sentinel.Redis.Stores.RedisDpopNonceStore.GetNonceAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+                Retrieves the current nonce for a given client (identified by JWK thumbprint).
+            </summary>
+        </member>
+        <member name="M:Sentinel.Redis.Stores.RedisDpopNonceStore.SetNonceAsync(System.String,System.String,System.DateTimeOffset,System.Threading.CancellationToken)">
+            <summary>
+                Stores a new nonce for a client, invalidating any prior nonce.
+                ✅ FIX: Respect the "Clear by Empty" protocol from the middleware.
+                When middleware passes string.Empty, delete the nonce instead of crashing.
+            </summary>
+        </member>
+        <member name="M:Sentinel.Redis.Stores.RedisDpopNonceStore.CleanupExpiredAsync(System.Threading.CancellationToken)">
+            <summary>
+                Removes expired nonce entries (garbage collection).
+                In Redis, TTL expiration happens automatically.
+            </summary>
+        </member>
+        <member name="M:Sentinel.Redis.Stores.RedisDpopNonceStore.ConsumeNonceIfMatchesAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+                Atomically verifies if the current nonce matches the expected value, and if so, deletes it.
+                Prevents TOCTOU race conditions by executing the compare-and-delete as a single Lua script.
+            </summary>
+        </member>
+        <member name="T:Sentinel.Redis.Stores.RedisJtiReplayCache">
+            <summary>
+                Redis-backed implementation of IJtiReplayCache with Fail-Closed semantics.
+                Stores JWT ID (jti) claims to prevent replay attacks.
+                SECURITY INVARIANT: If Redis is unavailable, TryMarkUsedAsync throws an exception.
+                This ensures replay protection never degrades to unsafe fallback behavior.
+                Clients receive 503 Service Unavailable, not a false positive authorization.
+            </summary>
+        </member>
+        <member name="M:Sentinel.Redis.Stores.RedisJtiReplayCache.TryMarkUsedAsync(System.String,System.DateTimeOffset,System.Threading.CancellationToken)">
+            <summary>
+                Marks a JWT ID as used and prevents any further use.
+                ✅ FIX: Safe TTL computation. Protect the clock-skew window with a 1-second minimum TTL to prevent negative TimeSpan
+                exceptions.
+            </summary>
+        </member>
+        <member name="M:Sentinel.Redis.Stores.RedisJtiReplayCache.CleanupExpiredAsync(System.Threading.CancellationToken)">
+            <summary>
+                Removes expired JTI entries (garbage collection).
+                In Redis, TTL expiration happens automatically, so this is a no-op.
+            </summary>
+        </member>
+        <member name="T:Sentinel.Redis.Stores.RedisSessionBlacklistCache">
+            <summary>
+                Redis-backed implementation of ISessionBlacklistCache with Fail-Closed semantics.
+                Stores sessions marked as revoked/logged out.
+                SECURITY INVARIANT: If Redis is unavailable, all operations throw an exception.
+                Session blacklist MUST never degrade to unsafe fallback behavior.
+            </summary>
+        </member>
+        <member name="M:Sentinel.Redis.Stores.RedisSessionBlacklistCache.BlacklistSessionAsync(System.String,System.DateTimeOffset,System.Threading.CancellationToken)">
+            <summary>
+                Blacklists a session (marks it as revoked/logged out).
+                ✅ FIX: Matches interface exactly (DateTimeOffset expiresAt).
+                Internally converts to TimeSpan for Redis TTL efficiently.
+            </summary>
+        </member>
+        <member name="M:Sentinel.Redis.Stores.RedisSessionBlacklistCache.IsBlacklistedAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+                Checks if a session is blacklisted (revoked).
+                ✅ FIX: Matches interface exactly (Task&lt;bool&gt; IsBlacklistedAsync).
+            </summary>
+        </member>
+        <member name="M:Sentinel.Redis.Stores.RedisSessionBlacklistCache.CleanupExpiredAsync(System.Threading.CancellationToken)">
+            <summary>
+                Removes expired entries (garbage collection).
+                In Redis, TTL expiration happens automatically.
+            </summary>
+        </member>
+        <member name="T:Sentinel.Redis.Validators.RedisOptionsValidator">
+            <summary>
+                Startup validator for strict Redis-backed security cache configuration.
+            </summary>
+        </member>
+    </members>
+</doc>

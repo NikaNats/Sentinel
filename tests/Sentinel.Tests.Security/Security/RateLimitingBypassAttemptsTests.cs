@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using Sentinel.Tests.Shared;
 
 namespace Sentinel.Tests.Security;
 
@@ -89,13 +90,13 @@ public sealed class RateLimitingBypassAttemptsTests(SentinelApiFactory factory)
 
     private static string ComputeEcThumbprint(Dictionary<string, string> jwk)
     {
-        var canonical = JsonSerializer.Serialize(new Dictionary<string, string>
+var canonical = JsonSerializer.Serialize(new Dictionary<string, string>
         {
-            ["crv"] = jwk["crv"],
-            ["kty"] = jwk["kty"],
-            ["x"] = jwk["x"],
-            ["y"] = jwk["y"]
-        });
+            ["crv"] = jwk["crv"] ?? "P-256",
+            ["kty"] = jwk["kty"] ?? "EC",
+            ["x"] = jwk["x"]!,
+            ["y"] = jwk["y"]!
+        }, TestJsonContext.Default.DictionaryStringString);
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
         return Base64UrlEncoder.Encode(hash);
     }

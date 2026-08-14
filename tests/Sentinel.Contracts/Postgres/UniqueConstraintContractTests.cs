@@ -25,14 +25,14 @@ public sealed class UniqueConstraintContractTests(PostgreSqlContractFixture fixt
         // 1. Insert the first record and dispose the context
         await using (var context1 = PostgreSqlContractFixture.CreateContext(_fixture.ConnectionString))
         {
-            context1.JtiReplayCache.Add(new JtiReplayCacheEntry { Jti = jti, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5) });
+            context1.JtiReplayCache.Add(new JtiReplayCacheEntry { Jti = jti, ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-60) });
             await context1.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         // 2. Use a FRESH context to bypass the in-memory Change Tracker
         await using (var context2 = PostgreSqlContractFixture.CreateContext(_fixture.ConnectionString))
         {
-            context2.JtiReplayCache.Add(new JtiReplayCacheEntry { Jti = jti, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5) });
+            context2.JtiReplayCache.Add(new JtiReplayCacheEntry { Jti = jti, ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-60) });
             
             var act = async () => await context2.SaveChangesAsync(cancellationToken: TestContext.Current.CancellationToken);
             await act.Should().ThrowAsync<DbUpdateException>("the PK/unique constraint MUST reject the duplicate");
@@ -47,14 +47,14 @@ public sealed class UniqueConstraintContractTests(PostgreSqlContractFixture fixt
         // 1. Insert the first record and dispose the context
         await using (var context1 = PostgreSqlContractFixture.CreateContext(_fixture.ConnectionString))
         {
-            context1.DpopNonceStore.Add(new DpopNonceEntry { Thumbprint = thumbprint, Nonce = "n1", ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5) });
+            context1.DpopNonceStore.Add(new DpopNonceEntry { Thumbprint = thumbprint, Nonce = "n1", ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-60) });
             await context1.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         // 2. Use a FRESH context to bypass the in-memory Change Tracker
         await using (var context2 = PostgreSqlContractFixture.CreateContext(_fixture.ConnectionString))
         {
-            context2.DpopNonceStore.Add(new DpopNonceEntry { Thumbprint = thumbprint, Nonce = "n2", ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5) });
+            context2.DpopNonceStore.Add(new DpopNonceEntry { Thumbprint = thumbprint, Nonce = "n2", ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-60) });
             
             var act = async () => await context2.SaveChangesAsync(cancellationToken: TestContext.Current.CancellationToken);
             await act.Should().ThrowAsync<DbUpdateException>();
@@ -69,14 +69,14 @@ public sealed class UniqueConstraintContractTests(PostgreSqlContractFixture fixt
         // 1. Insert the first record and dispose the context
         await using (var context1 = PostgreSqlContractFixture.CreateContext(_fixture.ConnectionString))
         {
-            context1.SessionBlacklist.Add(new SessionBlacklistEntry { SessionId = sessionId, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5) });
+            context1.SessionBlacklist.Add(new SessionBlacklistEntry { SessionId = sessionId, ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-60) });
             await context1.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         // 2. Use a FRESH context to bypass the in-memory Change Tracker
         await using (var context2 = PostgreSqlContractFixture.CreateContext(_fixture.ConnectionString))
         {
-            context2.SessionBlacklist.Add(new SessionBlacklistEntry { SessionId = sessionId, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5) });
+            context2.SessionBlacklist.Add(new SessionBlacklistEntry { SessionId = sessionId, ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-60) });
             
             var act = async () => await context2.SaveChangesAsync(cancellationToken: TestContext.Current.CancellationToken);
             await act.Should().ThrowAsync<DbUpdateException>();
@@ -91,14 +91,14 @@ public sealed class UniqueConstraintContractTests(PostgreSqlContractFixture fixt
         // 1. Insert the first record and dispose the context
         await using (var context1 = PostgreSqlContractFixture.CreateContext(_fixture.ConnectionString))
         {
-            context1.JtiReplayCache.Add(new JtiReplayCacheEntry { Jti = jti, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5) });
+            context1.JtiReplayCache.Add(new JtiReplayCacheEntry { Jti = jti, ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-60) });
             await context1.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         // 2. Use a FRESH context for the duplicate attempt
         await using (var context2 = PostgreSqlContractFixture.CreateContext(_fixture.ConnectionString))
         {
-            context2.JtiReplayCache.Add(new JtiReplayCacheEntry { Jti = jti, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5) });
+            context2.JtiReplayCache.Add(new JtiReplayCacheEntry { Jti = jti, ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-60) });
             try
             {
                 await context2.SaveChangesAsync(cancellationToken: TestContext.Current.CancellationToken);

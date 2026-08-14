@@ -35,19 +35,15 @@ public sealed class KeycloakDpopProofFactory(TimeProvider? timeProvider = null)
     {
         var parameters = ProofKey.ExportParameters(false);
 
-        var header = JsonSerializer.Serialize(new
-        {
-            typ = "dpop+jwt",
-            alg = "PS256",
-            jwk = new
-            {
-                kty = "RSA",
-                n = Base64Url(parameters.Modulus!),
-                e = Base64Url(parameters.Exponent!),
-                alg = "PS256",
-                use = "sig"
-            }
-        });
+        var header = JsonSerializer.Serialize(new DpopProofHeaderDto(
+            "dpop+jwt",
+            "PS256",
+            new DpopProofJwkDto(
+                "RSA",
+                Base64Url(parameters.Modulus!),
+                Base64Url(parameters.Exponent!),
+                "PS256",
+                "sig")), KeycloakJsonContext.Default.DpopProofHeaderDto);
 
         var payload = new Dictionary<string, object>
         {
@@ -61,7 +57,7 @@ public sealed class KeycloakDpopProofFactory(TimeProvider? timeProvider = null)
             payload["ath"] = Base64Url(SHA256.HashData(Encoding.UTF8.GetBytes(accessToken)));
         }
 
-        var payloadJson = JsonSerializer.Serialize<object>(payload);
+        var payloadJson = JsonSerializer.Serialize(payload, KeycloakJsonContext.Default.DictionaryStringObject);
 
         var header64 = Base64Url(Encoding.UTF8.GetBytes(header));
         var payload64 = Base64Url(Encoding.UTF8.GetBytes(payloadJson));

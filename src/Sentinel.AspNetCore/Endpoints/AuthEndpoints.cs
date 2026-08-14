@@ -137,11 +137,9 @@ internal static class AuthEndpoints
 
         if (result.IsSuccess)
         {
-            return TypedResults.Ok(new
-            {
-                access_token = result.AccessToken,
-                refresh_token = result.RefreshToken
-            });
+            return TypedResults.Ok(new TokenResponseDto(
+                result.AccessToken ?? string.Empty,
+                result.RefreshToken));
         }
 
         if (result.IsReuseDetected)
@@ -455,4 +453,8 @@ internal static class AuthEndpoints
     public sealed record TotpSetupRequest(string DeviceName);
 
     public sealed record TotpVerifyRequest(string Code);
+
+    public sealed record TokenResponseDto(
+        [property: System.Text.Json.Serialization.JsonPropertyName("access_token")] string AccessToken,
+        [property: System.Text.Json.Serialization.JsonPropertyName("refresh_token")] string? RefreshToken);
 }

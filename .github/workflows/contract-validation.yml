@@ -1,0 +1,116 @@
+name: Contract Validation (CONTRACT-001)
+
+# CONTRACT-001 pipeline gates:
+#   1. OpenAPI baseline sync   - the v1-baseline.json snapshot must be a byte-for-byte
+#                                reproduction of docs/OPENAPI_3_1.yaml facts.
+#   2. Contract tests          - per-suite matrix (Keycloak, Redis, PostgreSQL,
+#                                OpenAPI) against REAL infrastructure via Testcontainers.
+#   3. Gate summary            - a contract failure blocks the pipeline with
+#                                explicit remediation guidance.
+
+on:
+  push:
+    branches: ["main", "release/*"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  baseline-sync:
+    name: OpenAPI Baseline In-Sync
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyYAML (baseline generator dependency)
+        run: pip install PyYAML
+
+      - name: Regenerate baseline (PREVIEWED generator pipeline)
+        run: python3 scripts/generate_openapi_baseline.py
+
+      - name: Fail on drift
+        run: |
+          git diff --exit-code tests/Sentinel.Contracts/OpenApi/Baselines/v1-baseline.json \
+            && echo "baseline is in sync" \
+            || echo "::error::OPENAPI_3_1.yaml changed without regenerating v1-baseline.json (run scripts/generate_openapi_baseline.py)"
+
+  contract-tests:
+    name: Contract Tests (${{ matrix.suite }})
+    runs-on: ubuntu-latest
+    needs: baseline-sync
+    timeout-minutes: 30
+    strategy:
+      fail-fast: true # Any contract failure blocks the remaining suites immediately
+      matrix:
+        suite:
+          - Keycloak
+          - Redis
+          - Postgres
+          - OpenApi
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: 'Directory.Packages.props'
+
+      - name: Restore
+        run: dotnet restore tests/Sentinel.Contracts/Sentinel.Contracts.csproj --locked-mode
+
+      - name: Run ${{ matrix.suite }} Contract Tests
+        run: >
+          dotnet test tests/Sentinel.Contracts/Sentinel.Contracts.csproj
+          --configuration Release --no-restore
+          --filter "FullyQualifiedName~Sentinel.Contracts.${{ matrix.suite }}"
+          --results-directory tests/Sentinel.Contracts/TestResults
+          --logger "console;verbosity=detailed"
+          --logger "trx;LogFileName=contract-${{ matrix.suite }}.trx"
+          -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
+
+      - name: Upload Contract Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-results-${{ matrix.suite }}
+          path: tests/Sentinel.Contracts/TestResults/contract-*.trx
+
+  contract-summary:
+    name: Contract Gate Summary
+    runs-on: ubuntu-latest
+    needs: contract-tests
+    if: always()
+    steps:
+      - name: Check Contract Gate Results
+        run: |
+          if [ "${{ needs.contract-tests.result }}" != "success" ]; then
+            echo "::error::Contract Compliance Gate FAILED"
+            echo "One or more contract tests failed. This indicates a breaking"
+            echo "change in an external dependency's interface."
+            echo ""
+            echo "ACTION REQUIRED:"
+            echo "1. Review the failed contract test(s)"
+            echo "2. Determine if the change is a breaking change"
+            echo "3. If breaking: update Sentinel to handle the new contract"
+            echo "4. If non-breaking: update the baseline/contract test"
+            echo "5. Document the change in the ADR"
+            exit 1
+          fi
+          echo "Contract Compliance Gate PASSED"

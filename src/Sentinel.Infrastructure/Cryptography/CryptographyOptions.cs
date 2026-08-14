@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Sentinel.Infrastructure.Cryptography;
 
 /// <summary>
@@ -17,7 +19,7 @@ public sealed class CryptographyOptions
     ///     Must reference a key present in the KeyRing dictionary.
     ///     Example: "2026-03-rev1"
     /// </summary>
-    public string ActiveKeyId { get; init; } = string.Empty;
+    public string ActiveKeyId { get; set; } = string.Empty;
 
     /// <summary>
     ///     A dictionary of all valid keys (historical and active).
@@ -29,7 +31,11 @@ public sealed class CryptographyOptions
     ///     "2025-12-rev1": "base64EncodedPreviousKey..."
     ///     }
     /// </summary>
-    public Dictionary<string, string> KeyRing { get; init; } = new();
+    [SuppressMessage(
+        "Design",
+        "CA2227:CollectionPropertiesShouldBeReadOnly",
+        Justification = "Configuration binding requires a settable collection; init-only setters are silently skipped by the NativeAOT configuration binder.")]
+    public Dictionary<string, string> KeyRing { get; set; } = new();
 
     /// <summary>
     ///     The legacy key used before versioning was introduced.
@@ -38,5 +44,5 @@ public sealed class CryptographyOptions
     ///     lazily re-encrypted with versioned keys, this can be safely removed.
     ///     Value: Base64-encoded 32-byte AES-256 key
     /// </summary>
-    public string? LegacyMasterKey { get; init; }
+    public string? LegacyMasterKey { get; set; }
 }

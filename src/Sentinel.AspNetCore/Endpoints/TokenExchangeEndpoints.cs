@@ -64,14 +64,12 @@ internal static class TokenExchangeEndpoints
                 statusCode: StatusCodes.Status401Unauthorized);
         }
 
-        return TypedResults.Ok(new
-        {
-            access_token = result.AccessToken,
-            refresh_token = result.RefreshToken,
-            token_type = result.TokenType,
-            expires_in = result.ExpiresIn,
-            scope = result.Scope
-        });
+        return TypedResults.Ok(new TokenExchangeResponseDto(
+            result.AccessToken,
+            result.RefreshToken,
+            result.TokenType ?? "DPoP",
+            result.ExpiresIn,
+            result.Scope));
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -79,4 +77,11 @@ internal static class TokenExchangeEndpoints
     // ─────────────────────────────────────────────────────────────────────────────
 
     public sealed record TokenExchangeRequest(string ExternalToken, string ProviderName, string CodeVerifier);
+
+    public sealed record TokenExchangeResponseDto(
+        [property: System.Text.Json.Serialization.JsonPropertyName("access_token")] string AccessToken,
+        [property: System.Text.Json.Serialization.JsonPropertyName("refresh_token")] string? RefreshToken,
+        [property: System.Text.Json.Serialization.JsonPropertyName("token_type")] string TokenType,
+        [property: System.Text.Json.Serialization.JsonPropertyName("expires_in")] int ExpiresIn,
+        [property: System.Text.Json.Serialization.JsonPropertyName("scope")] string? Scope);
 }

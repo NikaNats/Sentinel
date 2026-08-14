@@ -119,13 +119,14 @@ public sealed class AdminApiContractTests(KeycloakContractFixture fixture)
     // ─── Helpers ────────────────────────────────────────────────────────
 
     private static StringContent UserPayload(string username) => new(
-        JsonSerializer.Serialize(new
-        {
-            username,
-            enabled = true,
-            emailVerified = true,
-            email = $"{username}@contract-test.local"
-        }),
+        JsonSerializer.Serialize(
+            new KeycloakContractUserPayload(
+                username,
+                true,
+                true,
+                $"{username}@contract-test.local",
+                []),
+            KeycloakContractJsonContext.Default.KeycloakContractUserPayload),
         Encoding.UTF8, "application/json");
 
     private async Task<string> CreateUserReturningIdAsync()

@@ -247,7 +247,9 @@ public sealed class KeycloakServicesTests : IDisposable
             .ReturnsAsync(new HttpResponseMessage
             {
                 StatusCode = statusCode,
-                Content = responseBody != null ? JsonContent.Create<T>(responseBody) : null
+                Content = responseBody != null
+                    ? JsonContent.Create(responseBody, typeof(T), null, KeycloakJsonContext.Default.Options)
+                    : null
             });
     }
 

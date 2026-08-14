@@ -75,8 +75,8 @@ public sealed class SsfEventProcessorResiliencyTests
 
         var events = new Dictionary<string, JsonElement>
         {
-            [SessionRevokedEventType] = JsonSerializer.SerializeToElement(new SessionRevokedPayload("sid-1", null)),
-            [CredentialChangeEventType] = JsonSerializer.SerializeToElement(new CredentialChangePayload("user-2"))
+            [SessionRevokedEventType] = JsonSerializer.SerializeToElement(new SessionRevokedPayload("sid-1", null), SsfJsonContext.Default.Options),
+            [CredentialChangeEventType] = JsonSerializer.SerializeToElement(new CredentialChangePayload("user-2"), SsfJsonContext.Default.Options)
         };
 
         var token = new SsfEventToken(
@@ -117,7 +117,7 @@ public sealed class SsfEventProcessorResiliencyTests
 
         var events = new Dictionary<string, JsonElement>
         {
-            [SessionRevokedEventType] = JsonSerializer.SerializeToElement(new SessionRevokedPayload("sid-2", null))
+            [SessionRevokedEventType] = JsonSerializer.SerializeToElement(new SessionRevokedPayload("sid-2", null), SsfJsonContext.Default.Options)
         };
 
         var token = new SsfEventToken(

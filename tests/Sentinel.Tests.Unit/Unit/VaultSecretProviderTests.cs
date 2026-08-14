@@ -13,11 +13,6 @@ public sealed class VaultSecretProviderTests : IDisposable
 {
     private const string FallbackToken = "hvs.mocked-fallback-jwt-token-value";
 
-    private static readonly JsonSerializerOptions SerializerOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-    };
-
     private readonly Mock<HttpMessageHandler> _handlerMock;
     private readonly HttpClient _httpClient;
     private readonly VaultOptions _options;
@@ -180,7 +175,9 @@ public sealed class VaultSecretProviderTests : IDisposable
             .Returns(() => Task.FromResult(new HttpResponseMessage
             {
                 StatusCode = statusCode,
-                Content = responseBody != null ? JsonContent.Create(responseBody, null, SerializerOptions) : null
+                Content = responseBody != null
+                    ? JsonContent.Create(responseBody, typeof(T), null, VaultJsonContext.Default.Options)
+                    : null
             }));
 
     private void VerifyHttpCallCount(HttpMethod method, string path, Times times) =>

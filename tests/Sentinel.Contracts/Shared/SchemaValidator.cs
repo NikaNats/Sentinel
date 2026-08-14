@@ -33,7 +33,8 @@ public static class SchemaValidator
             OutputFormat = OutputFormat.Hierarchical
         };
 
-        var result = schema.Evaluate(JsonSerializer.SerializeToElement(instance), results);
+        using var instanceDoc = JsonDocument.Parse(instance!.ToJsonString());
+        var result = schema.Evaluate(instanceDoc.RootElement, results);
 
         var errors = new List<string>();
         CollectErrors(result.Details, errors);

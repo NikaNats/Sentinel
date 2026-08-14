@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Sentinel.Domain.Auth.Rar;
 using Sentinel.RAR;
+using Sentinel.Tests.Shared;
 
 namespace Sentinel.Tests.Security;
 
@@ -43,12 +44,9 @@ public sealed class RarPropertyTests
                 Amount: amount,
                 Currency: currency);
 
-            var payload = JsonSerializer.Serialize(new
-            {
-                transactionId = txnId,
-                amount,
-                currency
-            });
+            var payload = JsonSerializer.Serialize(
+                new RarTransferPayload(txnId, amount, currency),
+                TestJsonContext.Default.RarTransferPayload);
 
             var result = _validator.Validate(detail, payload);
             result.IsValid.Should().BeTrue();
@@ -75,12 +73,9 @@ public sealed class RarPropertyTests
                 Amount: amount,
                 Currency: currency);
 
-            var payload = JsonSerializer.Serialize(new
-            {
-                transactionId = txnId,
-                amount = tamperedAmount,
-                currency
-            });
+            var payload = JsonSerializer.Serialize(
+                new RarTransferPayload(txnId, tamperedAmount, currency),
+                TestJsonContext.Default.RarTransferPayload);
 
             var result = _validator.Validate(detail, payload);
             result.IsValid.Should().BeFalse();

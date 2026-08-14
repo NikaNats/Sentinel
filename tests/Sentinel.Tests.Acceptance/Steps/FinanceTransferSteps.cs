@@ -1,9 +1,10 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Sentinel.Tests.Shared;
 using AdversarialTestHost;
 using FluentAssertions;
 using FluentAssertions.Execution;
@@ -143,7 +144,8 @@ public sealed class FinanceTransferSteps(ScenarioContext scenarioContext) : IDis
     public async Task ThenTransactionStatusMustBe(string expectedStatus)
     {
         var lastResponse = scenarioContext.Get<HttpResponseMessage>("LastResponse");
-        var result = await lastResponse.Content.ReadFromJsonAsync<TransferResponse>();
+        var result = await lastResponse.Content.ReadFromJsonAsync(
+            AcceptanceJsonContext.Default.TransferResponse);
         result!.Status.Should().Be(expectedStatus);
     }
 
@@ -182,7 +184,7 @@ public sealed class FinanceTransferSteps(ScenarioContext scenarioContext) : IDis
         var payload = new TransferRequest(txnId, amount, currency, account);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, requestUrl);
-        request.Content = JsonContent.Create(payload);
+        request.Content = JsonContent.Create(payload, AcceptanceJsonContext.Default.TransferRequest);
 
         if (!string.IsNullOrEmpty(_accessToken))
         {
@@ -235,7 +237,7 @@ public sealed class FinanceTransferSteps(ScenarioContext scenarioContext) : IDis
             ["kty"] = jwk.Kty!,
             ["x"] = jwk.X!,
             ["y"] = jwk.Y!
-        });
+        }, AcceptanceJsonContext.Default.DictionaryStringString);
         return Base64UrlEncoder.Encode(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 
@@ -299,9 +301,10 @@ public sealed class FinanceTransferSteps(ScenarioContext scenarioContext) : IDis
         var payload = Base64UrlEncoder.Decode(parts[1]);
 
         var payloadJson = JsonDocument.Parse(payload).RootElement.Clone();
-        var mutablePayload = JsonSerializer.Deserialize<Dictionary<string, object>>(payloadJson.GetRawText())!;
+        var mutablePayload = JsonSerializer.Deserialize<Dictionary<string, object>>(
+            payloadJson.GetRawText(), AcceptanceJsonContext.Default.DictionaryStringObject)!;
 
-        var intermediateJson = JsonSerializer.Serialize(mutablePayload);
+        var intermediateJson = JsonSerializer.Serialize(mutablePayload, AcceptanceJsonContext.Default.DictionaryStringObject);
         var finalJson = intermediateJson.TrimEnd('}') + ",\"authorization_details\":" + rarJsonArray + "}";
         var newPayload = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(finalJson));
 

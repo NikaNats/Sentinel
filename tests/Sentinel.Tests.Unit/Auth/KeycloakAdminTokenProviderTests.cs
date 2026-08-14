@@ -1,11 +1,19 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Sentinel.Keycloak;
 
 namespace Sentinel.Tests.Unit.Auth;
+
+[JsonSerializable(typeof(TokenResponse))]
+internal sealed partial class AdminTokenTestJsonContext : JsonSerializerContext
+{
+}
+
+internal sealed record TokenResponse(string access_token, int expires_in);
 
 public sealed class KeycloakAdminTokenProviderTests
 {
@@ -66,13 +74,11 @@ public sealed class KeycloakAdminTokenProviderTests
         return new KeycloakAdminTokenProvider(factory, options, logger.Object, timeProvider);
     }
 
-    private static HttpResponseMessage CreateTokenResponse(string token, int expiresIn) =>
+private static HttpResponseMessage CreateTokenResponse(string token, int expiresIn) =>
         new(HttpStatusCode.OK)
         {
-            Content = JsonContent.Create(new TokenResponse(token, expiresIn))
+            Content = JsonContent.Create(new TokenResponse(token, expiresIn), AdminTokenTestJsonContext.Default.TokenResponse)
         };
-
-    private sealed record TokenResponse(string access_token, int expires_in);
 
     private sealed class StubHttpClientFactory(HttpClient client) : IHttpClientFactory
     {

@@ -11,6 +11,10 @@ namespace Sentinel.SSF;
 [JsonSerializable(typeof(UserStatusChangedPayload))]
 [JsonSerializable(typeof(CredentialChangePayload))]
 [JsonSerializable(typeof(SsfEventToken))]
+[JsonSerializable(typeof(SsfSetPayload))]
 public sealed partial class SsfJsonContext : JsonSerializerContext
 {
 }
+
+/// <summary>RFC 8936 SET wrapper envelope: <c>{"set": "&lt;jwt&gt;"}</c>.</summary>
+public sealed record SsfSetPayload(string Set);

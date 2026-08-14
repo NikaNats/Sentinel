@@ -58,6 +58,9 @@
     <PackageVersion Include="xunit.v3.extensibility.core" Version="3.2.2" />
     <PackageVersion Include="FsCheck" Version="3.3.3" />
     <PackageVersion Include="Testcontainers.Toxiproxy" Version="4.13.0" />
+    <!-- Transitively pinned: Testcontainers 4.13 pulls SSH.NET 2025.1.0 which is
+         vulnerable (CVE-2026-48798, SCP path traversal). Force 2026.0.0. -->
+    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <!-- Security & Fuzzing Tools -->
     <PackageVersion Include="SharpFuzz" Version="2.3.0" />
     <PackageVersion Include="SharpFuzz.CommandLine" Version="2.2.0" />

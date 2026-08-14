@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Sentinel.Tests.Shared;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -417,7 +418,7 @@ public sealed class SecurityScenarioTests : IDisposable
             token,
             HttpMethod.Post,
             requestUrl,
-            new { title = "secrets", content = "content" });
+            new DocumentCreatePayload("secrets", "content"));
         request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
 
         var response = await client.SendAsync(request, CancellationToken.None);
@@ -450,7 +451,7 @@ public sealed class SecurityScenarioTests : IDisposable
             token1,
             HttpMethod.Post,
             requestUrl,
-            new { title = "invoice", content = "v1" });
+            new DocumentCreatePayload("invoice", "v1"));
         request1.Headers.Add("Idempotency-Key", idempotencyKey);
 
         var response1 = await client.SendAsync(request1, CancellationToken.None);
@@ -467,7 +468,7 @@ public sealed class SecurityScenarioTests : IDisposable
             token2,
             HttpMethod.Post,
             requestUrl,
-            new { title = "invoice", content = "v2" },
+            new DocumentCreatePayload("invoice", "v2"),
             nonce);
         request2.Headers.Add("Idempotency-Key", idempotencyKey);
 
@@ -508,7 +509,7 @@ public sealed class SecurityScenarioTests : IDisposable
             ownerToken,
             HttpMethod.Post,
             createUrl,
-            new { title = "contract", content = "internal" });
+            new DocumentCreatePayload("contract", "internal"));
         createRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
 
         var createResponse = await client.SendAsync(createRequest, CancellationToken.None);
@@ -566,7 +567,7 @@ public sealed class SecurityScenarioTests : IDisposable
             createToken,
             HttpMethod.Post,
             createUrl,
-            new { title = "to-delete", content = "demo" });
+            new DocumentCreatePayload("to-delete", "demo"));
         createRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
 
         var createResponse = await client.SendAsync(createRequest, CancellationToken.None);
@@ -635,11 +636,12 @@ public sealed class SecurityScenarioTests : IDisposable
         string accessToken,
         HttpMethod method,
         string url,
-        object body,
+        DocumentCreatePayload body,
         string? nonce = null)
     {
         var request = CreateSignedRequest(ecdsa, jwkObject, accessToken, method, url, nonce);
-        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        request.Content = new StringContent(
+            JsonSerializer.Serialize(body, TestJsonContext.Default.DocumentCreatePayload), Encoding.UTF8, "application/json");
         return request;
     }
 
@@ -681,7 +683,7 @@ public sealed class SecurityScenarioTests : IDisposable
             ["kty"] = jwk["kty"],
             ["x"] = jwk["x"],
             ["y"] = jwk["y"]
-        });
+        }, TestJsonContext.Default.DictionaryStringString);
 
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
         return Base64UrlEncoder.Encode(hash);

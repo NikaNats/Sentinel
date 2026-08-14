@@ -95,7 +95,7 @@ public sealed class RequireIdempotencyAttributeTests
         var context = CreateContext();
         context.HttpContext.Request.Headers["Idempotency-Key"] = "13b33980-5b58-4974-b080-bb4ecff97327";
 
-        var okResult = TypedResults.Ok(new { status = "ok" });
+        var okResult = Microsoft.AspNetCore.Http.Results.Text("""{"status":"ok"}""", "application/json");
 
         var result = await filter.InvokeAsync(context,
             _ => ValueTask.FromResult<object?>(okResult));

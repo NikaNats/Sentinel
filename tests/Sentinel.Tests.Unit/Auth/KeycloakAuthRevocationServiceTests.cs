@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using Moq;
 using Moq.Protected;
 using Sentinel.Keycloak;
+using Sentinel.Keycloak.Models;
 
 namespace Sentinel.Tests.Unit.Auth;
 
@@ -70,7 +71,9 @@ public sealed class KeycloakAuthRevocationServiceTests : IDisposable
             .ReturnsAsync(new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.OK,
-                Content = JsonContent.Create(new { access_token = "mock-admin-token", expires_in = 3600 })
+                Content = JsonContent.Create(
+                    new KeycloakToken { AccessToken = "mock-admin-token", ExpiresIn = 3600 },
+                    KeycloakJsonContext.Default.KeycloakToken)
             });
     }
 

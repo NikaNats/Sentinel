@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Sentinel.Tests.Shared;
 using System.Threading;
 using System.Threading.Tasks;
 using DotNet.Testcontainers.Builders;
@@ -24,10 +25,7 @@ public sealed class VaultSecretRotationIntegrationTests : IAsyncLifetime
     private const string RootToken = "sentinel-master-root-token";
     private const ushort VaultPort = 8200;
 
-    private static readonly JsonSerializerOptions SerializerOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-    };
+    private static readonly JsonSerializerOptions SerializerOptions = TestJsonContext.Default.Options;
 
     private readonly IContainer _vaultContainer = new ContainerBuilder("hashicorp/vault:1.15")
         .WithEnvironment("VAULT_DEV_ROOT_TOKEN_ID", RootToken)
@@ -68,7 +66,7 @@ public sealed class VaultSecretRotationIntegrationTests : IAsyncLifetime
         await _vaultContainer.DisposeAsync();
     }
 
-    [Fact(DisplayName = "🔐 Vault Zero-Downtime: Live pepper rotation in Vault seamlessly updates PrivacyKeyManager with fail-safe fallback")]
+    [Fact(DisplayName = "?? Vault Zero-Downtime: Live pepper rotation in Vault seamlessly updates PrivacyKeyManager with fail-safe fallback")]
     public async Task RefreshKeyAsync_WhenSecretRotatesInVault_UpdatesPepperWithoutDowntime_AndFailsSafeOnOutage()
     {
         // 1. Prepare the initial MasterPepper V1 (32 bytes)
@@ -76,7 +74,7 @@ public sealed class VaultSecretRotationIntegrationTests : IAsyncLifetime
         var pepperV1Base64 = Convert.ToBase64String(pepperV1Bytes);
         await WriteSecretToVaultAsync("sentinel/privacy", "MasterPepper", pepperV1Base64);
 
-        // ⚠️ CA2000 fix: Added 'using' for automatic disposal
+        // ?? CA2000 fix: Added 'using' for automatic disposal
         using var keyManager = new PrivacyKeyManager(_secretProvider!, NullLogger<PrivacyKeyManager>.Instance);
 
         using var cts = new CancellationTokenSource();
@@ -121,15 +119,12 @@ public sealed class VaultSecretRotationIntegrationTests : IAsyncLifetime
         using var setupClient = new HttpClient();
         setupClient.DefaultRequestHeaders.Add("X-Vault-Token", RootToken);
 
-        var payload = new
+        var payload = new VaultSecretDataPayload(new Dictionary<string, string>
         {
-            data = new Dictionary<string, string>
-            {
-                [key] = value
-            }
-        };
+            [key] = value
+        });
 
-        using var response = await setupClient.PostAsJsonAsync($"{_vaultAddress}/v1/secret/data/{path}", payload, TestContext.Current.CancellationToken);
+        using var response = await setupClient.PostAsJsonAsync($"{_vaultAddress}/v1/secret/data/{path}", payload, TestJsonContext.Default.Options, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
     }
 
@@ -138,37 +133,29 @@ public sealed class VaultSecretRotationIntegrationTests : IAsyncLifetime
         using var setupClient = new HttpClient();
         setupClient.DefaultRequestHeaders.Add("X-Vault-Token", RootToken);
 
-        var policyPayload = new
-        {
-            policy = "path \"secret/data/sentinel/privacy\" { capabilities = [\"read\"] }"
-        };
+        var policyPayload = new VaultPolicyPayload("path \"secret/data/sentinel/privacy\" { capabilities = [\"read\"] }");
         using var policyRes = await setupClient.PostAsJsonAsync($"{vaultAddress}/v1/sys/policies/acl/sentinel-read-policy", policyPayload, SerializerOptions, cancellationToken);
         policyRes.EnsureSuccessStatusCode();
 
-        var authPayload = new { type = "jwt", description = "Mock Kubernetes Auth" };
+        var authPayload = new VaultAuthPayload("jwt", "Mock Kubernetes Auth");
         using var enableAuthRes = await setupClient.PostAsJsonAsync($"{vaultAddress}/v1/sys/auth/kubernetes", authPayload, SerializerOptions, cancellationToken);
         if (!enableAuthRes.IsSuccessStatusCode)
         {
             throw new HttpRequestException($"Failed to enable auth backend: {await enableAuthRes.Content.ReadAsStringAsync(cancellationToken)}");
         }
 
-        var configPayload = new
-        {
-            jwt_validation_pubkeys = new[] { publicKeyPem }
-        };
+        var configPayload = new VaultConfigPayload([publicKeyPem]);
         using var configRes = await setupClient.PostAsJsonAsync($"{vaultAddress}/v1/auth/kubernetes/config", configPayload, SerializerOptions, cancellationToken);
         if (!configRes.IsSuccessStatusCode)
         {
             throw new HttpRequestException($"Failed to configure auth backend: {await configRes.Content.ReadAsStringAsync(cancellationToken)}");
         }
 
-        var rolePayload = new
-        {
-            role_type = "jwt",
-            user_claim = "sub",
-            bound_subject = "system:serviceaccount:default:sentinel-api",
-            policies = new[] { "default", "sentinel-read-policy" }
-        };
+        var rolePayload = new VaultRolePayload(
+            "jwt",
+            "sub",
+            "system:serviceaccount:default:sentinel-api",
+            ["default", "sentinel-read-policy"]);
         using var roleRes = await setupClient.PostAsJsonAsync($"{vaultAddress}/v1/auth/kubernetes/role/sentinel-api", rolePayload, SerializerOptions, cancellationToken);
         if (!roleRes.IsSuccessStatusCode)
         {

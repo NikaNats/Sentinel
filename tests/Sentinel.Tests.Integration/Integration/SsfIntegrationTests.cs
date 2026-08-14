@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Sentinel.Tests.Shared;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -128,8 +129,10 @@ public sealed class SsfIntegrationTests(SsfIntegrationTests.SsfApiFactory factor
                 ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 ["events"] = new Dictionary<string, JsonElement>
                 {
-                    ["https://schemas.openid.net/secevent/caep/event-type/session-revoked"] =
-                        JsonSerializer.SerializeToElement(new SessionRevokedPayload(sid, "user-1"))
+["https://schemas.openid.net/secevent/caep/event-type/session-revoked"] =
+                        JsonSerializer.SerializeToElement(
+                            new SessionRevokedPayload(sid, "user-1"),
+                            TestJsonContext.Default.SessionRevokedPayload)
                 }
             },
             SigningCredentials =
@@ -141,13 +144,13 @@ public sealed class SsfIntegrationTests(SsfIntegrationTests.SsfApiFactory factor
 
     private static string ComputeEcThumbprint(Dictionary<string, string> jwk)
     {
-        var canonical = JsonSerializer.Serialize(new Dictionary<string, string>
+var canonical = JsonSerializer.Serialize(new Dictionary<string, string>
         {
             ["crv"] = jwk["crv"],
             ["kty"] = jwk["kty"],
             ["x"] = jwk["x"],
             ["y"] = jwk["y"]
-        });
+        }, TestJsonContext.Default.DictionaryStringString);
 
         return Base64UrlEncoder.Encode(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
