@@ -137,7 +137,8 @@ OpenCover/
 *.g.cs
 
 # Entity Framework
-Migrations/
+# NOTE: no bare `Migrations/` rule — EF Core migrations (src/Sentinel.EntityFrameworkCore/Migrations,
+# src/Sentinel.Infrastructure/Persistence/Migrations) MUST be committed so MigrateAsync works in CI/deploy.
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
