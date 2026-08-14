@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 set -eu
 
 # Self-locating: always write artifacts next to this script regardless of the
@@ -6,6 +6,10 @@ set -eu
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 umask 077
+
+# Regeneration is idempotent: previously generated keys are read-only (chmod 400),
+# so they must be removed before openssl can rewrite them.
+rm -f ca.key keycloak.key ca.crt keycloak.crt ca.srl ca.ext keycloak.ext keycloak.csr
 
 cat <<EOF > ca.ext
 [req]

@@ -36,7 +36,7 @@ RUN dotnet publish samples/Sentinel.Sample.MinimalApi/Sentinel.Sample.MinimalApi
 # ==========================================
 # Stage 2: High-Assurance Secure Runtime (Chiseled)
 # ==========================================
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.10-noble-chiseled AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.11-noble-chiseled AS runtime
 WORKDIR /app
 
 ENV ASPNETCORE_URLS=http://+:8080

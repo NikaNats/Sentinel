@@ -28,14 +28,13 @@ public sealed class ExecuteDeleteSemanticsContractTests(PostgreSqlContractFixtur
         using var scope = provider.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IDpopNonceStore>();
 
-        await using (var context = PostgreSqlContractFixture.CreateContext(_fixture.ConnectionString))
-        {
-            context.DpopNonceStore.AddRange(
-                new DpopNonceEntry { Thumbprint = "cleanup-expired-a", Nonce = "n1", ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-60) },
-                new DpopNonceEntry { Thumbprint = "cleanup-expired-b", Nonce = "n2", ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-60) },
-                new DpopNonceEntry { Thumbprint = "cleanup-live", Nonce = "n3", ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30) });
-            await context.SaveChangesAsync(cancellationToken: TestContext.Current.CancellationToken);
-        }
+        await using var context = PostgreSqlContractFixture.CreateContext(_fixture.ConnectionString);
+        await context.DpopNonceStore.ExecuteDeleteAsync(cancellationToken: TestContext.Current.CancellationToken);
+        context.DpopNonceStore.AddRange(
+            new DpopNonceEntry { Thumbprint = "cleanup-expired-a", Nonce = "n1", ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-60) },
+            new DpopNonceEntry { Thumbprint = "cleanup-expired-b", Nonce = "n2", ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-60) },
+            new DpopNonceEntry { Thumbprint = "cleanup-live", Nonce = "n3", ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30) });
+        await context.SaveChangesAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         await store.CleanupExpiredAsync(cancellationToken: TestContext.Current.CancellationToken);
 
@@ -55,6 +54,7 @@ public sealed class ExecuteDeleteSemanticsContractTests(PostgreSqlContractFixtur
         var cache = scope.ServiceProvider.GetRequiredService<IJtiReplayCache>();
 
         await using var context = PostgreSqlContractFixture.CreateContext(_fixture.ConnectionString);
+        await context.JtiReplayCache.ExecuteDeleteAsync(cancellationToken: TestContext.Current.CancellationToken);
         context.JtiReplayCache.AddRange(
             new JtiReplayCacheEntry { Jti = "cleanup-jti-expired", ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-60) },
             new JtiReplayCacheEntry { Jti = "cleanup-jti-live", ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30) });
@@ -77,6 +77,7 @@ public sealed class ExecuteDeleteSemanticsContractTests(PostgreSqlContractFixtur
 
         await using (var context = PostgreSqlContractFixture.CreateContext(_fixture.ConnectionString))
         {
+            await context.SessionBlacklist.ExecuteDeleteAsync(cancellationToken: TestContext.Current.CancellationToken);
             context.SessionBlacklist.AddRange(
                 new SessionBlacklistEntry { SessionId = "cleanup-session-expired", ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-60) },
                 new SessionBlacklistEntry { SessionId = "cleanup-session-live", ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30) });
