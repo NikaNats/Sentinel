@@ -153,6 +153,10 @@ jobs:
     needs: build-scan
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      # The Testcontainers ResourceReaper (ryuk) start is the classic all-tests-
+      # fail-in-fixture cause on containerized runners; runners are ephemeral and
+      # self-clean, so ryuk adds no value here.
+      TESTCONTAINERS_RYUK_DISABLED: true
 
     steps:
       - name: Checkout Repository
@@ -170,6 +174,12 @@ jobs:
       - name: Restore
         run: dotnet restore tests/Sentinel.Contracts/Sentinel.Contracts.csproj --locked-mode
 
+      - name: Pre-pull Testcontainers Images
+        run: |
+          docker pull postgres:17-alpine
+          docker pull redis:7.4-alpine
+          docker pull quay.io/keycloak/keycloak:26.6.4
+
       - name: Run All Contract Tests
         run: >
           dotnet test tests/Sentinel.Contracts/Sentinel.Contracts.csproj
@@ -184,6 +194,9 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       SENTINEL_SNK_BASE64: ${{ secrets.SENTINEL_SNK_BASE64 }}
+      # See contract-gate: ryuk adds a startup failure mode with no benefit on
+      # ephemeral runners.
+      TESTCONTAINERS_RYUK_DISABLED: true
     strategy:
       fail-fast: false
       matrix:
@@ -216,6 +229,16 @@ jobs:
 
       - name: Restore
         run: dotnet restore ${{ matrix.test-project }} --locked-mode
+
+      - name: Pre-pull Testcontainers Images
+        run: |
+          docker pull postgres:17-alpine
+          docker pull postgres:16-alpine
+          docker pull redis:7.4-alpine
+          docker pull quay.io/keycloak/keycloak:26.6.4
+          docker pull quay.io/keycloak/keycloak:26.1
+          docker pull hashicorp/vault:1.15
+          docker pull ghcr.io/shopify/toxiproxy:2.11.0
 
       - name: Test
         if: matrix.test-project != 'tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj'

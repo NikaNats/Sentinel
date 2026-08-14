@@ -50,6 +50,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: baseline-sync
     timeout-minutes: 30
+    env:
+      # The Testcontainers ResourceReaper (ryuk) start is the classic all-tests-
+      # fail-in-fixture cause on containerized runners; runners are ephemeral and
+      # self-clean, so ryuk adds no value here.
+      TESTCONTAINERS_RYUK_DISABLED: true
     strategy:
       fail-fast: true # Any contract failure blocks the remaining suites immediately
       matrix:
@@ -78,6 +83,12 @@ jobs:
       - name: Generate Local CA/Keycloak Certificates (Keycloak fixture)
         if: matrix.suite == 'Keycloak'
         run: bash infra/certs/generate-certs.sh
+
+      - name: Pre-pull Testcontainers Images
+        run: |
+          docker pull postgres:17-alpine
+          docker pull redis:7.4-alpine
+          docker pull quay.io/keycloak/keycloak:26.6.4
 
       - name: Run ${{ matrix.suite }} Contract Tests
         run: >
