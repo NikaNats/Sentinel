@@ -1,6 +1,10 @@
 ﻿#!/usr/bin/env bash
 set -eu
 
+# Self-locating: always write artifacts next to this script regardless of the
+# invoking CWD (CI runs `bash infra/certs/generate-certs.sh` from the repo root).
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
 umask 077
 
 cat <<EOF > ca.ext
