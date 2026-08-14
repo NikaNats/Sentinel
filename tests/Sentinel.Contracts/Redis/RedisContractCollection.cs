@@ -47,8 +47,8 @@ public sealed class RedisContractFixture : IAsyncLifetime
     public async ValueTask DisposeAsync()
     {
         RawMultiplexer.Dispose();
-        ProviderA.Dispose();
-        ProviderB.Dispose();
+        await ProviderA.DisposeAsync();
+        await ProviderB.DisposeAsync();
         await _redis.DisposeAsync();
     }
 

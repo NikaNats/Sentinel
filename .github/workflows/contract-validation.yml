@@ -75,6 +75,10 @@ jobs:
       - name: Restore
         run: dotnet restore tests/Sentinel.Contracts/Sentinel.Contracts.csproj --locked-mode
 
+      - name: Generate Local CA/Keycloak Certificates (Keycloak fixture)
+        if: matrix.suite == 'Keycloak'
+        run: bash infra/certs/generate-certs.sh
+
       - name: Run ${{ matrix.suite }} Contract Tests
         run: >
           dotnet test tests/Sentinel.Contracts/Sentinel.Contracts.csproj

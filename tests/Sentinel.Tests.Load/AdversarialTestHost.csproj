@@ -8,6 +8,7 @@
     <IsPackable>false</IsPackable>
 
     <PublishAot>true</PublishAot>
+    <RuntimeIdentifiers>linux-x64;win-x64</RuntimeIdentifiers>
     <OptimizationPreference>Speed</OptimizationPreference>
     <ServerGarbageCollection>true</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
