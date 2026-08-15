@@ -12,7 +12,14 @@ using Sentinel.Redis.Extensions;
 using Sentinel.SdJwt;
 using Sentinel.Security.Abstractions.SSF;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    // Anchor the content root to the app directory so appsettings.json (shipped
+    // next to the binary) is loaded regardless of the launch working directory -
+    // the AOT gate boots the published binary from the repo root.
+    ContentRootPath = AppContext.BaseDirectory,
+    Args = args
+});
 
 builder.WebHost.ConfigureKestrel(options =>
 {

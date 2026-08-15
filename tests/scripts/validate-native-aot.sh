@@ -130,13 +130,12 @@ check "root"           GET  "/"                                 "^200$"
 check "profile"        GET  "/api/v1/showcase/profile"          "^200$"
 
 # DTO-bound POST endpoints (anonymous / auth-required).
-# These return 400 under the kill switch on both JIT and Native AOT (the mock token
-# flow rejects the synthetic credentials before exchange) - the contract asserted
-# here is "never 5xx".
+# The mock endpoints return 200 (no real token flow is wired in this host); the
+# contract asserted here is "no 5xx, correct status, no serializer failures".
 check "token-exchange" POST "/api/system/security/auth/token-exchange" \
-  "^40[013]$" '{"externalToken":"fake","providerName":"google","codeVerifier":"abc"}'
+  "^200$" '{"externalToken":"fake","providerName":"google","codeVerifier":"abc"}'
 check "refresh"        POST "/api/system/security/auth/refresh" \
-  "^40[013]$" '{"refreshToken":"mock"}'
+  "^200$" '{"refreshToken":"mock"}'
 check "backchannel"    POST "/api/system/security/auth/backchannel-logout" "^200$"
 
 # Auth-required endpoints MUST be rejected with 401/403/400, never 5xx.
