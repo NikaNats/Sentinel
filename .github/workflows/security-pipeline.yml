@@ -174,6 +174,9 @@ jobs:
       - name: Restore
         run: dotnet restore tests/Sentinel.Contracts/Sentinel.Contracts.csproj --locked-mode
 
+      - name: Generate Local CA/Keycloak Certificates (Keycloak fixture)
+        run: bash infra/certs/generate-certs.sh
+
       - name: Pre-pull Testcontainers Images
         run: |
           docker pull postgres:17-alpine

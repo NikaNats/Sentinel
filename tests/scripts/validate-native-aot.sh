@@ -54,12 +54,14 @@ echo "==> Publishing $RID Native AOT binary"
 # is executed by the AdversarialTestHost at runtime. Downgrade exactly those two from
 # errors to warnings (WarningsNotAsErrors is used so the repo's NoWarn/CA suppressions
 # stay intact); the gate's real verdict is the runtime endpoint sweep below.
+# NOTE: %3B (not ';') is required inside -p: values - MSBuild's switch parser treats a
+# literal semicolon as a switch separator ("MSB1006: Property is not valid").
 dotnet publish "$PROJECT" \
   --configuration Release \
   --runtime "$RID" \
   --self-contained \
   -p:PublishAot=true \
-  "-p:WarningsNotAsErrors=IL2026;IL3050" \
+  -p:WarningsNotAsErrors=IL2026%3BIL3050 \
   -p:SkipGetBuildVersion=true \
   -p:NBGV_Disable=true \
   -o "$PUBLISH_DIR"
