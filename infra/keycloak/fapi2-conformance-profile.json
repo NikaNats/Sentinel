@@ -1,0 +1,36 @@
+{
+  "name": "fapi2-conformance-profile",
+  "executors": [
+    {
+      "executor": "pkce-enforcer",
+      "configuration": {
+        "auto-configure": "true"
+      }
+    },
+    {
+      "executor": "dpop-bind-enforcer",
+      "configuration": {
+        "auto-configure": "true",
+        "allow-only-refresh-token-binding": "false"
+      }
+    },
+    {
+      "executor": "secure-par-content",
+      "configuration": {}
+    },
+    {
+      "executor": "secure-signature-algorithm",
+      "configuration": {
+        "default-algorithm": "PS256",
+        "algorithm": [
+          "PS256",
+          "ES256"
+        ]
+      }
+    },
+    {
+      "executor": "secure-session",
+      "configuration": {}
+    }
+  ]
+}

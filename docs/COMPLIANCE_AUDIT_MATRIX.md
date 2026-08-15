@@ -33,6 +33,7 @@ This matrix maps international security standards, regulatory frameworks, and co
 | **RFC 9901** | Selective Disclosure JWT (SD-JWT) presentation and verification | Implemented | `src/Sentinel.SdJwt/`, `tests/Sentinel.Tests.Integration/Integration/SdJwtFlowIntegrationTests.cs` |
 | **NIST 800-63B** | Authentication Assurance (AAL3) via WebAuthn + ACR step-up | Implemented | `src/Sentinel.AspNetCore/Filters/AcrStepUpAuthorizationFilter.cs` |
 | **FIPS 204** | Post-Quantum Cryptographic signatures (ML-DSA) validation | Implemented | `src/Sentinel.Infrastructure/Cryptography/MlDsaSignatureVerifier.cs` |
+| **FAPI 2.0 Security Profile (OIDF Conformance)** | Third-party verifiable conformance against the OIDF suite (DPoP, PAR, private_key_jwt) | Partial | `.github/workflows/fapi-conformance-gate.yml`, `infra/dast/scripts/run-fapi-conformance.sh`; PASSED result + certificate pending first hosted-suite run (`docs/OIDF_FAPI_CONFORMANCE_RUNBOOK.md`) |
 
 ---
 
@@ -144,3 +145,4 @@ This matrix maps international security standards, regulatory frameworks, and co
 - [x] **Image Signing (Sigstore / cosign):** `sign-publish` job (release branches) attaches the SPDX SBOM and keylessly signs the container image (Fulcio), then cosign-verifies its certificate identity as the release gate.
 - [x] **Test Suite Matrix Completeness:** `test-suites` now executes all registered unit/integration test projects (including `DPoP`, `Session`, `SSF`, `Concurrency`) plus the Docker-enabled `acceptance-e2e` (Reqnroll FAPI/CAEP evidence) job.
 - [ ] Implement CI-based automated OpenAPI drift detection to verify contract alignment with route mappings.
+- [ ] **OIDF FAPI 2.0 Conformance PASSED:** run `fapi-conformance-gate.yml` against the hosted suite with a publicly routable staging Keycloak; archive `fapi-certificate.pdf` + `fapi-evidence-manifest.txt` under `docs/compliance/` and link from this matrix (prerequisites and triage matrix: `docs/OIDF_FAPI_CONFORMANCE_RUNBOOK.md`).

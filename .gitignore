@@ -150,6 +150,9 @@ local.settings.json
 # DAST run artifacts (local scans generate SARIF/txt under artifacts/)
 infra/dast/artifacts/
 
+# OIDF FAPI conformance evidence + per-plan client JWKS (never commit; archive via CI artifact)
+artifacts/fapi/
+
 # Python (contract tooling bytecode cache)
 __pycache__/
 *.pyc

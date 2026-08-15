@@ -1,4 +1,4 @@
-.PHONY: build test mutation lint sec-scan up down infra-audit chaos-up chaos-down chaos-inject chaos-load chaos-validate chaos-gate all
+.PHONY: build test mutation lint sec-scan up down infra-audit fapi-conformance fapi-conformance-local chaos-up chaos-down chaos-inject chaos-load chaos-validate chaos-gate all
 
 build:
 	dotnet restore Sentinel.slnx --locked-mode
@@ -29,6 +29,20 @@ infra-audit: up
 	@echo "Waiting for containers to become healthy..."
 	sleep 15
 	bash tests/infrastructure-tls-audit.sh
+
+# ─── OIDF FAPI 2.0 Conformance (staging) ─────────────────────────────────────
+# Runs the official OpenID Foundation FAPI 2.0 Conformance Suite against the
+# PUBLICLY REACHABLE staging Keycloak and archives the certificate + evidence
+# manifest under artifacts/fapi/. Requires the FAPI_SUITE_* / KC_ADMIN_*
+# environment variables (see docs/OIDF_FAPI_CONFORMANCE_RUNBOOK.md).
+fapi-conformance:
+	@echo "==> Running OIDF FAPI 2.0 Conformance Suite..."
+	bash infra/dast/scripts/run-fapi-conformance.sh
+
+fapi-conformance-local:
+	@echo "==> Running FAPI conformance against the local docker-compose stack (self-hosted suite only)..."
+	FAPI_PROVISION_HOOK=infra/keycloak/scripts/provision-fapi-conformance-clients.sh \
+	bash infra/dast/scripts/run-fapi-conformance.sh
 
 # ─── Distributed Chaos Engineering (KinD + Chaos Mesh + k6) ───────────────────
 # A KinD cluster with Chaos Mesh (eBPF) and the Sentinel stack. Run each chaos

@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# provision-fapi-conformance-clients.sh - registers the OIDF Conformance clients
+# in Keycloak with the exact FAPI 2.0 posture the suite exercises.
+#
+# The OIDF suite generates a per-plan signing keypair and uses private_key_jwt
+# client authentication. Keycloak must trust those public keys BEFORE the plan
+# starts - hence this hook is driven by run-fapi-conformance.sh (FAPI_PROVISION_HOOK),
+# which passes the suite-extracted JWKS files as FAPI_CLIENT_JWKS/FAPI_CLIENT2_JWKS.
+#
+# TWO clients are registered (the suite tests client mixup attacks and requires
+# distinct keys per client - see https://openid.net/certification/certification-fapi_op_testing/):
+#   sentinel-fapi-conformance          (primary)
+#   sentinel-fapi-conformance-mixup    (second client, different key)
+#
+# Required environment:
+#   KC_ADMIN_URL         Keycloak base URL (e.g. https://keycloak.staging.sentinel.io)
+#   KC_REALM             realm to provision into (default sentinel-dast)
+#   KC_ADMIN_USER / KC_ADMIN_PASSWORD  or  KC_ADMIN_TOKEN (master realm)
+#   FAPI_CLIENT_JWKS     path to the suite-generated public JWKS for client 1
+#   FAPI_CLIENT2_JWKS    path to the suite-generated public JWKS for client 2
+#   FAPI_CLIENT_ID / FAPI_CLIENT2_ID  client ids (defaults match run-fapi-conformance.sh)
+#   KCADM_BIN            optional explicit path to kcadm.sh
+#
+# Requirements: python3 + the `cryptography` package (JWKS -> PEM conversion;
+# preinstalled on GitHub-hosted ubuntu runners), or the Keycloak admin console
+# for manual JWKS upload (see docs/OIDF_FAPI_CONFORMANCE_RUNBOOK.md).
+set -euo pipefail
+
+KC_ADMIN_URL="${KC_ADMIN_URL:?KC_ADMIN_URL is required}"
+KC_REALM="${KC_REALM:-sentinel-dast}"
+CLIENT_ID="${FAPI_CLIENT_ID:-sentinel-fapi-conformance}"
+CLIENT2_ID="${FAPI_CLIENT2_ID:-sentinel-fapi-conformance-mixup}"
+JWKS1="${FAPI_CLIENT_JWKS:?FAPI_CLIENT_JWKS is required}"
+JWKS2="${FAPI_CLIENT2_JWKS:?FAPI_CLIENT2_JWKS is required}"
+
+KCADM="${KCADM_BIN:-kcadm.sh}"
+DOCKER_FALLBACK="${DOCKER_FALLBACK:-}"
+
+if ! command -v "$KCADM" >/dev/null 2>&1; then
+  if [ "$DOCKER_FALLBACK" = "true" ] && command -v docker >/dev/null 2>&1; then
+    KCADM="docker run --rm quay.io/keycloak/keycloak:26.6.4 /opt/keycloak/bin/kcadm.sh"
+    # kcadm inside the container cannot reach the host loopback; KC_ADMIN_URL must be routable from the container.
+  else
+    echo "::error::kcadm.sh not found. Install the Keycloak CLI, set KCADM_BIN, or use DOCKER_FALLBACK=true." >&2
+    exit 1
+  fi
+fi
+
+# Wrapper keeps "$@" quoted (no eval): KC_ADMIN_PASSWORD may contain shell
+# metacharacters. $KCADM expands unquoted by design - it can be a multi-word
+# docker command string; its value is operator-controlled, never a secret.
+kcadm() { $KCADM "$@"; }
+
+# JWKS -> SPKI PEM for the Keycloak static public-key attribute
+# (clientAuthenticatorType=client-jwt accepts a PEM public key via the REST API).
+if ! python3 -c "import cryptography" >/dev/null 2>&1; then
+  echo "::warning::Python 'cryptography' package missing - attempting pip3 install" >&2
+  if ! pip3 install --quiet cryptography; then
+    echo "::error::Failed to install 'cryptography'. Run the provisioner manually with a prepared PEM (see docs/OIDF_FAPI_CONFORMANCE_RUNBOOK.md)." >&2
+    exit 1
+  fi
+fi
+
+convert_jwks_to_pem() {
+  python3 - "$1" <<'PY'
+import base64, json, sys
+from cryptography.hazmat.primitives.asymmetric import rsa, ec
+from cryptography.hazmat.primitives import serialization
+
+def b64u(s):
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+with open(sys.argv[1], "r") as f:
+    jwks = json.load(f)
+keys = jwks.get("keys", [])
+if not keys:
+    raise SystemExit("JWKS contains no keys")
+key = keys[0]
+if key["kty"] == "RSA":
+    pub = rsa.RSAPublicNumbers(int.from_bytes(b64u(key["e"]), "big"),
+                               int.from_bytes(b64u(key["n"]), "big")).public_key()
+elif key["kty"] == "EC":
+    crv = {"P-256": ec.SECP256R1, "P-384": ec.SECP384R1}[key["crv"]]
+    pub = ec.EllipticCurvePublicNumbers(
+        int.from_bytes(b64u(key["x"]), "big"),
+        int.from_bytes(b64u(key["y"]), "big"), crv()).public_key()
+else:
+    raise SystemExit(f"Unsupported JWK kty: {key['kty']}")
+print(pub.public_bytes(serialization.Encoding.PEM,
+                       serialization.PublicFormat.SubjectPublicKeyInfo).decode())
+PY
+}
+
+provision_client() {
+  local client_id="$1" jwks_file="$2" pem
+  echo "==> provisioning client '${client_id}' in realm '${KC_REALM}'"
+  [ -s "$jwks_file" ] || { echo "::error::JWKS file empty/missing: $jwks_file" >&2; exit 1; }
+  pem=$(convert_jwks_to_pem "$jwks_file")
+
+  local existing
+  existing=$(kcadm get clients -r "$KC_REALM" -q clientId="$client_id" 2>/dev/null | \
+    python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[0]["id"] if d else "")' 2>/dev/null || echo "")
+
+  local body
+  body=$(jq -n \
+    --arg clientId "$client_id" \
+    --arg pem "$pem" \
+    '{clientId:$clientId, name:"OIDF FAPI 2.0 Conformance client", enabled:true, publicClient:false,
+      standardFlowEnabled:true, serviceAccountsEnabled:false, directAccessGrantsEnabled:false,
+      clientAuthenticatorType:"client-jwt",
+      redirectUris:["https://www.certification.openid.net/test/a/*/callback",
+                   "https://www.certification.openid.net/test/a/*/callback?dummy1=lorem&dummy2=ipsum"],
+      attributes:{
+        "jwt.credential.public.key":$pem,
+        "token.endpoint.auth.signing.alg":"PS256",
+        "dpop.bound.access.tokens":"true",
+        "pkce.code.challenge.method":"S256",
+        "require.pushed.authorization.requests":"true"}}')
+
+  if [ -n "$existing" ]; then
+    echo "    client exists (${existing}) - updating FAPI attributes"
+    kcadm update "clients/$existing" -r "$KC_REALM" -b "$body"
+  else
+    kcadm create clients -r "$KC_REALM" -b "$body"
+  fi
+  echo "    client '${client_id}' configured (PS256 private_key_jwt + DPoP + PKCE S256 + PAR required)"
+}
+
+echo "==> authenticating kcadm against ${KC_ADMIN_URL}"
+if [ -n "${KC_ADMIN_TOKEN:-}" ]; then
+  kcadm config credentials --server "$KC_ADMIN_URL" --realm master --token "$KC_ADMIN_TOKEN" >/dev/null
+else
+  kcadm config credentials --server "$KC_ADMIN_URL" --realm master --user "$KC_ADMIN_USER" --password "$KC_ADMIN_PASSWORD" >/dev/null
+fi
+
+provision_client "$CLIENT_ID" "$JWKS1"
+provision_client "$CLIENT2_ID" "$JWKS2"
+
+echo "==> conformance clients provisioned. Redirect URIs:"
+echo "    https://www.certification.openid.net/test/a/*/callback"
+echo "    https://www.certification.openid.net/test/a/*/callback?dummy1=lorem&dummy2=ipsum"

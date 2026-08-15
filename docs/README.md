@@ -30,6 +30,7 @@ If you are new to the repository, read these documents in the recommended order 
 | **[KEYCLOAK_FAPI_ENFORCEMENT.md](KEYCLOAK_FAPI_ENFORCEMENT.md)** | IAM Operators, Platform Engineers | Keycloak 26.6.4 realm policy structure, 26.x executor IDs, DPoP runtime support, and documented enforcement gaps. | Verified |
 | **[CONTAINER_BUILD_READINESS.md](CONTAINER_BUILD_READINESS.md)** | DevOps, SRE | Multi-stage, rootless, and hardened Docker container release readiness. | **RELEASE-READY** |
 | **[DISTRIBUTED_CONCURRENCY_SPEC.md](DISTRIBUTED_CONCURRENCY_SPEC.md)** | Architects, SRE | Distributed state atomicity, TOCTOU mitigation, Coyote & Chaos Mesh verification. | **APPROVED** |
+| **[OIDF_FAPI_CONFORMANCE_RUNBOOK.md](OIDF_FAPI_CONFORMANCE_RUNBOOK.md)** | DevOps, Architects, Security | OIDF FAPI 2.0 conformance gate: network topology, Keycloak hardening, suite API integration, evidence custody, failure triage. | **ACTIVE** |
 | **[LIVING_THREAT_MODEL.md](LIVING_THREAT_MODEL.md)** | Security Engineers, SOC | Threat inventory (STRIDE/DREAD), mitigations, and residual risks. | Active |
 | **[OPENAPI_3_1.yaml](OPENAPI_3_1.yaml)** | API Consumers, Gateway | Machine-readable API contracts and schemas for gateway routing. | Active |
 | **[SDK_LESS_INTEGRATION_GUIDE.md](SDK_LESS_INTEGRATION_GUIDE.md)** | API Consumers | Handshake protocols, Nonce challenge-response, and raw HTTP examples. | Active |

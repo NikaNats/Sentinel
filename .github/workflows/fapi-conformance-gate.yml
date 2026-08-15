@@ -1,0 +1,58 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Sentinel OIDF FAPI 2.0 Conformance Gate.
+#
+# Runs the official OpenID Foundation FAPI 2.0 Conformance Suite (Security
+# Profile + DPoP variant, plain_fapi, private_key_jwt) against the PUBLICLY
+# REACHABLE staging Keycloak, archives the certificate + HTML report with a
+# SHA-256 chain-of-custody manifest, and gates release/** on PASSED.
+#
+# Prerequisites (see docs/OIDF_FAPI_CONFORMANCE_RUNBOOK.md):
+#   * environment 'staging-fapi' with the secrets below
+#   * staging Keycloak publicly routable with a CA-signed certificate
+#   * conformance clients trusted by Keycloak (auto-provisioned via
+#     FAPI_PROVISION_HOOK when the provision script can reach the admin API)
+name: FAPI 2.0 Conformance Gate
+
+on:
+  push:
+    branches: ["release/**", "main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  fapi-conformance:
+    name: OIDF FAPI 2.0 Conformance
+    runs-on: ubuntu-latest
+    environment: staging-fapi
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run FAPI 2.0 Conformance Suite
+        shell: bash
+        env:
+          FAPI_SUITE_URL: ${{ secrets.FAPI_SUITE_URL }}
+          FAPI_SUITE_TOKEN: ${{ secrets.FAPI_SUITE_TOKEN }}
+          ISSUER_URL: ${{ secrets.STAGING_KEYCLOAK_ISSUER }}
+          RESOURCE_URL: ${{ secrets.STAGING_API_RESOURCE_URL }}
+          FAPI_CLIENT_ID: "sentinel-fapi-conformance"
+          FAPI_CLIENT2_ID: "sentinel-fapi-conformance-mixup"
+          FAPI_PROVISION_HOOK: "infra/keycloak/scripts/provision-fapi-conformance-clients.sh"
+          KC_ADMIN_URL: ${{ secrets.STAGING_KEYCLOAK_ADMIN_URL }}
+          KC_ADMIN_USER: ${{ secrets.STAGING_KEYCLOAK_ADMIN_USER }}
+          KC_ADMIN_PASSWORD: ${{ secrets.STAGING_KEYCLOAK_ADMIN_PASSWORD }}
+          KC_REALM: ${{ secrets.STAGING_KEYCLOAK_REALM }}
+        run: |
+          bash infra/dast/scripts/run-fapi-conformance.sh
+
+      - name: Archive Conformance Evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fapi2-conformance-evidence-${{ github.sha }}
+          path: artifacts/fapi/
+          retention-days: 365
