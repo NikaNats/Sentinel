@@ -1,4 +1,5 @@
 using Sentinel.Security.Abstractions.Nonce;
+using Sentinel.Security.Diagnostics;
 
 namespace Sentinel.Redis.Stores;
 
@@ -161,6 +162,9 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
             }
             else
             {
+                // Emit SRE/SIEM OpenTelemetry signal for nonce mismatch or concurrent consumption race.
+                AuthTelemetry.DpopNonceMismatches.Add(1);
+
                 _logger.LogWarning("Atomic nonce consumption failed (mismatch or expired) for thumbprint: {Thumbprint}",
                     thumbprint);
             }

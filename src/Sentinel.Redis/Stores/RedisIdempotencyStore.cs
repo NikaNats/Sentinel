@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Sentinel.Security.Abstractions.Idempotency;
+using Sentinel.Security.Diagnostics;
 
 namespace Sentinel.Redis.Stores;
 
@@ -28,6 +29,9 @@ public sealed class RedisIdempotencyStore(
                 {
                     return (IdempotencyAcquireResult.Acquired, null);
                 }
+
+                // Emit SRE/SIEM OpenTelemetry signal for lock contention (another pod holds IN_PROGRESS).
+                AuthTelemetry.IdempotencyLockContentions.Add(1);
 
                 var state = await db.StringGetAsync(key);
                 if (state.IsNullOrEmpty)

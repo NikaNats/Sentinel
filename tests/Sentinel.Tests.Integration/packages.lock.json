@@ -862,6 +862,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.10, )",
           "Microsoft.Extensions.Logging": "[10.0.10, )",
           "NikaNats.Sentinel.Security.Abstractions": "[1.0.0, )",
+          "NikaNats.Sentinel.Security.Diagnostics": "[1.0.0, )",
           "StackExchange.Redis": "[3.0.17, )"
         }
       },

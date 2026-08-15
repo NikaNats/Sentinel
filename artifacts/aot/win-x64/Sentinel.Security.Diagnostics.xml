@@ -64,6 +64,16 @@
             Counter: Redis degradation events triggering node-local replay protection.
             </summary>
         </member>
+        <member name="F:Sentinel.Security.Diagnostics.AuthTelemetry.DpopNonceMismatches">
+            <summary>
+                Counter: Number of DPoP nonce mismatches, stale nonces, or failed compare-and-delete attempts.
+            </summary>
+        </member>
+        <member name="F:Sentinel.Security.Diagnostics.AuthTelemetry.IdempotencyLockContentions">
+            <summary>
+                Counter: Number of idempotency lock acquisition contentions (IN_PROGRESS collisions or retries).
+            </summary>
+        </member>
         <member name="T:Sentinel.Security.Diagnostics.Extensions.SecurityDiagnosticsBuilderExtensions">
             <summary>
                 Adds OpenTelemetry tracing and metrics wiring for Sentinel security diagnostics.

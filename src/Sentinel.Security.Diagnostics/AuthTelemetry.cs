@@ -70,4 +70,18 @@ public static class AuthTelemetry
     public static readonly Counter<long> RedisDegradedModeActivations = Meter.CreateCounter<long>(
         "auth.redis.degraded_mode_activations",
         description: "Number of transitions into node-local replay protection mode.");
+
+    /// <summary>
+    ///     Counter: Number of DPoP nonce mismatches, stale nonces, or failed compare-and-delete attempts.
+    /// </summary>
+    public static readonly Counter<long> DpopNonceMismatches = Meter.CreateCounter<long>(
+        "auth.dpop.nonce_mismatch_total",
+        description: "Number of DPoP nonce mismatch, stale presentation, or atomic consumption failure events.");
+
+    /// <summary>
+    ///     Counter: Number of idempotency lock acquisition contentions (IN_PROGRESS collisions or retries).
+    /// </summary>
+    public static readonly Counter<long> IdempotencyLockContentions = Meter.CreateCounter<long>(
+        "auth.idempotency.lock_contention_total",
+        description: "Number of idempotency lock acquisition contentions under concurrent load.");
 }
