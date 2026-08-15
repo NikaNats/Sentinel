@@ -1,7 +1,7 @@
 # Keycloak FAPI 2.0 Enforcement (26.6.4)
 
 > **Document ID**: DOC-0016
-> **Last Updated**: 2026-08-10
+> **Last Updated**: 2026-08-15
 > **Applies To**: `infra/keycloak/realms/sentinel.json`, `infra/keycloak/realms/sentinel-dast.json`, `src/Sentinel.Keycloak`
 > **Status**: Live enforcement verified by `Sentinel.Contracts` Keycloak suite (41/41) and live probes
 
@@ -52,6 +52,84 @@ active.
   the `KC_RESTART` cookie (Keycloak 26 login form behavior).
 - **eventsListeners**: `["jboss-logging"]` only — the phantom `event-queue`
   listener emitted `KC-SERVICES0083` errors on every event.
+
+## WebAuthn AAL3 (NIST 800-63B) — realm configuration
+
+Added 2026-08-15, verified against a live Keycloak **26.6.4** container
+(`--import-realm`, admin API introspection). Both realm files carry the same
+configuration; the DAST realm keeps `rpId localhost` and no client binding.
+
+### WebAuthn policy (realm `attributes`)
+
+| Attribute | Value | Rationale |
+|---|---|---|
+| `webAuthnPolicyRpEntityName` | `Sentinel Government` / `Sentinel DAST` | RP display name |
+| `webAuthnPolicyRpId` | `sentinel.local` / `localhost` | per-realm origin anchor |
+| `webAuthnPolicySignatureAlgorithms` | `"ES256,RS256"` | **comma-separated string** — arrays fail import (`Cannot deserialize value of type java.lang.String from Array value`) |
+| `webAuthnPolicyAttestationConveyancePreference` | `direct` | MDS3-validatable attestation (FR-10) |
+| `webAuthnPolicyAuthenticatorAttachment` | `cross-platform` | AAL3-appropriate |
+| `webAuthnPolicyRequireResidentKey` | `required` | valid values are `required/preferred/discouraged` (PLAN-0001's `"Yes"` is invalid) |
+| `webAuthnPolicyUserVerificationRequirement` | `required` | FR-09 |
+| `webAuthnPolicyCreateTimeout` | `300` | seconds |
+| `webAuthnPolicyAvoidSameAuthenticatorRegister` | `false` | |
+| `webAuthnPolicyAcceptableAaguids` / `webAuthnPolicyExtraOrigins` | `""` | empty string, not array (same deserialization rule) |
+| `acr.loa.map` | `{"government-aal3-browser":"acr3"}` | FR-11: `acr3` after this flow |
+| brute force (realm level) | `bruteForceProtected: true`, `failureFactor: 5`, `maxDeltaTimeSeconds: 600` | FR-14 (already present) |
+
+### Flow tree (`government-aal3-browser`)
+
+```
+government-aal3-browser
+├─ [ALTERNATIVE] Cookie
+├─ [ALTERNATIVE] Identity Provider Redirector
+└─ [ALTERNATIVE] gov-aal3-forms
+   ├─ [REQUIRED] Username Password Form
+   ├─ [REQUIRED] WebAuthn Authenticator          (UV=required enforced by policy)
+   └─ [CONDITIONAL] gov-aal3-otp-recovery
+      ├─ [REQUIRED] Condition - user configured   (config: alias=CONFIGURE_TOTP)
+      └─ [REQUIRED] OTP Form
+```
+
+- `webauthn-register` required action: enabled, **default action** (priority 10)
+  → FR-13 (credential enrollment on first login).
+- FR-12 (TOTP *only* as recovery after repeated WebAuthn failure) cannot be
+  expressed natively: Keycloak has no "N failures → TOTP" condition. The
+  implemented form is `Condition - user configured` + OTP Form — TOTP is
+  offered to users who configured it. A failure-count trigger requires a
+  custom authenticator SPI (documented limitation, not blocking).
+
+### Client binding — not importable, applied via admin API
+
+Single-file realm import on 26.6.4 fails when a client carries
+`authenticationFlowBindingOverrides.browser` referencing a *custom* flow:
+
+```
+ERROR: Unable to resolve auth flow binding override for: browser
+```
+
+The flow imports fine; only the client→flow binding fails. Apply it after
+import with the idempotent helper (same kcadm conventions as the FAPI
+provisioner):
+
+```bash
+KC_ADMIN_URL=https://keycloak:8443 \
+KC_REALM=sentinel \
+KC_ADMIN_USER=admin KC_ADMIN_PASSWORD=... \
+DOCKER_FALLBACK=true infra/keycloak/scripts/apply-browser-flow-bindings.sh
+```
+
+Default binding: `sentinel-api-client` → `government-aal3-browser`
+(override via `BINDINGS="clientId=flowAlias ..."`).
+
+### kcadm-in-docker fallback notes (Windows/Git Bash)
+
+Each `kcadm` call is a separate `--rm` container, so the session must survive
+across invocations — and the image's `user.home` is the **passwd home of the
+uid** (`keycloak` user → `/opt/keycloak`, root → `/root`). The fallback uses
+`-u root -v kcadm-credentials:/root/.keycloak` + `--entrypoint
+/opt/keycloak/bin/kcadm.sh` (the `kc.sh` entrypoint has no kcadm dispatch).
+`MSYS_NO_PATHCONV=1` prevents Git Bash from converting `/opt/...` to a Windows
+path, and `python3` is detected with a `python` fallback (Windows Store alias).
 
 ## Runtime DPoP client support
 

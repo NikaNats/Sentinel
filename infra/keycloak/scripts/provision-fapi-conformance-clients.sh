@@ -40,7 +40,11 @@ DOCKER_FALLBACK="${DOCKER_FALLBACK:-}"
 
 if ! command -v "$KCADM" >/dev/null 2>&1; then
   if [ "$DOCKER_FALLBACK" = "true" ] && command -v docker >/dev/null 2>&1; then
-    KCADM="docker run --rm quay.io/keycloak/keycloak:26.6.4 /opt/keycloak/bin/kcadm.sh"
+    # kcadm persists its session under Java user.home (the passwd home of the
+    # uid; the image's keycloak user has home=/opt/keycloak, root=/root). A
+    # named volume at /root/.keycloak keeps the session across the --rm
+    # invocations (each kcadm call is a separate container).
+    KCADM="docker run --rm -u root -v kcadm-credentials:/root/.keycloak --entrypoint /opt/keycloak/bin/kcadm.sh quay.io/keycloak/keycloak:26.6.4"
     # kcadm inside the container cannot reach the host loopback; KC_ADMIN_URL must be routable from the container.
   else
     echo "::error::kcadm.sh not found. Install the Keycloak CLI, set KCADM_BIN, or use DOCKER_FALLBACK=true." >&2
@@ -51,11 +55,24 @@ fi
 # Wrapper keeps "$@" quoted (no eval): KC_ADMIN_PASSWORD may contain shell
 # metacharacters. $KCADM expands unquoted by design - it can be a multi-word
 # docker command string; its value is operator-controlled, never a secret.
-kcadm() { $KCADM "$@"; }
+# Under MSYS (Git Bash on Windows) docker.exe path-converts /opt/... into a
+# Windows path; MSYS_NO_PATHCONV=1 keeps the in-container path intact.
+if [ -n "${MSYSTEM:-}" ]; then
+  kcadm() { MSYS_NO_PATHCONV=1 $KCADM "$@"; }
+else
+  kcadm() { $KCADM "$@"; }
+fi
+
+# python3 is a Windows Store alias stub under Git Bash; prefer the real interpreter.
+if command -v python3 >/dev/null 2>&1 && python3 -c "import sys" >/dev/null 2>&1; then
+  PYTHON_CMD="python3"
+else
+  PYTHON_CMD="python"
+fi
 
 # JWKS -> SPKI PEM for the Keycloak static public-key attribute
 # (clientAuthenticatorType=client-jwt accepts a PEM public key via the REST API).
-if ! python3 -c "import cryptography" >/dev/null 2>&1; then
+if ! $PYTHON_CMD -c "import cryptography" >/dev/null 2>&1; then
   echo "::warning::Python 'cryptography' package missing - attempting pip3 install" >&2
   if ! pip3 install --quiet cryptography; then
     echo "::error::Failed to install 'cryptography'. Run the provisioner manually with a prepared PEM (see docs/OIDF_FAPI_CONFORMANCE_RUNBOOK.md)." >&2
@@ -64,7 +81,7 @@ if ! python3 -c "import cryptography" >/dev/null 2>&1; then
 fi
 
 convert_jwks_to_pem() {
-  python3 - "$1" <<'PY'
+  $PYTHON_CMD - "$1" <<'PY'
 import base64, json, sys
 from cryptography.hazmat.primitives.asymmetric import rsa, ec
 from cryptography.hazmat.primitives import serialization
@@ -101,7 +118,7 @@ provision_client() {
 
   local existing
   existing=$(kcadm get clients -r "$KC_REALM" -q clientId="$client_id" 2>/dev/null | \
-    python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[0]["id"] if d else "")' 2>/dev/null || echo "")
+    $PYTHON_CMD -c 'import json,sys; d=json.load(sys.stdin); print(d[0]["id"] if d else "")' 2>/dev/null || echo "")
 
   local body
   body=$(jq -n \
