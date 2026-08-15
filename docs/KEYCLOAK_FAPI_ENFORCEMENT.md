@@ -1,9 +1,9 @@
 # Keycloak FAPI 2.0 Enforcement (26.6.4)
 
 > **Document ID**: DOC-0016
-> **Last Updated**: 2026-08-15
+> **Last Updated**: 2026-08-16
 > **Applies To**: `infra/keycloak/realms/sentinel.json`, `infra/keycloak/realms/sentinel-dast.json`, `src/Sentinel.Keycloak`
-> **Status**: Live enforcement verified by `Sentinel.Contracts` Keycloak suite (41/41) and live probes
+> **Status**: Live enforcement verified by `Sentinel.Contracts` Keycloak suite (41/41), live probes, and the browser-mediated FAPI 2.0 E2E suite (8/8, `Sentinel.Tests.Integration.Federation`)
 
 ## Context
 
@@ -147,12 +147,71 @@ The Sentinel runtime signs every outbound token-endpoint call:
 Verified live against Keycloak 26.6.4: PS256-proof client_credentials → 200,
 `token_type=DPoP`; no-proof → 400.
 
+## Browser-mediated FAPI 2.0 E2E (Playwright, added 2026-08-16)
+
+`tests/Sentinel.Tests.Integration/Integration/Federation/` runs the full
+interactive flow against a real Keycloak **26.6.4** container (repo-pinned
+image, HTTPS 8443 with `infra/certs/`, `sentinel-dast` realm imported as-is,
+headless Chromium via `Microsoft.Playwright` 1.52.0):
+
+PAR (nonce + `dpop_jkt`) → browser login (`dast-victim-user`) → redirect to the
+registered `http://localhost:8081/callback` (served by an in-fixture
+`CallbackServer`, see below) → DPoP-bound token exchange → protected resource
+(Keycloak userinfo).
+
+| # | Asserted behavior | Live-verified result |
+|---|---|---|
+| 1 | PAR returns RFC 9126 `request_uri`, TTL ≤ 60 s | passes |
+| 2 | Full flow issues a code, `token_type=DPoP`, `cnf.jkt` == the `dpop_jkt` thumbprint sent in PAR | passes (sender constraint enforced) |
+| 3 | `nonce` from PAR round-trips into the `id_token` | passes |
+| 4 | DPoP proof without nonce and with a fabricated nonce are both accepted | passes — Keycloak 26.6.4 issues **no** `DPoP-Nonce` under this policy; the nonce claim is accepted but not validated |
+| 5 | Reused `request_uri` is rejected | passes — **error page** (HTTP 400, no redirect, no `error` param) |
+| 6 | Direct `/authorize` without PAR is rejected | passes — error page mentioning `request_uri` |
+| 7 | Expired `request_uri` (60 s TTL) is rejected | passes — error page |
+| 8 | Wrong PKCE verifier | passes — `400 {"error":"invalid_grant","error_description":"PKCE verification failed: Invalid code verifier"}` |
+| 9 | `plain` PKCE method | passes — `400 Invalid parameter: code challenge method is not matching the configured one` |
+| 10 | DPoP proof replay (`jti` reuse) against the Keycloak userinfo endpoint | documented — KC performs no jti-replay check of its own; Sentinel's Redis-backed `JtiReplayCache` covers replay rejection |
+
+Corrections applied to the original ADR-2026-004 plan after live probing:
+
+1. **`nonce` is required** in the pushed authorization request — authorize
+   rejects PAR without it (`Missing parameter: nonce`). The client always
+   generates one.
+2. **Enforcement violations surface as Keycloak error pages**, not OAuth error
+   redirects — the suite detects the rendered page.
+3. **No `DPoP-Nonce` is ever issued** — the nonce challenge-response path in
+   `Fapi2BrowserClient` exists for RFC 9449 completeness but is a no-op here;
+   tests assert absence.
+4. **Playwright route interception does not catch 302-followed navigations**
+   (verified empirically on 1.52.0: the redirect request is sent un-routed and
+   fails with `ERR_CONNECTION_REFUSED`). The callback is served by an in-test
+   `CallbackServer` (raw `TcpListener` on `127.0.0.1:8081` answering empty
+   200s) instead — this is the ADR's "dummy app", embedded in the fixture.
+5. **`Microsoft.Playwright` requires reflection-based System.Text.Json** for
+   its driver protocol; the repo-wide
+   `JsonSerializerIsReflectionEnabledByDefault=false`
+   (`Directory.Build.props`) breaks `Playwright.CreateAsync`. The opt-out is
+   scoped to `Sentinel.Tests.Integration.csproj` only; production sources keep
+   source-generated serialization.
+6. The DAST realm needs **no changes** for the suite: `sentinel-dast-victim`
+   (public, PAR-required, PKCE S256, DPoP-bound, redirect
+   `http://localhost:8081/callback`) and `dast-victim-user` already exist;
+   `webauthn-register` (default action) does not interfere with this user.
+
+Run locally: `dotnet build tests/Sentinel.Tests.Integration -c Release`, then
+`powershell -NoProfile -ExecutionPolicy Bypass -File
+tests/Sentinel.Tests.Integration/bin/Release/net10.0/playwright.ps1 install
+chromium`, then `dotnet test tests/Sentinel.Tests.Integration -c Release
+--no-build --filter "Category=E2E"`. CI: the `test-suites` matrix builds the
+Integration project and installs Chromium with `--with-deps` before testing.
+
 ## Gaps (documented deviations)
 
-1. **Interactive login DPoP**: the browser login flow (authorization code +
-   PKCE) cannot yet present DPoP proofs at the token endpoint. The API-side
-   implementation (backend-for-frontend) must adopt RFC 9449 proof signing in
-   the browser layer before interactive logins can run against this posture.
+1. **Interactive login DPoP in the Sentinel runtime**: the browser-mediated
+   flow is proven end-to-end by the Playwright suite (PAR + PKCE S256 + DPoP
+   against a real client); what is still missing is the runtime-side
+   (backend-for-frontend) browser-layer proof signing, so Sentinel's own
+   interactive logins cannot yet present DPoP proofs at the token endpoint.
 2. **holder-of-key (mTLS)**: `holder-of-key-enforcer` is intentionally not in
    the profiles — no mTLS ingress is provisioned, and enabling it yields
    `400 Client Certification missing for MTLS HoK Token Binding`. Configured

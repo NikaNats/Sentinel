@@ -243,6 +243,15 @@ jobs:
           docker pull hashicorp/vault:1.15
           docker pull ghcr.io/shopify/toxiproxy:2.11.0
 
+      - name: Build Integration (generates Playwright CLI)
+        if: matrix.test-project == 'tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj'
+        run: dotnet build ${{ matrix.test-project }} --configuration Release --no-restore --nologo -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
+
+      - name: Install Playwright Chromium (browser-mediated FAPI 2.0 E2E)
+        if: matrix.test-project == 'tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj'
+        run: |
+          pwsh tests/Sentinel.Tests.Integration/bin/Release/net10.0/playwright.ps1 install chromium --with-deps
+
       - name: Test
         if: matrix.test-project != 'tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj'
         run: dotnet test ${{ matrix.test-project }} --configuration Release --no-restore --logger "console;verbosity=detailed" -p:SkipGetBuildVersion=true -p:NBGV_Disable=true

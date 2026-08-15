@@ -75,6 +75,8 @@
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.13.0" />
     <PackageVersion Include="Testcontainers.Redis" Version="4.13.0" />
     <PackageVersion Include="TngTech.ArchUnitNET" Version="0.13.3" />
+    <!-- E2E browser automation (FAPI 2.0 browser-mediated flow tests) -->
+    <PackageVersion Include="Microsoft.Playwright" Version="1.52.0" />
     <!-- API Compatibility & Source Generation -->
     <PackageVersion Include="System.ComponentModel.Annotations" Version="5.0.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />

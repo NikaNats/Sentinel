@@ -7,6 +7,12 @@
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- Microsoft.Playwright's driver protocol serializes its RPC payloads with
+         reflection-based System.Text.Json, which throws when the repo-wide
+         JsonSerializerIsReflectionEnabledByDefault=false (Directory.Build.props)
+         is in effect (Playwright.CreateAsync fails). Scope the opt-out to this
+         test-only project: production sources keep source-generated serialization. -->
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,6 +31,7 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
+    <PackageReference Include="Microsoft.Playwright" />
   </ItemGroup>
 
   <ItemGroup>
