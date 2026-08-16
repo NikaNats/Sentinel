@@ -77,6 +77,11 @@ jobs:
           cache: true
           cache-dependency-path: 'Directory.Packages.props'
 
+      - name: Install dotnet-ef tool
+        run: |
+          dotnet tool restore
+          dotnet ef --version
+
       - name: Setup Kubernetes (KinD)
         uses: helm/kind-action@v1.14.0
         with:

@@ -136,7 +136,7 @@ async function signProof(entry, cryptoKey, method, url, nonce) {
   return proof;
 }
 
-async function signProofFor(entry, method, url, nonce) {
+export async function signProofFor(entry, method, url, nonce) {
   if (signerOverride) {
     const t0 = Date.now();
     const proof = signerOverride(method, url, JSON.stringify(entry.jwk), {

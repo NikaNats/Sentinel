@@ -61,7 +61,7 @@ export const options = {
   },
 };
 
-async function doTransfer(entry, nonce) {
+async function doTransfer(entry, token, nonce) {
   const proof = await signProofFor(entry, 'POST', `${BASE_URL}/api/v1/finance/transfer`, nonce);
   const params = {
     headers: {
@@ -94,13 +94,13 @@ export default async function () {
   // proof whose key thumbprint does not match the token's cnf.jkt).
   const entry = getPoolEntry(__VU);
   const token = entry.token || '';
-  let { res } = await doTransfer(entry, null);
+  let { res } = await doTransfer(entry, token, null);
 
   let attempts = 1;
   while (USE_NONCE && attempts < MAX_NONCE_RETRIES && (res.status === 401 || res.status === 400)) {
     const nonceHeader = res.headers['dpop-nonce'];
     if (!nonceHeader) break;
-    const next = await doTransfer(entry, nonceHeader);
+    const next = await doTransfer(entry, token, nonceHeader);
     res = next.res;
     attempts += 1;
   }
