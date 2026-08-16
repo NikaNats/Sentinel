@@ -1,0 +1,41 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Staging ingress for Keycloak (FAPI 2.0 OIDF Conformance Gate, DOC-0017 §1).
+# Requires ingress-nginx and the keycloak-staging-tls secret (same secret the
+# deployment mounts) containing a public-CA certificate for the host.
+#
+# Reuses the TLS configuration already gating in the DAST pipeline
+# (infra/dast/nuclei/templates/tls-version.yaml enforces TLS 1.2/1.3) - the
+# OIDF Conformance Suite rejects anything else. The ingress MUST preserve the
+# Host header and X-Forwarded-Proto (no rewrites), because Keycloak runs with
+# KC_PROXY_HEADERS=xforwarded and the suite's DPoP htu/htm checks compare
+# against the public issuer URL.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/part-of: sentinel
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: 8m
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+    - hosts:
+        - keycloak.staging.sentinel.io
+      secretName: keycloak-staging-tls
+  rules:
+    - host: keycloak.staging.sentinel.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  number: 8443

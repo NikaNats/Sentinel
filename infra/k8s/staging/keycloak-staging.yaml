@@ -1,0 +1,229 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Staging Keycloak for the FAPI 2.0 OIDF Conformance Gate (DOC-0017 Phase 1).
+# Deployed in the "staging" namespace. The cloud-hosted OIDF Conformance Suite
+# must reach this AS over public DNS with CA-signed TLS - self-signed certs
+# are rejected by the suite (see docs/OIDF_FAPI_CONFORMANCE_RUNBOOK.md §1).
+#
+# Prerequisites (see infra/staging/provision-staging-tls.sh):
+#   1. Secret "keycloak-staging-tls"   - tls.crt / tls.key (Let's Encrypt or ACM)
+#   2. Secret "keycloak-staging-admin" - KEYCLOAK_ADMIN / KEYCLOAK_ADMIN_PASSWORD
+#   3. ConfigMap "sentinel-realm-config" with sentinel-dast.json:
+#        kubectl create configmap sentinel-realm-config -n staging \
+#          --from-file=infra/keycloak/realms/sentinel-dast.json
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: staging
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/part-of: sentinel
+    app.kubernetes.io/component: staging
+  annotations:
+    checkov.io/skip1: CKV_K8S_35=admin credentials are injected from the keycloak-staging-admin Secret via secretKeyRef (never plaintext); Keycloak's configuration contract is environment-variable based
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 0
+        fsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.1
+          imagePullPolicy: Always
+          args:
+            - start
+            - --import-realm
+          env:
+            - name: KEYCLOAK_ADMIN
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-staging-admin
+                  key: KEYCLOAK_ADMIN
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-staging-admin
+                  key: KEYCLOAK_ADMIN_PASSWORD
+            - name: KC_FEATURES
+              value: dpop,par
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: KC_METRICS_ENABLED
+              value: "true"
+            - name: KC_HTTP_ENABLED
+              value: "false"
+            - name: KC_HTTPS_ENABLED
+              value: "true"
+            - name: KC_HTTPS_PORT
+              value: "8443"
+            - name: KC_HTTPS_CERTIFICATE_FILE
+              value: /opt/keycloak/certs/tls.crt
+            - name: KC_HTTPS_CERTIFICATE_KEY_FILE
+              value: /opt/keycloak/certs/tls.key
+            - name: KC_HTTPS_PROTOCOLS
+              value: TLSv1.3
+            - name: KC_HOSTNAME
+              value: keycloak.staging.sentinel.io
+            - name: KC_PROXY_HEADERS
+              value: xforwarded
+          ports:
+            - name: https
+              containerPort: 8443
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /opt/keycloak/data
+            - name: tmp
+              mountPath: /tmp
+            - name: certs
+              mountPath: /opt/keycloak/certs
+              readOnly: true
+            - name: realm
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+          readinessProbe:
+            httpsGet:
+              path: /health/ready
+              port: 8443
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpsGet:
+              path: /health/live
+              port: 8443
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: certs
+          secret:
+            secretName: keycloak-staging-tls
+            defaultMode: 0440
+        - name: realm
+          configMap:
+            name: sentinel-realm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: keycloak
+spec:
+  selector:
+    app.kubernetes.io/name: keycloak
+  ports:
+    - name: https
+      port: 8443
+      targetPort: 8443
+---
+# Default-deny for the staging namespace (mirrors infra/k8s/sentinel-network-policy.yaml).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: staging-default-deny-ingress
+  namespace: staging
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# The OIDF Conformance Suite reaches the AS through the ingress-nginx
+# controller; everything else is denied by staging-default-deny-ingress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: staging-keycloak-allow-ingress-nginx
+  namespace: staging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: staging-default-deny-egress
+  namespace: staging
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+---
+# Cluster DNS only; Keycloak needs no outbound connectivity for the gate.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: staging-keycloak-allow-dns
+  namespace: staging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+

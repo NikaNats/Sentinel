@@ -2,7 +2,7 @@
 
 > **Document ID**: DOC-0017
 > **Status**: ACTIVE
-> **Governs**: `.github/workflows/fapi-conformance-gate.yml` (remote gate), `security-pipeline.yml` → `fapi-local-preflight` (local pre-flight), `infra/dast/scripts/run-fapi-conformance.sh`, `infra/keycloak/scripts/provision-fapi-conformance-clients.sh`, `infra/keycloak/fapi2-conformance-profile.json`, `infra/fapi-conformance/` (local suite stack)
+> **Governs**: `.github/workflows/fapi-conformance-gate.yml` (remote gate), `security-pipeline.yml` → `fapi-local-preflight` (local pre-flight), `infra/dast/scripts/run-fapi-conformance.sh`, `infra/keycloak/scripts/provision-fapi-conformance-clients.sh`, `infra/keycloak/fapi2-conformance-profile.json`, `infra/fapi-conformance/` (local suite stack), `infra/k8s/staging/` (staging AS manifests), `infra/staging/provision-staging-tls.sh`, `infra/staging/verify-fapi-readiness.sh`
 > **Objective**: A verifiable **PASSED** OIDF Conformance result against the FAPI 2.0 Security Profile (DPoP, plain_fapi, private_key_jwt), archived as cryptographically bound release evidence.
 
 This runbook closes the three systemic gaps in the previous conformance setup:
@@ -27,6 +27,36 @@ The OIDF Conformance Suite initiates outbound HTTP requests to the Authorization
 | Resource server | Public Sentinel API base URL for the suite's DPoP resource tests (`RESOURCE_URL`) | `https://api.staging.sentinel.io/` reachable over HTTPS |
 
 > **Deployment note**: TLS 1.3 is already enforced by the DAST gate (`tls-version.yaml`); reuse the same ingress/ingress-nginx TLS configuration for staging Keycloak. Do **not** use the self-signed `infra/certs` bundle — the suite will reject the chain.
+
+### 1.1 Staging manifests (in-repo)
+
+| Artifact | Purpose |
+|---|---|
+| `infra/k8s/staging/keycloak-staging.yaml` | Namespace + Keycloak deployment (TLS-only, `KC_HTTPS_PROTOCOLS=TLSv1.3`, `KC_PROXY_HEADERS=xforwarded`, DPoP+PAR features, realm import) + Service. Checkov-clean (mirrors the `infra/k8s/keycloak-deployment.yaml` hardening). |
+| `infra/k8s/staging/keycloak-staging-ingress.yaml` | ingress-nginx ingress terminating `keycloak.staging.sentinel.io` from the `keycloak-staging-tls` secret; must preserve `Host`/`X-Forwarded-Proto` for DPoP `htu`/`htm` checks. |
+| `infra/staging/provision-staging-tls.sh` | Provisions the public-CA certificate into secret `keycloak-staging-tls` — Let's Encrypt via cert-manager (`--issuer cert-manager`, default) or AWS ACM (`--issuer acm`). Idempotent; verifies DNS and certificate validity before exiting 0. |
+
+**Provisioning order** (one-time, runbook phase 1):
+
+```bash
+# 1. TLS secret (public CA - REQUIRED; the suite rejects self-signed certs)
+bash infra/staging/provision-staging-tls.sh --issuer cert-manager   # or --issuer acm
+
+# 2. Admin credentials secret (values from your secrets vault)
+kubectl create secret generic keycloak-staging-admin -n staging \
+  --from-literal=KEYCLOAK_ADMIN=<admin> \
+  --from-literal=KEYCLOAK_ADMIN_PASSWORD=<password>
+
+# 3. Realm import config map (ships the FAPI-hardened sentinel-dast realm)
+kubectl create configmap sentinel-realm-config -n staging \
+  --from-file=infra/keycloak/realms/sentinel-dast.json
+
+# 4. Deploy AS + ingress
+kubectl apply -f infra/k8s/staging/
+
+# 5. DNS: point keycloak.staging.sentinel.io at the ingress external IP,
+#    then re-run provision-staging-tls.sh to complete the ACME challenge.
+```
 
 ## 2. Phase 2 — Keycloak FAPI 2.0 Hardening
 
@@ -65,6 +95,32 @@ The runner extracts the suite-generated per-plan public JWKS from the plan objec
 > **Manual fallback** (no admin API access): run `run-fapi-conformance.sh` once without the hook; it archives the suite JWKS to `artifacts/fapi/jwks/`; upload `client-jwks.json` via Keycloak admin console → client → Credentials → *Upload JWKS*; then re-run the runner with `FAPI_PROVISION_HOOK` unset (provisioning skipped, plan continues).
 
 ## 3. Phase 3 — Suite API integration (what changed and why)
+
+### 3.1 Pre-flight readiness verification
+
+`infra/staging/verify-fapi-readiness.sh` runs **before** the suite starts (both in the remote gate and manually against staging). It fails fast with triage output instead of burning a certification attempt on a misconfigured AS. Eight checks:
+
+| # | Check | Failure symptom |
+|---|---|---|
+| 1 | Discovery 200 + `issuer` matches `KEYCLOAK_URL` | Issuer URL mismatch (see §5) |
+| 2 | `pushed_authorization_request_endpoint` advertised | PAR feature off — `KC_FEATURES=dpop,par` |
+| 3 | Realm keys: PS256 present, RS256 absent | Algorithm confusion (§5) |
+| 4 | Client policies bound (count > 0) | Wrong-slot policy import (§2.1) |
+| 5 | Client profiles present (count > 0) | Profile never imported |
+| 6 | DPoP feature enabled (`/admin/serverinfo`) | Feature flag off |
+| 7 | PAR feature enabled (`/admin/serverinfo`) | Feature flag off |
+| 8 | TLS 1.3 handshake (`openssl s_client -tls1_3`) | Reverse proxy TLS config |
+
+Manual run:
+
+```bash
+KEYCLOAK_URL=https://keycloak.staging.sentinel.io/realms/sentinel-dast \
+KC_ADMIN_URL=https://keycloak.staging.sentinel.io \
+KC_ADMIN_USER=... KC_ADMIN_PASSWORD=... \
+bash infra/staging/verify-fapi-readiness.sh
+```
+
+The remote gate (`fapi-conformance-gate.yml` → "Verify FAPI Readiness (Pre-flight)") passes the `STAGING_KEYCLOAK_*` secrets; a failing readiness check blocks the run before any suite API call is made.
 
 The previous runner posted the entire payload as the JSON body and read `planId`; the real suite API (verified against `openid/conformance-suite` and the authentik/credo-ts suite clients) is:
 
@@ -140,7 +196,14 @@ down in `always()`.
 
 ### 4.2 Remote (authoritative) gate
 
-`.github/workflows/fapi-conformance-gate.yml` runs on `release/**` + `main` and on demand, against GitHub environment `staging-fapi`. It uploads `artifacts/fapi/` (report pack, result JSON, certificate, manifest) with 365-day retention and the commit SHA in the artifact name. Configure these secrets:
+`.github/workflows/fapi-conformance-gate.yml` runs on `release/**` + on demand against GitHub environment `staging-fapi`. Pipeline:
+
+1. **Verify FAPI Readiness (Pre-flight)** — `infra/staging/verify-fapi-readiness.sh` (§3.1); a failed check fails the run before the suite is invoked.
+2. **Run FAPI 2.0 Conformance Suite** — any non-`PASSED` outcome exits non-zero → the workflow (and therefore the `release/**` push) is blocked.
+3. **Commit Evidence on PASSED** — archives `fapi2-certificate-<YYYY-MM-DD>.pdf` + `fapi-evidence-manifest.txt` into `docs/compliance/` and pushes to the release branch (skipped if today's certificate is already committed — a repeat run terminates after one extra execution and cannot loop).
+4. **FAPI 2.0 Evidence Gate (release proof)** — defense-in-depth: re-checks out the release branch and verifies the certificate + manifest are committed before the run is green.
+
+It uploads `artifacts/fapi/` (report pack, result JSON, certificate, manifest) with 365-day retention and the commit SHA in the artifact name. Configure these secrets:
 
 | Secret | Purpose |
 |---|---|
@@ -169,10 +232,10 @@ The suite will fail on the first run — that is expected and is the point. Tria
 
 ## 6. Executive sign-off criteria
 
-Once the workflow reports PASSED and `artifacts/fapi/fapi-certificate.pdf` exists (with `%PDF` magic verified) **and** `fapi-evidence-manifest.txt` contains the SHA-256 of every artifact:
+The gate now automates step 2 below (certificate + manifest committed to `docs/compliance/` on PASSED). Remaining manual steps:
 
 1. Download the artifact pack `fapi2-conformance-evidence-<sha>`; verify the manifest hashes locally (`sha256sum -c`).
-2. Commit the certificate to `docs/compliance/fapi2-certificate-<YYYY-MM-DD>.pdf` **plus** the manifest (`fapi-evidence-manifest.txt`) as the attestation of provenance.
+2. *(automated)* Certificate committed to `docs/compliance/fapi2-certificate-<YYYY-MM-DD>.pdf` plus the manifest (`fapi-evidence-manifest.txt`) as the attestation of provenance — confirm the "Commit Evidence on PASSED" step ran and the "FAPI 2.0 Evidence Gate" job is green.
 3. Link the certificate and manifest from `docs/COMPLIANCE_AUDIT_MATRIX.md` (evidence index) — the OIDF suite plan page `plan-detail.html?plan=<id>` (recorded in the manifest) is the third-party verifiable source.
 4. Once OIDF formally lists Sentinel on https://openid.net/developers/certification/ add the conformance badge to the root `README.md`.
 
@@ -185,12 +248,19 @@ Once the workflow reports PASSED and `artifacts/fapi/fapi-certificate.pdf` exist
 bash -n infra/dast/scripts/run-fapi-conformance.sh
 bash -n infra/keycloak/scripts/provision-fapi-conformance-clients.sh
 bash -n infra/fapi-conformance/certs/generate-fapi-certs.sh
+bash -n infra/staging/provision-staging-tls.sh
+bash -n infra/staging/verify-fapi-readiness.sh
 # 2. compose validation
 docker compose -f infra/fapi-conformance/docker-compose.yml --env-file infra/fapi-conformance/.env.example config --quiet
 # 3. dry payload check (no network): validate the config builder
 jq -n --arg i "https://keycloak:8443/realms/sentinel-dast/.well-known/openid-configuration" \
       '{server:{discoveryUrl:$i}, client:{client_id:"sentinel-fapi-conformance"}, client2:{client_id:"sentinel-fapi-conformance-mixup"}}'
 # 4. profile import sanity (see docs/KEYCLOAK_FAPI_ENFORCEMENT.md re-import check)
-# 5. local pre-flight: make fapi-up && make fapi-conformance-local
-# 6. hosted certification run: FAPI_MODE=remote make fapi-conformance
+# 5. staging readiness (against the deployed AS, §3.1)
+KEYCLOAK_URL=https://keycloak.staging.sentinel.io/realms/sentinel-dast \
+  KC_ADMIN_URL=https://keycloak.staging.sentinel.io \
+  KC_ADMIN_USER=... KC_ADMIN_PASSWORD=... \
+  bash infra/staging/verify-fapi-readiness.sh
+# 6. local pre-flight: make fapi-up && make fapi-conformance-local
+# 7. hosted certification run: FAPI_MODE=remote make fapi-conformance
 ```
