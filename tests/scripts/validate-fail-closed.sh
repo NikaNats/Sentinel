@@ -13,7 +13,7 @@
 #   CHAOS_SCENARIO=redis-kill tests/scripts/validate-fail-closed.sh tests/load/summary.json
 #
 # Inputs (env):
-#   CHAOS_SCENARIO   redis-kill | pg-partition | dns-latency (required)
+#   CHAOS_SCENARIO   redis-kill | pg-partition | dns-latency | cascade (required)
 #   KUBECONFIG       path to kubectl config (defaults to $HOME/.kube/config)
 #   NAMESPACE        sentinel-prod (default)
 set -euo pipefail
@@ -24,7 +24,7 @@ if [ "$#" -ne 1 ]; then
 fi
 
 SUMMARY_FILE="$1"
-: "${CHAOS_SCENARIO:?Set CHAOS_SCENARIO to redis-kill, pg-partition, or dns-latency}"
+: "${CHAOS_SCENARIO:?Set CHAOS_SCENARIO to redis-kill, pg-partition, dns-latency, or cascade}"
 NAMESPACE="${NAMESPACE:-sentinel-prod}"
 : "${KUBECONFIG:=${HOME}/.kube/config}"
 export KUBECONFIG
@@ -104,8 +104,20 @@ case "$CHAOS_SCENARIO" in
     fi
     ok "DNS latency: JWKS refresh failures surfaced fail-closed (401)."
     ;;
+  cascade)
+    # Total state-store collapse: BOTH the ephemeral stores (Redis nonce/JTI)
+    # and the durable session anchor (PG) are down. Zero success responses and
+    # a mandatory fail-closed surfacing (401/503) - the strongest invariant.
+    if [ "${COUNT_200:-0}" -ne 0 ]; then
+      fail "$COUNT_200 HTTP 200 during cascade failure. Fail-open leak: request processed without any state verification."
+    fi
+    if [ "${COUNT_503:-0}" -eq 0 ] && [ "${COUNT_401:-0}" -eq 0 ]; then
+      fail "No 503/401 during cascade failure: neither outage engaged the fail-closed boundary."
+    fi
+    ok "Cascade failure: total state-store collapse failed closed (401/503), zero HTTP 200."
+    ;;
   *)
-    fail "Unknown CHAOS_SCENARIO='$CHAOS_SCENARIO' (expected redis-kill, pg-partition, dns-latency)"
+    fail "Unknown CHAOS_SCENARIO='$CHAOS_SCENARIO' (expected redis-kill, pg-partition, dns-latency, cascade)"
     ;;
 esac
 
@@ -124,6 +136,11 @@ if kubectl config current-context >/dev/null 2>&1; then
       echo "$LOGS" | grep -Eq 'Fail-closed triggered due to session store unavailability|SessionBlacklistUnavailableException' \
         && ok "OTel/logs contain session fail-closed evidence." \
         || fail "Missing SessionBlacklistUnavailableException evidence during pg-partition."
+      ;;
+    cascade)
+      echo "$LOGS" | grep -Eq 'NonceStoreUnavailable|ReplayCacheUnavailable|SessionBlacklistUnavailableException' \
+        && ok "OTel/logs contain fail-closed evidence for both collapsed stores." \
+        || fail "Missing fail-closed log evidence during cascade failure."
       ;;
     dns-latency)
       echo "$LOGS" | grep -Eq 'TaskCanceledException' \

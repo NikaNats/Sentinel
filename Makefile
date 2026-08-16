@@ -86,9 +86,11 @@ fapi-conformance-local:  ## Run FAPI 2.0 conformance against the local stack
 	bash infra/dast/scripts/run-fapi-conformance.sh
 
 # ─── Distributed Chaos Engineering (KinD + Chaos Mesh + k6) ───────────────────
-# A KinD cluster with Chaos Mesh (eBPF) and the Sentinel stack. Run each chaos
-# scenario against the deployed stack and validate the fail-closed invariants.
-# Requires: kind, kubectl, helm, k6 on PATH.
+# A KinD cluster with Chaos Mesh (eBPF) and the FULL Sentinel stack (API
+# included; schema via dotnet-ef; Keycloak 26.6.4 TLS with realm import).
+# Run each chaos scenario against the deployed stack and validate the
+# fail-closed invariants. Requires: kind, kubectl, helm, k6, node, dotnet.
+# Provisioning is shared with CI: tests/scripts/chaos-provision.sh.
 
 CHAOS_NS ?= sentinel-prod
 CHAOS_SCENARIO ?= redis-kill
@@ -96,6 +98,7 @@ CHAOS_SCENARIO ?= redis-kill
 #   redis-kill   → redis-pod-kill.yaml
 #   pg-partition → postgres-network-partition.yaml
 #   dns-latency  → dns-latency-keycloak.yaml
+#   cascade      → cascade-failure.yaml
 CHAOS_MANIFEST ?= $(patsubst %,tests/chaos/redis-pod-kill.yaml,$(CHAOS_SCENARIO))
 ifeq ($(CHAOS_SCENARIO),pg-partition)
 CHAOS_MANIFEST = tests/chaos/postgres-network-partition.yaml
@@ -103,26 +106,28 @@ endif
 ifeq ($(CHAOS_SCENARIO),dns-latency)
 CHAOS_MANIFEST = tests/chaos/dns-latency-keycloak.yaml
 endif
+ifeq ($(CHAOS_SCENARIO),cascade)
+CHAOS_MANIFEST = tests/chaos/cascade-failure.yaml
+endif
 K6_RATE ?= 5000
 K6_DURATION ?= 90s
+CHAOS_POOL ?= tests/load/chaos-dpop-pool.json
 
 chaos-up:
 	@test -n "$$CLUSTER_NAME" || echo "Using cluster sentinel-chaos"
 	kind create cluster --name sentinel-chaos || true
 	docker build -t sentinel-api:chaos -f src/Sentinel.AspNetCore/Dockerfile .
 	kind load docker-image sentinel-api:chaos --name sentinel-chaos
-	kubectl apply -f infra/k8s/redis-deployment.yaml
-	kubectl apply -f infra/k8s/postgres-deployment.yaml
-	kubectl apply -f infra/k8s/keycloak-deployment.yaml
-	kubectl -n sentinel-prod wait --for=condition=available deployment/redis --timeout=180s
-	kubectl -n sentinel-prod wait --for=condition=available deployment/postgres --timeout=180s
-	kubectl -n keycloak wait --for=condition=available deployment/keycloak --timeout=300s
+	MODE=stack SENTINEL_API_IMAGE=sentinel-api:chaos tests/scripts/chaos-provision.sh
 	helm repo add chaos-mesh https://charts.chaos-mesh.org || true
 	helm repo update
 	helm upgrade --install chaos-mesh chaos-mesh/chaos-mesh \
 		--namespace=chaos-mesh --create-namespace \
 		--set bpfki.create=true \
 		--set dashboard.securityMode=false
+
+chaos-mint:
+	MODE=mint tests/scripts/chaos-provision.sh
 
 chaos-down:
 	kind delete cluster --name sentinel-chaos || true
@@ -136,7 +141,7 @@ chaos-load:
 		-e K6_LOAD_URL=https://sentinel-api.sentinel-prod.svc.cluster.local \
 		-e K6_RATE=$(K6_RATE) -e K6_DURATION=$(K6_DURATION) \
 		-e K6_SCENARIO=$(CHAOS_SCENARIO) \
-		-e K6_TOKEN="$${K6_TOKEN:-placeholder}" \
+		-e K6_POOL_FILE=$(CHAOS_POOL) \
 		tests/load/chaos-load-test.js
 
 chaos-validate:
@@ -145,7 +150,7 @@ chaos-validate:
 chaos-clean:
 	-kubectl delete -f $(CHAOS_MANIFEST) --ignore-not-found=true
 
-chaos-gate: chaos-up chaos-inject chaos-load chaos-clean chaos-validate
+chaos-gate: chaos-up chaos-mint chaos-inject chaos-load chaos-clean chaos-validate
 	@echo "Chaos gate passed for scenario=$(CHAOS_SCENARIO)"
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

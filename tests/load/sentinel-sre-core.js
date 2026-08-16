@@ -110,6 +110,12 @@ if (poolKeys.length === 0) {
 // importKey is expensive; cache per VU (webcrypto path only).
 const vuKeyCache = {};
 
+// Shared with the chaos suite (tests/load/chaos-load-test.js): resolve the
+// per-VU pool entry (P-256 key + Keycloak-issued cnf.jkt-bound token).
+export function getPoolEntry(vu) {
+  return poolKeys[vu % poolKeys.length];
+}
+
 async function keyFor(vu) {
   if (vuKeyCache[vu]) return vuKeyCache[vu];
   const entry = poolKeys[vu % poolKeys.length];

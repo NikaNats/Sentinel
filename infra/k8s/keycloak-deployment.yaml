@@ -3,6 +3,13 @@
 # Keycloak deployment for the chaos gate. Deployed in the "keycloak" namespace
 # so the DNS pattern keycloak.keycloak.svc.cluster.local (used by
 # Keycloak__Authority and the dns-latency chaos manifest) resolves natively.
+#
+# Baseline alignment with docker-compose.yml: image 26.6.4, TLS-only on 8443,
+# realm import from infra/keycloak/realms/sentinel.json (ConfigMap
+# sentinel-realm-config, created by tests/scripts/chaos-provision.sh before
+# this manifest is applied). Certificates come from the sentinel-keycloak-tls
+# secret (infra/certs/keycloak.crt|key, signed by infra/certs/ca.crt - the CA
+# that sentinel-api trusts via sentinel-ca-bundle).
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -36,7 +43,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: keycloak
-          image: quay.io/keycloak/keycloak:26.1
+          image: quay.io/keycloak/keycloak:26.6.4
           imagePullPolicy: Always
           args:
             - start-dev
@@ -55,12 +62,18 @@ spec:
             - name: KC_METRICS_ENABLED
               value: "true"
             - name: KC_HTTP_ENABLED
-              value: "true"
-            - name: KC_HTTP_PORT
-              value: "8080"
+              value: "false"
+            - name: KC_HTTPS_PORT
+              value: "8443"
+            - name: KC_HTTPS_PROTOCOLS
+              value: TLSv1.3
+            - name: KC_HTTPS_CERTIFICATE_FILE
+              value: /etc/x509/https/tls.crt
+            - name: KC_HTTPS_CERTIFICATE_KEY_FILE
+              value: /etc/x509/https/tls.key
           ports:
-            - name: http
-              containerPort: 8080
+            - name: https
+              containerPort: 8443
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
@@ -73,16 +86,24 @@ spec:
               mountPath: /opt/keycloak/data
             - name: tmp
               mountPath: /tmp
+            - name: https-certs
+              mountPath: /etc/x509/https
+              readOnly: true
+            - name: realm-import
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
           readinessProbe:
             httpGet:
+              scheme: HTTPS
               path: /health/ready
-              port: 8080
+              port: 8443
             initialDelaySeconds: 15
             periodSeconds: 10
           livenessProbe:
             httpGet:
+              scheme: HTTPS
               path: /health/live
-              port: 8080
+              port: 8443
             initialDelaySeconds: 30
             periodSeconds: 15
             timeoutSeconds: 5
@@ -99,6 +120,17 @@ spec:
           emptyDir: {}
         - name: tmp
           emptyDir: {}
+        - name: https-certs
+          secret:
+            secretName: sentinel-keycloak-tls
+            defaultMode: 0440
+        - name: realm-import
+          configMap:
+            name: sentinel-realm-config
+            items:
+              - key: sentinel.json
+                path: sentinel.json
+            defaultMode: 0440
 ---
 apiVersion: v1
 kind: Service
@@ -111,6 +143,6 @@ spec:
   selector:
     app.kubernetes.io/name: keycloak
   ports:
-    - name: http
-      port: 8080
-      targetPort: 8080
+    - name: https
+      port: 8443
+      targetPort: 8443

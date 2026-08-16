@@ -1,0 +1,63 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Chaos Scenario 4: Simultaneous Cascade Failure (total state-store collapse)
+# ---------------------------------------------------------------------------
+# Threat model: Redis master kill AND PostgreSQL 100% packet loss at the same
+# time. This is the "Security > Availability" extreme: with BOTH ephemeral
+# (nonce/JTI) and durable (session blacklist) state unreachable, Sentinel must
+# reject every request (401/503), leak zero 200 responses, and never surface an
+# unhandled 500.
+#
+#   - DPoP nonce store + JTI replay cache (Redis)  -> 503 (fail-closed)
+#   - HybridSessionBlacklistCache (PG is source of truth) -> 401/503
+#   - 0 x HTTP 200; 0 x HTTP 500; recovery after the window ends.
+#
+# Apply:  kubectl apply -f tests/chaos/cascade-failure.yaml
+# Remove: kubectl delete -f tests/chaos/cascade-failure.yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Workflow
+metadata:
+  name: cascade-failure
+  namespace: sentinel-prod
+spec:
+  entry: main
+  templates:
+    - name: main
+      templateType: Parallel
+      children: [kill-redis, partition-postgres]
+    - name: kill-redis
+      templateType: PodChaos
+      podChaos:
+        action: pod-kill
+        mode: fixed
+        value: "1"
+        selector:
+          labelSelectors:
+            app.kubernetes.io/name: redis
+            redis-role: master
+        duration: "30s"
+    - name: partition-postgres
+      templateType: NetworkChaos
+      networkChaos:
+        action: loss
+        mode: all
+        selector:
+          labelSelectors:
+            app.kubernetes.io/name: postgres
+        loss:
+          loss: "100"
+          correlation: "0"
+        duration: "30s"
+---
+# OTel validation surface: both fail-closed exception families must appear in
+# the API logs during the cascade window.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chaos-4-fail-closed-anchor
+  namespace: sentinel-prod
+data:
+  invariant: >-
+    Redis + PG collapse => 401/503 ONLY; 0 x HTTP 200; 0 x HTTP 500.
+    ReplayCacheUnavailableException / NonceStoreUnavailableException /
+    SessionBlacklistUnavailableException evidence mandatory.

@@ -133,7 +133,7 @@ scanners remain DPoP-unaware while the real FAPI 2.0 pipeline is verified. See
 | T-07 | Malformed/unparsable token fuzzing | Nuclei malformed-token cases + ZAP fuzzer |
 | T-08 | Concurrent nonce consumption correctness | Coyote suite + conformance under load |
 | T-09 | Header/session data leakage probes | Nuclei headers baseline template |
-| T-10 | Cache-outage fail-closed behavior (Redis down → all 401) | Negative integration suites + gate forensics |
+| T-10 | Cache-outage fail-closed behavior (Redis down → all 401) | Negative integration suites + Chaos Mesh gate (redis-kill, pg-partition, cascade at 5k RPS: 0 x 200, 401/503-only, zero 500 — validate-fail-closed.sh) |
 | T-11 | ML-DSA verification correctness (FIPS 204) | `docs/MLDSA_AUDIT_CHECKLIST.md` independent review |
 
 The DAST gate is a release blocker (Gate 5); HIGH/CRITICAL findings must be

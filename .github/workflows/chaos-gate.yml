@@ -11,11 +11,21 @@
 #                                fail-closed: 0 x 200, expose 401/503 only.
 #   Scenario 3 (dns-latency):    Keycloak DNS +5s. JWKS refresh must fail
 #                                closed (401); 0 x 500; no TaskCanceled crash.
+#   Scenario 4 (cascade):        Redis kill AND PG partition simultaneously.
+#                                Total state-store collapse: 401/503 only.
 #
-# Prerequisites (workflow_dispatch only; the gate self-provisions Keycloak):
-#   - A Keycloak realm + a password-grant test user must exist (garantia repo)
-#   - K6_TOKEN obtained at gate runtime from the KinD Keycloak instance via
-#     the admin REST API (see step "Mint gate token").
+# Stack provisioning is handled by tests/scripts/chaos-provision.sh (also used
+# by the Makefile chaos-* targets):
+#   - TLS + runtime secrets from infra/certs and the deployment manifests
+#   - sentinel realm import (ConfigMap sentinel-realm-config) - Keycloak 26.6.4
+#     TLS-only, matching docker-compose.yml
+#   - sentinel-api deployment with the locally built image (external migrations
+#     image not provisionable from this repo: schema applied via dotnet-ef)
+#   - DPoP-bound token pool: sentinel-gate client (PS256 + audience mapper) +
+#     gate-user provisioned via the Keycloak admin API, tokens minted with
+#     live RFC 9449 proofs so they carry cnf.jkt - Sentinel rejects unbound
+#     tokens (missing_cnf_jkt), so a plain bearer gate token cannot exercise
+#     the fail-closed paths.
 #
 # Gate exits nonzero if validate-fail-closed.sh finds any fail-open evidence.
 name: Distributed Chaos Resilience Gate
@@ -32,7 +42,7 @@ jobs:
   chaos-gate:
     name: Chaos Gate (${{ matrix.scenario }})
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -49,6 +59,10 @@ jobs:
             chaos-manifest: tests/chaos/dns-latency-keycloak.yaml
             k6-rate: "3000"
             k6-duration: "120s"
+          - scenario: cascade
+            chaos-manifest: tests/chaos/cascade-failure.yaml
+            k6-rate: "5000"
+            k6-duration: "90s"
 
     steps:
       - name: Checkout Repository
@@ -74,14 +88,11 @@ jobs:
           docker build -t sentinel-api:chaos -f src/Sentinel.AspNetCore/Dockerfile .
           kind load docker-image sentinel-api:chaos --name sentinel-chaos
 
-      - name: Deploy Sentinel stack (Redis, PG, Keycloak, API)
+      - name: Deploy Sentinel stack (Redis, PG, Keycloak 26.6.4 TLS, API, schema)
+        shell: bash
         run: |
-          kubectl apply -f infra/k8s/redis-deployment.yaml
-          kubectl apply -f infra/k8s/postgres-deployment.yaml
-          kubectl apply -f infra/k8s/keycloak-deployment.yaml
-          kubectl -n sentinel-prod wait --for=condition=available deployment/redis --timeout=180s
-          kubectl -n sentinel-prod wait --for=condition=available deployment/postgres --timeout=180s
-          kubectl -n keycloak wait --for=condition=available deployment/keycloak --timeout=300s
+          MODE=stack SENTINEL_API_IMAGE=sentinel-api:chaos \
+            tests/scripts/chaos-provision.sh
 
       - name: Install Chaos Mesh (eBPF)
         run: |
@@ -94,58 +105,11 @@ jobs:
           kubectl -n chaos-mesh rollout status deployment/chaos-controller-manager --timeout=180s
           kubectl -n chaos-mesh rollout status daemonset/chaos-daemon --timeout=180s
 
-      - name: Mint gate token (Keycloak admin API → bearer)
-        id: token
+      - name: Mint DPoP-bound gate token pool (FAPI 2.0, cnf.jkt)
+        shell: bash
         run: |
-          # sentinel-api-client is DPoP/jwt-client hardened (PS256, binding
-          # enforcement); the realm M2M worker (sentinel-m2m-worker) is x509-only.
-          # For chaos gates we provision a dedicated gate client + user via the
-          # Keycloak admin API so JWT validation exercises the real JWKS path.
-          kubectl -n keycloak port-forward svc/keycloak 8080:8080 > /dev/null 2>&1 &
-          PF_PID=$!
-          for _ in $(seq 1 30); do
-            curl -sf http://localhost:8080/ > /dev/null 2>&1 && break
-            sleep 1
-          done
-
-          ADMIN_TOKEN=$(curl -sf -X POST \
-            'http://localhost:8080/realms/master/protocol/openid-connect/token' \
-            -H 'Content-Type: application/x-www-form-urlencoded' \
-            -d "grant_type=password&client_id=admin-cli&username=$(kubectl -n keycloak get deployment keycloak -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="KEYCLOAK_ADMIN")].value}')&password=$(kubectl -n keycloak get deployment keycloak -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="KEYCLOAK_ADMIN_PASSWORD")].value}')" \
-            | jq -r .access_token)
-
-          # Idempotent gate client creation (direct access grants + PS256)
-          GATE_CLIENT_ID=$(curl -sf "http://localhost:8080/admin/realms/sentinel/clients?clientId=sentinel-gate" \
-            -H "Authorization: Bearer $ADMIN_TOKEN" | jq -r '.[0].id // empty')
-          if [ -z "$GATE_CLIENT_ID" ]; then
-            GATE_CLIENT_ID=$(curl -sf -X POST \
-              'http://localhost:8080/admin/realms/sentinel/clients' \
-              -H "Authorization: Bearer $ADMIN_TOKEN" \
-              -H 'Content-Type: application/json' \
-              -d '{"clientId":"sentinel-gate","enabled":true,"publicClient":true,"standardFlowEnabled":false,"directAccessGrantsEnabled":true,"attributes":{"access.token.signed.response.alg":"PS256","access.token.lifespan":"300"}}' \
-              -o /dev/null -w '%{redirect_url}' | sed 's#.*/##')
-          fi
-
-          # Idempotent gate user creation (password sourced from deployed manifest env)
-          GATE_USER_PASSWORD=$(kubectl -n keycloak get deployment keycloak -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="KEYCLOAK_GATE_PASSWORD")].value}')
-          GATE_USER_ID=$(curl -sf "http://localhost:8080/admin/realms/sentinel/users?username=gate-user" \
-            -H "Authorization: Bearer $ADMIN_TOKEN" | jq -r '.[0].id // empty')
-          if [ -z "$GATE_USER_ID" ]; then
-            curl -sf -X POST 'http://localhost:8080/admin/realms/sentinel/users' \
-              -H "Authorization: Bearer $ADMIN_TOKEN" \
-              -H 'Content-Type: application/json' \
-              -d "{\"username\":\"gate-user\",\"enabled\":true,\"emailVerified\":true,\"credentials\":[{\"type\":\"password\",\"value\":\"$GATE_USER_PASSWORD\",\"temporary\":false}]}" \
-              > /dev/null
-          fi
-
-          GATE_TOKEN=$(curl -sf -X POST \
-            'http://localhost:8080/realms/sentinel/protocol/openid-connect/token' \
-            -H 'Content-Type: application/x-www-form-urlencoded' \
-            -d "grant_type=password&client_id=sentinel-gate&username=gate-user&password=$GATE_USER_PASSWORD&scope=openid profile" \
-            | jq -r .access_token)
-          kill "$PF_PID" 2>/dev/null || true
-          [ -n "$GATE_TOKEN" ] && [ "$GATE_TOKEN" != "null" ] || { echo "token mint failed" >&2; exit 1; }
-          echo "GATE_TOKEN=$GATE_TOKEN" >> "$GITHUB_ENV"
+          MODE=mint KEYCLOAK_GATE_PASSWORD=gate-pass \
+            tests/scripts/chaos-provision.sh
 
       - name: Install k6 CLI
         shell: bash
@@ -161,10 +125,6 @@ jobs:
       - name: Run k6 Load Test under Chaos
         shell: bash
         run: |
-          # K6_TOKEN must be exported by the gate's token provisioning step in
-          # a real run; the smoke run below uses the API's dev test-key path
-          # (Security:TestPublicKey) which is fine for validating the pipeline.
-          K6_TOKEN="${K6_TOKEN:-$GATE_TOKEN}" \
           /tmp/k6-v0.52.0-linux-amd64/k6 run \
             --quiet \
             --summary-export tests/load/chaos-summary-${{ matrix.scenario }}.json \
@@ -172,8 +132,7 @@ jobs:
             -e K6_RATE=${{ matrix.k6-rate }} \
             -e K6_DURATION=${{ matrix.k6-duration }} \
             -e K6_SCENARIO=${{ matrix.scenario }} \
-            -e K6_TOKEN="${K6_TOKEN:-$GATE_TOKEN}" \
-            -e K6_DPOP="${{ secrets.K6_DPOP_GATE }}" \
+            -e K6_POOL_FILE=tests/load/chaos-dpop-pool.json \
             tests/load/chaos-load-test.js
 
       - name: Remove Chaos — ${{ matrix.scenario }}
@@ -188,8 +147,6 @@ jobs:
           NAMESPACE=sentinel-prod \
             tests/scripts/validate-fail-closed.sh \
             tests/load/chaos-summary-${{ matrix.scenario }}.json
-        # Report k8s logs on failure (the validator needs kubectl).
-        continue-on-error: false
 
       - name: Upload chaos summary artifact
         if: always()
