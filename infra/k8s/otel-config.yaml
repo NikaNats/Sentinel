@@ -73,7 +73,14 @@ data:
           cert_file: /var/run/sentinel/siem/tls.crt
           key_file: /var/run/sentinel/siem/tls.key
 
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+
     service:
+      extensions:
+        - health_check
+
       telemetry:
         logs:
           level: info
@@ -129,9 +136,9 @@ spec:
 
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
@@ -139,7 +146,7 @@ spec:
       containers:
         - name: otel-collector
           image: otel/opentelemetry-collector-contrib:0.127.0
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
 
           args:
             - --config=/etc/otelcol/collector.yaml
@@ -152,6 +159,28 @@ spec:
             - name: otlp-http
               containerPort: 4318
               protocol: TCP
+
+            - name: health-check
+              containerPort: 13133
+              protocol: TCP
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 13133
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 13133
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
 
           securityContext:
             allowPrivilegeEscalation: false

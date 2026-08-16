@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1.7
+# checkov:skip=CKV_DOCKER_2:Chiseled runtime has no shell/curl/wget by design (distroless); liveness/readiness is enforced by the orchestrator probes in infra/k8s/sentinel-api-deployment.yaml, not by docker HEALTHCHECK
 
 # ==========================================
 # Stage 1: Compilation and Certificate Assembly

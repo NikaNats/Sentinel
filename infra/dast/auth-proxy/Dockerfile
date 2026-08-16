@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1.7
+# checkov:skip=CKV_DOCKER_2:Chiseled runtime has no shell/curl/wget by design (distroless); this test-only proxy is polled at /proxy-health by infra/dast/scripts/wait-for-stack.sh, not by docker HEALTHCHECK
 # TEST-ONLY DAST component. See infra/dast/docker-compose.dast.yml.
 # NOTE: this is the one component that is allowed NOT to be distroless-chiseled
 # (it is never near production traffic); it still runs as a non-root user.

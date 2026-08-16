@@ -30,6 +30,9 @@ metadata:
     app.kubernetes.io/part-of: sentinel
     app.kubernetes.io/component: identity-gateway
     app.kubernetes.io/version: "1.0.0"
+  annotations:
+    checkov.io/skip1: CKV_K8S_40=UID 1654 is the dedicated non-root user of the chiseled runtime image (mcr.microsoft.com/dotnet/aspnet:*-chiseled, USER app); raising it would break image file ownership contract
+    checkov.io/skip2: CKV_K8S_35=secret values are injected from Kubernetes Secret objects via secretKeyRef (never plaintext); the app's configuration contract is environment-variable based, secrets are mounted as files only where the app supports file sources
 spec:
   replicas: 2
   revisionHistoryLimit: 2
@@ -71,7 +74,7 @@ spec:
         # Running the sessions and security database migration
         - name: init-security-migrations
           image: ghcr.io/acme/sentinel-migrations:v1.0.0
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           command: ["./sentinel-security-migrate-bundle"]
           env:
             - name: ConnectionStrings__Postgres
@@ -97,7 +100,7 @@ spec:
         # Running the business domain database migration
         - name: init-domain-migrations
           image: ghcr.io/acme/sentinel-migrations:v1.0.0
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           command: ["./sentinel-domain-migrate-bundle"]
           env:
             - name: ConnectionStrings__Postgres
@@ -123,7 +126,7 @@ spec:
       containers:
         - name: sentinel-api
           image: ghcr.io/acme/sentinel-api:v1.0.0
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - name: https
               containerPort: 8080
