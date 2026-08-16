@@ -337,7 +337,8 @@ jobs:
             --url http://localhost:5000 \
             --checks not_a_server_error \
             --workers 4 \
-            --junit-xml artifacts/fuzz-results.xml
+            --report junit \
+            --report-junit-path artifacts/fuzz-results.xml
         continue-on-error: false
 
       - name: Upload Schemathesis Fuzzing Results
