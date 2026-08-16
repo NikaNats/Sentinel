@@ -16,7 +16,7 @@ name: FAPI 2.0 Conformance Gate
 
 on:
   push:
-    branches: ["release/**", "main"]
+    branches: ["release/**"]
   workflow_dispatch:
 
 permissions:
