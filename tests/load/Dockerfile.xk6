@@ -1,0 +1,34 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Builds the distributed k6 runner with the Go-native DPoP signer
+# (tests/load/xk6-dpop). Stock k6 caps per-runner proof signing at ~2-3k
+# proofs/sec in JS webcrypto; the xk6 extension moves ES256 signing into Go
+# (crypto/ecdsa), sustaining the 2k RPS per-runner target of the distributed
+# topology (10 runners x 2k RPS = 20k RPS aggregate, infra/k8s/sre/ CRDs).
+#
+# Usage (see docs/SRE_LOAD_TESTING_RUNBOOK.md §6):
+#   docker build -f tests/load/Dockerfile.xk6 -t sentinel-k6-dpop:local .
+#   kind load docker-image sentinel-k6-dpop:local --name <cluster>
+#
+# For EKS/AKS: push to a registry (e.g. ghcr.io/<org>/k6-dpop) and point the
+# CRD runner.image + imagePullPolicy: Always at it.
+FROM golang:1.24 AS builder
+
+ARG XK6_VERSION=v1.4.9
+
+RUN go install go.k6.io/xk6/cmd/xk6@${XK6_VERSION}
+
+COPY tests/load/xk6-dpop /src/xk6-dpop
+WORKDIR /src/xk6-dpop
+RUN go mod download
+
+# Local path form of --with keeps the signer in this repository; the module
+# itself is never published.
+RUN xk6 build --with github.com/sentinel/xk6-dpop=/src/xk6-dpop --output /k6
+
+FROM gcr.io/distroless/static-debian12:nonroot
+# k6 verifies TLS chains with the system CA bundle; distroless-static ships
+# none, so carry it over from the builder image.
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=builder /k6 /usr/local/bin/k6
+ENTRYPOINT ["k6"]

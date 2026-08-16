@@ -33,6 +33,7 @@ If you are new to the repository, read these documents in the recommended order 
 | **[OIDF_FAPI_CONFORMANCE_RUNBOOK.md](OIDF_FAPI_CONFORMANCE_RUNBOOK.md)** | DevOps, Architects, Security | OIDF FAPI 2.0 conformance gate: network topology, Keycloak hardening, suite API integration, evidence custody, failure triage. | **ACTIVE** |
 | **[PENTEST_PROGRAM.md](PENTEST_PROGRAM.md)** | Security Auditors, Release Managers, SOC | Independent penetration test program (Constitution §VIII.4): 10 mandated attack scenarios, CVSS SLAs, findings JSON schema, evidence chain, release gate. | **ACTIVE** |
 | **[PENTEST_ROE_SENTINEL.md](PENTEST_ROE_SENTINEL.md)** | Engagement Parties | Sentinel-specific signed Rules of Engagement (tailors PENTEST_ROE_TEMPLATE.md). | **ACTIVE** |
+| **[SRE_LOAD_TESTING_RUNBOOK.md](SRE_LOAD_TESTING_RUNBOOK.md)** | SRE, On-Call Operators | Production-scale load testing: distributed k6-operator topology, xk6-DPoP signer, scenarios A-D, metric reference, remediation triage, capacity matrix. | **ACTIVE** |
 | **[LIVING_THREAT_MODEL.md](LIVING_THREAT_MODEL.md)** | Security Engineers, SOC | Threat inventory (STRIDE/DREAD), mitigations, and residual risks. | Active |
 | **[OPENAPI_3_1.yaml](OPENAPI_3_1.yaml)** | API Consumers, Gateway | Machine-readable API contracts and schemas for gateway routing. | Active |
 | **[SDK_LESS_INTEGRATION_GUIDE.md](SDK_LESS_INTEGRATION_GUIDE.md)** | API Consumers | Handshake protocols, Nonce challenge-response, and raw HTTP examples. | Active |

@@ -175,6 +175,9 @@ sre-run:
 sre-validate:
 	bash tests/scripts/validate-sre-soak.sh tests/load/sre-summary.json
 
+sre-xk6-build:  ## Build the distributed k6 runner with the Go-native DPoP signer
+	bash tests/scripts/build-xk6-dpop.sh
+
 sre-gate: sre-mint sre-run sre-validate
 	@echo "SRE gate passed (mode=$(SRE_MODE))"
 

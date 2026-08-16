@@ -1,0 +1,169 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# SRE Distributed Gate - the authoritative distributed load harness.
+#
+# The local-runner gate (sre-load-gate.yml) is a smoke battery; a single k6
+# process cannot authoritatively validate 20k RPS spikes (the JS webcrypto
+# signer alone caps a runner near 2-3k proofs/sec). This gate:
+#
+#   1. Builds + pushes the xk6-DPoP runner image (tests/load/Dockerfile.xk6,
+#      Go-native ES256 signing - tests/load/xk6-dpop).
+#   2. Installs the Grafana k6-operator on the target cluster.
+#   3. Provisions the suite ConfigMap + DPoP pool Secret.
+#   4. Executes a distributed spike (N runners x per-runner rate =
+#      aggregate, suite divides by K6_PARALLELISM) via a K6 CR.
+#   5. Fails on any runner failure (status.stage != finished).
+#
+# PREREQUISITES (documented in docs/SRE_LOAD_TESTING_RUNBOOK.md §6):
+#   * KUBECONFIG secret - kubeconfig for the target cluster (write access to
+#     the operator namespace + the CRD namespace)
+#   * Packages: write on GHCR for the runner image
+#   * The Sentinel stack must be deployed and reachable at SENTINEL_LOAD_URL
+#     (same vars/secrets as sre-load-gate.yml)
+name: SRE Distributed Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      parallelism:
+        description: Number of k6 runner replicas (aggregate = per-runner x parallelism)
+        required: false
+        default: "4"
+      spike_max_rps:
+        description: Aggregate spike target RPS (each runner divides by parallelism)
+        required: false
+        default: "8000"
+      spike_duration:
+        description: Hold duration at max RPS
+        required: false
+        default: "2m"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  distributed-sre-gate:
+    name: Distributed Spike (${{ inputs.parallelism }} runners)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Mint DPoP pool
+        shell: bash
+        run: |
+          node tests/scripts/mint-dpop-pool.mjs --count 120 --out tests/load/dpop-pool-distributed.json
+
+      - name: Build and push xk6-DPoP runner image
+        shell: bash
+        run: |
+          IMG="ghcr.io/${{ github.repository }}/k6-dpop:${{ github.sha }}"
+          echo "IMG=$IMG" >> "$GITHUB_ENV"
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker build -f tests/load/Dockerfile.xk6 -t "$IMG" .
+          docker push "$IMG"
+
+      - name: Configure cluster access
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$HOME/.kube/config"
+          kubectl cluster-info
+
+      - name: Install k6-operator
+        shell: bash
+        run: |
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm repo update
+          helm upgrade --install k6-operator grafana/k6-operator -n k6-system --create-namespace
+
+      - name: Provision suite ConfigMap + DPoP pool Secret
+        shell: bash
+        run: |
+          NS=sentinel-prod
+          kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create configmap sentinel-sre-script -n "$NS" --dry-run=client -o yaml \
+            --from-file=sentinel-sre-suite-xk6.js=tests/load/sentinel-sre-suite-xk6.js \
+            --from-file=sentinel-sre-core.js=tests/load/sentinel-sre-core.js \
+            | kubectl apply -f -
+          kubectl create secret generic sentinel-dpop-pool -n "$NS" --dry-run=client -o yaml \
+            --from-file=dpop-pool.json=tests/load/dpop-pool-distributed.json \
+            | kubectl apply -f -
+
+      - name: Execute distributed spike
+        shell: bash
+        run: |
+          NS=sentinel-prod
+          cat <<EOF | kubectl apply -f -
+          apiVersion: k6.io/v1alpha1
+          kind: K6
+          metadata:
+            name: sentinel-distributed-spike
+            namespace: $NS
+          spec:
+            parallelism: ${{ inputs.parallelism }}
+            script:
+              configMap:
+                name: sentinel-sre-script
+                file: sentinel-sre-suite-xk6.js
+            arguments: "-e TEST_MODE=spike -e SPIKE_MAX_RPS=${{ inputs.spike_max_rps }} -e SPIKE_DURATION=${{ inputs.spike_duration }} -e K6_PARALLELISM=${{ inputs.parallelism }} -e K6_POOL_FILE=/pool/dpop-pool.json"
+            runner:
+              image: ${{ env.IMG }}
+              imagePullPolicy: Always
+              env:
+                - name: TARGET_URL
+                  value: ${{ vars.SENTINEL_LOAD_URL }}
+                - name: K6_BEARER
+                  value: ${{ secrets.SENTINEL_GATE_TOKEN }}
+                - name: K6_INSECURE
+                  value: "1"
+              volumeMounts:
+                - name: dpop-pool
+                  mountPath: /pool
+                  readOnly: true
+              volumes:
+                - name: dpop-pool
+                  secret:
+                    secretName: sentinel-dpop-pool
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: 2Gi
+                requests:
+                  cpu: "1"
+                  memory: 1Gi
+          EOF
+
+      - name: Wait for distributed run completion
+        shell: bash
+        run: |
+          NS=sentinel-prod
+          for i in $(seq 1 90); do
+            STAGE=$(kubectl get k6/sentinel-distributed-spike -n "$NS" -o jsonpath='{.status.stage}' 2>/dev/null || true)
+            echo "poll $i: stage=$STAGE"
+            case "$STAGE" in
+              finished) echo "Distributed spike PASSED"; exit 0 ;;
+              aborted|error|failed) echo "::error::Distributed spike failed (stage=$STAGE)"; exit 1 ;;
+              "") ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Timed out waiting for distributed spike completion"
+          exit 1
+
+      - name: Scan runner logs for threshold failures
+        if: always()
+        shell: bash
+        run: |
+          NS=sentinel-prod
+          kubectl logs -n "$NS" -l job-name=sentinel-distributed-spike --tail=2000 2>/dev/null \
+            | grep -iE 'threshold|http_req_failed|socket exhaustion' || true
+
+      - name: Clean up test run
+        if: always()
+        shell: bash
+        run: |
+          kubectl delete k6/sentinel-distributed-spike -n sentinel-prod --ignore-not-found=true || true
+          kubectl delete secret sentinel-dpop-pool -n sentinel-prod --ignore-not-found=true || true
+          kubectl delete configmap sentinel-sre-script -n sentinel-prod --ignore-not-found=true || true

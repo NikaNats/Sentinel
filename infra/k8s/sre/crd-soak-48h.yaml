@@ -8,10 +8,11 @@ spec:
   script:
     configMap:
       name: sentinel-sre-script
-      file: sentinel-sre-suite.js
+      file: sentinel-sre-suite-xk6.js
   arguments: "-e TEST_MODE=soak -e SOAK_RPS=3500 -e SOAK_DURATION=48h -e K6_PARALLELISM=4 -e K6_POOL_FILE=/pool/dpop-pool.json --summary-export=/test/summary.json"
   runner:
-    image: grafana/k6:0.52.0
+    image: sentinel-k6-dpop:local
+    imagePullPolicy: IfNotPresent
     env:
       - name: K6_POOL_FILE
         value: /pool/dpop-pool.json
