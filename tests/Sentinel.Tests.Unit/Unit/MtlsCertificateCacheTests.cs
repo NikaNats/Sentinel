@@ -1,5 +1,8 @@
 ﻿using FluentAssertions;
+using Microsoft.IdentityModel.Tokens;
 using Sentinel.AspNetCore.Stores;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Sentinel.Tests.Unit.Unit;
 
@@ -47,5 +50,62 @@ public sealed class MtlsCertificateCacheTests : IDisposable
             "The cache size must remain strictly bounded by the SizeLimit to prevent memory exhaustion.");
 
         _sut.Count.Should().BeGreaterThan(0, "The cache must not be completely emptied during compaction.");
+    }
+
+    // ---- Rotation / eviction tests (Enterprise Cryptographic & PKI Lifecycle) ----
+
+    [Fact(DisplayName = "🔄 Rotation: Different cert PEM produces distinct cache key (cache miss on rotation)")]
+    public void Rotation_DistinctRawPem_DistinctCacheKey()
+    {
+        // Arrange: two different "raw cert" payloads (simulate PEM rotation)
+        const string certAPem = "-----BEGIN CERTIFICATE-----\nCERT-A\n-----END CERTIFICATE-----";
+        const string certBPem = "-----BEGIN CERTIFICATE-----\nCERT-B\n-----END CERTIFICATE-----";
+
+        // Simulate GenerateZeroAllocationCacheKey: "mtls:" + SHA256(UTF8(rawCertData))
+        var keyA = ComputeMtlsCacheKey(certAPem);
+        var keyB = ComputeMtlsCacheKey(certBPem);
+
+        keyA.Should().NotBe(keyB, "Different cert PEM must yield different cache keys.");
+
+        // Act: Cache cert A
+        _sut.Set(keyA, "thumbprint-A", TimeSpan.FromMinutes(5));
+
+        // Assert: Cert B is a cache miss
+        _sut.TryGetValue(keyB, out _).Should().BeFalse("Rotation to new cert must be a cache miss.");
+
+        // Act: Cache cert B
+        _sut.Set(keyB, "thumbprint-B", TimeSpan.FromMinutes(5));
+
+        // Assert: Both cached (coexistence during grace period)
+        _sut.TryGetValue(keyA, out var valA).Should().BeTrue();
+        valA.Should().Be("thumbprint-A");
+        _sut.TryGetValue(keyB, out var valB).Should().BeTrue();
+        valB.Should().Be("thumbprint-B");
+    }
+
+    [Fact(DisplayName = "🛡️ Rotation Storm: Many rotated certs stay within capacity bound")]
+    public void RotationStorm_ManyCerts_CapacityBounded()
+    {
+        // Simulate a rotation storm: 50 cert rotations, cache limit 10
+        for (var i = 0; i < 50; i++)
+        {
+            var certPem = $"-----BEGIN CERTIFICATE-----\nCERT-{i}\n-----END CERTIFICATE-----";
+            var cacheKey = ComputeMtlsCacheKey(certPem);
+            _sut.Set(cacheKey, $"thumbprint-{i}", TimeSpan.FromMinutes(5));
+        }
+
+        Thread.Sleep(150);
+
+        _sut.Count.Should().BeLessThanOrEqualTo(10,
+            "Cache must remain bounded even under sustained rotation load.");
+    }
+
+    // Helpers mirroring MtlsBindingMiddleware.GenerateZeroAllocationCacheKey
+    private static string ComputeMtlsCacheKey(string rawCertData)
+    {
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawCertData));
+        // Base64Url encoding: base64 -> replace +/ with -_ and strip padding
+        var base64 = Convert.ToBase64String(hashBytes);
+        return string.Concat("mtls:", base64.Replace('+', '-').Replace('/', '_').TrimEnd('='));
     }
 }

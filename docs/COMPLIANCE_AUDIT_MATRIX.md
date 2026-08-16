@@ -53,6 +53,10 @@ This matrix maps international security standards, regulatory frameworks, and co
 | **Production Container Hardening** | Implemented | Multi-stage, distroless `Dockerfile` running as the chiseled base image's pre-configured non-privileged user `app` (UID 1654) with `DOTNET_EnableDiagnostics=0` (`src/Sentinel.AspNetCore/Dockerfile`). |
 | **Post-Quantum Cryptography** | Implemented | Native .NET 10 FIPS 204 `MLDsa` cryptographic signature verification (`MlDsaSignatureVerifier.cs`), mathematically verified via `MlDsaSignatureVerifierTests.cs`. |
 | **Persistent vs Ephemeral State** | Implemented | Safe multi-tier mapping: RDBMS (PostgreSQL) is restricted to persistent writes via Write-Through `HybridSessionBlacklistCache.cs`, while ephemeral caches (Nonces, JTIs) are strictly blocked from RDBMS in production via `SecurityInvariantsStartupFilter` to prevent DB DoS. The filter is now registered in every host through `SentinelAspNetCoreExtensions.AddSentinelAspNetCore` (`TryAddEnumerable`). |
+| **JWKS Key Rotation & Grace Period** | Implemented | `RotatingJwksServer` test fixture + `JwksRotationIntegrationTests`; kid-miss telemetry (`crypto.jwks.kid_miss_total`), refresh telemetry (`crypto.jwks.refresh_total`); grace period via retained retired keys in JWKS; known HTTP metadata limitation documented (github.com/dotnet/aspnetcore/issues/28948). |
+| **TLS Certificate Hot Reload** | Implemented | `KestrelCertificateReloader` + `ServerCertificateSelector`; file watcher with debounce + retry; `crypto.tls.cert_days_remaining` gauge + `crypto.tls.cert_reload_total` counter; zero-downtime swap with deferred old-cert disposal. |
+| **mTLS Certificate Cache Rotation** | Implemented | `MtlsCertificateCache` keyed by raw-PEM SHA-256 + sliding expiration; rotation = cache miss + parse; bounded by `SizeLimit` (10k); unit tests for rotation/eviction. |
+| **Envelope Lazy Re-wrap** | Implemented | `IEnvelopeEncryptionService.DecryptEnvelope` → `EnvelopeDecryptionResult(PlainText, RequiresRewrap, RewrappedCipher)`; V1 retired key / V0 legacy → lazy re-wrap under active key; `crypto.lazy_rewraps_total` + `crypto.keyring.active_key_mismatch` metrics. |
 
 ---
 
@@ -75,7 +79,11 @@ This matrix maps international security standards, regulatory frameworks, and co
 - `src/Sentinel.SdJwt/` (Selective Disclosure Presentation Verifier)
 - `src/Sentinel.Rar/` (Rich Authorization Request Evaluator)
 - `src/Sentinel.Infrastructure/Cryptography/MlDsaSignatureVerifier.cs` (Native FIPS 204 ML-DSA Signature Verifier)
+- `src/Sentinel.Infrastructure/Cryptography/AesGcmEncryptionService.cs` (Envelope encryption + lazy re-wrap)
+- `src/Sentinel.Infrastructure/Cryptography/CryptographyOptions.cs` (KeyRing + ActiveKeyId config)
 - `src/Sentinel.Infrastructure/Cache/HybridSessionBlacklistCache.cs` (PostgreSQL + Redis Write-Through Cache)
+- `src/Sentinel.AspNetCore/Infrastructure/KestrelCertificateReloader.cs` (TLS cert hot reload)
+- `src/Sentinel.AspNetCore/Stores/MtlsCertificateCache.cs` (mTLS cert cache)
 
 ### 4.3 Advanced Testing & Verification Suites
 - `tests/Sentinel.Tests.Concurrency/IdempotencyConcurrencyTests.cs` (Coyote Systematic Concurrency Tests)
@@ -85,7 +93,10 @@ This matrix maps international security standards, regulatory frameworks, and co
 - `tests/Sentinel.Benchmarks/` (Micro-benchmarking Suite)
 - `tests/Sentinel.FuzzTests/` (Generative Fuzz Testing Harness)
 - `tests/Sentinel.Tests.Unit/Unit/MlDsaSignatureVerifierTests.cs` (Natively verified Post-Quantum Cryptographic Tests)
+- `tests/Sentinel.Tests.Unit/Unit/AesGcmEncryptionServiceTests.cs` (Envelope re-wrap + rotation + legacy)
+- `tests/Sentinel.Tests.Unit/Unit/MtlsCertificateCacheTests.cs` (Rotation + eviction + capacity)
 - `tests/Sentinel.Tests.Integration/Integration/HybridSessionBlacklistCacheIntegrationTests.cs` (Containerized multi-tier persistence and caching tests)
+- `tests/Sentinel.Tests.Integration/Integration/Cryptography/JwksRotationIntegrationTests.cs` (JWKS rotation + grace + retirement)
 - `Sentinel.Tests.Acceptance/` (Reqnroll E2E Acceptance Tests for FAPI 2.0 Financial Transfers and CAEP SSF Session Revocation)
 
 ---

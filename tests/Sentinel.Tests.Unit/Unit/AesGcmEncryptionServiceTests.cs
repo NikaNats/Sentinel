@@ -3,6 +3,7 @@ using System.Text;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
 using Moq;
+using Sentinel.Application.Common.Abstractions;
 using Sentinel.Infrastructure.Cryptography;
 
 namespace Sentinel.Tests.Unit.Unit;
@@ -144,5 +145,156 @@ public sealed class AesGcmEncryptionServiceTests
 
         decrypted.Should().Be(plainText,
             "Modern service must transparently fall back to legacy key for unversioned ciphertexts.");
+    }
+
+    // ---- EnvelopeDecryptionResult / IEnvelopeEncryptionService tests ----
+
+    [Fact(DisplayName = "🔄 Envelope: Active key decryption reports no re-wrap required")]
+    public void DecryptEnvelope_WithActiveKey_RewrapNotRequired()
+    {
+        var activeKey = GenerateRandomKeyBase64();
+        var options = CreateOptionsMonitor(new CryptographyOptions
+        {
+            ActiveKeyId = "key-active",
+            KeyRing = new Dictionary<string, string> { ["key-active"] = activeKey }
+        });
+
+        var sut = new AesGcmEncryptionService(options);
+        const string plainText = "current-active-key-payload";
+
+        var ciphertext = sut.Encrypt(plainText);
+        var result = sut.DecryptEnvelope(ciphertext);
+
+        result.PlainText.Should().Be(plainText);
+        result.RequiresRewrap.Should().BeFalse();
+        result.RewrappedCipher.Should().BeNull();
+    }
+
+    [Fact(DisplayName = "🔄 Envelope: Non-active key in ring triggers lazy re-wrap under active key")]
+    public void DecryptEnvelope_WithNonActiveKeyInRing_TriggersLazyRewrap()
+    {
+        var keyOld = GenerateRandomKeyBase64();
+        var keyNew = GenerateRandomKeyBase64();
+
+        var optionsOld = CreateOptionsMonitor(new CryptographyOptions
+        {
+            ActiveKeyId = "key-old",
+            KeyRing = new Dictionary<string, string> { ["key-old"] = keyOld }
+        });
+
+        var sutOld = new AesGcmEncryptionService(optionsOld);
+        const string plainText = "historical-data-encrypted-with-old-key";
+
+        var ciphertextOld = sutOld.Encrypt(plainText);
+
+        var optionsNew = CreateOptionsMonitor(new CryptographyOptions
+        {
+            ActiveKeyId = "key-new",
+            KeyRing = new Dictionary<string, string>
+            {
+                ["key-old"] = keyOld,
+                ["key-new"] = keyNew
+            }
+        });
+
+        var sutNew = new AesGcmEncryptionService(optionsNew);
+        var result = sutNew.DecryptEnvelope(ciphertextOld);
+
+        result.PlainText.Should().Be(plainText);
+        result.RequiresRewrap.Should().BeTrue();
+        result.RewrappedCipher.Should().NotBeNull();
+
+        // The rewrapped ciphertext MUST decrypt under the active key
+        var roundTrip = sutNew.Decrypt(result.RewrappedCipher!);
+        roundTrip.Should().Be(plainText);
+    }
+
+    [Fact(DisplayName = "🔄 Envelope: Legacy V0 ciphertext triggers lazy re-wrap")]
+    public void DecryptEnvelope_WithLegacyCiphertext_TriggersLazyRewrap()
+    {
+        var legacyKeyBase64 = GenerateRandomKeyBase64();
+        var legacyKeyBytes = Convert.FromBase64String(legacyKeyBase64);
+        const string plainText = "legacy-record-to-be-upgraded";
+
+        var legacyCiphertext = EncryptLegacyRaw(plainText, legacyKeyBytes);
+
+        var activeKey = GenerateRandomKeyBase64();
+        var modernOptions = CreateOptionsMonitor(new CryptographyOptions
+        {
+            ActiveKeyId = "modern-key-v1",
+            KeyRing = new Dictionary<string, string> { ["modern-key-v1"] = activeKey },
+            LegacyMasterKey = legacyKeyBase64
+        });
+
+        var sut = new AesGcmEncryptionService(modernOptions);
+        var result = sut.DecryptEnvelope(legacyCiphertext);
+
+        result.PlainText.Should().Be(plainText);
+        result.RequiresRewrap.Should().BeTrue();
+        result.RewrappedCipher.Should().NotBeNull();
+
+        var roundTrip = sut.Decrypt(result.RewrappedCipher!);
+        roundTrip.Should().Be(plainText);
+    }
+
+    [Fact(DisplayName = "🛡️ Envelope: Unknown key in envelope fails closed (no silent fallback)")]
+    public void DecryptEnvelope_WithUnknownKey_FailsClosed()
+    {
+        var activeKey = GenerateRandomKeyBase64();
+        var options = CreateOptionsMonitor(new CryptographyOptions
+        {
+            ActiveKeyId = "key-active",
+            KeyRing = new Dictionary<string, string> { ["key-active"] = activeKey }
+        });
+
+        var sut = new AesGcmEncryptionService(options);
+        const string plainText = "this-will-be-encrypted-with-unknown-key";
+
+        var ciphertext = sut.Encrypt(plainText);
+
+        // Mutate the key-id byte in the envelope header to simulate unknown key
+        // Header: [MagicByte][keyIdLen][keyId...]
+        // keyId is at offset 2
+        ciphertext[2] ^= 0xFF; // corrupt key-id length -> parse fails -> unknown key path
+
+        var act = () => sut.DecryptEnvelope(ciphertext);
+        act.Should().Throw<CryptographicException>();
+    }
+
+    [Fact(DisplayName = "🔄 Envelope: Re-wrap is idempotent (already-active ciphertext reports no re-wrap)")]
+    public void DecryptEnvelope_RewrappedCiphertext_IsIdempotent()
+    {
+        var keyOld = GenerateRandomKeyBase64();
+        var keyNew = GenerateRandomKeyBase64();
+
+        var optionsOld = CreateOptionsMonitor(new CryptographyOptions
+        {
+            ActiveKeyId = "key-old",
+            KeyRing = new Dictionary<string, string> { ["key-old"] = keyOld }
+        });
+
+        var sutOld = new AesGcmEncryptionService(optionsOld);
+        var ciphertextOld = sutOld.Encrypt("data");
+
+        var optionsNew = CreateOptionsMonitor(new CryptographyOptions
+        {
+            ActiveKeyId = "key-new",
+            KeyRing = new Dictionary<string, string>
+            {
+                ["key-old"] = keyOld,
+                ["key-new"] = keyNew
+            }
+        });
+
+        var sutNew = new AesGcmEncryptionService(optionsNew);
+
+        // First re-wrap
+        var result1 = sutNew.DecryptEnvelope(ciphertextOld);
+        result1.RequiresRewrap.Should().BeTrue();
+
+        // Second call with the REWRAPPED ciphertext (now active)
+        var result2 = sutNew.DecryptEnvelope(result1.RewrappedCipher!);
+        result2.RequiresRewrap.Should().BeFalse();
+        result2.PlainText.Should().Be("data");
     }
 }

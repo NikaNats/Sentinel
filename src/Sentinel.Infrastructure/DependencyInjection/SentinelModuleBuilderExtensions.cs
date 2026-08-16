@@ -36,11 +36,35 @@ public static class SentinelModuleBuilderExtensions
 
                 return opts.KeyRing.ContainsKey(opts.ActiveKeyId);
             }, "Cryptography:ActiveKeyId must reference an existing key in Cryptography:KeyRing.")
+            .Validate(opts =>
+            {
+                foreach (var (keyId, base64Key) in opts.KeyRing)
+                {
+                    try
+                    {
+                        var keyBytes = Convert.FromBase64String(base64Key);
+                        if (keyBytes.Length != 32)
+                        {
+                            return false;
+                        }
+                    }
+#pragma warning disable CA1031
+                    catch
+                    {
+                        return false;
+                    }
+#pragma warning restore CA1031
+                }
+                return true;
+            }, "All keys in Cryptography:KeyRing must be exactly 32 bytes (AES-256) when base64-decoded.")
             .ValidateOnStart();
 
         _ = services.Configure<RegistrationOptions>(configuration.GetSection("Registration"));
 
         _ = services.AddSingleton<IEncryptionService, AesGcmEncryptionService>();
+
+        _ = services.AddSingleton<IEnvelopeEncryptionService>(sp =>
+            sp.GetRequiredService<AesGcmEncryptionService>());
 
         _ = services.AddSingleton<ILogoutTokenValidator, LogoutTokenValidator>();
 

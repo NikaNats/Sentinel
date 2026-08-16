@@ -1,4 +1,5 @@
-﻿using System.Net.Security;
+﻿using System.Diagnostics;
+using System.Net.Security;
 using System.Security.Authentication;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -15,17 +16,22 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
+using OpenTelemetry;
 using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Scalar.AspNetCore;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Application.DependencyInjection;
 using Sentinel.AspNetCore.Endpoints;
 using Sentinel.AspNetCore.Extensions;
+using Sentinel.AspNetCore.Infrastructure;
 using Sentinel.Infrastructure.Auth;
 using Sentinel.Infrastructure.DependencyInjection;
 using Sentinel.Keycloak.Extensions;
 using Sentinel.Keycloak.Services;
+using Sentinel.Security.Diagnostics;
 using Sentinel.RAR.Extensions;
 using Sentinel.Redis.Extensions;
 using Sentinel.Sample.MinimalApi;
@@ -71,9 +77,33 @@ builder.WebHost.ConfigureKestrel(options =>
     options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
 });
 
+// Certificate hot reload (Enterprise Cryptographic & PKI Lifecycle)
+if (builder.Configuration.GetSection("Kestrel:CertificateReloader:Path").Exists())
+{
+    builder.Services.AddKestrelCertificateReloader(builder.Configuration);
+    builder.WebHost.UseKestrelCertificateReloader();
+}
+
 builder.Services.AddOpenApi();
 
-var allowedCorsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+    // OpenTelemetry configuration (docs/OTEL_DOTNET_INTEGRATION_SNIPPET.md)
+    builder.Services.AddOpenTelemetry()
+        .ConfigureResource(resource => resource
+            .AddService(serviceName: "Sentinel.Sample.MinimalApi")
+            .AddAttributes(new Dictionary<string, object>
+            {
+                ["deployment.environment"] = builder.Environment.EnvironmentName,
+                ["service.version"] = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown"
+            }))
+        .WithMetrics(metrics => metrics
+            .AddMeter(AuthTelemetry.MeterName)
+            .AddPrometheusExporter())
+        .WithTracing(tracing => tracing
+            .AddSource(AuthTelemetry.SourceName)
+            .AddAspNetCoreInstrumentation()
+            .AddOtlpExporter());
+
+    var allowedCorsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 if (allowedCorsOrigins.Length > 0)
 {
     builder.Services.AddCors(options =>
@@ -257,6 +287,38 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
                 var json = JsonSerializer.Serialize(problem, SampleJsonContext.Default.ProblemDetails);
                 await context.Response.WriteAsync(json);
+            },
+            OnAuthenticationFailed = context =>
+            {
+                // Enterprise Cryptographic & PKI Lifecycle: kid-miss telemetry
+                // JwtBearerHandler natively calls ConfigurationManager.RequestRefresh()
+                // on SecurityTokenSignatureKeyNotFoundException; we observe and record.
+                if (context.Exception is SecurityTokenSignatureKeyNotFoundException)
+                {
+                    try
+                    {
+                        var kid = "unknown";
+                        var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
+                        if (!string.IsNullOrWhiteSpace(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var token = authHeader["Bearer ".Length..].Trim();
+                            var jwt = new JsonWebToken(token);
+                            kid = jwt.Kid ?? "unknown";
+                        }
+                        var tags = new TagList { { "kid", kid } };
+                        AuthTelemetry.JwksKidMisses.Add(1, tags);
+                        AuthTelemetry.JwksRefreshRequests.Add(1);
+                    }
+#pragma warning disable CA1031
+                    catch
+                    {
+                        AuthTelemetry.JwksKidMisses.Add(1, new TagList { { "kid", "unknown" } });
+                        AuthTelemetry.JwksRefreshRequests.Add(1);
+                    }
+#pragma warning restore CA1031
+                }
+
+                return Task.CompletedTask;
             }
         };
 
@@ -327,11 +389,20 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
         options.MetadataAddress = null!;
         options.Authority = null!;
     }
-    else
-    {
-        options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
-    }
-});
+else
+        {
+            options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
+        }
+
+        // Enterprise Cryptographic & PKI Lifecycle: configure JWKS refresh interval
+        // Default RefreshInterval=30s (DoS protection per ASP.NET Core team guidance).
+        // Shorter interval = faster rotation convergence; operator-tunable.
+        var refreshIntervalSeconds = keycloakSection.GetValue<int>("JwksRefreshIntervalSeconds");
+        if (refreshIntervalSeconds > 0 && options.ConfigurationManager is ConfigurationManager<OpenIdConnectConfiguration> cm)
+        {
+            cm.RefreshInterval = TimeSpan.FromSeconds(refreshIntervalSeconds);
+        }
+    });
 
 builder.Services
     .AddRedisSecurityCaches(builder.Configuration.GetSection("Sentinel:Redis"))
@@ -418,12 +489,7 @@ builder.Services.AddSingleton<DocumentRepository>();
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseDeveloperExceptionPage();
-}
-else
-{
+    // RFC 7807 ProblemDetails globally - no Developer Exception Page (Zero Dev Bypasses)
     app.UseExceptionHandler(errorApp =>
     {
         errorApp.Run(async context =>
@@ -433,15 +499,21 @@ else
                 return;
             }
 
-            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            var statusCode = context.Response.StatusCode != StatusCodes.Status200OK
+                ? context.Response.StatusCode
+                : StatusCodes.Status500InternalServerError;
+
+            context.Response.StatusCode = statusCode;
             context.Response.ContentType = "application/problem+json; charset=utf-8";
 
             var problem = new ProblemDetails
             {
                 Type = "/errors/internal",
-                Title = "Unexpected error",
+                Title = statusCode == StatusCodes.Status500InternalServerError
+                    ? "Unexpected error"
+                    : "Request failed",
                 Detail = "An unexpected error occurred while processing the request.",
-                Status = StatusCodes.Status500InternalServerError,
+                Status = statusCode,
                 Extensions = { ["traceId"] = context.TraceIdentifier }
             };
 
@@ -449,7 +521,6 @@ else
             await context.Response.WriteAsync(json);
         });
     });
-}
 
 app.UseForwardedHeaders();
 app.UseHttpsRedirection();

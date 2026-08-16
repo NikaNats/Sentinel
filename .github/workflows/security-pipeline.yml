@@ -14,6 +14,7 @@ env:
 
 permissions:
   contents: read
+  security-events: write
 
 jobs:
   build-scan:
@@ -121,8 +122,9 @@ jobs:
         with:
           framework: kubernetes,dockerfile
           output_format: cli
-          soft_fail: true 
+          soft_fail: false
           skip_check: CKV_DOCKER_4,CKV_K8S_43
+          quiet: false
 
       - name: Generate Local CA/Keycloak Certificates (Dockerfile build context)
         run: bash infra/certs/generate-certs.sh
@@ -135,7 +137,7 @@ jobs:
         with:
           image-ref: sentinel-api:ci
           severity: HIGH,CRITICAL
-          ignore-unfixed: true
+          ignore-unfixed: false
           exit-code: '1'
           format: sarif
           output: artifacts/trivy-image.sarif
@@ -146,6 +148,19 @@ jobs:
           name: trivy-image-sarif
           path: artifacts/trivy-image.sarif
           if-no-files-found: error
+
+      - name: Gate 10 - Cryptographic Lifecycle & Rotation Tests
+        run: |
+          dotnet test tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj \
+            --configuration Release --no-restore \
+            --filter "FullyQualifiedName~JwksRotation|FullyQualifiedName~KestrelCertificateHotReload|FullyQualifiedName~MtlsCertificateRotation|FullyQualifiedName~EnvelopeRewrap" \
+            --logger "console;verbosity=detailed" \
+            -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
+          dotnet test tests/Sentinel.Tests.Unit/Sentinel.Tests.Unit.csproj \
+            --configuration Release --no-restore \
+            --filter "FullyQualifiedName~MtlsCertificateRotation|FullyQualifiedName~EnvelopeRewrap" \
+            --logger "console;verbosity=detailed" \
+            -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
 
   contract-gate:
     name: Contract Compliance Gate
@@ -249,12 +264,18 @@ jobs:
 
       - name: Install Playwright Chromium (browser-mediated FAPI 2.0 E2E)
         if: matrix.test-project == 'tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj'
-        run: |
-          pwsh tests/Sentinel.Tests.Integration/bin/Release/net10.0/playwright.ps1 install chromium --with-deps
+        uses: microsoft/playwright-github-action@v1
+        with:
+          browsers: chromium
 
       - name: Test
         if: matrix.test-project != 'tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj'
-        run: dotnet test ${{ matrix.test-project }} --configuration Release --no-restore --logger "console;verbosity=detailed" -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
+        run: |
+          dotnet test ${{ matrix.test-project }} --configuration Release --no-restore \
+            --logger "console;verbosity=detailed" \
+            /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura \
+            /p:Threshold=80 /p:ThresholdType=line /p:ThresholdStat=total \
+            -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
 
       - name: Coyote Systematic Concurrency Proof (1000 iterations, IL-rewritten)
         if: matrix.test-project == 'tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj'
@@ -315,8 +336,16 @@ jobs:
           schemathesis run docs/OPENAPI_3_1.yaml \
             --url http://localhost:5000 \
             --checks not_a_server_error \
-            --workers 4
+            --workers 4 \
+            --junit-xml artifacts/fuzz-results.xml
         continue-on-error: false
+
+      - name: Upload Schemathesis Fuzzing Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: schemathesis-fuzz-results
+          path: artifacts/fuzz-results.xml
+          if-no-files-found: error
 
   native-aot-gate:
     name: Native AOT Serialization Gate

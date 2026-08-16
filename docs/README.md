@@ -35,6 +35,7 @@ If you are new to the repository, read these documents in the recommended order 
 | **[OPENAPI_3_1.yaml](OPENAPI_3_1.yaml)** | API Consumers, Gateway | Machine-readable API contracts and schemas for gateway routing. | Active |
 | **[SDK_LESS_INTEGRATION_GUIDE.md](SDK_LESS_INTEGRATION_GUIDE.md)** | API Consumers | Handshake protocols, Nonce challenge-response, and raw HTTP examples. | Active |
 | **[SRE_SOC_RUNBOOKS.md](SRE_SOC_RUNBOOKS.md)** | SRE, On-Call Operators | Incident triage, logging, telemetry, and disaster recovery playbooks. | Active |
+| **[CRYPTO_LIFECYCLE_RUNBOOK.md](CRYPTO_LIFECYCLE_RUNBOOK.md)** | Crypto Operators, SRE | JWKS rotation, TLS hot reload, mTLS cache, envelope re-wrap, metrics, alerting. | Active |
 | **`runbooks/auth-token-issuance.md`** | IAM Operators | Token issuance, trust-chain validation, and key-rotation playbooks. | Active |
 | **`archive/*`** | Compliance Auditors | Historical audit artifacts retained for end-to-end traceability. | Archived |
 

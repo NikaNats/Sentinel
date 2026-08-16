@@ -84,4 +84,80 @@ public static class AuthTelemetry
     public static readonly Counter<long> IdempotencyLockContentions = Meter.CreateCounter<long>(
         "auth.idempotency.lock_contention_total",
         description: "Number of idempotency lock acquisition contentions under concurrent load.");
+
+    // ---------------------------------------------------------------------
+    // Cryptographic & PKI lifecycle telemetry (Enterprise Cryptographic and
+    // PKI Lifecycle Architecture, docs/CRYPTO_LIFECYCLE_RUNBOOK.md).
+    //
+    // Metric names follow OTel-style namespacing under `crypto.*`:
+    //   - jwks.refresh_total:    JWKS refresh requested after kid-miss.
+    //   - jwks.kid_miss_total:    signature-key-not-found events (kid label).
+    //   - tls.cert_days_remaining: days until the served TLS certificate
+    //     expires (observable gauge; provider updated by the cert reloader).
+    //   - lazy_rewraps_total:     envelope ciphertexts re-encrypted under the
+    //     active key during decryption (key_id label).
+    //   - keyring.active_key_mismatch: decryptions whose envelope key differs
+    //     from the configured active key (keyring rotation drift signal).
+    // ---------------------------------------------------------------------
+
+    /// <summary>
+    ///     Counter: JWKS refresh requests triggered by a signature-key-not-found
+    ///     (kid-miss) event during token validation.
+    /// </summary>
+    public static readonly Counter<long> JwksRefreshRequests = Meter.CreateCounter<long>(
+        "crypto.jwks.refresh_total",
+        description: "Number of JWKS configuration refresh requests after a signing key lookup miss.");
+
+    /// <summary>
+    ///     Counter: Signing key (kid) lookup misses during JWT signature validation.
+    /// </summary>
+    public static readonly Counter<long> JwksKidMisses = Meter.CreateCounter<long>(
+        "crypto.jwks.kid_miss_total",
+        description: "Number of JWT signature validations that failed to find the token signing key (kid).");
+
+    /// <summary>
+    ///     Observable gauge: days remaining until the currently served TLS
+    ///     certificate expires. Updated by KestrelCertificateReloader on every
+    ///     (re)load; a value crossing the alerting threshold indicates the
+    ///     operator must renew the certificate.
+    /// </summary>
+    private static double s_tlsCertDaysRemaining;
+
+    /// <summary>
+    ///     Gets or sets the days remaining until the served TLS certificate
+    ///     expires. The Kestrel certificate reloader updates this value on
+    ///     every certificate (re)load; the observable gauge below reports it.
+    /// </summary>
+    public static double TlsCertDaysRemaining
+    {
+        get => Interlocked.CompareExchange(ref s_tlsCertDaysRemaining, 0, 0);
+        set => Interlocked.Exchange(ref s_tlsCertDaysRemaining, value);
+    }
+
+    /// <summary>
+    ///     Observable gauge: remaining certificate lifetime (days).
+    /// </summary>
+    public static readonly ObservableGauge<double> TlsCertDaysRemainingGauge = Meter.CreateObservableGauge<double>(
+        "crypto.tls.cert_days_remaining",
+        () => s_tlsCertDaysRemaining,
+        unit: "days",
+        description: "Days until the served TLS certificate expires.");
+
+    /// <summary>
+    ///     Counter: Envelope ciphertexts decrypted under a non-active key and
+    ///     transparently re-encrypted (lazy re-wrap) under the active key.
+    /// </summary>
+    public static readonly Counter<long> LazyRewraps = Meter.CreateCounter<long>(
+        "crypto.lazy_rewraps_total",
+        description: "Number of envelope ciphertexts re-encrypted under the active key during decryption.");
+
+    /// <summary>
+    ///     Counter: Envelope decryptions whose keyring key differs from the
+    ///     configured active key. A non-zero rate (summed by key_id) is the
+    ///     rotation-drift alerting signal: either the keyring was rotated
+    ///     without the active key being updated, or legacy data remains.
+    /// </summary>
+    public static readonly Counter<long> KeyRingActiveKeyMismatches = Meter.CreateCounter<long>(
+        "crypto.keyring.active_key_mismatch",
+        description: "Number of decryptions performed with a keyring key that differs from the active key.");
 }

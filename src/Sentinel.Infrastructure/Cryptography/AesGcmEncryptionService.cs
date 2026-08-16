@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using Sentinel.Application.Common.Abstractions;
+using Sentinel.Security.Diagnostics;
 
 namespace Sentinel.Infrastructure.Cryptography;
 
@@ -13,7 +15,7 @@ namespace Sentinel.Infrastructure.Cryptography;
 ///     - Zero-allocation Span&lt;T&gt; parsing for header metadata
 ///     - FedRAMP High compliance via auditable key version information
 /// </summary>
-internal sealed class AesGcmEncryptionService : IEncryptionService, IDisposable
+internal sealed class AesGcmEncryptionService : IEnvelopeEncryptionService, IDisposable
 {
     private const byte MagicByte = 0x56;
     private const int NonceSize = 12;
@@ -65,7 +67,8 @@ internal sealed class AesGcmEncryptionService : IEncryptionService, IDisposable
 
         var cipherBytes = new byte[plainBytes.Length];
 
-        using (var aesGcm = new AesGcm(state.ActiveKey, TagSize))
+        // Modern .NET 8+ zero-allocation API: AesGcm(key.AsSpan())
+        using (var aesGcm = new AesGcm(state.ActiveKey.AsSpan(), TagSize))
         {
             aesGcm.Encrypt(nonce, plainBytes, cipherBytes, tag);
         }
@@ -99,22 +102,61 @@ internal sealed class AesGcmEncryptionService : IEncryptionService, IDisposable
         }
 
         var state = _state;
-        ReadOnlySpan<byte> payload = cipherData;
 
-        if (payload[0] == MagicByte && payload.Length > 2)
+        if (cipherData[0] == MagicByte && cipherData.Length > 2 &&
+            TryDecryptVersioned(cipherData, state, out _, out var plainText))
         {
-            try
-            {
-                return DecryptV1(payload, state);
-            }
-            catch (CryptographicException)
-            {
-            }
+            return plainText;
         }
 
         if (state.LegacyKey != null)
         {
-            return DecryptLegacy(payload, state.LegacyKey);
+            return DecryptLegacy(cipherData, state.LegacyKey);
+        }
+
+        throw new CryptographicException(
+            "Unable to decrypt: Payload format is unversioned (V0) but no LegacyMasterKey is configured.");
+    }
+
+    public EnvelopeDecryptionResult DecryptEnvelope(byte[] cipherData)
+    {
+        if (cipherData.Length < NonceSize + TagSize + 2)
+        {
+            throw new CryptographicException("Ciphertext payload is too short.");
+        }
+
+        var state = _state;
+
+        if (cipherData[0] == MagicByte && cipherData.Length > 2 &&
+            TryDecryptVersioned(cipherData, state, out var keyId, out var plainText))
+        {
+            if (string.Equals(keyId, state.ActiveKeyId, StringComparison.Ordinal))
+            {
+                return new EnvelopeDecryptionResult(plainText, RequiresRewrap: false, RewrappedCipher: null);
+            }
+
+            // NIST SP 800-57 rotation grace: the payload was produced under a
+            // key that is no longer active. Re-wrap lazily and hand the caller
+            // the ciphertext to persist, converging storage on the active key.
+            var rewrapped = Encrypt(plainText);
+
+            var tags = new TagList { { "key_id", keyId } };
+            AuthTelemetry.LazyRewraps.Add(1, tags);
+            AuthTelemetry.KeyRingActiveKeyMismatches.Add(1, tags);
+
+            return new EnvelopeDecryptionResult(plainText, RequiresRewrap: true, rewrapped);
+        }
+
+        if (state.LegacyKey != null)
+        {
+            var plainLegacy = DecryptLegacy(cipherData, state.LegacyKey);
+            var rewrapped = Encrypt(plainLegacy);
+
+            var legacyTags = new TagList { { "key_id", "legacy-v0" } };
+            AuthTelemetry.LazyRewraps.Add(1, legacyTags);
+            AuthTelemetry.KeyRingActiveKeyMismatches.Add(1, legacyTags);
+
+            return new EnvelopeDecryptionResult(plainLegacy, RequiresRewrap: true, rewrapped);
         }
 
         throw new CryptographicException(
@@ -159,39 +201,53 @@ internal sealed class AesGcmEncryptionService : IEncryptionService, IDisposable
         return new CryptoState(config.ActiveKeyId, activeKey, keyRing, legacyKey);
     }
 
-    private static string DecryptV1(ReadOnlySpan<byte> payload, CryptoState state)
+    private static bool TryDecryptVersioned(
+        ReadOnlySpan<byte> payload,
+        CryptoState state,
+        out string keyId,
+        out string plainText)
     {
-        var cursor = 1;
-        var keyIdLen = payload[cursor++];
+        keyId = string.Empty;
+        plainText = string.Empty;
 
-        if (payload.Length < cursor + keyIdLen + NonceSize + TagSize)
+        try
         {
-            throw new CryptographicException("Malformed versioned ciphertext: insufficient header data.");
+            var cursor = 1;
+            var keyIdLen = payload[cursor++];
+
+            if (payload.Length < cursor + keyIdLen + NonceSize + TagSize)
+            {
+                return false;
+            }
+
+            var keyIdBytes = payload.Slice(cursor, keyIdLen);
+            cursor += keyIdLen;
+
+            keyId = Encoding.UTF8.GetString(keyIdBytes);
+            if (!state.KeyRing.TryGetValue(keyId, out var key))
+            {
+                return false;
+            }
+
+            var nonce = payload.Slice(cursor, NonceSize);
+            cursor += NonceSize;
+
+            var tag = payload.Slice(cursor, TagSize);
+            cursor += TagSize;
+
+            var cipherBytes = payload.Slice(cursor);
+            var plainBytes = new byte[cipherBytes.Length];
+
+            using var aesGcm = new AesGcm(key.AsSpan(), TagSize);
+            aesGcm.Decrypt(nonce, cipherBytes, tag, plainBytes);
+
+            plainText = Encoding.UTF8.GetString(plainBytes);
+            return true;
         }
-
-        var keyIdBytes = payload.Slice(cursor, keyIdLen);
-        cursor += keyIdLen;
-
-        var keyId = Encoding.UTF8.GetString(keyIdBytes);
-        if (!state.KeyRing.TryGetValue(keyId, out var key))
+        catch (CryptographicException)
         {
-            throw new CryptographicException(
-                $"Key ID '{keyId}' not found in KeyRing. Cannot decrypt data encrypted with unknown key.");
+            return false;
         }
-
-        var nonce = payload.Slice(cursor, NonceSize);
-        cursor += NonceSize;
-
-        var tag = payload.Slice(cursor, TagSize);
-        cursor += TagSize;
-
-        var cipherBytes = payload.Slice(cursor);
-        var plainBytes = new byte[cipherBytes.Length];
-
-        using var aesGcm = new AesGcm(key, TagSize);
-        aesGcm.Decrypt(nonce, cipherBytes, tag, plainBytes);
-
-        return Encoding.UTF8.GetString(plainBytes);
     }
 
     private static string DecryptLegacy(ReadOnlySpan<byte> payload, byte[] legacyKey)
@@ -201,7 +257,7 @@ internal sealed class AesGcmEncryptionService : IEncryptionService, IDisposable
         var cipherBytes = payload.Slice(NonceSize + TagSize);
         var plainBytes = new byte[cipherBytes.Length];
 
-        using var aesGcm = new AesGcm(legacyKey, TagSize);
+        using var aesGcm = new AesGcm(legacyKey.AsSpan(), TagSize);
         aesGcm.Decrypt(nonce, cipherBytes, tag, plainBytes);
 
         return Encoding.UTF8.GetString(plainBytes);

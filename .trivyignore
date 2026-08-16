@@ -1,0 +1,16 @@
+# Trivy Ignore File
+# 
+# Format: CVE-ID expires=YYYY-MM-DD ticket=JIRA/TICKET-ID reason="Justification"
+#
+# This file provides the audit trail required by FedRAMP for formally accepted risks.
+# Each entry MUST have an expiration date and a ticket reference.
+#
+# Review this file during every release cycle. Expired entries must be re-evaluated.
+
+# Example entries (remove if not applicable):
+# CVE-2024-XXXX expires=2025-03-01 ticket=SENT-1234 reason="No upstream patch available in alpine:3.20; monitoring for patch"
+# CVE-2024-YYYY expires=2025-06-15 ticket=SENT-5678 reason="Low severity in our threat model; compensating control: network isolation"
+
+# Current ignores (none at this time - base images are kept up to date):
+# This section intentionally left blank. Add entries only when absolutely necessary
+# with documented POAM/ticket references and expiration dates.
