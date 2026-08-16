@@ -172,10 +172,28 @@ kubectl -n sentinel-prod create secret generic sentinel-dpop-pool \
 
 ### 6.3 Run & validate
 
+The static CRDs default to the KinD image tag. Real clusters must inject the
+registry image via the apply helper (EKS/AKS/GKE cannot pull `:local`):
+
 ```bash
-kubectl apply -f infra/k8s/sre/crd-spike-20k.yaml
-# success = .status.stage == 'finished' (failed runs land in aborted/error)
+# KinD (image must be kind-load'ed first - see §6.1):
+tests/scripts/apply-sre-crd.sh infra/k8s/sre/crd-spike-20k.yaml
+
+# EKS/AKS/GKE:
+SRE_RUNNER_IMAGE=ghcr.io/<org>/k6-dpop:<tag> \
+  tests/scripts/apply-sre-crd.sh infra/k8s/sre/crd-spike-20k.yaml
+# mutable tags: add SRE_PULL_POLICY=Always; prefer digest/unique tags
+```
+
+Then validate at the Job/pod level, **not** just the operator stage report:
+
+```bash
 kubectl get k6/sentinel-spike-20k -n sentinel-prod -o jsonpath='{.status.stage}'
+# -> 'finished' (operator-side aborts land in aborted/error)
+# k6 exits 99 on a threshold breach, which FAILS the runner Job even though
+# the operator may still surface stage=finished - so also require:
+kubectl wait --for=condition=complete job/sentinel-spike-20k-runner-1 -n sentinel-prod --timeout=60s
+# (the distributed gate does exactly this for every runner Job + pod)
 # then validate metrics (needs Prometheus reachable):
 PROM_URL=https://prometheus... tests/scripts/validate-sre-soak.sh tests/load/sre-summary.json
 ```
@@ -188,8 +206,17 @@ kind for newer operator versions — both take the same `spec`.
 - `.github/workflows/sre-load-gate.yml` — smoke battery against the live
   cluster on every relevant push (stock k6, local runner).
 - `.github/workflows/sre-distributed-gate.yml` — workflow_dispatch: builds
-  the xk6 image, provisions a KinD stack, installs the operator, executes a
-  4-runner spike, and fails on any runner failure.
+  and pushes the xk6 image to GHCR, provisions the suite ConfigMap + pool
+  Secret, installs the operator, executes a distributed spike, and **fails
+  on threshold breaches via runner Job/pod completion** (k6 exits 99 on a
+  breach, so the Job lands in `Failed` even when the operator reports
+  `stage=finished`).
+- **Cluster access** — `SRE_CLUSTER_AUTH` repo variable selects the provider:
+  `kubeconfig` (default bootstrap: `KUBECONFIG` secret, keep it short-lived
+  and namespace-scoped; **follow-up ticket: OIDC/workload-identity
+  federation, Constitution §V.4 zero long-lived credentials**) or `aws`
+  (OIDC federation via `configure-aws-credentials` +
+  `aws eks update-kubeconfig` — no stored credential).
 
 ## 7. Remediation Playbook (Gate Failures)
 

@@ -1,3 +1,5 @@
+# image sentinel-k6-dpop:local is the KinD default; for EKS/AKS/GKE apply via
+# tests/scripts/apply-sre-crd.sh with SRE_RUNNER_IMAGE=<registry>/k6-dpop:<tag>.
 apiVersion: k6.io/v1alpha1
 kind: K6
 metadata:

@@ -12,11 +12,19 @@
 #   3. Provisions the suite ConfigMap + DPoP pool Secret.
 #   4. Executes a distributed spike (N runners x per-runner rate =
 #      aggregate, suite divides by K6_PARALLELISM) via a K6 CR.
-#   5. Fails on any runner failure (status.stage != finished).
+#   5. Enforces SLOs at the Job/pod level, not just the operator's stage
+#      report: k6 exits 99 on a threshold breach, so the runner Job lands in
+#      Failed even when the operator surfaces stage=finished.
 #
 # PREREQUISITES (documented in docs/SRE_LOAD_TESTING_RUNBOOK.md §6):
-#   * KUBECONFIG secret - kubeconfig for the target cluster (write access to
-#     the operator namespace + the CRD namespace)
+#   * Cluster access - SRE_CLUSTER_AUTH repo variable selects the provider:
+#       - 'kubeconfig' (default bootstrap): KUBECONFIG secret holding a
+#         short-lived, namespace-scoped kubeconfig. Follow-up ticket: migrate
+#         to OIDC/workload identity federation (Constitution §V.4 - zero
+#         long-lived credentials) for EKS/AKS/GKE.
+#       - 'aws': OIDC federation via configure-aws-credentials with
+#         AWS_ROLE_ARN/AWS_REGION/EKS_CLUSTER_NAME repo variables (no
+#         long-lived credential is stored).
 #   * Packages: write on GHCR for the runner image
 #   * The Sentinel stack must be deployed and reachable at SENTINEL_LOAD_URL
 #     (same vars/secrets as sre-load-gate.yml)
@@ -41,6 +49,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 jobs:
   distributed-sre-gate:
@@ -64,11 +73,30 @@ jobs:
           docker build -f tests/load/Dockerfile.xk6 -t "$IMG" .
           docker push "$IMG"
 
+      - name: Configure AWS credentials (OIDC federation)
+        if: vars.SRE_CLUSTER_AUTH == 'aws'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
       - name: Configure cluster access
         shell: bash
         run: |
-          mkdir -p "$HOME/.kube"
-          echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$HOME/.kube/config"
+          PROVIDER="${SRE_CLUSTER_AUTH:-kubeconfig}"
+          case "$PROVIDER" in
+            aws)
+              aws eks update-kubeconfig --name "${{ vars.EKS_CLUSTER_NAME }}" --region "${{ vars.AWS_REGION }}"
+              ;;
+            kubeconfig)
+              mkdir -p "$HOME/.kube"
+              echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$HOME/.kube/config"
+              ;;
+            *)
+              echo "::error::unsupported SRE_CLUSTER_AUTH=$PROVIDER (kubeconfig|aws)"
+              exit 1
+              ;;
+          esac
           kubectl cluster-info
 
       - name: Install k6-operator
@@ -139,18 +167,51 @@ jobs:
         shell: bash
         run: |
           NS=sentinel-prod
+          CR=sentinel-distributed-spike
+          STAGE=""
           for i in $(seq 1 90); do
-            STAGE=$(kubectl get k6/sentinel-distributed-spike -n "$NS" -o jsonpath='{.status.stage}' 2>/dev/null || true)
+            STAGE=$(kubectl get "k6/$CR" -n "$NS" -o jsonpath='{.status.stage}' 2>/dev/null || true)
             echo "poll $i: stage=$STAGE"
             case "$STAGE" in
-              finished) echo "Distributed spike PASSED"; exit 0 ;;
+              finished) break ;;
               aborted|error|failed) echo "::error::Distributed spike failed (stage=$STAGE)"; exit 1 ;;
               "") ;;
             esac
             sleep 10
           done
-          echo "::error::Timed out waiting for distributed spike completion"
-          exit 1
+          if [[ "$STAGE" != "finished" ]]; then
+            echo "::error::Timed out waiting for distributed spike completion (stage=$STAGE)"
+            exit 1
+          fi
+
+      - name: Enforce k6 thresholds (Job/pod completion, not just operator stage)
+        shell: bash
+        run: |
+          set -euo pipefail
+          NS=sentinel-prod
+          CR=sentinel-distributed-spike
+          FAILED=0
+          # A k6 threshold breach exits 99 -> the runner Job is marked Failed;
+          # the operator can still surface stage=finished, so validate the
+          # underlying Jobs and pods directly (label-agnostic name prefix).
+          for j in $(kubectl get jobs -n "$NS" -o name 2>/dev/null | grep "$CR" || true); do
+            if ! kubectl wait --for=condition=complete "$j" -n "$NS" --timeout=60s >/dev/null 2>&1; then
+              echo "::error::$j did not complete - k6 threshold breach (exit 99) or runner crash"
+              FAILED=1
+            fi
+          done
+          for p in $(kubectl get pods -n "$NS" -o name 2>/dev/null | grep "$CR" || true); do
+            PHASE=$(kubectl get "$p" -n "$NS" -o jsonpath='{.status.phase}' 2>/dev/null || true)
+            if [[ "$PHASE" != "Succeeded" ]]; then
+              echo "::error::$p phase=$PHASE (expected Succeeded)"
+              FAILED=1
+            fi
+          done
+          if [[ "$FAILED" -ne 0 ]]; then
+            echo "::error::SLO validation failed - see runner logs below"
+            exit 1
+          fi
+          echo "Distributed spike PASSED (all runner Jobs complete, SLOs within threshold)"
 
       - name: Scan runner logs for threshold failures
         if: always()
