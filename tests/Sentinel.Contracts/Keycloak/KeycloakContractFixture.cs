@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using DotNet.Testcontainers.Builders;
 using Testcontainers.Keycloak;
@@ -474,6 +475,34 @@ public sealed class KeycloakContractFixture : IAsyncLifetime
         using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
         var response = await SendAdminAsync(HttpMethod.Post, "/users", content);
         response.StatusCode.Should().Be(HttpStatusCode.Created, "contract user must be provisioned via Admin API");
+
+        // The realm (infra/keycloak/realms/sentinel.json) configures
+        // "webauthn-register" as a DEFAULT required action (AAL3 posture,
+        // commit 2ab9776): every user must enroll a passkey at first login,
+        // which redirects the auth flow to the registration page. The
+        // contract suite is a headless OIDC wire-format probe (no browser /
+        // authenticator), so the enrollment step is removed for the SYNTHETIC
+        // contract user via the Admin API - real users keep the mandatory
+        // AAL3 passkey enrollment.
+        //
+        // Verified on Keycloak 26.6.4: the create payload's requiredActions
+        // is ignored (defaults are applied unconditionally) and there is no
+        // per-action DELETE endpoint (404); the supported path is a PUT of
+        // the user representation with requiredActions: [].
+        var userId = response.Headers.Location!.ToString().Split('/').Last();
+        using (var get = await SendAdminAsync(HttpMethod.Get, $"/users/{userId}"))
+        {
+            get.EnsureSuccessStatusCode();
+            using var document = JsonDocument.Parse(await get.Content.ReadAsStringAsync());
+            var node = JsonNode.Parse(document.RootElement.GetRawText())
+                ?? throw new InvalidOperationException("User representation was not parseable.");
+            node["requiredActions"] = JsonNode.Parse("[]");
+            using var updateContent = new StringContent(
+                node.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
+            var update = await SendAdminAsync(HttpMethod.Put, $"/users/{userId}", updateContent);
+            update.StatusCode.Should().Be(HttpStatusCode.NoContent,
+                "webauthn-register required action must be removable via user PUT");
+        }
     }
 
     /// <summary>
