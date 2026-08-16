@@ -41,6 +41,14 @@
         <!-- NuGet lock files are committed (required by CI locked restores and SLSA Level 4) -->
         <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
 
+        <!-- NBGV 3.x exports ~50 cloud-build variables (NBGV_*, GitBuildVersion, ...)
+             into $GITHUB_ENV on every build when GITHUB_ACTIONS=true. Under parallel
+             MSBuild node builds the concurrent appends interleave mid-line and the
+             runner rejects the corrupted env file ('Invalid format ...'). Nothing in
+             CI consumes these exported variables, so suppress the export entirely. -->
+        <NBGV_SetCloudBuildVersionVars Condition="'$(GITHUB_ACTIONS)' == 'true'">false</NBGV_SetCloudBuildVersionVars>
+        <NBGV_SetCloudBuildVersionVars Condition="'$(GITHUB_ACTIONS)' != 'true'">false</NBGV_SetCloudBuildVersionVars>
+
         <!-- Strong-Name Signing Configuration (Enterprise & FAPI 2.0 Compliance) -->
         <!-- 1.Enable signing ONLY during official release packaging to prevent InternalsVisibleTo conflicts during test runs -->
         <SignSentinelRelease Condition="'$(SignSentinelRelease)' == ''">false</SignSentinelRelease>
