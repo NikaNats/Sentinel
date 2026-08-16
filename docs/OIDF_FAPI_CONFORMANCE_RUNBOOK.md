@@ -64,6 +64,15 @@ kubectl apply -f infra/k8s/staging/
 #    then re-run provision-staging-tls.sh to complete the ACME challenge.
 ```
 
+> **Secret sourcing**: the `kubectl create secret` steps above are the bootstrap
+> fallback. Per `docs/KUBERNETES_SECRET_MANAGEMENT_STRATEGY.md`, Sentinel
+> clusters must not rely on imperative Secrets — reconcile
+> `keycloak-staging-tls`, `keycloak-staging-admin`, and `keycloak-staging-db`
+> from a KMS-backed store via External Secrets Operator (Azure Key Vault / AWS
+> Secrets Manager + workload identity) before the gate runs. The manifest
+> references only secret *names*, so swapping the provisioning mechanism is a
+> drop-in change.
+
 ## 2. Phase 2 — Keycloak FAPI 2.0 Hardening
 
 ### 2.1 Client policy profile

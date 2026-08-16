@@ -34,6 +34,7 @@ metadata:
     app.kubernetes.io/component: staging
   annotations:
     checkov.io/skip1: CKV_K8S_35=admin credentials are injected from the keycloak-staging-admin Secret via secretKeyRef (never plaintext); Keycloak's configuration contract is environment-variable based
+    checkov.io/skip2: "CKV_K8S_40=UID 1000 is the image's declared user (quay.io/keycloak sets USER 1000); raising it would break the image file-ownership contract, and the image runs non-root with group 0"
 spec:
   replicas: 1
   selector:
@@ -47,7 +48,7 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
-        runAsUser: 10001
+        runAsUser: 1000
         runAsGroup: 0
         fsGroup: 0
         seccompProfile:
@@ -189,6 +190,7 @@ metadata:
     app.kubernetes.io/component: staging
   annotations:
     checkov.io/skip1: CKV_K8S_35=db credentials are injected from the keycloak-staging-db Secret via secretKeyRef (never plaintext); postgres' configuration contract is environment-variable based
+    checkov.io/skip2: CKV_K8S_40=UID 70 is the image's dedicated postgres user (official postgres:alpine); raising it breaks the entrypoint's data-directory ownership contract and crashes initdb
 spec:
   replicas: 1
   selector:
@@ -202,9 +204,9 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
-        runAsUser: 10001
-        runAsGroup: 10001
-        fsGroup: 10001
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -262,7 +264,8 @@ spec:
               memory: 1Gi
       volumes:
         - name: data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: postgres-staging-data
         - name: run-postgresql
           emptyDir: {}
         - name: tmp
@@ -282,6 +285,23 @@ spec:
     - name: postgres
       port: 5432
       targetPort: 5432
+---
+# Persistent database data: a pod eviction/restart during the 90-minute
+# conformance window must not wipe the realm state. Requires a default
+# storage class on the cluster.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-staging-data
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: postgres-staging
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
 ---
 # Default-deny for the staging namespace (mirrors infra/k8s/sentinel-network-policy.yaml).
 apiVersion: networking.k8s.io/v1

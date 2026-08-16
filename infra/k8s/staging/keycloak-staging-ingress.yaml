@@ -19,11 +19,15 @@ metadata:
     app.kubernetes.io/name: keycloak
     app.kubernetes.io/part-of: sentinel
   annotations:
-    kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/proxy-body-size: 8m
+    # Keycloak is TLS-only (KC_HTTPS_ENABLED=true, no HTTP listener): without
+    # backend-protocol HTTPS the ingress proxies plain HTTP to :8443 and every
+    # request fails with 502.
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
     cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
+  ingressClassName: nginx
   tls:
     - hosts:
         - keycloak.staging.sentinel.io

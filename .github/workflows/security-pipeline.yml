@@ -267,12 +267,13 @@ jobs:
         run: |
           # microsoft/playwright-github-action@v1 is deprecated (declares no
           # inputs, node12) and cannot install deps on Ubuntu 24.04/noble.
-          # The build above already generated the .NET Playwright CLI
-          # (Microsoft.Playwright 1.52.0) in the test project's output, so the
-          # version-matched browser is installed from it directly.
-          CLI="tests/Sentinel.Tests.Integration/bin/Release/net10.0/playwright.sh"
-          chmod +x "$CLI"
-          sudo "$CLI" install --with-deps chromium
+          # The Microsoft.Playwright NuGet package ships only playwright.ps1
+          # (no .sh variant); the build above copies it next to
+          # Microsoft.Playwright.dll, and pwsh is preinstalled on
+          # GitHub-hosted runners - so the version-matched browser is
+          # installed from it directly.
+          CLI="tests/Sentinel.Tests.Integration/bin/Release/net10.0/playwright.ps1"
+          sudo pwsh "$CLI" install --with-deps chromium
 
       - name: Test
         if: matrix.test-project != 'tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj'
