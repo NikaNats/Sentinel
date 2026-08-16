@@ -1,4 +1,4 @@
-.PHONY: build test mutation lint sec-scan up down infra-audit fapi-conformance fapi-conformance-local chaos-up chaos-down chaos-inject chaos-load chaos-validate chaos-gate all
+.PHONY: build test mutation lint sec-scan up down infra-audit fapi-conformance fapi-conformance-local chaos-up chaos-down chaos-inject chaos-load chaos-validate chaos-gate migration-test migration-chaos migration-cross-version all
 
 build:
 	dotnet restore Sentinel.slnx --locked-mode
@@ -187,3 +187,36 @@ sre-gate: sre-mint sre-run sre-validate
 	@echo "SRE gate passed (mode=$(SRE_MODE))"
 
 all: build lint test sec-scan infra-audit
+
+# ─── Database Migration & Rollback Testing ─────────────────────────────────────
+# Comprehensive migration testing for zero-downtime deployments:
+# - Forward/rollback migration verification
+# - Data integrity across migration cycles
+# - Concurrent migration under active traffic
+# - Partial migration recovery (interrupted migrations)
+# - Cross-version compatibility (old code/new schema, new code/old schema)
+# - Chaos engineering for migration edge cases
+
+migration-test:
+	dotnet test tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj \
+		--logger "console;verbosity=detailed" \
+		--filter "FullyQualifiedName~Sentinel.Tests.Integration.Database.ComprehensiveMigrationTests"
+
+migration-chaos:
+	dotnet test tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj \
+		--logger "console;verbosity=detailed" \
+		--filter "FullyQualifiedName~Sentinel.Tests.Integration.Database.MigrationChaosTests"
+
+migration-cross-version:
+	dotnet test tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj \
+		--logger "console;verbosity=detailed" \
+		--filter "FullyQualifiedName~Sentinel.Tests.Integration.Database.CrossVersionCompatibilityTests"
+
+migration-all: migration-test migration-chaos migration-cross-version
+	@echo "All migration tests passed"
+
+# ─── Contract Tests (PostgreSQL schema pinning) ────────────────────────────────
+contract-test:
+	dotnet test tests/Sentinel.Contracts/Sentinel.Contracts.csproj \
+		--logger "console;verbosity=detailed" \
+		--filter "FullyQualifiedName~Sentinel.Contracts.Postgres"

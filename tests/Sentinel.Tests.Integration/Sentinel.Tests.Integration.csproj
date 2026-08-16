@@ -35,6 +35,8 @@
     <PackageReference Include="Microsoft.Playwright" />
     <PackageReference Include="Microsoft.IdentityModel.Tokens" />
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
   </ItemGroup>
 
   <ItemGroup>
@@ -48,6 +50,7 @@
     <ProjectReference Include="..\..\src\Sentinel.Infrastructure\Sentinel.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Redis\Sentinel.Redis.csproj" />
     <ProjectReference Include="..\..\src\Sentinel.Security.Abstractions\Sentinel.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Sentinel.EntityFrameworkCore\Sentinel.EntityFrameworkCore.csproj" />
   </ItemGroup>
 
 </Project>
