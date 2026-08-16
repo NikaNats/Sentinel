@@ -35,8 +35,16 @@ CLIENT2_ID="${FAPI_CLIENT2_ID:-sentinel-fapi-conformance-mixup}"
 JWKS1="${FAPI_CLIENT_JWKS:?FAPI_CLIENT_JWKS is required}"
 JWKS2="${FAPI_CLIENT2_JWKS:?FAPI_CLIENT2_JWKS is required}"
 
+# Optional: trust the local CA that signs the dev Keycloak cert.
+#   KC_TRUSTSTORE_HOST  host path to a PKCS12 truststore containing the CA
+#                       (local: infra/fapi-conformance/certs/truststore.p12)
+#   KC_TRUSTSTORE_PASS  truststore password (default sentinel-fapi)
+KC_TRUSTSTORE_HOST="${KC_TRUSTSTORE_HOST:-}"
+KC_TRUSTSTORE_PASS="${KC_TRUSTSTORE_PASS:-sentinel-fapi}"
+
 KCADM="${KCADM_BIN:-kcadm.sh}"
 DOCKER_FALLBACK="${DOCKER_FALLBACK:-}"
+TRUSTSTORE_IN_CONTAINER="/truststore/truststore.p12"
 
 if ! command -v "$KCADM" >/dev/null 2>&1; then
   if [ "$DOCKER_FALLBACK" = "true" ] && command -v docker >/dev/null 2>&1; then
@@ -44,8 +52,13 @@ if ! command -v "$KCADM" >/dev/null 2>&1; then
     # uid; the image's keycloak user has home=/opt/keycloak, root=/root). A
     # named volume at /root/.keycloak keeps the session across the --rm
     # invocations (each kcadm call is a separate container).
-    KCADM="docker run --rm -u root -v kcadm-credentials:/root/.keycloak --entrypoint /opt/keycloak/bin/kcadm.sh quay.io/keycloak/keycloak:26.6.4"
-    # kcadm inside the container cannot reach the host loopback; KC_ADMIN_URL must be routable from the container.
+    # --network host lets the container reach a local Keycloak at
+    # https://localhost:8443; the truststore is mounted read-only.
+    KCADM="docker run --rm -u root --network host -v kcadm-credentials:/root/.keycloak"
+    if [ -n "$KC_TRUSTSTORE_HOST" ]; then
+      KCADM="$KCADM -v $KC_TRUSTSTORE_HOST:$TRUSTSTORE_IN_CONTAINER:ro"
+    fi
+    KCADM="$KCADM --entrypoint /opt/keycloak/bin/kcadm.sh quay.io/keycloak/keycloak:26.6.4"
   else
     echo "::error::kcadm.sh not found. Install the Keycloak CLI, set KCADM_BIN, or use DOCKER_FALLBACK=true." >&2
     exit 1
@@ -57,10 +70,22 @@ fi
 # docker command string; its value is operator-controlled, never a secret.
 # Under MSYS (Git Bash on Windows) docker.exe path-converts /opt/... into a
 # Windows path; MSYS_NO_PATHCONV=1 keeps the in-container path intact.
-if [ -n "${MSYSTEM:-}" ]; then
-  kcadm() { MSYS_NO_PATHCONV=1 $KCADM "$@"; }
+# KC_TRUST_ARGS: when a truststore is supplied, kcadm trusts the local CA
+# (host kcadm uses the host path; the docker fallback uses the mount path).
+if [ -n "$KC_TRUSTSTORE_HOST" ]; then
+  if [ -z "$DOCKER_FALLBACK" ] || [ "$DOCKER_FALLBACK" != "true" ]; then
+    KC_TRUST_ARGS=(--truststore "$KC_TRUSTSTORE_HOST" --trustpass "$KC_TRUSTSTORE_PASS")
+  else
+    KC_TRUST_ARGS=(--truststore "$TRUSTSTORE_IN_CONTAINER" --trustpass "$KC_TRUSTSTORE_PASS")
+  fi
 else
-  kcadm() { $KCADM "$@"; }
+  KC_TRUST_ARGS=()
+fi
+
+if [ -n "${MSYSTEM:-}" ]; then
+  kcadm() { MSYS_NO_PATHCONV=1 $KCADM "${KC_TRUST_ARGS[@]}" "$@"; }
+else
+  kcadm() { $KCADM "${KC_TRUST_ARGS[@]}" "$@"; }
 fi
 
 # python3 is a Windows Store alias stub under Git Bash; prefer the real interpreter.

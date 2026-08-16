@@ -30,17 +30,58 @@ infra-audit: up
 	sleep 15
 	bash tests/infrastructure-tls-audit.sh
 
-# ─── OIDF FAPI 2.0 Conformance (staging) ─────────────────────────────────────
-# Runs the official OpenID Foundation FAPI 2.0 Conformance Suite against the
-# PUBLICLY REACHABLE staging Keycloak and archives the certificate + evidence
-# manifest under artifacts/fapi/. Requires the FAPI_SUITE_* / KC_ADMIN_*
-# environment variables (see docs/OIDF_FAPI_CONFORMANCE_RUNBOOK.md).
+# ─── OIDF FAPI 2.0 Conformance ─────────────────────────────────────────────
+# Remote mode: runs the official OpenID Foundation FAPI 2.0 Conformance Suite
+# against the PUBLICLY REACHABLE staging Keycloak and archives the certificate
+# + evidence manifest under artifacts/fapi/. Requires the FAPI_SUITE_* /
+# KC_ADMIN_* environment variables (see docs/OIDF_FAPI_CONFORMANCE_RUNBOOK.md).
 fapi-conformance:
-	@echo "==> Running OIDF FAPI 2.0 Conformance Suite..."
+	@echo "==> Running OIDF FAPI 2.0 Conformance Suite (remote mode)..."
+	FAPI_MODE=remote \
 	bash infra/dast/scripts/run-fapi-conformance.sh
 
-fapi-conformance-local:
-	@echo "==> Running FAPI conformance against the local docker-compose stack (self-hosted suite only)..."
+# ─── OIDF FAPI 2.0 Conformance Suite (local self-hosted) ───────────────────
+# Stands up the OIDF suite (MongoDB + conformance-server + nginx proxy) via
+# infra/fapi-conformance/docker-compose.yml, against Keycloak + Sentinel API
+# from the root docker-compose.yml. Suite URL: https://localhost:8443.
+
+FAPI_COMPOSE = infra/fapi-conformance/docker-compose.yml
+FAPI_ENV     = infra/fapi-conformance/.env
+
+.PHONY: fapi-certs fapi-up fapi-down fapi-suite-logs fapi-conformance-local
+
+fapi-certs:  ## Generate self-signed certs for the local OIDF suite
+	bash infra/fapi-conformance/certs/generate-fapi-certs.sh
+
+fapi-up: fapi-certs  ## Start the local OIDF Conformance Suite
+	@test -f $(FAPI_ENV) || { cp $(FAPI_ENV).example $(FAPI_ENV); echo "Created $(FAPI_ENV) — edit FAPI_SUITE_TOKEN, then re-run 'make fapi-up'"; exit 1; }
+	docker compose -f $(FAPI_COMPOSE) --env-file $(FAPI_ENV) up -d --build
+	@echo "Waiting for suite to become healthy..."
+	@for i in $$(seq 1 60); do \
+		if curl -ksf https://localhost:8443/api/info > /dev/null 2>&1; then \
+			echo "✓ OIDF suite is up at https://localhost:8443"; exit 0; \
+		fi; \
+		sleep 2; \
+	done; \
+	echo "ERROR: suite did not become healthy (see: make fapi-suite-logs)"; exit 1
+
+fapi-down:  ## Tear down the local OIDF Conformance Suite
+	docker compose -f $(FAPI_COMPOSE) down -v --remove-orphans
+
+fapi-suite-logs:  ## Tail local OIDF suite logs
+	docker compose -f $(FAPI_COMPOSE) logs -f conformance-server
+
+fapi-conformance-local:  ## Run FAPI 2.0 conformance against the local stack
+	@test -f $(FAPI_ENV) || { echo "ERROR: $(FAPI_ENV) missing. Run 'make fapi-up' first."; exit 1; }
+	FAPI_MODE=local \
+	FAPI_SUITE_URL=https://localhost:8443 \
+	FAPI_SUITE_TOKEN=$$(grep '^FAPI_SUITE_TOKEN=' $(FAPI_ENV) | cut -d= -f2-) \
+	ISSUER_URL=$$(grep '^KEYCLOAK_ISSUER=' $(FAPI_ENV) | cut -d= -f2-) \
+	RESOURCE_URL=$$(grep '^SENTINEL_API_URL=' $(FAPI_ENV) | cut -d= -f2-) \
+	KC_ADMIN_URL=$$(grep '^KC_ADMIN_URL=' $(FAPI_ENV) | cut -d= -f2-) \
+	KC_ADMIN_USER=$$(grep '^KC_ADMIN_USER=' $(FAPI_ENV) | cut -d= -f2-) \
+	KC_ADMIN_PASSWORD=$$(grep '^KC_ADMIN_PASSWORD=' $(FAPI_ENV) | cut -d= -f2-) \
+	KC_REALM=$$(grep '^KC_REALM=' $(FAPI_ENV) | cut -d= -f2-) \
 	FAPI_PROVISION_HOOK=infra/keycloak/scripts/provision-fapi-conformance-clients.sh \
 	bash infra/dast/scripts/run-fapi-conformance.sh
 

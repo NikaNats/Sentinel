@@ -14,17 +14,28 @@
 #   4. download and verify the evidence pack (exporthtml zip, result JSON,
 #      certificate PDF) and write a SHA-256 chain-of-custody manifest.
 #
+# Two modes (FAPI_MODE):
+#   local (default)   - suite runs locally via
+#                       docker compose -f infra/fapi-conformance/docker-compose.yml;
+#                       SUITE_URL defaults to https://localhost:8443 (nginx proxy),
+#                       token defaults to local-dev-token; a pre-flight
+#                       reachability check runs before plan creation.
+#   remote            - hosted/self-hosted suite (certification runs):
+#                       FAPI_SUITE_URL / FAPI_SUITE_TOKEN are REQUIRED.
+#
 # Required environment:
-#   FAPI_SUITE_URL    conformance suite base URL (hosted or self)
-#   FAPI_SUITE_TOKEN  API token for plan creation
-#   ISSUER_URL        PUBLICLY REACHABLE staging issuer, e.g.
+#   FAPI_SUITE_URL    conformance suite base URL (remote mode only)
+#   FAPI_SUITE_TOKEN  API token for plan creation (remote mode only)
+#   ISSUER_URL        Keycloak issuer under test, e.g.
 #                     https://keycloak.staging.sentinel.io/realms/sentinel-dast
-#                     (the cloud-hosted suite must be able to reach it)
+#                     LOCAL: https://host.docker.internal:8443/realms/sentinel-dast
+#                     (the suite must be able to reach it)
 #   RESOURCE_URL      public Sentinel API base URL used by DPoP resource tests
 #   FAPI_CLIENT_ID    conformance client id (default: sentinel-fapi-conformance)
 #   FAPI_CLIENT2_ID   second client id for mixup tests (default: sentinel-fapi-conformance-mixup)
 #
 # Optional:
+#   FAPI_MODE         "local" (default) | "remote"
 #   FAPI_PLAN_CONFIG  path to a full custom plan configuration JSON (overrides defaults)
 #   FAPI_PROVISION_HOOK  path to a script that provisions client JWKS into Keycloak;
 #                        invoked with FAPI_CLIENT_JWKS / FAPI_CLIENT2_JWKS file paths
@@ -35,15 +46,28 @@
 # Exit codes: 0 = PASSED (or REVIEW), 1 = FAILED/ERROR/timeout/provisioning required.
 set -euo pipefail
 
-SUITE_URL="${FAPI_SUITE_URL:?FAPI_SUITE_URL is required}"
-SUITE_TOKEN="${FAPI_SUITE_TOKEN:?FAPI_SUITE_TOKEN is required}"
-ISSUER_URL="${ISSUER_URL:?ISSUER_URL is required - must be publicly reachable by the OIDF suite}"
+FAPI_MODE="${FAPI_MODE:-local}"
+case "$FAPI_MODE" in
+  local)
+    SUITE_URL="${FAPI_SUITE_URL:-https://localhost:8443}"
+    SUITE_TOKEN="${FAPI_SUITE_TOKEN:-local-dev-token}"
+    ;;
+  remote)
+    SUITE_URL="${FAPI_SUITE_URL:?FAPI_SUITE_URL is required in remote mode}"
+    SUITE_TOKEN="${FAPI_SUITE_TOKEN:?FAPI_SUITE_TOKEN is required in remote mode}"
+    ;;
+  *)
+    echo "::error::FAPI_MODE must be 'local' or 'remote' (got: ${FAPI_MODE})" >&2
+    exit 1
+    ;;
+esac
+ISSUER_URL="${ISSUER_URL:?ISSUER_URL is required - must be reachable by the OIDF suite}"
 CLIENT_ID="${FAPI_CLIENT_ID:-sentinel-fapi-conformance}"
 CLIENT2_ID="${FAPI_CLIENT2_ID:-sentinel-fapi-conformance-mixup}"
 PLAN_NAME="${PLAN_NAME:-fapi2-security-profile-dpop}"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-artifacts/fapi}"
 MAX_POLL="${FAPI_MAX_POLL:-3600}"
-POLL_EVERY=15
+POLL_EVERY="${FAPI_POLL_INTERVAL:-15}"
 REPORT_DIR="$ARTIFACTS_DIR/report"
 JWKS_DIR="$ARTIFACTS_DIR/jwks"
 
@@ -55,6 +79,27 @@ for cmd in jq curl unzip; do
 done
 
 mkdir -p "$REPORT_DIR" "$JWKS_DIR"
+
+# ---------------------------------------------------------------------------
+# Pre-flight: the suite must be reachable before we attempt plan creation.
+# Local mode serves a self-signed cert via the nginx proxy; -k covers both
+# local and remote (hosted suites carry valid CA certs, -k is harmless there).
+# ---------------------------------------------------------------------------
+echo "==> Pre-flight: verifying suite reachable at ${SUITE_URL}"
+SUITE_REACHABLE=false
+for _ in $(seq 1 30); do
+  if curl -ksf "${SUITE_URL}/api/info" >/dev/null 2>&1; then
+    SUITE_REACHABLE=true
+    break
+  fi
+  sleep 2
+done
+if [ "$SUITE_REACHABLE" != "true" ]; then
+  echo "::error::Conformance suite not reachable at ${SUITE_URL} after 30 attempts." >&2
+  echo "    Local stack: make fapi-up  (docker compose -f infra/fapi-conformance/docker-compose.yml up -d)" >&2
+  exit 1
+fi
+echo "    suite is up."
 
 # ---------------------------------------------------------------------------
 # [1/6] Create the plan.
@@ -80,7 +125,7 @@ echo "==> [1/6] Creating FAPI 2.0 plan '${PLAN_NAME}' on ${SUITE_URL}"
 echo "    variant: ${VARIANT_JSON}"
 PLAN_NAME_ENC=$(jq -rn --arg v "$PLAN_NAME" '$v | @uri')
 VARIANT_ENC=$(jq -rn --arg v "$VARIANT_JSON" '$v | @uri')
-PLAN_RESPONSE=$(curl -fsS -X POST "$SUITE_URL/api/plan?planName=${PLAN_NAME_ENC}&variant=${VARIANT_ENC}" \
+PLAN_RESPONSE=$(curl -kfsS -X POST "$SUITE_URL/api/plan?planName=${PLAN_NAME_ENC}&variant=${VARIANT_ENC}" \
   -H "Authorization: Bearer $SUITE_TOKEN" \
   -H 'Content-Type: application/json' \
   -d "$CONFIG_JSON") || {
@@ -107,7 +152,7 @@ printf '%s' "$PLAN_RESPONSE" | jq -r '.client2.jwks // empty' > "$JWKS_DIR/clien
 
 if [ ! -s "$JWKS_DIR/client-jwks.json" ]; then
   # Fallback: fetch the plan object if the create response omits the keys.
-  PLAN_OBJ=$(curl -fsS "$SUITE_URL/api/plan/$PLAN_ID" -H "Authorization: Bearer $SUITE_TOKEN" || echo "")
+  PLAN_OBJ=$(curl -kfsS "$SUITE_URL/api/plan/$PLAN_ID" -H "Authorization: Bearer $SUITE_TOKEN" || echo "")
   [ -n "$PLAN_OBJ" ] && printf '%s' "$PLAN_OBJ" | jq -r '.client.jwks // empty' > "$JWKS_DIR/client-jwks.json" 2>/dev/null || true
   [ -n "$PLAN_OBJ" ] && printf '%s' "$PLAN_OBJ" | jq -r '.client2.jwks // empty' > "$JWKS_DIR/client2-jwks.json" 2>/dev/null || true
 fi
@@ -138,11 +183,11 @@ fi
 # [4/6] Start the plan (idempotent; 4xx if already started) and poll the
 # plan-level aggregate result.
 # ---------------------------------------------------------------------------
-STARTED=$(curl -fsS "$SUITE_URL/api/plan/$PLAN_ID" -H "Authorization: Bearer $SUITE_TOKEN" 2>/dev/null \
+STARTED=$(curl -kfsS "$SUITE_URL/api/plan/$PLAN_ID" -H "Authorization: Bearer $SUITE_TOKEN" 2>/dev/null \
   | jq -r '.started // false' 2>/dev/null || echo false)
 if [ "$STARTED" != "true" ]; then
   echo "==> [4/6] Starting plan ${PLAN_ID}"
-  curl -fsS -X POST "$SUITE_URL/api/plan/$PLAN_ID/start" -H "Authorization: Bearer $SUITE_TOKEN" >/dev/null 2>&1 \
+  curl -kfsS -X POST "$SUITE_URL/api/plan/$PLAN_ID/start" -H "Authorization: Bearer $SUITE_TOKEN" >/dev/null 2>&1 \
     || echo "::warning::start endpoint not available (4xx) - plan may auto-run; continuing to poll."
 else
   echo "==> [4/6] Plan already started."
@@ -152,7 +197,7 @@ echo "==> [5/6] Polling plan result (every ${POLL_EVERY}s, up to ${MAX_POLL}s)"
 STATUS=""
 RESULT_JSON=""
 for _ in $(seq 1 $((MAX_POLL / POLL_EVERY))); do
-  RESULT_JSON=$(curl -fsS "$SUITE_URL/api/plan/$PLAN_ID/result" \
+  RESULT_JSON=$(curl -kfsS "$SUITE_URL/api/plan/$PLAN_ID/result" \
     -H "Authorization: Bearer $SUITE_TOKEN" -H 'Accept: application/json' || echo "{}")
   STATUS=$(printf '%s' "$RESULT_JSON" | jq -r '.result // "RUNNING"' 2>/dev/null || echo "RUNNING")
   echo "    status: ${STATUS}"
@@ -177,7 +222,7 @@ echo "==> [6/6] Downloading and verifying evidence artifacts"
 printf '%s' "$RESULT_JSON" > "$ARTIFACTS_DIR/fapi-result.json"
 
 EXPORT_ZIP="$ARTIFACTS_DIR/fapi-report.zip"
-if curl -fsS "$SUITE_URL/api/plan/exporthtml/$PLAN_ID" -H "Authorization: Bearer $SUITE_TOKEN" \
+if curl -kfsS "$SUITE_URL/api/plan/exporthtml/$PLAN_ID" -H "Authorization: Bearer $SUITE_TOKEN" \
     -o "$EXPORT_ZIP" 2>/dev/null; then
   (cd "$REPORT_DIR" && unzip -oq "$EXPORT_ZIP" 2>/dev/null) || echo "::warning::report zip is not a valid archive"
   echo "    report pack: $EXPORT_ZIP (+ extracted $REPORT_DIR)"
@@ -187,7 +232,7 @@ fi
 
 CERT_FILE="$ARTIFACTS_DIR/fapi-certificate.pdf"
 if [ "$STATUS" = "PASSED" ] || [ "$STATUS" = "COMPLETED" ]; then
-  if curl -fsS "$SUITE_URL/api/plan/$PLAN_ID/certificate" \
+  if curl -kfsS "$SUITE_URL/api/plan/$PLAN_ID/certificate" \
       -H "Authorization: Bearer $SUITE_TOKEN" -H 'Accept: application/pdf' \
       -o "$CERT_FILE" 2>/dev/null && [ -s "$CERT_FILE" ]; then
     if [ "$(head -c 4 "$CERT_FILE")" = "%PDF" ]; then
