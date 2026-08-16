@@ -95,6 +95,10 @@ jobs:
           git config user.name "sentinel-ci"
           git config user.email "sre@sentinel.io"
           git add docs/compliance/
+          if git diff --staged --quiet; then
+            echo "No changes to commit. Evidence already exists in repository."
+            exit 0
+          fi
           git commit -m "docs(compliance): archive OIDF FAPI 2.0 conformance certificate $(date -u +%F) (${{ github.sha }})"
           git push origin "HEAD:${GITHUB_REF_NAME}"
 

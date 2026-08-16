@@ -47,14 +47,20 @@ kubectl create secret generic keycloak-staging-admin -n staging \
   --from-literal=KEYCLOAK_ADMIN=<admin> \
   --from-literal=KEYCLOAK_ADMIN_PASSWORD=<password>
 
-# 3. Realm import config map (ships the FAPI-hardened sentinel-dast realm)
+# 3. Database credentials secret (username MUST be "keycloak" - the postgres
+#    probes hardcode -U keycloak -d keycloak)
+kubectl create secret generic keycloak-staging-db -n staging \
+  --from-literal=username=keycloak \
+  --from-literal=password=<password>
+
+# 4. Realm import config map (ships the FAPI-hardened sentinel-dast realm)
 kubectl create configmap sentinel-realm-config -n staging \
   --from-file=infra/keycloak/realms/sentinel-dast.json
 
-# 4. Deploy AS + ingress
+# 5. Deploy AS + bundled postgres-staging + ingress + network policies
 kubectl apply -f infra/k8s/staging/
 
-# 5. DNS: point keycloak.staging.sentinel.io at the ingress external IP,
+# 6. DNS: point keycloak.staging.sentinel.io at the ingress external IP,
 #    then re-run provision-staging-tls.sh to complete the ACME challenge.
 ```
 

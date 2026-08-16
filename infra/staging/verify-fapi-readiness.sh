@@ -122,9 +122,9 @@ check "PAR feature enabled" \
 if [[ "$VERIFY_TLS" == "true" ]]; then
     HOST_PORT="${KEYCLOAK_URL#https://}"
     HOST_PORT="${HOST_PORT%%/*}"
-    check "TLS 1.3 handshake ($HOST_PORT)" \
+    check "TLS 1.3 handshake + public CA chain validity ($HOST_PORT)" \
         openssl s_client -connect "$HOST_PORT" -servername "${HOST_PORT%%:*}" \
-            -tls1_3 -brief </dev/null
+            -tls1_3 -brief -verify 1 -verify_return_error </dev/null
 else
     echo "[SKIP] TLS 1.3 handshake (VERIFY_TLS=false)"
 fi

@@ -5,12 +5,19 @@
 # must reach this AS over public DNS with CA-signed TLS - self-signed certs
 # are rejected by the suite (see docs/OIDF_FAPI_CONFORMANCE_RUNBOOK.md §1).
 #
-# Prerequisites (see infra/staging/provision-staging-tls.sh):
+# Prerequisites (see infra/staging/provision-staging-tls.sh and
+# docs/OIDF_FAPI_CONFORMANCE_RUNBOOK.md §1.1):
 #   1. Secret "keycloak-staging-tls"   - tls.crt / tls.key (Let's Encrypt or ACM)
 #   2. Secret "keycloak-staging-admin" - KEYCLOAK_ADMIN / KEYCLOAK_ADMIN_PASSWORD
-#   3. ConfigMap "sentinel-realm-config" with sentinel-dast.json:
+#   3. Secret "keycloak-staging-db"    - username (must be "keycloak") / password
+#   4. ConfigMap "sentinel-realm-config" with sentinel-dast.json:
 #        kubectl create configmap sentinel-realm-config -n staging \
 #          --from-file=infra/keycloak/realms/sentinel-dast.json
+#
+# Keycloak runs in production mode ("start"), which requires an external
+# database - the bundled H2 database is dev-only and the pod would
+# CrashLoopBackOff otherwise. PostgreSQL (postgres-staging) ships in this file;
+# the keycloak-staging-db secret provides the credentials to both.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -47,7 +54,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: keycloak
-          image: quay.io/keycloak/keycloak:26.1
+          image: quay.io/keycloak/keycloak:26.6.4
           imagePullPolicy: Always
           args:
             - start
@@ -63,6 +70,20 @@ spec:
                 secretKeyRef:
                   name: keycloak-staging-admin
                   key: KEYCLOAK_ADMIN_PASSWORD
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: jdbc:postgresql://postgres-staging:5432/keycloak
+            - name: KC_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-staging-db
+                  key: username
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-staging-db
+                  key: password
             - name: KC_FEATURES
               value: dpop,par
             - name: KC_HEALTH_ENABLED
@@ -155,6 +176,113 @@ spec:
       port: 8443
       targetPort: 8443
 ---
+# PostgreSQL for the staging Keycloak (production mode requires an external
+# database). Mirrors the hardening of infra/k8s/postgres-deployment.yaml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-staging
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: postgres-staging
+    app.kubernetes.io/part-of: sentinel
+    app.kubernetes.io/component: staging
+  annotations:
+    checkov.io/skip1: CKV_K8S_35=db credentials are injected from the keycloak-staging-db Secret via secretKeyRef (never plaintext); postgres' configuration contract is environment-variable based
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres-staging
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres-staging
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          imagePullPolicy: Always
+          env:
+            - name: POSTGRES_DB
+              value: keycloak
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-staging-db
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-staging-db
+                  key: password
+          ports:
+            - name: postgres
+              containerPort: 5432
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run-postgresql
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "keycloak", "-d", "keycloak"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "keycloak", "-d", "keycloak"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: run-postgresql
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-staging
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: postgres-staging
+spec:
+  selector:
+    app.kubernetes.io/name: postgres-staging
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
 # Default-deny for the staging namespace (mirrors infra/k8s/sentinel-network-policy.yaml).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -201,11 +329,13 @@ spec:
   policyTypes:
     - Egress
 ---
-# Cluster DNS only; Keycloak needs no outbound connectivity for the gate.
+# Required egress for the staging Keycloak: cluster DNS + the bundled
+# postgres-staging database. Everything else is denied by
+# staging-default-deny-egress.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: staging-keycloak-allow-dns
+  name: staging-keycloak-allow-required-egress
   namespace: staging
 spec:
   podSelector:
@@ -226,4 +356,33 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres-staging
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Database ingress: staging-default-deny-ingress otherwise blocks the
+# Keycloak -> postgres connection above.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: staging-postgres-allow-keycloak
+  namespace: staging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgres-staging
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak
+      ports:
+        - protocol: TCP
+          port: 5432
 
