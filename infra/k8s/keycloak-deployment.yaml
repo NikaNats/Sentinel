@@ -49,6 +49,7 @@ spec:
             - start-dev
             - --import-realm
           env:
+            # checkov:skip=CKV_K8S_35:Secrets injected via secretKeyRef as required by Keycloak config contract; not plaintext in env
             - name: KC_BOOTSTRAP_ADMIN_USERNAME
               valueFrom:
                 secretKeyRef:
