@@ -29,6 +29,8 @@ RUN xk6 build --with github.com/sentinel/xk6-dpop=/src/xk6-dpop --output /k6
 FROM gcr.io/distroless/static-debian12:nonroot
 # k6 verifies TLS chains with the system CA bundle; distroless-static ships
 # none, so carry it over from the builder image.
+# checkov:skip=CKV_DOCKER_2:Ephemeral k6 load-test runner; health verified by k6 CLI exit code, not HTTP endpoint.
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /k6 /usr/local/bin/k6
+USER nonroot
 ENTRYPOINT ["k6"]
