@@ -13,43 +13,50 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Sentinel.EntityFrameworkCore;
 using Sentinel.EntityFrameworkCore.Models;
-using Sentinel.Tests.Shared.Fixtures;
+using Sentinel.Tests.Integration.Database.Fixtures;
 using Xunit;
 
 namespace Sentinel.Tests.Integration.Database;
 
-[Collection("Sentinel Integration")]
-public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputHelper output)
+[Collection("Sentinel Migration Integration")]
+public sealed class MigrationChaosTests(MigrationTestFixture fixture, ITestOutputHelper output) : IAsyncLifetime
 {
-    private readonly SentinelApiFactory _factory = factory ?? throw new ArgumentNullException(nameof(factory));
+    private readonly MigrationTestFixture _fixture = fixture ?? throw new ArgumentNullException(nameof(fixture));
     private readonly ITestOutputHelper _output = output ?? throw new ArgumentNullException(nameof(output));
+    private string _connectionString = string.Empty;
     private static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;
+
+    public async ValueTask InitializeAsync()
+    {
+        _connectionString = await _fixture.CreateFreshDatabaseAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _fixture.DropDatabaseAsync(_connectionString);
+    }
 
     #region Partial Migration Recovery
 
     [Fact(DisplayName = "🌪️ MIGRATION CHAOS: Kill migration mid-flight, verify recoverable")]
     public async Task Chaos_KillMigrationMidFlight_Recoverable()
     {
-        using var scope = _factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
-
+        using var context = MigrationTestFixture.CreateContext(_connectionString);
         var migrator = context.Database.GetInfrastructure().GetRequiredService<IMigrator>();
+
         await migrator.MigrateAsync("0", TestCancellationToken);
 
-        var pending = (await context.Database.GetPendingMigrationsAsync(TestCancellationToken)).ToList();
+        var pending = await MigrationTestFixture.GetPendingMigrationsAsync(_connectionString, TestCancellationToken);
         pending.Should().NotBeEmpty();
 
-        await migrator.MigrateAsync(pending.First(), TestCancellationToken);
+        await MigrationTestFixture.MigrateToAsync(_connectionString, pending.First(), TestCancellationToken);
 
-        var appliedAfterKill = (await context.Database.GetAppliedMigrationsAsync(TestCancellationToken)).ToList();
+        var appliedAfterKill = await MigrationTestFixture.GetAppliedMigrationsAsync(_connectionString, TestCancellationToken);
         appliedAfterKill.Should().NotBeEmpty();
 
-        using var newScope = _factory.Services.CreateScope();
-        var newContext = newScope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
+        await MigrationTestFixture.MigrateAsync(_connectionString, TestCancellationToken);
 
-        await newContext.Database.MigrateAsync(TestCancellationToken);
-
-        var finalApplied = (await newContext.Database.GetAppliedMigrationsAsync(TestCancellationToken)).ToList();
+        var finalApplied = await MigrationTestFixture.GetAppliedMigrationsAsync(_connectionString, TestCancellationToken);
         finalApplied.Should().NotBeEmpty();
 
         _output.WriteLine($"Migration killed mid-flight, recovered: {finalApplied.Count} migrations applied");
@@ -58,24 +65,14 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
     [Fact(DisplayName = "🌪️ MIGRATION CHAOS: Concurrent partial migrations from multiple instances")]
     public async Task Chaos_ConcurrentPartialMigrations_NoCorruption()
     {
-        var tasks = new List<Task>();
-
-        for (int i = 0; i < 5; i++)
+        var tasks = Enumerable.Range(0, 5).Select(_ => Task.Run(async () =>
         {
-            tasks.Add(Task.Run(async () =>
-            {
-                using var scope = _factory.Services.CreateScope();
-                var context = scope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
-
-                await context.Database.MigrateAsync(TestCancellationToken);
-            }));
-        }
+            await MigrationTestFixture.MigrateAsync(_connectionString, TestCancellationToken);
+        })).ToList();
 
         await Task.WhenAll(tasks);
 
-        using var scope = _factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
-        var applied = (await context.Database.GetAppliedMigrationsAsync(TestCancellationToken)).ToList();
+        var applied = await MigrationTestFixture.GetAppliedMigrationsAsync(_connectionString, TestCancellationToken);
 
         applied.Should().NotBeEmpty();
         applied.Should().OnlyHaveUniqueItems("no duplicate migrations in history");
@@ -86,9 +83,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
     [Fact(DisplayName = "🌪️ MIGRATION CHAOS: Migration timeout during long-running operation")]
     public async Task Chaos_MigrationTimeout_Resumable()
     {
-        using var scope = _factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
-
+        using var context = MigrationTestFixture.CreateContext(_connectionString);
         var migrator = context.Database.GetInfrastructure().GetRequiredService<IMigrator>();
 
         await migrator.MigrateAsync("0", TestCancellationToken);
@@ -112,8 +107,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
     [Fact(DisplayName = "🌪️ MIGRATION CHAOS: Migration during sustained high write load")]
     public async Task Chaos_MigrationUnderHighWriteLoad_Succeeds()
     {
-        using var scope = _factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
+        using var context = MigrationTestFixture.CreateContext(_connectionString);
 
         await context.Database.MigrateAsync(TestCancellationToken);
 
@@ -123,8 +117,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
 
         var writeTask = Task.Run(async () =>
         {
-            using var writeScope = _factory.Services.CreateScope();
-            var writeContext = writeScope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
+            using var writeContext = MigrationTestFixture.CreateContext(_connectionString);
 
             while (!cts.Token.IsCancellationRequested)
             {
@@ -144,6 +137,10 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
                     await writeContext.SaveChangesAsync(cts.Token);
                     await Task.Delay(10);
                 }
+                catch (OperationCanceledException)
+                {
+                    // teardown: cts.Cancel() raced an in-flight write
+                }
                 catch (Exception ex)
                 {
                     writeErrors.Enqueue(ex);
@@ -159,7 +156,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
         cts.Cancel();
         await writeTask;
 
-        var errorRate = (double)writeErrors.Count / writeCount;
+        var errorRate = (double)writeErrors.Count / Math.Max(1, writeCount);
         errorRate.Should().BeLessThan(0.01, "write error rate should be < 1% during migration");
 
         _output.WriteLine($"Migration under load: {writeCount} writes, {writeErrors.Count} errors ({errorRate:P2} error rate)");
@@ -168,8 +165,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
     [Fact(DisplayName = "🌪️ MIGRATION CHAOS: Migration during sustained high read load")]
     public async Task Chaos_MigrationUnderHighReadLoad_Succeeds()
     {
-        using var scope = _factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
+        using var context = MigrationTestFixture.CreateContext(_connectionString);
 
         await context.Database.MigrateAsync(TestCancellationToken);
 
@@ -182,8 +178,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
 
         var readTask = Task.Run(async () =>
         {
-            using var readScope = _factory.Services.CreateScope();
-            var readContext = readScope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
+            using var readContext = MigrationTestFixture.CreateContext(_connectionString);
 
             while (!cts.Token.IsCancellationRequested)
             {
@@ -192,6 +187,10 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
                     var count = await readContext.DpopNonceStore.CountAsync(cts.Token);
                     Interlocked.Increment(ref readCount);
                     await Task.Delay(10);
+                }
+                catch (OperationCanceledException)
+                {
+                    // teardown: cts.Cancel() raced an in-flight query
                 }
                 catch (Exception ex)
                 {
@@ -220,12 +219,11 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
     [Fact(DisplayName = "🌪️ MIGRATION CHAOS: Manual schema changes detected")]
     public async Task Chaos_ManualSchemaChanges_Detected()
     {
-        using var scope = _factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
+        using var context = MigrationTestFixture.CreateContext(_connectionString);
 
         await context.Database.MigrateAsync(TestCancellationToken);
 
-        await using var connection = new NpgsqlConnection(context.Database.GetConnectionString());
+        await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(TestCancellationToken);
 
         using (var cmd = connection.CreateCommand())
@@ -234,7 +232,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
             await cmd.ExecuteNonQueryAsync(TestCancellationToken);
         }
 
-        var pending = (await context.Database.GetPendingMigrationsAsync(TestCancellationToken)).ToList();
+        var pending = await MigrationTestFixture.GetPendingMigrationsAsync(_connectionString, TestCancellationToken);
 
         _output.WriteLine($"Schema drift test completed - pending migrations: {pending.Count}");
     }
@@ -242,8 +240,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
     [Fact(DisplayName = "🌪️ MIGRATION CHAOS: Constraint violation during migration")]
     public async Task Chaos_ConstraintViolationDuringMigration_Handled()
     {
-        using var scope1 = _factory.Services.CreateScope();
-        var context = scope1.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
+        using var context = MigrationTestFixture.CreateContext(_connectionString);
 
         await context.Database.MigrateAsync(TestCancellationToken);
 
@@ -254,9 +251,8 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
         context.DpopNonceStore.Add(entry1);
         await context.SaveChangesAsync(TestCancellationToken);
 
-        // Use a completely new scope to avoid entity tracking conflict
-        using var scope2 = _factory.Services.CreateScope();
-        var context2 = scope2.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
+        // Use a completely new context to avoid entity tracking conflict
+        using var context2 = MigrationTestFixture.CreateContext(_connectionString);
         context2.DpopNonceStore.Add(entry2);
         Func<Task> saveAct = async () => await context2.SaveChangesAsync(TestCancellationToken);
         await saveAct.Should().ThrowAsync<DbUpdateException>();
@@ -274,8 +270,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
     [Fact(DisplayName = "🌪️ MIGRATION CHAOS: Rollback during active writes")]
     public async Task Chaos_RollbackDuringWrites_Recovers()
     {
-        using var scope = _factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
+        using var context = MigrationTestFixture.CreateContext(_connectionString);
 
         await context.Database.MigrateAsync(TestCancellationToken);
 
@@ -286,8 +281,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
 
         var writeTask = Task.Run(async () =>
         {
-            using var writeScope = _factory.Services.CreateScope();
-            var writeContext = writeScope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
+            using var writeContext = MigrationTestFixture.CreateContext(_connectionString);
 
             int i = 0;
             while (!cts.Token.IsCancellationRequested)
@@ -304,6 +298,10 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
                     await writeContext.SaveChangesAsync(cts.Token);
                     await Task.Delay(20);
                 }
+                catch (OperationCanceledException)
+                {
+                    // teardown: cts.Cancel() raced an in-flight write
+                }
                 catch (Exception ex)
                 {
                     writeErrors.Enqueue(ex);
@@ -319,7 +317,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
         cts.Cancel();
         await writeTask;
 
-        var connection = context.Database.GetDbConnection();
+        await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(TestCancellationToken);
 
         using (var cmd = connection.CreateCommand())
@@ -335,9 +333,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
     [Fact(DisplayName = "🌪️ MIGRATION CHAOS: Rollback then immediate re-migrate")]
     public async Task Chaos_RollbackThenRemigrate_FastRecovery()
     {
-        using var scope = _factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
-
+        using var context = MigrationTestFixture.CreateContext(_connectionString);
         var migrator = context.Database.GetInfrastructure().GetRequiredService<IMigrator>();
 
         var stopwatch = Stopwatch.StartNew();
@@ -348,7 +344,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
 
         stopwatch.Stop();
 
-        var applied = (await context.Database.GetAppliedMigrationsAsync(TestCancellationToken)).ToList();
+        var applied = await MigrationTestFixture.GetAppliedMigrationsAsync(_connectionString, TestCancellationToken);
         applied.Should().NotBeEmpty();
 
         stopwatch.ElapsedMilliseconds.Should().BeLessThan(10000, "rollback + re-migrate should complete within 10s");
@@ -363,9 +359,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
     [Fact(DisplayName = "🌪️ MIGRATION CHAOS: Connection loss during migration")]
     public async Task Chaos_ConnectionLossDuringMigration_Recovers()
     {
-        using var scope = _factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
-
+        using var context = MigrationTestFixture.CreateContext(_connectionString);
         var migrator = context.Database.GetInfrastructure().GetRequiredService<IMigrator>();
 
         await migrator.MigrateAsync("0", TestCancellationToken);
@@ -375,8 +369,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
         await Task.Delay(50);
         await context.DisposeAsync();
 
-        using var newScope = _factory.Services.CreateScope();
-        var newContext = newScope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
+        using var newContext = MigrationTestFixture.CreateContext(_connectionString);
 
         Func<Task> resumeAction = async () => await newContext.Database.MigrateAsync(TestCancellationToken);
         await resumeAction.Should().NotThrowAsync("migration should recover after connection loss");
@@ -387,9 +380,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
     [Fact(DisplayName = "🌪️ MIGRATION CHAOS: Migration inside transaction that rolls back")]
     public async Task Chaos_MigrationInRolledBackTransaction_NoPartialState()
     {
-        using var scope = _factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
-
+        using var context = MigrationTestFixture.CreateContext(_connectionString);
         var migrator = context.Database.GetInfrastructure().GetRequiredService<IMigrator>();
 
         await migrator.MigrateAsync("0", TestCancellationToken);
@@ -399,19 +390,20 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
         try
         {
             await migrator.MigrateAsync(targetMigration: null, cancellationToken: TestCancellationToken);
-            await transaction.RollbackAsync(TestCancellationToken);
         }
         catch
         {
-            await transaction.RollbackAsync(TestCancellationToken);
+            // EF Core migrations cannot run inside an ambient user transaction
         }
 
-        var applied = (await context.Database.GetAppliedMigrationsAsync(TestCancellationToken)).ToList();
+        await transaction.RollbackAsync(TestCancellationToken);
+
+        var applied = await MigrationTestFixture.GetAppliedMigrationsAsync(_connectionString, TestCancellationToken);
         applied.Should().BeEmpty("rolled back transaction should leave no migrations applied");
 
-        await context.Database.MigrateAsync(TestCancellationToken);
+        await MigrationTestFixture.MigrateAsync(_connectionString, TestCancellationToken);
 
-        var appliedAfter = (await context.Database.GetAppliedMigrationsAsync(TestCancellationToken)).ToList();
+        var appliedAfter = await MigrationTestFixture.GetAppliedMigrationsAsync(_connectionString, TestCancellationToken);
         appliedAfter.Should().NotBeEmpty();
 
         _output.WriteLine("Migration in rolled back transaction leaves no partial state");
@@ -424,9 +416,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
     [Fact(DisplayName = "🌪️ MIGRATION CHAOS: Memory pressure during migration")]
     public async Task Chaos_MemoryPressureDuringMigration_Completes()
     {
-        using var scope = _factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
-
+        using var context = MigrationTestFixture.CreateContext(_connectionString);
         var migrator = context.Database.GetInfrastructure().GetRequiredService<IMigrator>();
 
         await migrator.MigrateAsync("0", TestCancellationToken);
@@ -441,7 +431,7 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
         {
             await context.Database.MigrateAsync(TestCancellationToken);
 
-            var applied = (await context.Database.GetAppliedMigrationsAsync(TestCancellationToken)).ToList();
+            var applied = await MigrationTestFixture.GetAppliedMigrationsAsync(_connectionString, TestCancellationToken);
             applied.Should().NotBeEmpty();
         }
         finally
@@ -457,24 +447,22 @@ public sealed class MigrationChaosTests(SentinelApiFactory factory, ITestOutputH
     [Fact(DisplayName = "🌪️ MIGRATION CHAOS: Rapid migrate/rollback cycles")]
     public async Task Chaos_RapidMigrateRollbackCycles_Stable()
     {
-        using var scope = _factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<SentinelSecurityDbContext>();
-
+        using var context = MigrationTestFixture.CreateContext(_connectionString);
         var migrator = context.Database.GetInfrastructure().GetRequiredService<IMigrator>();
 
         for (int cycle = 0; cycle < 5; cycle++)
         {
             await context.Database.MigrateAsync(TestCancellationToken);
-            var applied = (await context.Database.GetAppliedMigrationsAsync(TestCancellationToken)).ToList();
+            var applied = await MigrationTestFixture.GetAppliedMigrationsAsync(_connectionString, TestCancellationToken);
             applied.Should().NotBeEmpty();
 
             await migrator.MigrateAsync("0", TestCancellationToken);
-            var afterRollback = (await context.Database.GetAppliedMigrationsAsync(TestCancellationToken)).ToList();
+            var afterRollback = await MigrationTestFixture.GetAppliedMigrationsAsync(_connectionString, TestCancellationToken);
             afterRollback.Should().BeEmpty();
         }
 
         await context.Database.MigrateAsync(TestCancellationToken);
-        var final = (await context.Database.GetAppliedMigrationsAsync(TestCancellationToken)).ToList();
+        var final = await MigrationTestFixture.GetAppliedMigrationsAsync(_connectionString, TestCancellationToken);
         final.Should().NotBeEmpty();
 
         _output.WriteLine("5 rapid migrate/rollback cycles completed without issues");

@@ -47,15 +47,14 @@ jobs:
           cache: true
           cache-dependency-path: 'Directory.Packages.props'
 
-      - name: Install dotnet-ef tool
-        run: |
-          dotnet tool restore
-          dotnet ef --version
+      - name: Restore Dependencies
+        run: dotnet restore Sentinel.slnx --locked-mode
 
       - name: Run Migration Contract Tests
         run: |
           dotnet test tests/Sentinel.Contracts/Sentinel.Contracts.csproj \
             --configuration Release \
+            --no-restore \
             --logger "console;verbosity=detailed" \
             --filter "FullyQualifiedName~Sentinel.Contracts.Postgres.MigrationCompatibilityContractTests"
 
@@ -63,6 +62,7 @@ jobs:
         run: |
           dotnet test tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj \
             --configuration Release \
+            --no-restore \
             --logger "console;verbosity=detailed" \
             --filter "FullyQualifiedName~Sentinel.Tests.Integration.Database.ComprehensiveMigrationTests"
 
@@ -70,6 +70,7 @@ jobs:
         run: |
           dotnet test tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj \
             --configuration Release \
+            --no-restore \
             --logger "console;verbosity=detailed" \
             --filter "FullyQualifiedName~Sentinel.Tests.Integration.Database.MigrationChaosTests"
 
@@ -77,6 +78,7 @@ jobs:
         run: |
           dotnet test tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj \
             --configuration Release \
+            --no-restore \
             --logger "console;verbosity=detailed" \
             --filter "FullyQualifiedName~Sentinel.Tests.Integration.Database.CrossVersionCompatibilityTests"
 

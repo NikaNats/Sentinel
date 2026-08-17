@@ -1,4 +1,4 @@
-.PHONY: build test mutation lint sec-scan up down infra-audit fapi-conformance fapi-conformance-local chaos-up chaos-down chaos-inject chaos-load chaos-validate chaos-gate migration-test migration-chaos migration-cross-version all
+.PHONY: build test mutation lint sec-scan up down infra-audit fapi-conformance fapi-conformance-local chaos-up chaos-down chaos-inject chaos-load chaos-validate chaos-gate migration-test migration-chaos migration-cross-version migration-all contract-test all
 
 build:
 	dotnet restore Sentinel.slnx --locked-mode
