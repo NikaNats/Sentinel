@@ -1,0 +1,71 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Sentinel - mass assignment on entity creation MUST be rejected.
+#
+# The document entity's owner is derived from the authenticated principal
+# (sub claim), NEVER from the request body. A vulnerable API would bind an
+# injected "owner" field, assigning the document to the attacker-controlled
+# subject and hiding it from the caller's own listing.
+#
+# Detection: create a document with an injected owner field, then list the
+# caller's documents. If the created document is MISSING from the listing,
+# the owner field was honored -> mass assignment finding. A hardened API
+# ignores the extra field: the document stays in the caller's list and the
+# template never fires.
+#
+# Fire-on-vulnerability semantics. Runs authenticated through the DPoP proxy
+# (both requests share the proxy's client identity); unauthenticated runs get
+# 401 and cannot match.
+id: sentinel-mass-assignment
+info:
+  name: Sentinel - mass assignment on entity creation must be rejected
+  author: sentinel-sec
+  severity: high
+  description: Ownership-controlling fields (owner, roles, permissions) must be derived from the authenticated principal; a request body field that reassigns ownership indicates a mass-assignment vulnerability (CWE-915).
+  reference:
+    - https://owasp.org/www-project-api-security/
+    - https://cwe.mitre.org/data/definitions/915.html
+  tags: sentinel,mass-assignment,cwe-915,api
+
+http:
+  # Request 1: create a document carrying an injected owner field.
+  # The id is extracted (internal variable) and re-checked in request 2.
+  - method: POST
+    path:
+      - "{{BaseURL}}/v1/documents"
+    headers:
+      Content-Type: application/json
+    body: "{\"title\":\"mass-assignment-probe-{{randstr}}\",\"content\":\"probe\",\"owner\":\"attacker-controlled-sub\"}"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+          - 201
+      - type: dsl
+        dsl:
+          - "doc_id != ''"
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - '"id":\s*"([0-9a-fA-F-]{36})"'
+        group: 1
+        internal: true
+        name: doc_id
+
+  # Request 2: the caller's listing MUST still contain the document.
+  # If doc_id is absent from the list, the injected owner field was honored
+  # (the document was reassigned away from the caller) - mass assignment.
+  - method: GET
+    path:
+      - "{{BaseURL}}/v1/documents"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: dsl
+        dsl:
+          - "doc_id != ''"
+          - "!contains(body, doc_id)"

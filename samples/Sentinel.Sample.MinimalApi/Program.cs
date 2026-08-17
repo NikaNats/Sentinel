@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -157,7 +158,28 @@ builder.Services.Configure<JsonOptions>(options =>
 X509Certificate2? trustedCa = null;
 if (!string.IsNullOrWhiteSpace(localCaPath) && File.Exists(localCaPath))
 {
-    trustedCa = X509Certificate2.CreateFromPemFile(localCaPath);
+    var pem = File.ReadAllText(localCaPath);
+    var certStart = pem.IndexOf("-----BEGIN CERTIFICATE-----", StringComparison.Ordinal);
+    var certEnd = pem.IndexOf("-----END CERTIFICATE-----", StringComparison.Ordinal);
+    if (certStart >= 0 && certEnd >= 0)
+    {
+        // Extract Base64 payload between PEM headers, strip ALL whitespace (handles CRLF/BOM),
+        // decode to raw DER bytes, then load certificate via X509CertificateLoader (no obsolescence).
+        var headerLen = "-----BEGIN CERTIFICATE-----".Length;
+        var base64 = pem.Substring(certStart + headerLen, certEnd - certStart - headerLen);
+        base64 = Regex.Replace(base64, @"\s+", "");
+        var derBytes = Convert.FromBase64String(base64);
+        trustedCa = X509CertificateLoader.LoadCertificate(derBytes);
+    }
+    else
+    {
+        // Fallback: assume DER file
+        trustedCa = X509CertificateLoader.LoadCertificate(File.ReadAllBytes(localCaPath));
+    }
+}
+else
+{
+    Console.WriteLine($"[WARN] CA path not configured or file not found: {localCaPath}");
 }
 #pragma warning restore CA2000
 
@@ -287,24 +309,26 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 context.Response.ContentType = "application/problem+json; charset=utf-8";
 
-                var errorDetail = !string.IsNullOrWhiteSpace(context.ErrorDescription)
+                var detailedError = !string.IsNullOrWhiteSpace(context.ErrorDescription)
                     ? context.ErrorDescription
                     : context.AuthenticateFailure?.Message;
 
-                if (string.IsNullOrWhiteSpace(errorDetail))
+                if (string.IsNullOrWhiteSpace(detailedError))
                 {
-                    errorDetail = "Missing or invalid token";
+                    detailedError = "Missing or invalid token";
                 }
 
+                // Static, safe header for WWW-Authenticate (RFC 6750) - no user-controlled content
                 context.Response.Headers.Append("WWW-Authenticate",
-                    $"Bearer error=\"invalid_token\", error_description=\"{errorDetail}\"");
+                    "Bearer error=\"invalid_token\", error_description=\"Authentication required\"");
 
+                // Detailed error goes ONLY into the JSON body (RFC 7807)
                 var problem = new ProblemDetails
                 {
                     Type = "/errors/unauthorized",
                     Title = "Authentication required",
                     Status = StatusCodes.Status401Unauthorized,
-                    Detail = errorDetail
+                    Detail = Regex.Replace(detailedError, @"[\r\n\t\x00-\x1F\x7F]", "")
                 };
 
                 var json = JsonSerializer.Serialize(problem, SampleJsonContext.Default.ProblemDetails);
@@ -350,7 +374,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
         options.RequireHttpsMetadata = !string.Equals(keycloakSection["RequireHttpsMetadata"], "false",
             StringComparison.OrdinalIgnoreCase);
-        options.Backchannel = new HttpClient(tls13HandlerFactory());
+        // Use default HttpClient (system trust store) for JWKS fetch; CA is in system trust store via update-ca-certificates.
+        // options.Backchannel = new HttpClient(tls13HandlerFactory());
 
         var configuredAuthority = keycloakSection["Authority"] ?? string.Empty;
         var allowedIssuers = new List<string> { configuredAuthority };
@@ -504,13 +529,17 @@ builder.Services.AddAuthorizationBuilder()
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddPolicy("profile", _ =>
-        RateLimitPartition.GetConcurrencyLimiter("profile-global", _ => new ConcurrencyLimiterOptions
-        {
-            PermitLimit = 1,
-            QueueLimit = 2,
-            QueueProcessingOrder = QueueProcessingOrder.OldestFirst
-        }));
+    options.AddPolicy("profile", context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                Window = TimeSpan.FromSeconds(10),
+                SegmentsPerWindow = 2,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 5
+            }));
 });
 
 builder.Services.AddSentinelAspNetCore().AddAll().ConfigureAcrRanking();
@@ -519,9 +548,10 @@ builder.Services.AddSingleton<DocumentRepository>();
 var app = builder.Build();
 
 // Release the single shared trusted-CA handle on shutdown (see tls13HandlerFactory above).
+// Use ApplicationStopping so in-flight outbound TLS calls during grace period still work.
 if (trustedCa is not null)
 {
-    app.Lifetime.ApplicationStopped.Register(trustedCa.Dispose);
+    app.Lifetime.ApplicationStopping.Register(trustedCa.Dispose);
 }
 
     // RFC 7807 ProblemDetails globally - no Developer Exception Page (Zero Dev Bypasses)

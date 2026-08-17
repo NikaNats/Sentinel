@@ -28,7 +28,7 @@
     "webAuthnPolicyAvoidSameAuthenticatorRegister": "false",
     "webAuthnPolicyAcceptableAaguids": "",
     "webAuthnPolicyExtraOrigins": "",
-    "acr.loa.map": "{\"government-aal3-browser\":\"acr3\"}"
+    "acr.loa.map": "{\"government-aal3-browser\":3}"
   },
   "accessTokenLifespan": 300,
   "accessTokenLifespanForImplicitFlow": 0,

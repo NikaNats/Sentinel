@@ -49,12 +49,21 @@ spec:
             - start-dev
             - --import-realm
           env:
-            - name: KEYCLOAK_ADMIN
-              value: admin
-            - name: KEYCLOAK_ADMIN_PASSWORD
-              value: admin
-            - name: KEYCLOAK_GATE_PASSWORD
-              value: gate-pass
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-bootstrap
+                  key: admin-username
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-bootstrap
+                  key: admin-password
+            - name: KC_GATE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-gate
+                  key: gate-password
             - name: KC_FEATURES
               value: dpop,par
             - name: KC_HEALTH_ENABLED

@@ -1,0 +1,54 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Sentinel - stored/reflected XSS in document data MUST be rejected.
+# A stored XSS payload (raw <script> in the title) written via POST must never
+# come back UNENCODED in any API response. The sample stores titles verbatim
+# but serializes JSON with a strict encoder (System.Text.Json escapes '<' as
+# \u003C), so a hardened pipeline never reflects the raw payload and this
+# template never fires. A response containing the raw payload means the API
+# reflects attacker-controlled markup (XSS on any consumer rendering the JSON).
+#
+# Fire-on-vulnerability semantics: correct encoding does NOT match, keeping
+# the release gate green on a hardened pipeline. Runs authenticated through
+# the DPoP proxy; unauthenticated runs get 401 and cannot match.
+id: sentinel-xss
+info:
+  name: Sentinel - stored XSS reflection must be encoded
+  author: sentinel-sec
+  severity: medium
+  description: A stored payload containing raw <script> markup must never be reflected unencoded in API responses; reflection indicates an XSS sink reachable by consumers rendering the JSON.
+  reference:
+    - https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/02-Testing_for_Stored_Cross_Site_Scripting
+    - https://capec.mitre.org/data/definitions/63.html
+  tags: sentinel,xss,injection,owasp
+
+http:
+  # Request 1: store an XSS payload as the document title (unique marker).
+  - method: POST
+    path:
+      - "{{BaseURL}}/v1/documents"
+    headers:
+      Content-Type: application/json
+    body: "{\"title\":\"SENTINELXSSPROBE<script>alert(1)</script>\",\"content\":\"xss-probe\"}"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+          - 201
+
+  # Request 2: the list endpoint must NOT reflect the raw payload.
+  # raw_body is case-preserving; the payload is echoed verbatim only when the
+  # API fails to encode it. System.Text.Json escapes '<' to \u003C, so the raw
+  # '<script>' can never appear on a hardened pipeline.
+  - method: GET
+    path:
+      - "{{BaseURL}}/v1/documents"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: dsl
+        dsl:
+          - "contains(raw_body, 'SENTINELXSSPROBE<script>alert(1)</script>')"

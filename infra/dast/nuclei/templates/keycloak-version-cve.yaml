@@ -2,18 +2,22 @@
 #
 # Keycloak version regression screening.
 # Sentinel pins quay.io/keycloak/keycloak:26.6.4 (docker-compose.yml). This
-# template fingerprints any running Keycloak OLDER than 26.6.4 - the always-fire
-# "is this Keycloak" check is out of scope (that is done by Trivy on the image
-# registry + the image digest pin). A positive here means a server downgraded
-# from the pinned baseline and the CVE alerting must be re-run.
+# template fingerprints any running Keycloak BELOW the 26.6.4 baseline - the
+# always-fire "is this Keycloak" check is out of scope (that is done by Trivy
+# on the image registry + the image digest pin). A positive here means a
+# server downgraded from the pinned baseline and the CVE alerting must be
+# re-run. The pinned baseline is the governing security boundary: versions
+# below it carry unfixed advisories (e.g. CVE-2023-6134, reflected XSS fixed
+# in 22.0.5/23.0.7) and MUST be treated as vulnerable until proven otherwise.
 id: keycloak-version-cve
 info:
-  name: Keycloak - pre-26 fingerprint (pinned baseline regression)
+  name: Keycloak - pre-26.6.4 fingerprint (pinned baseline regression)
   author: sentinel-sec
   severity: high
-  description: Detects a Keycloak instance running a version older than the Sentinel-pinned 26.6.4 baseline (quay.io/keycloak/keycloak:26.6.4).
+  description: Detects a Keycloak instance running a version older than the Sentinel-pinned 26.6.4 baseline (quay.io/keycloak/keycloak:26.6.4), including 26.0-26.5.x and 26.6.0-26.6.3.
   reference:
     - https://www.keycloak.org/security
+    - https://nvd.nist.gov/vuln/detail/CVE-2023-6134
   tags: keycloak,version-cve,regression
 
 http:
@@ -27,5 +31,5 @@ http:
       - type: regex
         part: body
         regex:
-          - "version\\s*[:=]\\s*[\"']?(?:2[0-5])[.]\\d+(?:[.]\\d+)?"
+          - "version\\s*[:=]\\s*[\"']?((?:2[0-5])[.]\\d+(?:[.]\\d+)?|26[.][0-5][.]\\d+|26[.]6[.][0-3])"
           - "(?:Keycloak|kc_version)[^0-9]*((?:2[0-5]))[.]\\d+"

@@ -1,11 +1,19 @@
 # Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
 #
 # Sentinel - Bearer downgrade on a DPoP-bound API MUST be rejected.
-# Sentinel's DPoP validation rejects Bearer presentation of DPoP-bound tokens
-# with 401/400/403. This template FIRES ONLY ON VULNERABILITY: any response
-# that is NOT a rejection (i.e. the request was accepted) is a finding.
-# Correct 401/403 rejections never match, so the gate stays green on a
-# hardened pipeline.
+# RFC 9449 section 5.1: a DPoP-bound access token must be presented with the
+# DPoP scheme; a plain Bearer presentation must be rejected. Sentinel's DPoP
+# middleware answers 401 (WWW-Authenticate: DPoP error="invalid_dpop_proof").
+#
+# Fire-on-vulnerability semantics: any response that is NOT a rejection
+# (401/400/403) means the raw Bearer header was accepted - a DPoP binding
+# failure - and the finding fires. Correct rejections never match, so the
+# release gate stays green on a hardened pipeline.
+#
+# RUN PLACEMENT: this template must run against the API DIRECTLY (unauth run
+# in dast-release-gate.yml). Through the DPoP auth proxy the raw Authorization
+# header is stripped and re-signed, so a proxy-run 200 is EXPECTED behaviour
+# and would be a false positive - the workflow excludes it there.
 id: sentinel-dpop-bearer-downgrade
 info:
   name: Sentinel - Bearer downgrade on DPoP-bound API must be rejected
@@ -20,20 +28,19 @@ info:
 http:
   - raw:
       - |
-        GET /v1/documents HTTP/1.1
+        GET {{path}} HTTP/1.1
         Host: {{Hostname}}
         Authorization: Bearer forged-token-value
-    matchers-condition: and
+    path:
+      - /v1/documents
+      - /v1/profile
+      - /v1/security-context
+      - /v1/test/protected
+    matchers-condition: or
     matchers:
       - type: status
         status:
           - 401
           - 400
           - 403
-        negative: true
-      - type: word
-        part: body
-        words:
-          - "\"sub\""
-          - "documents"
         negative: true

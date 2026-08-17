@@ -22,8 +22,8 @@ services:
     image: quay.io/keycloak/keycloak:26.6.4
     container_name: sentinel-keycloak
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_FEATURES: dpop,par
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"

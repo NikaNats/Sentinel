@@ -26,8 +26,8 @@ network:
     matchers:
       - type: binary
         part: data
-        words:
-          - "\x16\x03\x03"
+        binary:
+          - "160303"
     extractors:
       - type: regex
         part: data

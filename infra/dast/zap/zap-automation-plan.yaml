@@ -21,8 +21,9 @@ env:
         - "http://dast-auth-proxy:8080.*"
       excludePaths:
         - ".*\\.svg"
+        - "http://dast-auth-proxy:8080/proxy-health"
   parameters:
-    timeout: 120
+    connectionTimeout: 120000
     failOnError: false
     failOnWarning: false
 
@@ -59,13 +60,13 @@ jobs:
   - type: activeScan
     parameters:
       context: sentinel-dast
-      policy: sentinel-dast
       maxRuleDurationInMins: 5
       maxScanDurationInMins: 45
 
   - type: outputSummary
     parameters:
       format: long
+      summaryFile: /zap/wrk/artifacts/zap-summary.txt
 
   - type: report
     parameters:

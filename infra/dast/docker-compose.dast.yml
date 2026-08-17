@@ -19,6 +19,9 @@ name: sentinel-fapi2-stack
 services:
   sentinel-api:
     profiles: ["dast"]
+    build:
+      context: .
+      dockerfile: infra/dast/sentinel-api.Dockerfile
     environment:
       ASPNETCORE_ENVIRONMENT: Staging
       # DAST realm supplies its own JWKS + FAPI 2.0 executors; audience stays
@@ -32,6 +35,10 @@ services:
       # localhost:6379 inside its own container and fails closed with 503 on
       # every DPoP check.
       Sentinel__Redis__EndPoint: "redis:6379"
+      # Trusted CA for JWKS backchannel TLS (used by JwtBearer's custom Backchannel HttpClient)
+      Security__TrustedRootCaPath: "/usr/local/share/ca-certificates/sentinel-ca.crt"
+    volumes:
+      - ./infra/certs/ca.crt:/usr/local/share/ca-certificates/sentinel-ca.crt:ro
 
   # Test-only. Never deploy outside an ephemeral DAST environment.
   dast-auth-proxy:

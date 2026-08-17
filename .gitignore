@@ -148,6 +148,7 @@ azure-pipelines.yml.bak
 local.settings.json
 
 # DAST run artifacts (local scans generate SARIF/txt under artifacts/)
+artifacts/
 infra/dast/artifacts/
 
 # OIDF FAPI conformance evidence + per-plan client JWKS (never commit; archive via CI artifact)

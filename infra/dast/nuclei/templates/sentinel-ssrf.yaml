@@ -1,0 +1,52 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Sentinel - SSRF on URL-accepting inputs MUST be rejected.
+#
+# INTENDED SURFACE: any endpoint that accepts a URL the server later fetches
+# (link previews, webhooks, profile image import, ...). The sample currently
+# exposes NO URL-fetching endpoint, so this template probes the document
+# creation surface with an injected "SourceUrl" field (the shape such a
+# feature would take) and fires ONLY on evidence that the server fetched the
+# URL: echoed cloud-metadata content or access keys in the response body.
+#
+# Fire-on-vulnerability semantics: a pipeline that ignores unknown fields
+# (JSON deserialization does not bind extra properties) returns a normal 2xx
+# with no metadata echo and this template never fires. If a future endpoint
+# fetches attacker-supplied URLs, the same template catches the regression
+# without code changes.
+#
+# The probe URL is the RFC 1918 cloud-metadata endpoint (169.254.169.254):
+# reachable only from inside the stack network, so the check is safe in CI.
+id: sentinel-ssrf
+info:
+  name: Sentinel - SSRF on URL-accepting inputs must be rejected
+  author: sentinel-sec
+  severity: high
+  description: Any endpoint accepting attacker-controlled URLs must never fetch them; evidence of a fetch (cloud-metadata echo, credential material) in the response indicates an SSRF vulnerability.
+  reference:
+    - https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/19-Testing_for_Server-Side_Request_Forgery
+    - https://capec.mitre.org/data/definitions/664.html
+  tags: sentinel,ssrf,injection,owasp
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}/v1/documents"
+    headers:
+      Content-Type: application/json
+    body: "{\"title\":\"ssrf-probe\",\"content\":\"probe\",\"SourceUrl\":\"http://169.254.169.254/latest/meta-data/iam/security-credentials/\"}"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+          - 201
+      - type: word
+        part: body
+        condition: or
+        words:
+          - "meta-data"
+          - "AccessKeyId"
+          - "SecretAccessKey"
+          - "Token"
+          - "Expiration"

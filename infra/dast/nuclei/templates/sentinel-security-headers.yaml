@@ -1,9 +1,11 @@
 # Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
 #
 # Sentinel - Security header baseline (Constitution §III.5 / PLAN-0001 §4.5).
-# Verifies the exact hardened header set is present AND that version-leaking
-# headers are absent. Runs against /healthz (anonymous endpoint) so it works
-# both directly against the API and through the DPoP auth proxy.
+# Verifies the exact hardened header set from
+# src/Sentinel.AspNetCore/Middleware/SecurityHeadersMiddleware.cs is present
+# AND that version-leaking headers are absent. Runs against /healthz
+# (anonymous endpoint) so it works both directly against the API and through
+# the DPoP auth proxy.
 id: sentinel-security-headers-baseline
 info:
   name: Sentinel - Security header baseline
@@ -25,10 +27,13 @@ http:
         condition: and
         words:
           - "Strict-Transport-Security: max-age=63072000"
+          - "Content-Security-Policy: default-src 'none'"
           - "X-Content-Type-Options: nosniff"
           - "X-Frame-Options: DENY"
           - "Referrer-Policy: no-referrer"
+          - "Permissions-Policy: geolocation=(), microphone=(), camera=()"
           - "Cache-Control: no-store"
+          - "Pragma: no-cache"
       - type: word
         part: header
         condition: or

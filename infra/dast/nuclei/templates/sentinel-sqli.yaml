@@ -1,0 +1,83 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Sentinel - SQL injection on string-bound request fields MUST be rejected.
+# The sample's document endpoints persist string fields (title/content) into
+# storage; if any of those values were ever interpolated into SQL, the payloads
+# below would surface a SQL engine error signature in the response. Sentinel
+# treats ALL payloads as opaque data (parameterized/ORM storage), so a correct
+# pipeline returns 2xx WITHOUT SQL error signatures and this template never
+# fires. Any SQL error signature in a response body is a HIGH finding.
+#
+# Fire-on-vulnerability semantics (same as the DPoP templates): correct
+# handling does NOT match, so the release gate stays green on a hardened
+# pipeline. Runs authenticated through the DPoP proxy; unauthenticated runs
+# get 401 and cannot match.
+id: sentinel-sqli
+info:
+  name: Sentinel - SQL injection must be rejected
+  author: sentinel-sec
+  severity: high
+  description: String request fields (document title/content) must be stored as opaque data; a SQL engine error signature in any response indicates query interpolation and an injection vulnerability.
+  reference:
+    - https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/05-Testing_for_SQL_Injection
+    - https://capec.mitre.org/data/definitions/66.html
+  tags: sentinel,sqli,injection,owasp
+
+http:
+  # Error-based probe on the Title field (POST /v1/documents).
+  - method: POST
+    path:
+      - "{{BaseURL}}/v1/documents"
+    headers:
+      Content-Type: application/json
+    body: "{\"title\":\"' OR '1'='1' --\",\"content\":\"sqli-probe-1\"}"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+          - 201
+      - type: word
+        part: body
+        condition: or
+        words:
+          - "Npgsql"
+          - "PostgresException"
+          - "syntax error at or near"
+          - "unterminated quoted"
+          - "SQLSTATE"
+          - "SqlException"
+          - "MySqlException"
+          - "Microsoft.Data.SqlClient"
+          - "ORA-01756"
+          - "ORA-00933"
+          - "ORA-00904"
+
+  # Error-based probe on the Content field.
+  - method: POST
+    path:
+      - "{{BaseURL}}/v1/documents"
+    headers:
+      Content-Type: application/json
+    body: "{\"title\":\"sqli-probe-2\",\"content\":\"'; SELECT pg_sleep(1); --\"}"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+          - 201
+      - type: word
+        part: body
+        condition: or
+        words:
+          - "Npgsql"
+          - "PostgresException"
+          - "syntax error at or near"
+          - "unterminated quoted"
+          - "SQLSTATE"
+          - "SqlException"
+          - "MySqlException"
+          - "Microsoft.Data.SqlClient"
+          - "ORA-01756"
+          - "ORA-00933"
+          - "ORA-00904"

@@ -28,7 +28,7 @@
                        "webAuthnPolicyAvoidSameAuthenticatorRegister":  "false",
                        "webAuthnPolicyAcceptableAaguids":  "",
                        "webAuthnPolicyExtraOrigins":  "",
-                       "acr.loa.map":  "{\"government-aal3-browser\":\"acr3\"}"
+                       "acr.loa.map":  "{\"government-aal3-browser\":3}"
                    },
     "accessTokenLifespan":  300,
     "accessTokenLifespanForImplicitFlow":  0,
@@ -424,9 +424,7 @@
                         "optionalClientScopes":  [
                                                      "offline_access"
                                                  ],
-                        "secret":  "SentinelDastScannerSecret-2026-PQC"
-                    },
-                    {
+                        {
                         "clientId":  "sentinel-dast-victim",
                         "name":  "Simulated victim user client (public, gray-box credential testing)",
                         "protocol":  "openid-connect",

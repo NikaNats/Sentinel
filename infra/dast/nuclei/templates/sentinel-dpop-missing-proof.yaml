@@ -1,14 +1,21 @@
 # Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
 #
 # Sentinel - DPoP-bound request WITHOUT a DPoP proof must be rejected.
-# A bound-access-token request cannot omit the proof. Sentinel must answer
-# 401/400 with a ProblemDetails body carrying "/errors/missing-dpop-proof" or
-# "/errors/invalid-dpop-proof" (src/Sentinel.AspNetCore/Errors/ErrorCodes.cs).
+# RFC 9449 section 4.2: a bound-access-token request cannot omit the proof.
+# Sentinel must answer 401/400 with a ProblemDetails body carrying
+# "/errors/missing-dpop-proof" or "/errors/invalid-dpop-proof"
+# (src/Sentinel.AspNetCore/Errors/ErrorCodes.cs).
 #
-# Detection semantics: this template FIRES ONLY ON VULNERABILITY, i.e. when the
-# request is ACCEPTED (2xx with a non-error body) despite the missing proof.
-# Correct rejections (401/400 + error URI) do NOT match, so the release gate
-# stays green on a hardened pipeline.
+# Detection semantics: this template FIRES ONLY ON VULNERABILITY, i.e. when
+# the request is ACCEPTED (2xx) despite the missing proof. Correct rejections
+# (401/400) do NOT match, so the release gate stays green on a hardened
+# pipeline. A 2xx acceptance on ANY protected endpoint is the finding itself
+# (the proof was waived) - no body inspection is needed.
+#
+# RUN PLACEMENT: must run against the API DIRECTLY (unauth run in
+# dast-release-gate.yml). Through the DPoP auth proxy the Authorization header
+# is stripped and a valid proof is injected, so a proxy-run 200 is EXPECTED
+# behaviour and would be a false positive - the workflow excludes it there.
 id: sentinel-dpop-missing-proof
 info:
   name: Sentinel - DPoP proof missing must be rejected
@@ -23,9 +30,12 @@ http:
   - method: GET
     path:
       - "{{BaseURL}}/v1/documents"
+      - "{{BaseURL}}/v1/profile"
+      - "{{BaseURL}}/v1/security-context"
+      - "{{BaseURL}}/v1/test/protected"
     headers:
       Authorization: "Bearer attacker-controlled-but-unbound-jwt"
-    matchers-condition: and
+    matchers-condition: or
     matchers:
       - type: status
         status:
@@ -34,9 +44,3 @@ http:
           - 202
           - 203
           - 204
-      - type: word
-        part: body
-        words:
-          - "/errors/missing-dpop-proof"
-          - "/errors/invalid-dpop-proof"
-        negative: true

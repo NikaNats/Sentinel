@@ -18,7 +18,10 @@ DOCS_URL="$PROXY_URL/v1/documents"
 seed_document() {
   local name="$1" tag="$2"
   local body
-  body="{\"name\":\"$name\",\"content\":\"synthetic DAST fixture\",\"tags\":[\"$tag\"]}"
+  # Body matches the API DTO exactly: CreateDocumentRequest(Title, Content).
+  # Extra fields (e.g. "tags") are ignored by JSON binding; the title drives
+  # the surgical-authz "secrets" reservation, so fixture titles avoid it.
+  body="{\"title\":\"$name\",\"content\":\"synthetic DAST fixture ($tag)\"}"
   local code
   code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$DOCS_URL" \
     -H 'Content-Type: application/json' \
@@ -37,7 +40,7 @@ seed_document "dast-fixture-tombstone" "archived"
 IDEMPOTENT_KEY="fixture-replay-$(date +%s)"
 curl -s -o /dev/null -X POST "$DOCS_URL" \
   -H 'Content-Type: application/json' -H "Idempotency-Key: $IDEMPOTENT_KEY" \
-  -d '{"name":"dast-fixture-replay","content":"replay target","tags":["fixture"]}'
+  -d '{"title":"dast-fixture-replay","content":"replay target"}'
 echo "[seed] replay fixture idempotency key: $IDEMPOTENT_KEY"
 
 echo "[seed] done."
