@@ -132,6 +132,9 @@ jobs:
       - name: Build Container Image For Scanning
         run: docker build -t sentinel-api:ci -f src/Sentinel.AspNetCore/Dockerfile .
 
+      - name: Create Artifacts Directory
+        run: mkdir -p artifacts
+
       - name: Gate 9 - Container Image Scan (Trivy)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
