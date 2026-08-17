@@ -1,0 +1,28 @@
+# Sentinel security alerting rules consumed by the Layer-2 observability gate
+# (tests/scripts/validate-observability.sh). Mirrors the SRE alert intent:
+# DPoP failure spikes and token replays MUST be visible as firing alerts.
+#
+# GATE THRESHOLDS, not production SRE tuning: TokenReplayDetected intentionally
+# fires at > 0 so the gate proves the signal path end-to-end. Production alert
+# baselining/severity is an operator decision (SRE stack, infra/sre-alerts.yaml)
+# and may threshold against noisy-client baselines.
+groups:
+  - name: sentinel-auth-attacks
+    rules:
+      - alert: HighDPoPFailures
+        expr: rate(auth_dpop_failures_total[1m]) > 0.1
+        for: 10s
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Elevated DPoP validation failures (possible replay or policy abuse)"
+
+      - alert: TokenReplayDetected
+        expr: rate(auth_jti_replays_total[1m]) > 0
+        for: 10s
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "Access token replay detected - a consumed jti was re-presented"

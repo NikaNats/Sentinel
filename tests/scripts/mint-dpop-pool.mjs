@@ -36,6 +36,7 @@
 import { createHash, createPrivateKey, createSign, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const b64url = (buf) => Buffer.from(buf).toString('base64url');
 
@@ -204,7 +205,15 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error(`mint-dpop-pool: ${e.message}`);
-  process.exit(2);
-});
+// Exported for downstream tooling (sign-dpop-proof.mjs) so the RFC 9449 signing
+// logic (IEEE P1363 raw r||s) lives in exactly one place.
+export { signProof, generateKey };
+
+// Module guard: run the CLI only when executed directly, never when imported.
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+if (isMain) {
+  main().catch((e) => {
+    console.error(`mint-dpop-pool: ${e.message}`);
+    process.exit(2);
+  });
+}

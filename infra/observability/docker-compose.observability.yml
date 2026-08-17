@@ -1,0 +1,82 @@
+# Layer-2 observability overlay for the Sentinel FAPI 2.0 stack.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f infra/observability/docker-compose.observability.yml up -d --build
+#
+# Adds the collector/Prometheus/Loki/Tempo quartet and routes the API's OTLP
+# traffic (metrics/traces/logs) into it. The API image is unchanged - OTLP
+# export activates via OTEL_EXPORTER_OTLP_ENDPOINT and access-token jti
+# single-use enforcement via FeatureFlags__Auth__JtiReplayEnforcement.
+#
+# DEV-GATE ONLY: Loki (filesystem) and Tempo (local) are ephemeral by design -
+# the gate validates signal flow, not retention. Production observability lives
+# in the Kubernetes manifests (infra/k8s/otel-config.yaml) shipping to the SIEM
+# gateway with mTLS; durable/distributed storage is an ops deployment decision.
+services:
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.127.0
+    container_name: sentinel-otel-collector
+    command:
+      - --config=/etc/otelcol/config.yaml
+    volumes:
+      - ./infra/observability/collector/config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8889:8889"
+    depends_on:
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    container_name: sentinel-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ./infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      collector:
+        condition: service_started
+
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: sentinel-loki
+    command:
+      - -config.file=/etc/loki/config.yaml
+    volumes:
+      - ./infra/observability/loki/config.yaml:/etc/loki/config.yaml:ro
+    ports:
+      - "3100:3100"
+
+  tempo:
+    image: grafana/tempo:2.7.1
+    container_name: sentinel-tempo
+    command:
+      - -config.file=/etc/tempo/config.yaml
+    volumes:
+      - ./infra/observability/tempo/config.yaml:/etc/tempo/config.yaml:ro
+    ports:
+      - "3200:3200"
+
+  sentinel-api:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_SERVICE_NAME: sentinel-api
+      FeatureFlags__Auth__JtiReplayEnforcement: "true"
+    depends_on:
+      keycloak:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      collector:
+        condition: service_started

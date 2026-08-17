@@ -16,6 +16,13 @@ using Sentinel.EntityFrameworkCore.Models;
 using Sentinel.Tests.Integration.Database.Fixtures;
 using Xunit;
 
+// CA2213: the MigrationTestFixture is disposed by xUnit v3 via IAsyncLifetime - the test
+// classes only drop the per-test databases, never the fixture itself.
+// CA1031: the chaos traffic simulators intentionally swallow and count transient exceptions
+// (connection resets, constraint races) to measure error rates instead of failing early.
+#pragma warning disable CA2213
+#pragma warning disable CA1031
+
 namespace Sentinel.Tests.Integration.Database;
 
 [Collection("Sentinel Migration Integration")]
@@ -90,7 +97,7 @@ public sealed class MigrationChaosTests(MigrationTestFixture fixture, ITestOutpu
 
         var migrateTask = context.Database.MigrateAsync(TestCancellationToken);
 
-        await Task.Delay(100);
+        await Task.Delay(100, TestCancellationToken);
 
         try { await migrateTask; } catch (OperationCanceledException) { }
 
@@ -113,7 +120,7 @@ public sealed class MigrationChaosTests(MigrationTestFixture fixture, ITestOutpu
 
         var writeErrors = new ConcurrentQueue<Exception>();
         var writeCount = 0;
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
 
         var writeTask = Task.Run(async () =>
         {
@@ -134,8 +141,8 @@ public sealed class MigrationChaosTests(MigrationTestFixture fixture, ITestOutpu
                         });
                     }
                     writeContext.DpopNonceStore.AddRange(batch);
-                    await writeContext.SaveChangesAsync(cts.Token);
-                    await Task.Delay(10);
+                    await writeContext.SaveChangesAsync(TestCancellationToken);
+                    await Task.Delay(10, TestCancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -146,14 +153,14 @@ public sealed class MigrationChaosTests(MigrationTestFixture fixture, ITestOutpu
                     writeErrors.Enqueue(ex);
                 }
             }
-        });
+        }, TestCancellationToken);
 
-        await Task.Delay(1000);
+        await Task.Delay(1000, TestCancellationToken);
 
         Func<Task> migrateAction = async () => await context.Database.MigrateAsync(TestCancellationToken);
         await migrateAction.Should().NotThrowAsync("migration should succeed under load");
 
-        cts.Cancel();
+        await cts.CancelAsync();
         await writeTask;
 
         var errorRate = (double)writeErrors.Count / Math.Max(1, writeCount);
@@ -174,7 +181,7 @@ public sealed class MigrationChaosTests(MigrationTestFixture fixture, ITestOutpu
 
         var readErrors = new ConcurrentQueue<Exception>();
         var readCount = 0;
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
 
         var readTask = Task.Run(async () =>
         {
@@ -184,9 +191,9 @@ public sealed class MigrationChaosTests(MigrationTestFixture fixture, ITestOutpu
             {
                 try
                 {
-                    var count = await readContext.DpopNonceStore.CountAsync(cts.Token);
+                    var count = await readContext.DpopNonceStore.CountAsync(TestCancellationToken);
                     Interlocked.Increment(ref readCount);
-                    await Task.Delay(10);
+                    await Task.Delay(10, TestCancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -197,14 +204,14 @@ public sealed class MigrationChaosTests(MigrationTestFixture fixture, ITestOutpu
                     readErrors.Enqueue(ex);
                 }
             }
-        });
+        }, TestCancellationToken);
 
-        await Task.Delay(500);
+        await Task.Delay(500, TestCancellationToken);
 
         Func<Task> migrateAction = async () => await context.Database.MigrateAsync(TestCancellationToken);
         await migrateAction.Should().NotThrowAsync("migration should succeed under read load");
 
-        cts.Cancel();
+        await cts.CancelAsync();
         await readTask;
 
         readErrors.Should().BeEmpty("no read errors during migration");
@@ -277,7 +284,7 @@ public sealed class MigrationChaosTests(MigrationTestFixture fixture, ITestOutpu
         var migrator = context.Database.GetInfrastructure().GetRequiredService<IMigrator>();
 
         var writeErrors = new ConcurrentQueue<Exception>();
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
 
         var writeTask = Task.Run(async () =>
         {
@@ -295,8 +302,8 @@ public sealed class MigrationChaosTests(MigrationTestFixture fixture, ITestOutpu
                         ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5)
                     };
                     writeContext.DpopNonceStore.Add(entry);
-                    await writeContext.SaveChangesAsync(cts.Token);
-                    await Task.Delay(20);
+                    await writeContext.SaveChangesAsync(TestCancellationToken);
+                    await Task.Delay(20, TestCancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -307,14 +314,14 @@ public sealed class MigrationChaosTests(MigrationTestFixture fixture, ITestOutpu
                     writeErrors.Enqueue(ex);
                 }
             }
-        });
+        }, TestCancellationToken);
 
-        await Task.Delay(500);
+        await Task.Delay(500, TestCancellationToken);
 
         Func<Task> rollbackAct = async () => await migrator.MigrateAsync("0", TestCancellationToken);
         await rollbackAct.Should().NotThrowAsync("rollback should succeed even under write load");
 
-        cts.Cancel();
+        await cts.CancelAsync();
         await writeTask;
 
         await using var connection = new NpgsqlConnection(_connectionString);
@@ -366,7 +373,7 @@ public sealed class MigrationChaosTests(MigrationTestFixture fixture, ITestOutpu
 
         var migrateTask = context.Database.MigrateAsync(TestCancellationToken);
 
-        await Task.Delay(50);
+        await Task.Delay(50, TestCancellationToken);
         await context.DisposeAsync();
 
         using var newContext = MigrationTestFixture.CreateContext(_connectionString);

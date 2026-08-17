@@ -50,6 +50,39 @@ public static class SentinelAspNetCoreExtensions
 
         return app;
     }
+
+    /// <summary>
+    ///     Registers the security middlewares that MUST run before authentication:
+    ///     security headers, correlation id propagation (activity baggage), and DPoP
+    ///     proof validation. Placing these before <c>UseAuthentication()</c> ensures the
+    ///     correlation id baggage is attached before token validation and security events
+    ///     (e.g. TOKEN_REPLAY_ALERT) are emitted.
+    /// </summary>
+    public static IApplicationBuilder UseSentinelPreAuthenticationSecurity(this IApplicationBuilder app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+
+        app.UseMiddleware<SecurityHeadersMiddleware>();
+        app.UseMiddleware<CorrelationIdMiddleware>();
+        app.UseMiddleware<DpopValidationMiddleware>();
+
+        return app;
+    }
+
+    /// <summary>
+    ///     Registers the security middlewares that depend on an authenticated principal
+    ///     and MUST run after <c>UseAuthentication()</c>: mTLS certificate binding
+    ///     (RFC 8705 cnf claim) and ACR step-up validation.
+    /// </summary>
+    public static IApplicationBuilder UseSentinelPostAuthenticationSecurity(this IApplicationBuilder app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+
+        app.UseMiddleware<MtlsBindingMiddleware>();
+        app.UseMiddleware<AcrValidationMiddleware>();
+
+        return app;
+    }
 }
 
 public sealed class SentinelAspNetCoreBuilder(IServiceCollection services)

@@ -16,6 +16,13 @@ using Sentinel.EntityFrameworkCore.Models;
 using Sentinel.Tests.Integration.Database.Fixtures;
 using Xunit;
 
+// CA2213: the MigrationTestFixture is disposed by xUnit v3 via IAsyncLifetime - the test
+// classes only drop the per-test databases, never the fixture itself.
+// CA1031: the concurrent traffic simulators intentionally swallow and count transient
+// exceptions (connection resets, constraint races) to measure error rates.
+#pragma warning disable CA2213
+#pragma warning disable CA1031
+
 namespace Sentinel.Tests.Integration.Database;
 
 [Collection("Sentinel Migration Integration")]
@@ -228,18 +235,18 @@ public sealed class ComprehensiveMigrationTests(MigrationTestFixture fixture, IT
             using var writeContext = MigrationTestFixture.CreateContext(_connectionString);
 
             for (int i = 0; i < 100; i++)
-            {
-                var entry = new DpopNonceEntry
                 {
-                    Thumbprint = $"concurrent-{i}",
-                    Nonce = $"nonce-{i}",
-                    ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5)
-                };
-                writeContext.DpopNonceStore.Add(entry);
-                await writeContext.SaveChangesAsync(TestCancellationToken);
-                await Task.Delay(10);
-            }
-        });
+                    var entry = new DpopNonceEntry
+                    {
+                        Thumbprint = $"concurrent-{i}",
+                        Nonce = $"nonce-{i}",
+                        ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5)
+                    };
+                    writeContext.DpopNonceStore.Add(entry);
+                    await writeContext.SaveChangesAsync(TestCancellationToken);
+                    await Task.Delay(10, TestCancellationToken);
+                }
+            }, TestCancellationToken);
 
         await MigrationTestFixture.MigrateAsync(_connectionString, TestCancellationToken);
         await writeTask;
@@ -304,7 +311,7 @@ public sealed class ComprehensiveMigrationTests(MigrationTestFixture fixture, IT
 
         var readErrors = new ConcurrentQueue<Exception>();
         var readCount = 0;
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
 
         var readTask = Task.Run(async () =>
         {
@@ -314,9 +321,9 @@ public sealed class ComprehensiveMigrationTests(MigrationTestFixture fixture, IT
             {
                 try
                 {
-                    var count = await readContext.DpopNonceStore.CountAsync(cts.Token);
+                    var count = await readContext.DpopNonceStore.CountAsync(TestCancellationToken);
                     Interlocked.Increment(ref readCount);
-                    await Task.Delay(50);
+                    await Task.Delay(50, TestCancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -327,14 +334,14 @@ public sealed class ComprehensiveMigrationTests(MigrationTestFixture fixture, IT
                     readErrors.Enqueue(ex);
                 }
             }
-        });
+        }, TestCancellationToken);
 
-        await Task.Delay(500);
+        await Task.Delay(500, TestCancellationToken);
 
         Func<Task> migrateAction = async () => await context.Database.MigrateAsync(TestCancellationToken);
         await migrateAction.Should().NotThrowAsync("migration should complete alongside reads");
 
-        cts.Cancel();
+        await cts.CancelAsync();
         await readTask;
 
         readErrors.Should().BeEmpty("no read errors should occur during migration");
@@ -352,13 +359,12 @@ public sealed class ComprehensiveMigrationTests(MigrationTestFixture fixture, IT
 
         var writeErrors = new ConcurrentQueue<Exception>();
         var writeCount = 0;
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
 
         var writeTask = Task.Run(async () =>
         {
             using var writeContext = MigrationTestFixture.CreateContext(_connectionString);
 
-            int i = 0;
             while (!cts.Token.IsCancellationRequested)
             {
                 try
@@ -370,8 +376,8 @@ public sealed class ComprehensiveMigrationTests(MigrationTestFixture fixture, IT
                         ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5)
                     };
                     writeContext.DpopNonceStore.Add(entry);
-                    await writeContext.SaveChangesAsync(cts.Token);
-                    await Task.Delay(20);
+                    await writeContext.SaveChangesAsync(TestCancellationToken);
+                    await Task.Delay(20, TestCancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -382,14 +388,14 @@ public sealed class ComprehensiveMigrationTests(MigrationTestFixture fixture, IT
                     writeErrors.Enqueue(ex);
                 }
             }
-        });
+        }, TestCancellationToken);
 
-        await Task.Delay(500);
+        await Task.Delay(500, TestCancellationToken);
 
         Func<Task> migrateAction = async () => await context.Database.MigrateAsync(TestCancellationToken);
         await migrateAction.Should().NotThrowAsync("migration should complete alongside writes");
 
-        cts.Cancel();
+        await cts.CancelAsync();
         await writeTask;
 
         _output.WriteLine($"Concurrent migration with writes: {writeCount} writes, {writeErrors.Count} errors");
@@ -406,7 +412,7 @@ public sealed class ComprehensiveMigrationTests(MigrationTestFixture fixture, IT
             tasks.Add(Task.Run(async () =>
             {
                 await MigrationTestFixture.MigrateAsync(_connectionString, TestCancellationToken);
-            }));
+            }, TestCancellationToken));
         }
 
         await Task.WhenAll(tasks);
@@ -454,7 +460,7 @@ public sealed class ComprehensiveMigrationTests(MigrationTestFixture fixture, IT
 
         var migrateTask = context.Database.MigrateAsync(TestCancellationToken);
 
-        await Task.Delay(100);
+        await Task.Delay(100, TestCancellationToken);
         try { await migrateTask; } catch (OperationCanceledException) { }
 
         Func<Task> resumeAction = async () => await context.Database.MigrateAsync(TestCancellationToken);

@@ -28,8 +28,7 @@ public sealed class MigrationTestFixture : IAsyncLifetime
 
     public MigrationTestFixture()
     {
-        _postgres = new PostgreSqlBuilder()
-            .WithImage("postgres:17-alpine")
+        _postgres = new PostgreSqlBuilder("postgres:17-alpine")
             .WithDatabase("sentinel_migration_test")
             .WithUsername("migration_user")
             .WithPassword("migration_password")
@@ -64,7 +63,12 @@ public sealed class MigrationTestFixture : IAsyncLifetime
         await connection.OpenAsync();
 
         await using var command = connection.CreateCommand();
+        // CA2100: dbName is an internally generated identifier (Guid) or the value previously
+        // returned by CreateFreshDatabaseAsync - never user input. It is double-quoted per
+        // Postgres identifier rules, so a crafted name cannot escape the quoted context.
+#pragma warning disable CA2100
         command.CommandText = $"CREATE DATABASE \"{dbName}\" TEMPLATE template0 ENCODING 'UTF8'";
+#pragma warning restore CA2100
         try
         {
             await command.ExecuteNonQueryAsync();
@@ -96,7 +100,11 @@ public sealed class MigrationTestFixture : IAsyncLifetime
         await connection.OpenAsync();
 
         await using var command = connection.CreateCommand();
+        // CA2100: dbName is the value previously returned by CreateFreshDatabaseAsync -
+        // an internally generated identifier, never user input (see comment above).
+#pragma warning disable CA2100
         command.CommandText = $"DROP DATABASE IF EXISTS \"{dbName}\" WITH (FORCE)";
+#pragma warning restore CA2100
         await command.ExecuteNonQueryAsync();
     }
 

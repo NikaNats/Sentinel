@@ -1,6 +1,10 @@
 using System.Security.Claims;
+using Microsoft.Extensions.Configuration;
 using Sentinel.Security.Abstractions.Exceptions;
+using Sentinel.Security.Abstractions.Replay;
+using Sentinel.Security.Abstractions.Security;
 using Sentinel.Security.Abstractions.Session;
+using Sentinel.Security.Diagnostics;
 
 namespace Sentinel.Infrastructure.Auth;
 
@@ -14,18 +18,30 @@ public sealed class TokenValidationService
     private readonly ILogger<TokenValidationService> _logger;
     private readonly ISessionBlacklistCache _sessionBlacklist;
     private readonly TimeProvider _timeProvider;
+    private readonly IJtiReplayCache? _replayCache;
+    private readonly ISecurityEventEmitter? _securityEventEmitter;
+    private readonly bool _jtiReplayEnforcementEnabled;
 
     /// <summary>
     ///     Primary constructor with explicit dependencies injection.
+    ///     The replay cache, security event emitter and feature flag are optional so that hosts that have not
+    ///     opted into access-token jti single-use enforcement (FeatureFlags:Auth:JtiReplayEnforcement) keep the
+    ///     previous session-blacklist-only behaviour.
     /// </summary>
     public TokenValidationService(
         ISessionBlacklistCache sessionBlacklist,
         ILogger<TokenValidationService> logger,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IJtiReplayCache? replayCache = null,
+        ISecurityEventEmitter? securityEventEmitter = null,
+        IConfiguration? configuration = null)
     {
         _sessionBlacklist = sessionBlacklist ?? throw new ArgumentNullException(nameof(sessionBlacklist));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _replayCache = replayCache;
+        _securityEventEmitter = securityEventEmitter;
+        _jtiReplayEnforcementEnabled = configuration?.GetValue<bool>("FeatureFlags:Auth:JtiReplayEnforcement") ?? false;
     }
 
     /// <summary>
@@ -38,7 +54,6 @@ public sealed class TokenValidationService
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(principal);
-        _ = context;
 
         try
         {
@@ -84,6 +99,40 @@ public sealed class TokenValidationService
             {
                 _logSecurityAlert(_logger, "Subject (user) globally revoked or locked.", null);
                 return TokenValidationOutcome.Fail("User account has been globally revoked or locked.");
+            }
+
+            if (_jtiReplayEnforcementEnabled && _replayCache is not null)
+            {
+                var jti = principal.FindFirst("jti")?.Value;
+                if (string.IsNullOrWhiteSpace(jti))
+                {
+                    _logSecurityWarning(_logger, "Missing jti claim.", null);
+                    return TokenValidationOutcome.Fail("Token is missing a jti claim.");
+                }
+
+                bool replayDetected;
+                try
+                {
+                    // Fail-closed: consumes the jti atomically; false means the jti was already used (replay).
+                    replayDetected = !await _replayCache.TryMarkUsedAsync(jti, expTime, ct).ConfigureAwait(false);
+                }
+                catch (ReplayCacheUnavailableException ex)
+                {
+                    _logCriticalFailure(_logger, "Fail-closed triggered due to replay cache unavailability.", ex);
+                    return TokenValidationOutcome.Fail(ex);
+                }
+
+                if (replayDetected)
+                {
+                    var clientId = principal.FindFirst("azp")?.Value ?? principal.FindFirst("client_id")?.Value;
+                    _securityEventEmitter?.EmitTokenReplay(
+                        jti,
+                        principal.FindFirst("sub")?.Value,
+                        clientId,
+                        SecurityContextHasher.HashIp(context));
+                    _logSecurityAlert(_logger, "Token replay detected (jti already consumed).", null);
+                    return TokenValidationOutcome.Fail("Token replay detected.");
+                }
             }
 
             if (!await sessionCheckTask)

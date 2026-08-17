@@ -190,6 +190,11 @@ internal sealed class DpopValidationMiddleware
 
         var validationResult =
             await validator.ValidateAsync(validationRequest, context.RequestAborted).ConfigureAwait(false);
+
+        // Observability contract: record the duration of every full validation attempt
+        // (signature verification + RFC 9449 semantic checks), success or failure.
+        AuthTelemetry.ValidationDuration.Record(_timeProvider.GetElapsedTime(startTimestamp).TotalSeconds);
+
         var result = validationResult.ToHttpResult();
 
         if (!result.IsValid)

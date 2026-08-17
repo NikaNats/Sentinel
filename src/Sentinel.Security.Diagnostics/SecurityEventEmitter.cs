@@ -64,12 +64,13 @@ public sealed class SecurityEventEmitter(
     }
 
     /// <summary>
-    ///     Emits a DPoP validation failure event with structured logging and metrics.
+    ///     Emits a DPoP validation failure structured log (SIEM audit trail).
+    ///     NOTE: auth.dpop.failures is deliberately NOT incremented here - the counter is
+    ///     owned exclusively by DpopValidationMiddleware, which attributes the failure
+    ///     reason tag. A second increment site would double-count every failure.
     /// </summary>
     public void EmitDpopValidationFailure(string thumbprint, string reason, string ipHash)
     {
-        AuthTelemetry.DpopFailures.Add(1);
-
         DpopFailureEvent(
             logger,
             reason,
@@ -98,6 +99,8 @@ public sealed class SecurityEventEmitter(
 
     /// <summary>
     ///     Gets the correlation ID from the current Activity (W3C Trace Context).
+    ///     CorrelationIdMiddleware propagates the X-Correlation-ID header under the "correlationId"
+    ///     baggage key; the dotted "correlation.id" key is honoured for legacy emitters.
     /// </summary>
     private static string GetCorrelationId()
     {
@@ -107,7 +110,11 @@ public sealed class SecurityEventEmitter(
             return "NO_TRACE";
         }
 
-        var correlationId = activity.GetBaggageItem("correlation.id");
+        var correlationId = activity.GetBaggageItem("correlationId");
+        if (string.IsNullOrWhiteSpace(correlationId))
+        {
+            correlationId = activity.GetBaggageItem("correlation.id");
+        }
 
         return correlationId ?? activity.Id ?? "NO_TRACE";
     }

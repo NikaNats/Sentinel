@@ -17,6 +17,7 @@ using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using OpenTelemetry;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -89,7 +90,7 @@ builder.Services.AddOpenApi();
     // OpenTelemetry configuration (docs/OTEL_DOTNET_INTEGRATION_SNIPPET.md)
     builder.Services.AddOpenTelemetry()
         .ConfigureResource(resource => resource
-            .AddService(serviceName: "Sentinel.Sample.MinimalApi")
+            .AddService(serviceName: builder.Configuration["OTEL_SERVICE_NAME"] ?? "Sentinel.Sample.MinimalApi")
             .AddAttributes(new Dictionary<string, object>
             {
                 ["deployment.environment"] = builder.Environment.EnvironmentName,
@@ -101,7 +102,17 @@ builder.Services.AddOpenApi();
         .WithTracing(tracing => tracing
             .AddSource(AuthTelemetry.SourceName)
             .AddAspNetCoreInstrumentation()
-            .AddOtlpExporter());
+            .AddOtlpExporter())
+        .WithLogging(logging =>
+        {
+            // Structured security events (TOKEN_REPLAY_ALERT, DPOP_FAILURE, ...) are only
+            // shipped to the OTLP endpoint (collector -> Loki) when one is configured.
+            // Without an endpoint the in-process logger still emits them locally.
+            if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
+            {
+                logging.AddOtlpExporter();
+            }
+        });
 
     var allowedCorsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 if (allowedCorsOrigins.Length > 0)
@@ -138,6 +149,18 @@ builder.Services.Configure<JsonOptions>(options =>
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, SampleJsonContext.Default);
 });
 
+// Loaded ONCE at startup and shared by every TLS 1.3 client (JwtBearer backchannel
+// + outbound HttpClient factories). Previously created per-factory-invocation and
+// captured in a callback closure, leaking one native X509Certificate2 handle per
+// client. Disposed on application stop via IHostApplicationLifetime.
+#pragma warning disable CA2000 // Ownership transfers to the handler closures; disposed via app.Lifetime.ApplicationStopped.
+X509Certificate2? trustedCa = null;
+if (!string.IsNullOrWhiteSpace(localCaPath) && File.Exists(localCaPath))
+{
+    trustedCa = X509Certificate2.CreateFromPemFile(localCaPath);
+}
+#pragma warning restore CA2000
+
 var tls13HandlerFactory = () =>
 {
     var handler = new SocketsHttpHandler
@@ -152,9 +175,8 @@ var tls13HandlerFactory = () =>
         }
     };
 
-    if (!string.IsNullOrWhiteSpace(localCaPath) && File.Exists(localCaPath))
+    if (trustedCa is not null)
     {
-        var trustedCa = X509Certificate2.CreateFromPemFile(localCaPath);
         handler.SslOptions.RemoteCertificateValidationCallback = (sender, cert, chain, errors) =>
         {
             if (errors == SslPolicyErrors.None)
@@ -334,7 +356,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         var allowedIssuers = new List<string> { configuredAuthority };
 
         var testPublicKey = builder.Configuration["Security:TestPublicKey"];
-        if ((isDevelopment || !string.IsNullOrWhiteSpace(testPublicKey)) &&
+        // Zero Dev Bypasses: the static test key is honoured ONLY in development.
+        // In any other environment a stray Security__TestPublicKey config value must
+        // NOT downgrade validation (no static key, no 60s clock skew, no disabled
+        // OIDC discovery/JWKS rotation).
+        if (isDevelopment &&
             !configuredAuthority.Contains("localhost:8443", StringComparison.OrdinalIgnoreCase))
         {
             allowedIssuers.Add("https://localhost:8443/realms/sentinel");
@@ -361,7 +387,7 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
     var allowedIssuers = new List<string> { configuredAuthority };
 
     var testPublicKey = builder.Configuration["Security:TestPublicKey"];
-    if ((isDevelopment || !string.IsNullOrWhiteSpace(testPublicKey)) &&
+    if (isDevelopment &&
         !configuredAuthority.Contains("localhost:8443", StringComparison.OrdinalIgnoreCase))
     {
         allowedIssuers.Add("https://localhost:8443/realms/sentinel");
@@ -374,7 +400,10 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
     options.TokenValidationParameters.ValidateLifetime = true;
     options.TokenValidationParameters.ValidateIssuerSigningKey = true;
 
-    if (!string.IsNullOrWhiteSpace(testPublicKey))
+    // Zero Dev Bypasses: static test-key validation (and its 60s clock skew) is
+    // strictly development-only. Production always validates against the Keycloak
+    // JWKS with ClockSkew = TimeSpan.Zero.
+    if (isDevelopment && !string.IsNullOrWhiteSpace(testPublicKey))
     {
         options.TokenValidationParameters.ClockSkew = TimeSpan.FromSeconds(60);
 
@@ -489,6 +518,12 @@ builder.Services.AddSingleton<DocumentRepository>();
 
 var app = builder.Build();
 
+// Release the single shared trusted-CA handle on shutdown (see tls13HandlerFactory above).
+if (trustedCa is not null)
+{
+    app.Lifetime.ApplicationStopped.Register(trustedCa.Dispose);
+}
+
     // RFC 7807 ProblemDetails globally - no Developer Exception Page (Zero Dev Bypasses)
     app.UseExceptionHandler(errorApp =>
     {
@@ -530,9 +565,13 @@ if (allowedCorsOrigins.Length > 0)
 }
 
 app.UseRateLimiter();
+// CorrelationId/DPoP must run BEFORE authentication so the correlation id baggage is
+// attached before token validation and SIEM security events (TOKEN_REPLAY_ALERT) emit.
+app.UseSentinelPreAuthenticationSecurity();
 app.UseAuthentication();
-app.UseSentinelSecurityPipeline();
 app.UseAuthorization();
+// mTLS binding + ACR validation require an authenticated principal.
+app.UseSentinelPostAuthenticationSecurity();
 app.MapOpenApi();
 app.MapPrometheusScrapingEndpoint(); // GET /metrics - scraped by Prometheus (SRE soak/spike/capacity gates, sre-alerts.yaml)
 app.MapScalarApiReference("/docs", options =>

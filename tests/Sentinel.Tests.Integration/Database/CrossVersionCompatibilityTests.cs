@@ -10,6 +10,10 @@ using Sentinel.EntityFrameworkCore.Models;
 using Sentinel.Tests.Integration.Database.Fixtures;
 using Xunit;
 
+// CA2213: the MigrationTestFixture is disposed by xUnit v3 via IAsyncLifetime - the test
+// classes only drop the per-test databases, never the fixture itself.
+#pragma warning disable CA2213
+
 namespace Sentinel.Tests.Integration.Database;
 
 [Collection("Sentinel Migration Integration")]
@@ -191,7 +195,7 @@ public sealed class CrossVersionCompatibilityTests(MigrationTestFixture fixture,
                 cmd.Parameters.Add(new NpgsqlParameter("@created", DateTimeOffset.UtcNow));
                 await cmd.ExecuteNonQueryAsync(TestCancellationToken);
             }
-        });
+        }, TestCancellationToken);
 
         var v2Task = Task.Run(async () =>
         {
@@ -207,7 +211,7 @@ public sealed class CrossVersionCompatibilityTests(MigrationTestFixture fixture,
                 context.DpopNonceStore.Add(entry);
                 await context.SaveChangesAsync(TestCancellationToken);
             }
-        });
+        }, TestCancellationToken);
 
         await Task.WhenAll(v1Task, v2Task);
 
