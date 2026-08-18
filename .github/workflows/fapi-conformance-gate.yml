@@ -55,6 +55,7 @@ jobs:
           KC_ADMIN_USER: ${{ secrets.STAGING_KEYCLOAK_ADMIN_USER }}
           KC_ADMIN_PASSWORD: ${{ secrets.STAGING_KEYCLOAK_ADMIN_PASSWORD }}
           REALM: ${{ secrets.STAGING_KEYCLOAK_REALM }}
+          RESOURCE_URL: ${{ secrets.STAGING_API_RESOURCE_URL }}
         run: |
           bash infra/staging/verify-fapi-readiness.sh
 

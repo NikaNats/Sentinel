@@ -34,7 +34,9 @@ The OIDF Conformance Suite initiates outbound HTTP requests to the Authorization
 |---|---|
 | `infra/k8s/staging/keycloak-staging.yaml` | Namespace + Keycloak deployment (TLS-only, `KC_HTTPS_PROTOCOLS=TLSv1.3`, `KC_PROXY_HEADERS=xforwarded`, DPoP+PAR features, realm import) + Service. Checkov-clean (mirrors the `infra/k8s/keycloak-deployment.yaml` hardening). |
 | `infra/k8s/staging/keycloak-staging-ingress.yaml` | ingress-nginx ingress terminating `keycloak.staging.sentinel.io` from the `keycloak-staging-tls` secret; must preserve `Host`/`X-Forwarded-Proto` for DPoP `htu`/`htm` checks. |
-| `infra/staging/provision-staging-tls.sh` | Provisions the public-CA certificate into secret `keycloak-staging-tls` — Let's Encrypt via cert-manager (`--issuer cert-manager`, default) or AWS ACM (`--issuer acm`). Idempotent; verifies DNS and certificate validity before exiting 0. |
+| `infra/staging/provision-staging-tls.sh` | Provisions the public-CA certificate into secret `keycloak-staging-tls` — Let's Encrypt via cert-manager (`--issuer cert-manager`, default) or AWS ACM (`--issuer acm`). Idempotent; verifies DNS and certificate validity before exiting 0. Re-run with `STAGING_HOST=api.staging.sentinel.io STAGING_TLS_SECRET=sentinel-api-staging-tls` for the resource server. |
+| `infra/k8s/staging/sentinel-api-staging.yaml` | Staging **resource server**: Sentinel API deployment + service (TLS on `:8080` from `sentinel-api-staging-tls`), `redis-staging` revocation store, `init-db` creating `sentinel_dev` on `postgres-staging`, and network policies (ingress-nginx → `:8080`; egress to DNS / postgres / redis / ingress-nginx for the public JWKS). Checkov-clean (mirrors the `infra/k8s/sentinel-api-deployment.yaml` hardening). |
+| `infra/k8s/staging/sentinel-api-staging-ingress.yaml` | ingress-nginx ingress terminating `api.staging.sentinel.io` from the `sentinel-api-staging-tls` secret; must preserve `Host`/`X-Forwarded-Proto` for DPoP `htu`/`htm` checks. `RESOURCE_URL=https://api.staging.sentinel.io/` activates the suite's RS tests. |
 
 **Provisioning order** (one-time, runbook phase 1):
 
@@ -57,11 +59,23 @@ kubectl create secret generic keycloak-staging-db -n staging \
 kubectl create configmap sentinel-realm-config -n staging \
   --from-file=infra/keycloak/realms/sentinel-dast.json
 
-# 5. Deploy AS + bundled postgres-staging + ingress + network policies
+# 4b. RS runtime secrets (postgres string must use the keycloak-staging-db
+#     credentials with Database=sentinel_dev; keycloak client secret from the
+#     sentinel-dast realm's confidential client)
+kubectl create secret generic sentinel-api-staging-secrets -n staging \
+  --from-literal=postgres-connection-string="Host=postgres-staging;Port=5432;Database=sentinel_dev;Username=keycloak;Password=<password>" \
+  --from-literal=keycloak-client-secret=<client-secret>
+
+# 4c. RS TLS secret (public CA for api.staging.sentinel.io)
+STAGING_HOST=api.staging.sentinel.io STAGING_TLS_SECRET=sentinel-api-staging-tls \
+  bash infra/staging/provision-staging-tls.sh --issuer cert-manager
+
+# 5. Deploy AS + RS + bundled postgres-staging/redis-staging + ingress + network policies
 kubectl apply -f infra/k8s/staging/
 
-# 6. DNS: point keycloak.staging.sentinel.io at the ingress external IP,
-#    then re-run provision-staging-tls.sh to complete the ACME challenge.
+# 6. DNS: point keycloak.staging.sentinel.io AND api.staging.sentinel.io at the
+#    ingress external IP, then re-run provision-staging-tls.sh (steps 4c and
+#    the keycloak invocation) to complete the ACME challenges.
 ```
 
 > **Secret sourcing**: the `kubectl create secret` steps above are the bootstrap
@@ -113,7 +127,7 @@ The runner extracts the suite-generated per-plan public JWKS from the plan objec
 
 ### 3.1 Pre-flight readiness verification
 
-`infra/staging/verify-fapi-readiness.sh` runs **before** the suite starts (both in the remote gate and manually against staging). It fails fast with triage output instead of burning a certification attempt on a misconfigured AS. Eight checks:
+`infra/staging/verify-fapi-readiness.sh` runs **before** the suite starts (both in the remote gate and manually against staging). It fails fast with triage output instead of burning a certification attempt on a misconfigured AS. Eight checks (plus a ninth, resource-server reachability, when `RESOURCE_URL` is set):
 
 | # | Check | Failure symptom |
 |---|---|---|
@@ -125,12 +139,14 @@ The runner extracts the suite-generated per-plan public JWKS from the plan objec
 | 6 | DPoP feature enabled (`/admin/serverinfo`) | Feature flag off |
 | 7 | PAR feature enabled (`/admin/serverinfo`) | Feature flag off |
 | 8 | TLS 1.3 handshake (`openssl s_client -tls1_3`) | Reverse proxy TLS config |
+| 9 | RS reachable over HTTPS (`RESOURCE_URL`) — when set | `api.staging.sentinel.io` DNS/ingress/TLS |
 
 Manual run:
 
 ```bash
 KEYCLOAK_URL=https://keycloak.staging.sentinel.io/realms/sentinel-dast \
 KC_ADMIN_URL=https://keycloak.staging.sentinel.io \
+RESOURCE_URL=https://api.staging.sentinel.io/ \
 KC_ADMIN_USER=... KC_ADMIN_PASSWORD=... \
 bash infra/staging/verify-fapi-readiness.sh
 ```

@@ -1,0 +1,423 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Staging Sentinel API (resource server) for the FAPI 2.0 OIDF Conformance
+# Gate (DOC-0017 Phase 1). Deployed in the "staging" namespace alongside
+# keycloak-staging.yaml. The cloud-hosted OIDF Conformance Suite exercises the
+# RS via RESOURCE_URL=https://api.staging.sentinel.io - DPoP-bound access-token
+# enforcement is the core of FAPI 2.0, so RS tests must NOT be skipped.
+#
+# Prerequisites (see infra/staging/provision-staging-tls.sh and
+# docs/OIDF_FAPI_CONFORMANCE_RUNBOOK.md §1.1):
+#   1. Secret "sentinel-api-staging-tls"    - tls.crt / tls.key (public CA for
+#      api.staging.sentinel.io; same issuer as keycloak-staging-tls).
+#   2. Secret "sentinel-api-staging-secrets" - postgres-connection-string
+#      (must use the keycloak-staging-db credentials, Database=sentinel_dev;
+#      the DB is auto-created by the init-db init container), and
+#      keycloak-client-secret (confidential client secret on the sentinel-dast
+#      realm).
+#   3. Secret "keycloak-staging-db"          - shared with keycloak-staging.yaml
+#      (username "keycloak" / password); the init container reuses it.
+#
+# The API serves TLS directly on :8080 with the same public certificate the
+# ingress terminates, so the suite sees a valid public chain end-to-end and the
+# DPoP htu/htm headers survive (ingress preserves Host / X-Forwarded-Proto).
+# Keycloak__Authority points at the PUBLIC issuer (KC_HOSTNAME is
+# keycloak.staging.sentinel.io) - the RS validates the token iss against it and
+# fetches JWKS through the ingress (see the egress policy below).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentinel-api
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: sentinel-api
+    app.kubernetes.io/part-of: sentinel
+    app.kubernetes.io/component: identity-gateway
+  annotations:
+    checkov.io/skip1: CKV_K8S_40=UID 1654 is the dedicated non-root user of the chiseled runtime image (mcr.microsoft.com/dotnet/aspnet:*-chiseled, USER app); raising it would break image file ownership contract
+    checkov.io/skip2: CKV_K8S_35=secret values are injected from Kubernetes Secret objects via secretKeyRef (never plaintext); the app's configuration contract is environment-variable based, secrets are mounted as files only where the app supports file sources
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sentinel-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sentinel-api
+        app.kubernetes.io/part-of: sentinel
+        app.kubernetes.io/component: identity-gateway
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654
+        runAsGroup: 1654
+        fsGroup: 1654
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: init-db
+          image: postgres:17-alpine
+          imagePullPolicy: Always
+          command:
+            - sh
+            - -c
+            - psql -v ON_ERROR_STOP=1 -tAc "SELECT 1 FROM pg_database WHERE datname='sentinel_dev'" | grep -q 1 || createdb sentinel_dev
+          env:
+            - name: PGHOST
+              value: postgres-staging
+            - name: PGDATABASE
+              value: keycloak
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-staging-db
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-staging-db
+                  key: password
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+      containers:
+        - name: sentinel-api
+          image: ghcr.io/acme/sentinel-api:v1.0.0
+          imagePullPolicy: Always
+          ports:
+            - name: https
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Production
+            - name: ASPNETCORE_URLS
+              value: https://+:8080
+            - name: ASPNETCORE_Kestrel__Certificates__Default__Path
+              value: /var/run/sentinel/tls/tls.crt
+            - name: ASPNETCORE_Kestrel__Certificates__Default__KeyPath
+              value: /var/run/sentinel/tls/tls.key
+            - name: DOTNET_EnableDiagnostics
+              value: "0"
+            - name: ConnectionStrings__Postgres
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-api-staging-secrets
+                  key: postgres-connection-string
+            - name: Sentinel__Redis__EndPoint
+              value: redis-staging:6379
+            - name: Sentinel__Redis__EnableInMemoryFallback
+              value: "false"
+            - name: Keycloak__Authority
+              value: https://keycloak.staging.sentinel.io/realms/sentinel-dast
+            - name: Keycloak__Audience
+              value: sentinel-api
+            - name: Keycloak__RequireHttpsMetadata
+              value: "true"
+            - name: Sentinel__Keycloak__Authority
+              value: https://keycloak.staging.sentinel.io/realms/sentinel-dast
+            - name: Sentinel__Keycloak__Audience
+              value: sentinel-api
+            - name: Sentinel__Keycloak__RequireHttpsMetadata
+              value: "true"
+            - name: Sentinel__Keycloak__ClientSecret
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-api-staging-secrets
+                  key: keycloak-client-secret
+            - name: FeatureFlags__Auth__JtiReplayEnforcement
+              value: "true"
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: tls
+              mountPath: /var/run/sentinel/tls
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        - name: tls
+          secret:
+            secretName: sentinel-api-staging-tls
+            defaultMode: 0440
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sentinel-api
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: sentinel-api
+    app.kubernetes.io/part-of: sentinel
+spec:
+  selector:
+    app.kubernetes.io/name: sentinel-api
+  ports:
+    - name: https
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+---
+# Redis revocation store for the staging RS. No persistence needed: the
+# conformance window is short and a replay-enforced jti cache must never
+# survive a restart with stale state (fail-closed on eviction instead).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-staging
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: redis-staging
+    app.kubernetes.io/part-of: sentinel
+    app.kubernetes.io/component: staging
+  annotations:
+    checkov.io/skip1: CKV_K8S_40=UID 10001 is the image's declared non-root user (redis:7.4-alpine); raising it breaks the data-directory ownership contract
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis-staging
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis-staging
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          imagePullPolicy: Always
+          args: ["redis-server", "--save", "", "--appendonly", "no"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-staging
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: redis-staging
+spec:
+  selector:
+    app.kubernetes.io/name: redis-staging
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+# The OIDF Conformance Suite reaches the RS through ingress-nginx; everything
+# else is denied by staging-default-deny-ingress (keycloak-staging.yaml).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: staging-sentinel-api-allow-ingress-nginx
+  namespace: staging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: sentinel-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# Required egress for the staging RS: cluster DNS, postgres-staging,
+# redis-staging, and the public Keycloak issuer through ingress-nginx
+# (JWKS + metadata fetch). Everything else is denied by
+# staging-default-deny-egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: staging-sentinel-api-allow-required-egress
+  namespace: staging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: sentinel-api
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres-staging
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis-staging
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# Database ingress: staging-default-deny-ingress otherwise blocks the
+# sentinel-api -> postgres-staging connection above.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: staging-postgres-allow-sentinel-api
+  namespace: staging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgres-staging
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: sentinel-api
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Redis ingress: staging-default-deny-ingress otherwise blocks the
+# sentinel-api -> redis-staging connection above.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: staging-redis-allow-sentinel-api
+  namespace: staging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis-staging
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: sentinel-api
+      ports:
+        - protocol: TCP
+          port: 6379

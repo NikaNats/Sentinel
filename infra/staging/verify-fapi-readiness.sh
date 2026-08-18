@@ -16,12 +16,14 @@
 #   6. DPoP feature enabled (serverinfo)
 #   7. PAR feature enabled (serverinfo)
 #   8. TLS 1.3 handshake succeeds (openssl s_client)
+#   9. resource server reachable over HTTPS (only when RESOURCE_URL is set)
 #
 # Required environment:
 #   KEYCLOAK_URL         e.g. https://keycloak.staging.sentinel.io/realms/sentinel-dast
 #   KC_ADMIN_URL         Keycloak base URL (origin only)
 #   KC_ADMIN_USER / KC_ADMIN_PASSWORD   admin credentials (or KC_ADMIN_TOKEN)
 #   REALM                realm to verify (default sentinel-dast)
+#   RESOURCE_URL         public Sentinel API base URL (optional; enables check 9)
 #
 # Requirements: curl, jq, openssl.
 set -euo pipefail
@@ -127,6 +129,15 @@ if [[ "$VERIFY_TLS" == "true" ]]; then
             -tls1_3 -brief -verify 1 -verify_return_error </dev/null
 else
     echo "[SKIP] TLS 1.3 handshake (VERIFY_TLS=false)"
+fi
+
+# 9. Resource server reachability (DPoP resource tests); skipped when the
+#    run targets AS-only conformance (RESOURCE_URL unset).
+if [[ -n "${RESOURCE_URL:-}" ]]; then
+    check "resource server reachable over HTTPS ($RESOURCE_URL)" \
+        curl -fsSI --max-time 15 "$RESOURCE_URL"
+else
+    echo "[SKIP] resource server check (RESOURCE_URL unset - RS tests omitted)"
 fi
 
 echo

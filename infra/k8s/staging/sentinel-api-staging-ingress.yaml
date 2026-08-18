@@ -1,0 +1,41 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+#
+# Staging ingress for the Sentinel API (resource server) - FAPI 2.0 OIDF
+# Conformance Gate, DOC-0017 §1. Requires ingress-nginx and the
+# sentinel-api-staging-tls secret (public-CA certificate for
+# api.staging.sentinel.io, same issuer as keycloak-staging-tls).
+#
+# The suite's DPoP resource tests call RESOURCE_URL over this host; the
+# ingress MUST preserve the Host header and X-Forwarded-Proto (no rewrites)
+# so the RS reconstructs the public DPoP htu/htm. The backend serves TLS
+# directly on :8080 with the same public certificate (mirrors the Keycloak
+# ingress: without backend-protocol HTTPS every request fails with 502).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sentinel-api
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: sentinel-api
+    app.kubernetes.io/part-of: sentinel
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.staging.sentinel.io
+      secretName: sentinel-api-staging-tls
+  rules:
+    - host: api.staging.sentinel.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sentinel-api
+                port:
+                  number: 8080
