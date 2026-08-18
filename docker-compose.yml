@@ -75,6 +75,8 @@ services:
       Keycloak__Authority: https://keycloak:8443/realms/sentinel
       Keycloak__Audience: sentinel-api
       Keycloak__RequireHttpsMetadata: "true"
+      Sentinel__Redis__EndPoint: redis:6379
+      Sentinel__Redis__EnableInMemoryFallback: "false"
 
 volumes:
   sentinel-postgres-data:
