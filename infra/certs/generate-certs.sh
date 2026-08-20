@@ -67,7 +67,14 @@ openssl x509 -req \
   -extfile keycloak.ext \
   -sha256
 
-chmod 400 ca.key keycloak.key
+chmod 400 ca.key
+# keycloak.key must be readable by the Keycloak container (runs as UID 1000 /
+# 'jboss'), which reads it through a bind-mount at /etc/x509/https/tls.key.
+# 400 would only grant read to the host owner (e.g. CI runner UID 1001), so the
+# container process would hit AccessDeniedException on startup. 444 keeps it
+# read-only for everyone (dev/CI cert; never production) and rm -f still allows
+# regeneration since unlink only needs directory write permission.
+chmod 444 keycloak.key
 chmod 444 ca.crt keycloak.crt
 
 rm -f ca.ext keycloak.csr keycloak.ext ca.srl

@@ -251,6 +251,9 @@ jobs:
       - name: Restore
         run: dotnet restore ${{ matrix.test-project }} --locked-mode
 
+      - name: Generate Local CA/Keycloak Certificates (Testcontainers fixtures)
+        run: bash infra/certs/generate-certs.sh
+
       - name: Pre-pull Testcontainers Images
         run: |
           docker pull postgres:17-alpine
