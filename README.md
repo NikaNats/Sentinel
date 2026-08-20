@@ -461,6 +461,85 @@ To execute the acceptance suite, simply run:
 dotnet test tests/Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release
 ```
 
+### Security Testing Suites
+
+#### 1. Security Scenarios Integration Tests
+
+End-to-end attack scenarios against a live Testcontainers-backed stack:
+token replay, symmetric-key/algorithm confusion, invalid audience, missing
+scope, cross-subject access, mTLS-bound document deletion, and more:
+
+```bash
+dotnet test tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj \
+  --configuration Release \
+  --filter "FullyQualifiedName~SecurityScenarioTests" \
+  --logger "console;verbosity=detailed"
+```
+
+#### 2. DAST Suite (OWASP ZAP + Nuclei + gate evaluation)
+
+Full-stack dynamic scans against the live compose stack via the DPoP signing
+proxy. Steps and artifact names mirror `.github/workflows/dast-release-gate.yml`
+(see `docs/DAST_AND_PENTEST_PROGRAM.md` for the complete program):
+
+```bash
+# 1. Generate test certificates
+bash infra/certs/generate-certs.sh
+
+# 2. Spin up stack with the DAST overlay
+docker compose -f docker-compose.yml -f infra/dast/docker-compose.dast.yml \
+  --profile dast up -d --build
+bash infra/dast/scripts/wait-for-stack.sh
+bash infra/dast/scripts/seed-test-data.sh
+
+# 3. OWASP ZAP active scan (through the DPoP proxy)
+mkdir -p artifacts
+docker run --rm --network sentinel-fapi2-stack_default \
+  -v "$PWD/infra/dast/zap:/zap/wrk/zap:ro" \
+  -v "$PWD/docs:/zap/wrk/docs:ro" \
+  -v "$PWD/artifacts:/zap/wrk/artifacts" \
+  ghcr.io/zaproxy/zaproxy:stable zap.sh -cmd \
+    -autorun /zap/wrk/zap/zap-automation-plan.yaml
+
+# 4. Nuclei — unauthenticated surface
+docker run --rm --network sentinel-fapi2-stack_default \
+  -v "$PWD/infra/dast/nuclei:/nuclei/cfg:ro" -v "$PWD/artifacts:/artifacts" \
+  projectdiscovery/nuclei:latest \
+  -config /nuclei/cfg/nuclei-config.yaml -t /nuclei/cfg/templates \
+  -exclude /nuclei/cfg/templates/sentinel-sqli.yaml \
+  -exclude /nuclei/cfg/templates/sentinel-xss.yaml \
+  -exclude /nuclei/cfg/templates/sentinel-ssrf.yaml \
+  -exclude /nuclei/cfg/templates/sentinel-mass-assignment.yaml \
+  -u http://sentinel-api:8080 \
+  -se /artifacts/nuclei-unauth.sarif -o /artifacts/nuclei-unauth.txt
+
+# 5. Nuclei — authenticated surface (through the DPoP proxy)
+docker run --rm --network sentinel-fapi2-stack_default \
+  -v "$PWD/infra/dast/nuclei:/nuclei/cfg:ro" -v "$PWD/artifacts:/artifacts" \
+  projectdiscovery/nuclei:latest \
+  -config /nuclei/cfg/nuclei-config.yaml -t /nuclei/cfg/templates \
+  -exclude /nuclei/cfg/templates/sentinel-dpop-bearer-downgrade.yaml \
+  -exclude /nuclei/cfg/templates/sentinel-dpop-missing-proof.yaml \
+  -u http://dast-auth-proxy:8080 \
+  -se /artifacts/nuclei-auth.sarif -o /artifacts/nuclei-auth.txt
+
+# 6. Evaluate release gates (zero HIGH/CRITICAL = pass)
+bash infra/dast/scripts/evaluate-gates.sh
+```
+
+Artifacts: `artifacts/zap-report.html`, `zap-report.sarif`, `zap-report.json`,
+`zap-summary.txt`, `nuclei-unauth.txt`, `nuclei-auth.txt` (+ `.sarif`).
+
+#### 3. DPoP Protocol-Level Tests
+
+RFC 9449 (DPoP — Demonstrating Proof-of-Possession) unit/integration tests
+covering proof validation, nonce challenge-response, and token-theft/replay
+protection:
+
+```bash
+dotnet test tests/Sentinel.Tests.DPoP/Sentinel.Tests.DPoP.csproj
+```
+
 ## Containerization And Runtime Hardening
 
 - Multi-stage Docker build with locked restore and release publish
