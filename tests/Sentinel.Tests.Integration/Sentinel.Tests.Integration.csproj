@@ -13,6 +13,8 @@
          is in effect (Playwright.CreateAsync fails). Scope the opt-out to this
          test-only project: production sources keep source-generated serialization. -->
     <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    <!-- Suppress xUnit analyzer rules that are too noisy for integration tests -->
+    <NoWarn>$(NoWarn);XUnit1051;xUnit1051</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

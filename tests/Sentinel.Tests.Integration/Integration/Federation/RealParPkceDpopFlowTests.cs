@@ -36,7 +36,7 @@ public sealed class RealParPkceDpopFlowTests
         _output = output;
     }
 
-    private static HttpClient CreateHttpClient() => PlaywrightFapi2Fixture.CreateTrustingHttpClient();
+    private HttpClient CreateHttpClient() => _fixture.CreateTrustingHttpClient();
 
     private static CancellationToken TestCt => TestContext.Current.CancellationToken;
 
@@ -49,7 +49,7 @@ public sealed class RealParPkceDpopFlowTests
         using var fapiClient = new Fapi2BrowserClient(
             http,
             PlaywrightFapi2Fixture.ClientId,
-            PlaywrightFapi2Fixture.RedirectUri,
+            _fixture.RedirectUri,
             _fixture.BaseAddress,
             PlaywrightFapi2Fixture.RealmName);
 
@@ -123,7 +123,7 @@ public sealed class RealParPkceDpopFlowTests
         using var fapiClient = new Fapi2BrowserClient(
             http,
             PlaywrightFapi2Fixture.ClientId,
-            PlaywrightFapi2Fixture.RedirectUri,
+            _fixture.RedirectUri,
             _fixture.BaseAddress,
             PlaywrightFapi2Fixture.RealmName);
 
@@ -151,7 +151,7 @@ public sealed class RealParPkceDpopFlowTests
                    {
                        ["grant_type"] = "authorization_code",
                        ["code"] = browserResult.AuthorizationCode!,
-                       ["redirect_uri"] = PlaywrightFapi2Fixture.RedirectUri,
+                       ["redirect_uri"] = _fixture.RedirectUri,
                        ["client_id"] = PlaywrightFapi2Fixture.ClientId,
                        ["code_verifier"] = codeVerifier
                    })
@@ -174,7 +174,7 @@ public sealed class RealParPkceDpopFlowTests
         using var fapiClient = new Fapi2BrowserClient(
             http,
             PlaywrightFapi2Fixture.ClientId,
-            PlaywrightFapi2Fixture.RedirectUri,
+            _fixture.RedirectUri,
             _fixture.BaseAddress,
             PlaywrightFapi2Fixture.RealmName);
 
@@ -201,7 +201,7 @@ public sealed class RealParPkceDpopFlowTests
         using var fapiClient = new Fapi2BrowserClient(
             http,
             PlaywrightFapi2Fixture.ClientId,
-            PlaywrightFapi2Fixture.RedirectUri,
+            _fixture.RedirectUri,
             _fixture.BaseAddress,
             PlaywrightFapi2Fixture.RealmName);
 
@@ -209,7 +209,7 @@ public sealed class RealParPkceDpopFlowTests
         var directAuthUrl =
             new Uri(
                 $"{fapiClient.AuthorizationEndpoint}?client_id={PlaywrightFapi2Fixture.ClientId}" +
-                $"&response_type=code&redirect_uri={Uri.EscapeDataString(PlaywrightFapi2Fixture.RedirectUri)}" +
+                $"&response_type=code&redirect_uri={Uri.EscapeDataString(_fixture.RedirectUri)}" +
                 $"&scope=openid&code_challenge={codeChallenge}&code_challenge_method=S256");
 
         var browserResult = await _fixture.ExecuteBrowserLoginAsync(directAuthUrl);
@@ -228,7 +228,7 @@ public sealed class RealParPkceDpopFlowTests
         using var fapiClient = new Fapi2BrowserClient(
             http,
             PlaywrightFapi2Fixture.ClientId,
-            PlaywrightFapi2Fixture.RedirectUri,
+            _fixture.RedirectUri,
             _fixture.BaseAddress,
             PlaywrightFapi2Fixture.RealmName);
 
@@ -254,7 +254,7 @@ public sealed class RealParPkceDpopFlowTests
         using var fapiClient = new Fapi2BrowserClient(
             http,
             PlaywrightFapi2Fixture.ClientId,
-            PlaywrightFapi2Fixture.RedirectUri,
+            _fixture.RedirectUri,
             _fixture.BaseAddress,
             PlaywrightFapi2Fixture.RealmName);
 
@@ -280,7 +280,7 @@ public sealed class RealParPkceDpopFlowTests
         using var fapiClient = new Fapi2BrowserClient(
             http,
             PlaywrightFapi2Fixture.ClientId,
-            PlaywrightFapi2Fixture.RedirectUri,
+            _fixture.RedirectUri,
             _fixture.BaseAddress,
             PlaywrightFapi2Fixture.RealmName);
 
@@ -305,7 +305,7 @@ public sealed class RealParPkceDpopFlowTests
         using var fapiClient = new Fapi2BrowserClient(
             http,
             PlaywrightFapi2Fixture.ClientId,
-            PlaywrightFapi2Fixture.RedirectUri,
+            _fixture.RedirectUri,
             _fixture.BaseAddress,
             PlaywrightFapi2Fixture.RealmName);
 

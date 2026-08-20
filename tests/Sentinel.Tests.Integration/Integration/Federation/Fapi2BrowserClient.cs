@@ -33,16 +33,20 @@ public sealed class Fapi2BrowserClient : IDisposable
         string clientId,
         string redirectUri,
         string keycloakBaseUrl,
-        string realm)
+        string realm,
+        int callbackPort = 0)
     {
         _httpClient = httpClient;
         _dpopBuilder = new Fapi2DpopProofBuilder();
         _clientId = clientId;
         _redirectUri = redirectUri;
         _realmUrl = $"{keycloakBaseUrl.TrimEnd('/')}/realms/{realm}";
+        CallbackPort = callbackPort;
     }
 
     public Fapi2DpopProofBuilder DpopBuilder => _dpopBuilder;
+
+    public int CallbackPort { get; }
 
     public string ParEndpoint => $"{_realmUrl}/protocol/openid-connect/ext/par/request";
 
@@ -63,12 +67,14 @@ public sealed class Fapi2BrowserClient : IDisposable
     public static string GenerateNonce() => Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32));
 
     /// <summary>Pushed Authorization Request (RFC 9126).</summary>
+    /// <summary>Pushed Authorization Request (RFC 9126).</summary>
     public async Task<ParResponse> SubmitParRequestAsync(
         string scope,
         string codeChallenge,
         string state,
         string nonce,
         string codeChallengeMethod = "S256",
+        string? acrValues = "acr3 3",
         CancellationToken ct = default)
     {
         var parameters = new Dictionary<string, string>
@@ -81,10 +87,13 @@ public sealed class Fapi2BrowserClient : IDisposable
             ["nonce"] = nonce,
             ["code_challenge"] = codeChallenge,
             ["code_challenge_method"] = codeChallengeMethod,
-            // Binds the authorization code to the DPoP key used at the token
-            // endpoint; verified REQUIRED by the token endpoint on 26.6.4.
             ["dpop_jkt"] = _dpopBuilder.JwkThumbprint
         };
+
+        if (!string.IsNullOrWhiteSpace(acrValues))
+        {
+            parameters["acr_values"] = acrValues;
+        }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, ParEndpoint)
         {
@@ -103,7 +112,7 @@ public sealed class Fapi2BrowserClient : IDisposable
         }
 
         return JsonSerializer.Deserialize<ParResponse>(responseBody)
-            ?? throw new InvalidOperationException("Failed to deserialize PAR response");
+               ?? throw new InvalidOperationException("Failed to deserialize PAR response");
     }
 
     /// <summary>RFC 9126: request_uri goes to /authorize as a query parameter.</summary>

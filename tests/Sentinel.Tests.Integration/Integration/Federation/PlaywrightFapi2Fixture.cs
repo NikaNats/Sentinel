@@ -1,61 +1,68 @@
 using System.Net;
-using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using System.Text.RegularExpressions;
 using DotNet.Testcontainers.Builders;
 using Microsoft.Playwright;
 using Testcontainers.Keycloak;
+using Xunit;
 
 namespace Sentinel.Tests.Integration.Federation;
 
 /// <summary>
-///     xUnit async fixture for the FAPI 2.0 browser-mediated E2E tests: a real
-///     Keycloak 26.6.4 container (the repo-pinned base image) importing the
-///     sentinel-dast realm, and a headless Chromium instance via Microsoft.Playwright.
-///
-///     Configuration notes (all verified live):
-///     - The DAST realm sets sslRequired: "all", so the container serves HTTPS
-///       on 8443 with the repo-local CA/cert pair (same posture as the contract
-///       gate); the browser trusts it via IgnoreHTTPSErrors, the fixture's
-///       HttpClient pins the Sentinel CA.
-///     - sentinel-dast.json already declares the FAPI 2.0 browser client
-///       (sentinel-dast-victim: PAR-required, PKCE S256, DPoP-bound tokens,
-///       redirect http://localhost:8081/callback) and the dast-victim-user, so
-///       no admin-API provisioning is needed.
-///     - The browser callback URI is intercepted with a route fulfillment
-///       (204): Chromium would otherwise error on the unresolvable
-///       localhost:8081 and Playwright's GotoAsync would throw; the
-///       authorization code is captured from the intercepted request URL.
+///     xUnit async fixture for the FAPI 2.0 browser-mediated E2E tests.
+///     Spins up a real Keycloak 26.6.4 container with the sentinel-dast realm
+///     and a headless Chromium instance via Microsoft.Playwright.
 /// </summary>
-public sealed class PlaywrightFapi2Fixture : IAsyncLifetime
+public sealed partial class PlaywrightFapi2Fixture : IAsyncLifetime
 {
     public const string RealmName = "sentinel-dast";
     public const string ClientId = "sentinel-dast-victim";
     public const string TestUsername = "dast-victim-user";
     public const string TestPassword = "DastTestPassword123!";
-    public const string RedirectUri = "http://localhost:8081/callback";
 
-    private static readonly Regex ErrorPagePattern =
-        new("Invalid parameter|We are sorry|not included", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly string RepoRoot = GetRepoRoot();
+
+    // Native AOT compatible regex (replaces RegexOptions.Compiled)
+    [GeneratedRegex("Invalid parameter|We are sorry|not included", RegexOptions.IgnoreCase)]
+    private static partial Regex ErrorPagePattern();
 
     private readonly KeycloakContainer _keycloak;
+    private readonly X509Certificate2 _sentinelCa;
+    private readonly int _callbackPort;
+    private readonly string _tempRealmPath;
+
     private string _baseAddress = string.Empty;
     private IPlaywright? _playwright;
     private IBrowser? _browser;
-    private CallbackServer? _callbackServer;
+private CallbackServer? _callbackServer;
+
+    /// <summary>Dynamic redirect URI matching the dynamically allocated callback port.</summary>
+    public string RedirectUri => $"http://localhost:{_callbackPort}/callback";
 
     public PlaywrightFapi2Fixture()
     {
-        var repoRoot = GetRepoRoot();
+        _sentinelCa = X509Certificate2.CreateFromPem(
+            File.ReadAllText(Path.Combine(RepoRoot, "infra", "certs", "ca.crt")));
+
+        // 1. Dynamically assign port to prevent CI parallel execution collisions
+        _callbackPort = GetFreeTcpPort();
+
+        // 2. Patch the static realm JSON in-memory to use the dynamic port
+        var originalRealmPath = Path.Combine(RepoRoot, "infra", "keycloak", "realms", "sentinel-dast.json");
+        var realmJson = File.ReadAllText(originalRealmPath);
+        realmJson = realmJson.Replace("http://localhost:8081/callback", $"http://localhost:{_callbackPort}/callback");
+
+        // FIX: Must use a .json extension so Keycloak's DirImportProvider detects and imports it
+        _tempRealmPath = Path.Combine(Path.GetTempPath(), $"sentinel-dast-{Guid.NewGuid():N}.json");
+        File.WriteAllText(_tempRealmPath, realmJson);
+
         _keycloak = new KeycloakBuilder("quay.io/keycloak/keycloak:26.6.4")
             .WithUsername("admin")
             .WithPassword("admin")
             .WithEnvironment("KC_FEATURES", "dpop,par")
-            // Mirrors the repo compose keycloak posture: HTTPS-only on 8443 with
-            // the repo CA/cert pair. The DAST realm requires sslRequired "all",
-            // so plain HTTP would be refused with 403.
             .WithEnvironment("KC_HEALTH_ENABLED", "true")
             .WithEnvironment("KC_HTTP_ENABLED", "false")
             .WithEnvironment("KC_HTTPS_PORT", "8443")
@@ -63,17 +70,17 @@ public sealed class PlaywrightFapi2Fixture : IAsyncLifetime
             .WithEnvironment("KC_HTTPS_CERTIFICATE_KEY_FILE", "/etc/x509/keys/keycloak.key")
             .WithPortBinding(8443, true)
             .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilMessageIsLogged("Keycloak .* started in .*"))
-            .WithRealm(Path.Combine(repoRoot, "infra", "keycloak", "realms", "sentinel-dast.json"))
+                .UntilMessageIsLogged(".*Keycloak .* started in .*"))
+            .WithRealm(_tempRealmPath)
             .WithResourceMapping(
-                new FileInfo(Path.Combine(repoRoot, "infra", "certs", "keycloak.crt")),
+                new FileInfo(Path.Combine(RepoRoot, "infra", "certs", "keycloak.crt")),
                 "/etc/x509/certs/",
                 0, 0,
                 DotNet.Testcontainers.Configurations.UnixFileModes.UserRead
                 | DotNet.Testcontainers.Configurations.UnixFileModes.GroupRead
                 | DotNet.Testcontainers.Configurations.UnixFileModes.OtherRead)
             .WithResourceMapping(
-                new FileInfo(Path.Combine(repoRoot, "infra", "certs", "keycloak.key")),
+                new FileInfo(Path.Combine(RepoRoot, "infra", "certs", "keycloak.key")),
                 "/etc/x509/keys/",
                 0, 0,
                 DotNet.Testcontainers.Configurations.UnixFileModes.UserRead
@@ -83,14 +90,22 @@ public sealed class PlaywrightFapi2Fixture : IAsyncLifetime
     }
 
     public string BaseAddress => _baseAddress;
-
     public Uri RealmUrl => new($"{_baseAddress}/realms/{RealmName}");
+    public int CallbackPort => _callbackPort;
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Reliability", "CA2000",
-        Justification = "Handler is disposed via disposeHandler: true; client is disposed by the caller.")]
-    public static HttpClient CreateTrustingHttpClient()
-        => new(CreateSentinelCaTrustingHandler(), disposeHandler: true) { Timeout = TimeSpan.FromSeconds(30) };
+public static HttpClient CreateTrustingHttpClient(X509Certificate2 ca)
+    {
+        var handler = new HttpClientHandler
+        {
+            AllowAutoRedirect = true,
+            ServerCertificateCustomValidationCallback = (_, cert, _, _) =>
+                cert is not null && IsSignedBySentinelCa(new X509Certificate2(cert), ca)
+        };
+        return new HttpClient(handler, disposeHandler: true) { Timeout = TimeSpan.FromSeconds(30) };
+    }
+
+    public HttpClient CreateTrustingHttpClient()
+        => CreateTrustingHttpClient(_sentinelCa);
 
     public async ValueTask InitializeAsync()
     {
@@ -106,13 +121,10 @@ public sealed class PlaywrightFapi2Fixture : IAsyncLifetime
         _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {
             Headless = true,
-            Args = ["--no-sandbox", "--disable-dev-shm-usage"]
+            Args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
         });
 
-        // The DAST client's registered redirect_uri (http://localhost:8081/callback)
-        // is served by a minimal local HTTP server so the browser callback
-        // navigation succeeds and the code is readable from the final page URL.
-        _callbackServer = new CallbackServer();
+        _callbackServer = new CallbackServer(_callbackPort);
     }
 
     public async ValueTask DisposeAsync()
@@ -122,23 +134,26 @@ public sealed class PlaywrightFapi2Fixture : IAsyncLifetime
         if (_browser is not null)
         {
             await _browser.CloseAsync();
+            _browser = null;
         }
 
         _playwright?.Dispose();
+        _playwright = null;
+
         await _keycloak.DisposeAsync();
+        _sentinelCa.Dispose(); // Prevent crypto handle leaks
+
+        if (File.Exists(_tempRealmPath))
+        {
+            try { File.Delete(_tempRealmPath); } catch { /* best effort cleanup */ }
+        }
     }
 
-    /// <summary>
-    ///     Executes the browser-mediated authorization: navigates to the
-    ///     authorization URL, performs the Keycloak login, and returns either
-    ///     the captured callback (code/state) or the error-page state Keycloak
-    ///     renders for invalid requests.
-    /// </summary>
     public async Task<BrowserFlowResult> ExecuteBrowserLoginAsync(Uri authorizationUrl)
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions
         {
-            IgnoreHTTPSErrors = true // self-signed Keycloak cert in the test container
+            IgnoreHTTPSErrors = true
         });
 
         var failedRequests = new List<string>();
@@ -156,8 +171,6 @@ public sealed class PlaywrightFapi2Fixture : IAsyncLifetime
                 Timeout = 30000
             });
 
-            // PAR enforcement failures (reuse/expiry/direct-authorize) surface
-            // as a Keycloak error PAGE (400), not a redirect - detect that first.
             var errorText = await WaitForErrorPageAsync(page);
             if (errorText is not null)
             {
@@ -174,11 +187,11 @@ public sealed class PlaywrightFapi2Fixture : IAsyncLifetime
             await page.FillAsync("#password", TestPassword);
             await page.ClickAsync("#kc-login");
 
-            // Wait for either the callback (code) or a Keycloak error page.
             var deadline = DateTime.UtcNow.AddSeconds(15);
             while (DateTime.UtcNow < deadline)
             {
-                if (page.Url.Contains("localhost:8081", StringComparison.Ordinal))
+                // Use the dynamically assigned port
+                if (page.Url.Contains($"localhost:{_callbackPort}", StringComparison.Ordinal))
                 {
                     var query = ParseQuery(new Uri(page.Url).Query);
                     return new BrowserFlowResult(
@@ -189,7 +202,7 @@ public sealed class PlaywrightFapi2Fixture : IAsyncLifetime
                 }
 
                 var bodyText = await ReadPageTextAsync(page);
-                if (ErrorPagePattern.IsMatch(bodyText))
+                if (ErrorPagePattern().IsMatch(bodyText))
                 {
                     return new BrowserFlowResult(null, null, null, bodyText);
                 }
@@ -215,7 +228,7 @@ public sealed class PlaywrightFapi2Fixture : IAsyncLifetime
         while (DateTime.UtcNow < deadline)
         {
             var bodyText = await ReadPageTextAsync(page);
-            if (ErrorPagePattern.IsMatch(bodyText))
+            if (ErrorPagePattern().IsMatch(bodyText))
             {
                 return bodyText;
             }
@@ -256,7 +269,7 @@ public sealed class PlaywrightFapi2Fixture : IAsyncLifetime
 
     private async Task WaitForRealmReadyAsync()
     {
-        using var http = CreateTrustingHttpClient();
+        using var http = CreateTrustingHttpClient(_sentinelCa);
         var deadline = DateTime.UtcNow.AddSeconds(300);
         var lastError = string.Empty;
         while (DateTime.UtcNow < deadline)
@@ -271,33 +284,15 @@ public sealed class PlaywrightFapi2Fixture : IAsyncLifetime
 
                 lastError = $"discovery returned {response.StatusCode}";
             }
-#pragma warning disable CA1031 // Container startup is retried on any transient failure; the retry loop is the handling strategy
             catch (Exception ex)
             {
                 lastError = ex.Message;
             }
-#pragma warning restore CA1031
 
             await Task.Delay(1000);
         }
 
         throw new TimeoutException($"Keycloak realm {RealmName} was not ready within 300 seconds: {lastError}");
-    }
-
-    /// <summary>Trusts only certificates signed by the repo-local Sentinel CA.</summary>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Reliability", "CA2000",
-        Justification = "The CA certificate must outlive the handler factory: the validation callback captures it and runs on every request.")]
-    private static HttpClientHandler CreateSentinelCaTrustingHandler()
-    {
-        var ca = X509Certificate2.CreateFromPem(
-            File.ReadAllText(Path.Combine(GetRepoRoot(), "infra", "certs", "ca.crt")));
-        return new HttpClientHandler
-        {
-            AllowAutoRedirect = true,
-            ServerCertificateCustomValidationCallback = (_, cert, _, _) =>
-                cert is not null && IsSignedBySentinelCa(new X509Certificate2(cert), ca)
-        };
     }
 
     private static bool IsSignedBySentinelCa(X509Certificate2 cert, X509Certificate2 ca)
@@ -308,9 +303,7 @@ public sealed class PlaywrightFapi2Fixture : IAsyncLifetime
             chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
             chain.ChainPolicy.CustomTrustStore.Add(ca);
             chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-            // Repo-issued certs carry a slightly forward NotBefore (clock drift at
-            // generation time); pin within the validity window so the CA is the
-            // asserted element.
+            // Repo-issued certs carry a slightly forward NotBefore (clock drift at generation time)
             chain.ChainPolicy.VerificationTime = cert.NotBefore.AddHours(1);
             return chain.Build(cert);
         }
@@ -322,7 +315,8 @@ public sealed class PlaywrightFapi2Fixture : IAsyncLifetime
 
     private static string GetRepoRoot()
     {
-        var directory = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+        // AppContext.BaseDirectory is preferred over AppDomain in modern .NET
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Sentinel.slnx")))
         {
             directory = directory.Parent;
@@ -330,6 +324,15 @@ public sealed class PlaywrightFapi2Fixture : IAsyncLifetime
 
         return directory?.FullName
             ?? throw new DirectoryNotFoundException("Could not locate repository root (Sentinel.slnx).");
+    }
+
+    private static int GetFreeTcpPort()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
     }
 }
 
@@ -340,13 +343,7 @@ public sealed record BrowserFlowResult(
     string? ErrorPageText);
 
 /// <summary>
-///     Minimal local HTTP server standing in for the OIDC client's redirect
-///     endpoint. Playwright route interception does not catch 302-followed
-///     navigations (verified empirically on 1.52.0: the redirect request is
-///     sent to the network un-routed, producing ERR_CONNECTION_REFUSED), so
-///     the redirect_uri http://localhost:8081/callback (registered in the DAST
-///     realm) is served by a real listener: the browser navigation completes
-///     and the authorization code is read from the final page URL.
+///     Minimal local HTTP server standing in for the OIDC client's redirect endpoint.
 /// </summary>
 internal sealed class CallbackServer : IDisposable
 {
@@ -354,60 +351,45 @@ internal sealed class CallbackServer : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _acceptLoop;
 
-    public CallbackServer()
+    public CallbackServer(int port)
     {
-        _listener = new TcpListener(IPAddress.Loopback, 8081);
+        _listener = new TcpListener(IPAddress.Loopback, port);
         _listener.Start();
-        _acceptLoop = Task.Run(AcceptLoopAsync);
+        _acceptLoop = Task.Run(() => AcceptLoopAsync(_cts.Token));
     }
 
-    private async Task AcceptLoopAsync()
+    private async Task AcceptLoopAsync(CancellationToken ct)
     {
-        while (!_cts.IsCancellationRequested)
+        while (!ct.IsCancellationRequested)
         {
             try
             {
-                var client = await _listener.AcceptTcpClientAsync(_cts.Token);
-                _ = Task.Run(() => HandleClientAsync(client, _cts.Token));
+                var client = await _listener.AcceptTcpClientAsync(ct);
+                _ = Task.Run(() => HandleClientAsync(client, ct), ct);
             }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (SocketException)
-            {
-                break;
-            }
+            catch (OperationCanceledException) { break; }
+            catch (ObjectDisposedException) { break; }
+            catch (SocketException) { break; }
         }
     }
 
     private static async Task HandleClientAsync(TcpClient client, CancellationToken ct)
     {
         using (client)
-        using (var stream = client.GetStream())
+        await using (var stream = client.GetStream())
         {
-            var buffer = new byte[8192];
+            var buffer = new byte[4096];
             var total = 0;
             while (total < buffer.Length)
             {
                 var read = await stream.ReadAsync(buffer.AsMemory(total), ct);
-                if (read == 0)
-                {
-                    break;
-                }
-
+                if (read == 0) break;
                 total += read;
-                if (total >= 4 && buffer.AsSpan(total - 4, 4).SequenceEqual("\r\n\r\n"u8))
-                {
-                    break;
-                }
+                if (total >= 4 && buffer.AsSpan(total - 4, 4).SequenceEqual("\r\n\r\n"u8)) break;
             }
 
-            // Any path (e.g. /callback, /favicon.ico) answers with an empty 200:
-            // the browser completes the navigation and the test reads the code
-            // from the resulting page URL.
             const string response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-            await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(response), ct);
+            await stream.WriteAsync(Encoding.ASCII.GetBytes(response), ct);
         }
     }
 
@@ -415,14 +397,7 @@ internal sealed class CallbackServer : IDisposable
     {
         _cts.Cancel();
         _cts.Dispose();
-        try
-        {
-            _listener.Dispose();
-        }
-        catch (SocketException)
-        {
-            // listener already disposed
-        }
+        try { _listener.Stop(); _listener.Dispose(); } catch { /* listener already disposed */ }
     }
 }
 
