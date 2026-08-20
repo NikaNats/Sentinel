@@ -2,574 +2,15 @@ openapi: 3.1.0
 info:
   title: Sentinel API Contract (Framework + Reference Host)
   version: 2026-08-20
-  description: |-
-    OpenAPI contract for the current Sentinel reference host and mounted Sentinel.AspNetCore security endpoints.
-
-    Active route prefixes in the sample host:
-    - Security framework routes: /v1/auth/*, /v1/ssf/*
-    - Business routes: /v1/documents/*, /api/v1/finance/*, /v1/* (profile, security-context, protected, step-up)
-
-    DPoP nonce challenge semantics:
-    - 401 responses can include:
-      WWW-Authenticate: DPoP error="use_dpop_nonce"
-      DPoP-Nonce: <value>
+  description: "OpenAPI contract for the Sentinel security API endpoints.\n\nCanonical contract route prefixes:\n- Security\
+    \ framework routes: /api/system/security/auth/*, /api/system/security/ssf/*\n- Business routes: /api/v1/documents/*, /api/v1/finance/*,\
+    \ /api/v1/showcase/*\n\nDPoP nonce challenge semantics:\n- 401 responses can include:\n  WWW-Authenticate: DPoP error=\"\
+    use_dpop_nonce\"\n  DPoP-Nonce: <value>"
 servers:
-  - url: https://localhost:5001
-    description: Local development
-  - url: https://api.sentinel.local
-    description: Example production host
-
-paths:
-  /:
-    get:
-      tags: [System]
-      summary: Get service metadata and endpoint map
-      operationId: getServiceInfo
-      responses:
-        '200':
-          description: Service information
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SampleInfoResponse'
-
-  /healthz:
-    get:
-      tags: [System]
-      summary: Get service health
-      operationId: getHealth
-      responses:
-        '200':
-          description: Healthy response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HealthResponse'
-
-  /v1/auth/refresh:
-    post:
-      tags: [Authentication]
-      summary: Refresh access token
-      operationId: refreshToken
-      parameters:
-        - $ref: '#/components/parameters/DPoPHeader'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RefreshRequest'
-      responses:
-        '200':
-          description: Token refresh successful
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RefreshResponse'
-        '400':
-          $ref: '#/components/responses/Problem400'
-        '401':
-          $ref: '#/components/responses/Problem401'
-
-  /v1/auth/change-password:
-    post:
-      tags: [Authentication]
-      summary: Change current user password
-      operationId: changePassword
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKeyHeader'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ChangePasswordRequest'
-      responses:
-        '204':
-          description: Password changed
-        '400':
-          $ref: '#/components/responses/Problem400'
-        '401':
-          $ref: '#/components/responses/Problem401'
-        '409':
-          $ref: '#/components/responses/Problem409'
-        '500':
-          $ref: '#/components/responses/Problem500'
-        '503':
-          $ref: '#/components/responses/Problem503'
-
-  /v1/auth/logout:
-    post:
-      tags: [Authentication]
-      summary: Logout current session
-      operationId: logout
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKeyHeader'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RevokeRequest'
-      responses:
-        '204':
-          description: Session revoked
-        '400':
-          $ref: '#/components/responses/Problem400'
-        '401':
-          $ref: '#/components/responses/Problem401'
-        '409':
-          $ref: '#/components/responses/Problem409'
-        '503':
-          $ref: '#/components/responses/Problem503'
-
-  /v1/auth/sessions:
-    get:
-      tags: [Authentication]
-      summary: List active sessions for authenticated subject
-      operationId: getActiveSessions
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      responses:
-        '200':
-          description: Active session list
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Problem401'
-
-  /v1/auth/sessions/{sessionId}:
-    delete:
-      tags: [Authentication]
-      summary: Revoke one session by id
-      operationId: revokeSession
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      parameters:
-        - $ref: '#/components/parameters/SessionIdPath'
-        - $ref: '#/components/parameters/IdempotencyKeyHeader'
-      responses:
-        '204':
-          description: Session revoked
-        '400':
-          $ref: '#/components/responses/Problem400'
-        '401':
-          $ref: '#/components/responses/Problem401'
-        '404':
-          $ref: '#/components/responses/Problem404'
-        '409':
-          $ref: '#/components/responses/Problem409'
-        '503':
-          $ref: '#/components/responses/Problem503'
-
-  /v1/auth/logout-all:
-    post:
-      tags: [Authentication]
-      summary: Revoke all sessions for current subject
-      operationId: globalLogout
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKeyHeader'
-      responses:
-        '204':
-          description: All sessions revoked
-        '401':
-          $ref: '#/components/responses/Problem401'
-        '409':
-          $ref: '#/components/responses/Problem409'
-        '500':
-          $ref: '#/components/responses/Problem500'
-        '503':
-          $ref: '#/components/responses/Problem503'
-
-  /v1/auth/account:
-    delete:
-      tags: [Authentication]
-      summary: Delete current account
-      operationId: deleteAccount
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKeyHeader'
-      responses:
-        '204':
-          description: Account deleted
-        '401':
-          $ref: '#/components/responses/Problem401'
-        '409':
-          $ref: '#/components/responses/Problem409'
-        '500':
-          $ref: '#/components/responses/Problem500'
-        '503':
-          $ref: '#/components/responses/Problem503'
-
-  /v1/auth/mfa/totp/setup:
-    post:
-      tags: [MFA]
-      summary: Reserved endpoint for TOTP setup (not implemented)
-      operationId: setupTotp
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TotpSetupRequest'
-      responses:
-        '401':
-          $ref: '#/components/responses/Problem401'
-        '501':
-          $ref: '#/components/responses/Problem501'
-
-  /v1/auth/mfa/totp/verify:
-    post:
-      tags: [MFA]
-      summary: Reserved endpoint for TOTP verification (not implemented)
-      operationId: verifyTotp
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TotpVerifyRequest'
-      responses:
-        '401':
-          $ref: '#/components/responses/Problem401'
-        '501':
-          $ref: '#/components/responses/Problem501'
-
-  /v1/auth/mfa/totp:
-    delete:
-      tags: [MFA]
-      summary: Reserved endpoint for TOTP deletion (not implemented)
-      operationId: deleteTotp
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      responses:
-        '401':
-          $ref: '#/components/responses/Problem401'
-        '501':
-          $ref: '#/components/responses/Problem501'
-
-  /v1/auth/mfa/recovery-codes:
-    get:
-      tags: [MFA]
-      summary: Reserved endpoint for recovery code retrieval (not implemented)
-      operationId: getRecoveryCodes
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      responses:
-        '401':
-          $ref: '#/components/responses/Problem401'
-        '501':
-          $ref: '#/components/responses/Problem501'
-
-  /v1/auth/mfa/recovery-codes/regenerate:
-    post:
-      tags: [MFA]
-      summary: Reserved endpoint for recovery code regeneration (not implemented)
-      operationId: regenerateRecoveryCodes
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      responses:
-        '401':
-          $ref: '#/components/responses/Problem401'
-        '501':
-          $ref: '#/components/responses/Problem501'
-
-  /v1/auth/token-exchange:
-    post:
-      tags: [Token Exchange]
-      summary: Exchange external token for Sentinel token pair
-      operationId: exchangeExternalToken
-      parameters:
-        - $ref: '#/components/parameters/DPoPHeader'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TokenExchangeRequest'
-      responses:
-        '200':
-          description: Exchange succeeded
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TokenExchangeResponse'
-        '400':
-          $ref: '#/components/responses/Problem400'
-        '401':
-          $ref: '#/components/responses/Problem401'
-
-  /v1/ssf/events:
-    post:
-      tags: [Security Event Token]
-      summary: Receive and process Security Event Token (SET)
-      operationId: receiveSsfEvent
-      parameters:
-        - $ref: '#/components/parameters/SSFAuthTokenHeader'
-      requestBody:
-        required: true
-        content:
-          application/secevent+jwt:
-            schema:
-              type: string
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SsfEventJsonRequest'
-      responses:
-        '202':
-          description: Event accepted for processing
-        '400':
-          $ref: '#/components/responses/Problem400'
-        '401':
-          $ref: '#/components/responses/Problem401'
-        '404':
-          $ref: '#/components/responses/Problem404'
-
-  /v1/documents:
-    get:
-      tags: [Documents]
-      summary: List documents owned by current subject
-      operationId: listDocuments
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      responses:
-        '200':
-          description: Document list
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/DocumentSummaryDto'
-        '401':
-          $ref: '#/components/responses/Problem401'
-
-    post:
-      tags: [Documents]
-      summary: Create document
-      operationId: createDocument
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKeyHeader'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateDocumentRequest'
-      responses:
-        '201':
-          description: Document created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DocumentSummaryDto'
-        '204':
-          description: Duplicate idempotent request acknowledged
-        '400':
-          $ref: '#/components/responses/Problem400'
-        '401':
-          $ref: '#/components/responses/Problem401'
-        '409':
-          $ref: '#/components/responses/Problem409'
-        '503':
-          $ref: '#/components/responses/Problem503'
-
-  /v1/documents/{id}:
-    get:
-      tags: [Documents]
-      summary: Get one document by id (owner scoped)
-      operationId: getDocument
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      parameters:
-        - $ref: '#/components/parameters/DocumentIdPath'
-      responses:
-        '200':
-          description: Document detail
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DocumentDetailDto'
-        '401':
-          $ref: '#/components/responses/Problem401'
-        '404':
-          $ref: '#/components/responses/Problem404'
-
-    delete:
-      tags: [Documents]
-      summary: Delete one document by id (owner scoped)
-      operationId: deleteDocument
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      parameters:
-        - $ref: '#/components/parameters/DocumentIdPath'
-      responses:
-        '204':
-          description: Document deleted
-        '401':
-          $ref: '#/components/responses/Problem401'
-        '403':
-          $ref: '#/components/responses/Problem403'
-        '404':
-          $ref: '#/components/responses/Problem404'
-
-  /api/v1/finance/transfer:
-    post:
-      tags: [Finance]
-      summary: Execute transfer under signed authorization bounds
-      operationId: executeTransfer
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKeyHeader'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TransferRequest'
-      responses:
-        '200':
-          description: Transfer accepted
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TransferResponse'
-        '204':
-          description: Duplicate idempotent request acknowledged
-        '400':
-          $ref: '#/components/responses/Problem400'
-        '401':
-          $ref: '#/components/responses/Problem401'
-        '403':
-          description: Authorization bounds exceeded
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
-          $ref: '#/components/responses/Problem409'
-        '503':
-          $ref: '#/components/responses/Problem503'
-
-  /v1/security-context:
-    get:
-      tags: [Showcase]
-      summary: Return diagnostic security context for current request
-      operationId: getSecurityContext
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      responses:
-        '200':
-          description: Security context
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SecurityContextDto'
-        '401':
-          $ref: '#/components/responses/Problem401'
-
-  /v1/profile:
-    get:
-      tags: [Showcase]
-      summary: Get user profile with SD-JWT selective disclosure or standard claims
-      operationId: getShowcaseProfile
-      security:
-        - BearerAuth: []
-      responses:
-        '200':
-          description: Profile claims
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Problem401'
-        '403':
-          $ref: '#/components/responses/Problem403'
-
-  /v1/test/protected:
-    get:
-      tags: [Showcase]
-      summary: Simple authenticated test endpoint
-      operationId: getShowcaseProtected
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      responses:
-        '200':
-          description: Protected data returned
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  subject:
-                    type: string
-                  assuranceLevel:
-                    type: string
-        '401':
-          $ref: '#/components/responses/Problem401'
-
-  /v1/test/step-up:
-    get:
-      tags: [Showcase]
-      summary: Elevated endpoint requiring high-assurance hardware MFA (acr3)
-      operationId: getShowcaseStepUp
-      security:
-        - BearerAuth: []
-          DPoPProof: []
-      responses:
-        '200':
-          description: High-assurance data returned
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  subject:
-                    type: string
-                  assuranceLevel:
-                    type: string
-        '401':
-          $ref: '#/components/responses/Problem401'
-
+- url: https://localhost:5001
+  description: Local development
+- url: https://api.sentinel.local
+  description: Example production host
 components:
   securitySchemes:
     BearerAuth:
@@ -582,7 +23,6 @@ components:
       in: header
       name: DPoP
       description: DPoP proof JWT for sender-constrained requests.
-
   parameters:
     DPoPHeader:
       name: DPoP
@@ -619,7 +59,6 @@ components:
       schema:
         type: string
         format: uuid
-
   responses:
     Problem400:
       description: Bad request
@@ -669,7 +108,6 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
-
   schemas:
     ProblemDetails:
       type: object
@@ -685,10 +123,12 @@ components:
         instance:
           type: string
       additionalProperties: true
-
     SampleInfoResponse:
       type: object
-      required: [service, docs, endpoints]
+      required:
+      - service
+      - docs
+      - endpoints
       properties:
         service:
           type: string
@@ -696,10 +136,14 @@ components:
           type: string
         endpoints:
           $ref: '#/components/schemas/EndpointMap'
-
     EndpointMap:
       type: object
-      required: [health, security, documents, finance, showcase]
+      required:
+      - health
+      - security
+      - documents
+      - finance
+      - showcase
       properties:
         health:
           type: string
@@ -711,10 +155,11 @@ components:
           type: string
         showcase:
           type: string
-
     HealthResponse:
       type: object
-      required: [status, utc]
+      required:
+      - status
+      - utc
       properties:
         status:
           type: string
@@ -722,54 +167,57 @@ components:
         utc:
           type: string
           format: date-time
-
     RefreshRequest:
       type: object
-      required: [refreshToken]
+      required:
+      - refreshToken
       properties:
         refreshToken:
           type: string
-
     RefreshResponse:
       type: object
-      required: [access_token, refresh_token]
+      required:
+      - access_token
+      - refresh_token
       properties:
         access_token:
           type: string
         refresh_token:
           type: string
-
     RevokeRequest:
       type: object
-      required: [refreshToken]
+      required:
+      - refreshToken
       properties:
         refreshToken:
           type: string
-
     ChangePasswordRequest:
       type: object
-      required: [newPassword]
+      required:
+      - newPassword
       properties:
         newPassword:
           type: string
-
     TotpSetupRequest:
       type: object
-      required: [deviceName]
+      required:
+      - deviceName
       properties:
         deviceName:
           type: string
-
     TotpVerifyRequest:
       type: object
-      required: [code]
+      required:
+      - code
       properties:
         code:
           type: string
-
     TokenExchangeRequest:
       type: object
-      required: [externalToken, providerName, codeVerifier]
+      required:
+      - externalToken
+      - providerName
+      - codeVerifier
       properties:
         externalToken:
           type: string
@@ -777,10 +225,10 @@ components:
           type: string
         codeVerifier:
           type: string
-
     TokenExchangeResponse:
       type: object
-      required: [access_token]
+      required:
+      - access_token
       properties:
         access_token:
           type: string
@@ -792,28 +240,32 @@ components:
           type: integer
         scope:
           type: string
-
     SsfEventJsonRequest:
       type: object
-      required: [set]
+      required:
+      - set
       properties:
         set:
           type: string
           description: Security Event Token JWT string.
-
     CreateDocumentRequest:
       type: object
-      required: [title, content]
+      required:
+      - title
+      - content
       properties:
         title:
           type: string
           maxLength: 120
         content:
           type: string
-
     DocumentSummaryDto:
       type: object
-      required: [id, title, encryptedBytes, createdUtc]
+      required:
+      - id
+      - title
+      - encryptedBytes
+      - createdUtc
       properties:
         id:
           type: string
@@ -825,10 +277,14 @@ components:
         createdUtc:
           type: string
           format: date-time
-
     DocumentDetailDto:
       type: object
-      required: [id, title, contentPreview, encryptedBytes, createdUtc]
+      required:
+      - id
+      - title
+      - contentPreview
+      - encryptedBytes
+      - createdUtc
       properties:
         id:
           type: string
@@ -843,10 +299,13 @@ components:
         createdUtc:
           type: string
           format: date-time
-
     TransferRequest:
       type: object
-      required: [transactionId, amount, currency, destinationAccount]
+      required:
+      - transactionId
+      - amount
+      - currency
+      - destinationAccount
       properties:
         transactionId:
           type: string
@@ -858,10 +317,13 @@ components:
           maxLength: 3
         destinationAccount:
           type: string
-
     TransferResponse:
       type: object
-      required: [status, transactionId, message, processedAtUtc]
+      required:
+      - status
+      - transactionId
+      - message
+      - processedAtUtc
       properties:
         status:
           type: string
@@ -872,10 +334,14 @@ components:
         processedAtUtc:
           type: string
           format: date-time
-
     SecurityContextDto:
       type: object
-      required: [subject, acr, dpopJkt, authorizationDetailsCount, traceId]
+      required:
+      - subject
+      - acr
+      - dpopJkt
+      - authorizationDetailsCount
+      - traceId
       properties:
         subject:
           type: string
@@ -887,3 +353,565 @@ components:
           type: integer
         traceId:
           type: string
+paths:
+  /:
+    get:
+      tags:
+      - System
+      summary: Get service metadata and endpoint map
+      operationId: getServiceInfo
+      responses:
+        '200':
+          description: Service information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SampleInfoResponse'
+  /healthz:
+    get:
+      tags:
+      - System
+      summary: Get service health
+      operationId: getHealth
+      responses:
+        '200':
+          description: Healthy response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /api/system/security/auth/refresh:
+    post:
+      tags:
+      - Authentication
+      summary: Refresh access token
+      operationId: refreshToken
+      parameters:
+      - $ref: '#/components/parameters/DPoPHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Token refresh successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '400':
+          $ref: '#/components/responses/Problem400'
+        '401':
+          $ref: '#/components/responses/Problem401'
+  /api/system/security/auth/change-password:
+    post:
+      tags:
+      - Authentication
+      summary: Change current user password
+      operationId: changePassword
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: Password changed
+        '400':
+          $ref: '#/components/responses/Problem400'
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '409':
+          $ref: '#/components/responses/Problem409'
+        '500':
+          $ref: '#/components/responses/Problem500'
+        '503':
+          $ref: '#/components/responses/Problem503'
+  /api/system/security/auth/logout:
+    post:
+      tags:
+      - Authentication
+      summary: Logout current session
+      operationId: logout
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeRequest'
+      responses:
+        '204':
+          description: Session revoked
+        '400':
+          $ref: '#/components/responses/Problem400'
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '409':
+          $ref: '#/components/responses/Problem409'
+        '503':
+          $ref: '#/components/responses/Problem503'
+  /api/system/security/auth/sessions:
+    get:
+      tags:
+      - Authentication
+      summary: List active sessions for authenticated subject
+      operationId: getActiveSessions
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      responses:
+        '200':
+          description: Active session list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Problem401'
+  /api/system/security/auth/sessions/{sessionId}:
+    delete:
+      tags:
+      - Authentication
+      summary: Revoke one session by id
+      operationId: revokeSession
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      parameters:
+      - $ref: '#/components/parameters/SessionIdPath'
+      - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      responses:
+        '204':
+          description: Session revoked
+        '400':
+          $ref: '#/components/responses/Problem400'
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '404':
+          $ref: '#/components/responses/Problem404'
+        '409':
+          $ref: '#/components/responses/Problem409'
+        '503':
+          $ref: '#/components/responses/Problem503'
+  /api/system/security/auth/logout-all:
+    post:
+      tags:
+      - Authentication
+      summary: Revoke all sessions for current subject
+      operationId: globalLogout
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      responses:
+        '204':
+          description: All sessions revoked
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '409':
+          $ref: '#/components/responses/Problem409'
+        '500':
+          $ref: '#/components/responses/Problem500'
+        '503':
+          $ref: '#/components/responses/Problem503'
+  /api/system/security/auth/account:
+    delete:
+      tags:
+      - Authentication
+      summary: Delete current account
+      operationId: deleteAccount
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      responses:
+        '204':
+          description: Account deleted
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '409':
+          $ref: '#/components/responses/Problem409'
+        '500':
+          $ref: '#/components/responses/Problem500'
+        '503':
+          $ref: '#/components/responses/Problem503'
+  /api/system/security/auth/mfa/totp/setup:
+    post:
+      tags:
+      - MFA
+      summary: Reserved endpoint for TOTP setup (not implemented)
+      operationId: setupTotp
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TotpSetupRequest'
+      responses:
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '501':
+          $ref: '#/components/responses/Problem501'
+  /api/system/security/auth/mfa/totp/verify:
+    post:
+      tags:
+      - MFA
+      summary: Reserved endpoint for TOTP verification (not implemented)
+      operationId: verifyTotp
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TotpVerifyRequest'
+      responses:
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '501':
+          $ref: '#/components/responses/Problem501'
+  /api/system/security/auth/mfa/totp:
+    delete:
+      tags:
+      - MFA
+      summary: Reserved endpoint for TOTP deletion (not implemented)
+      operationId: deleteTotp
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      responses:
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '501':
+          $ref: '#/components/responses/Problem501'
+  /api/system/security/auth/mfa/recovery-codes:
+    get:
+      tags:
+      - MFA
+      summary: Reserved endpoint for recovery code retrieval (not implemented)
+      operationId: getRecoveryCodes
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      responses:
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '501':
+          $ref: '#/components/responses/Problem501'
+  /api/system/security/auth/mfa/recovery-codes/regenerate:
+    post:
+      tags:
+      - MFA
+      summary: Reserved endpoint for recovery code regeneration (not implemented)
+      operationId: regenerateRecoveryCodes
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      responses:
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '501':
+          $ref: '#/components/responses/Problem501'
+  /api/system/security/auth/token-exchange:
+    post:
+      tags:
+      - Token Exchange
+      summary: Exchange external token for Sentinel token pair
+      operationId: exchangeExternalToken
+      parameters:
+      - $ref: '#/components/parameters/DPoPHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenExchangeRequest'
+      responses:
+        '200':
+          description: Exchange succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenExchangeResponse'
+        '400':
+          $ref: '#/components/responses/Problem400'
+        '401':
+          $ref: '#/components/responses/Problem401'
+  /api/system/security/auth/backchannel-logout:
+    post:
+      tags:
+      - Authentication
+      summary: OpenID Connect Backchannel Logout endpoint
+      operationId: backchannelLogout
+      responses:
+        '200':
+          description: Logout token processed
+        '400':
+          $ref: '#/components/responses/Problem400'
+  /api/system/security/ssf/events:
+    post:
+      tags:
+      - Security Event Token
+      summary: Receive and process Security Event Token (SET)
+      operationId: receiveSsfEvent
+      parameters:
+      - $ref: '#/components/parameters/SSFAuthTokenHeader'
+      requestBody:
+        required: true
+        content:
+          application/secevent+jwt:
+            schema:
+              type: string
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SsfEventJsonRequest'
+      responses:
+        '202':
+          description: Event accepted for processing
+        '400':
+          $ref: '#/components/responses/Problem400'
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '404':
+          $ref: '#/components/responses/Problem404'
+  /api/v1/documents:
+    get:
+      tags:
+      - Documents
+      summary: List documents owned by current subject
+      operationId: listDocuments
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      responses:
+        '200':
+          description: Document list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DocumentSummaryDto'
+        '401':
+          $ref: '#/components/responses/Problem401'
+    post:
+      tags:
+      - Documents
+      summary: Create document
+      operationId: createDocument
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDocumentRequest'
+      responses:
+        '201':
+          description: Document created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentSummaryDto'
+        '204':
+          description: Duplicate idempotent request acknowledged
+        '400':
+          $ref: '#/components/responses/Problem400'
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '409':
+          $ref: '#/components/responses/Problem409'
+        '503':
+          $ref: '#/components/responses/Problem503'
+  /api/v1/documents/{id}:
+    get:
+      tags:
+      - Documents
+      summary: Get one document by id (owner scoped)
+      operationId: getDocument
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      parameters:
+      - $ref: '#/components/parameters/DocumentIdPath'
+      responses:
+        '200':
+          description: Document detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDetailDto'
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '404':
+          $ref: '#/components/responses/Problem404'
+    delete:
+      tags:
+      - Documents
+      summary: Delete one document by id (owner scoped)
+      operationId: deleteDocument
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      parameters:
+      - $ref: '#/components/parameters/DocumentIdPath'
+      responses:
+        '204':
+          description: Document deleted
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '403':
+          $ref: '#/components/responses/Problem403'
+        '404':
+          $ref: '#/components/responses/Problem404'
+  /api/v1/finance/transfer:
+    post:
+      tags:
+      - Finance
+      summary: Execute transfer under signed authorization bounds
+      operationId: executeTransfer
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferRequest'
+      responses:
+        '200':
+          description: Transfer accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+        '204':
+          description: Duplicate idempotent request acknowledged
+        '400':
+          $ref: '#/components/responses/Problem400'
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '403':
+          description: Authorization bounds exceeded
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          $ref: '#/components/responses/Problem409'
+        '503':
+          $ref: '#/components/responses/Problem503'
+  /api/v1/showcase/security-context:
+    get:
+      tags:
+      - Showcase
+      summary: Return diagnostic security context for current request
+      operationId: getSecurityContext
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      responses:
+        '200':
+          description: Security context
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityContextDto'
+        '401':
+          $ref: '#/components/responses/Problem401'
+  /api/v1/showcase/profile:
+    get:
+      tags:
+      - Showcase
+      summary: Get user profile with SD-JWT selective disclosure or standard claims
+      operationId: getShowcaseProfile
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Profile claims
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Problem401'
+        '403':
+          $ref: '#/components/responses/Problem403'
+  /api/v1/showcase/test/protected:
+    get:
+      tags:
+      - Showcase
+      summary: Simple authenticated test endpoint
+      operationId: getShowcaseProtected
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      responses:
+        '200':
+          description: Protected data returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject:
+                    type: string
+                  assuranceLevel:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Problem401'
+  /api/v1/showcase/test/step-up:
+    get:
+      tags:
+      - Showcase
+      summary: Elevated endpoint requiring high-assurance hardware MFA (acr3)
+      operationId: getShowcaseStepUp
+      security:
+      - BearerAuth: []
+        DPoPProof: []
+      responses:
+        '200':
+          description: High-assurance data returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject:
+                    type: string
+                  assuranceLevel:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Problem401'
