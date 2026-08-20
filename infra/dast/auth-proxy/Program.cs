@@ -81,6 +81,8 @@ app.Map("/{**catchAll}", async (HttpContext ctx, CancellationToken ct) =>
         bodyBytes = ms.ToArray();
     }
 
+    await Console.Error.WriteLineAsync($"[dbg] fwd {method} {url} body={bodyBytes.Length} bytes: {Encoding.UTF8.GetString(bodyBytes).Replace("\n", " ")}");
+
     HttpStatusCode status;
     HttpResponseMessage res;
     var attempts = 0;
@@ -110,6 +112,17 @@ app.Map("/{**catchAll}", async (HttpContext ctx, CancellationToken ct) =>
     ctx.Response.StatusCode = (int)status;
     foreach (var h in res.Headers)
     {
+        // HttpClient de-chunks the upstream body, so relaying the upstream
+        // Transfer-Encoding header would make clients re-parse the already
+        // decoded bytes as chunk framing (e.g. curl: "chunk hex-length char
+        // not a hex digit"). Let Kestrel re-frame the body; drop Connection
+        // so it can manage keep-alive itself.
+        if (h.Key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase)
+            || h.Key.Equals("Connection", StringComparison.OrdinalIgnoreCase))
+        {
+            continue;
+        }
+
         ctx.Response.Headers[h.Key] = h.Value.ToArray();
     }
 

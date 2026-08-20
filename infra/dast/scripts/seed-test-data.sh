@@ -23,9 +23,11 @@ seed_document() {
   # the surgical-authz "secrets" reservation, so fixture titles avoid it.
   body="{\"title\":\"$name\",\"content\":\"synthetic DAST fixture ($tag)\"}"
   local code
+  # Idempotency-Key MUST be a GUID: Sentinel's IdempotencyFilter (RFC 9110)
+  # rejects any other format with 400 invalid-idempotency-key.
   code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$DOCS_URL" \
     -H 'Content-Type: application/json' \
-    -H "Idempotency-Key: seed-$(uuidgen 2>/dev/null || echo "$RANDOM$RANDOM$RANDOM")" \
+    -H "Idempotency-Key: $(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen)" \
     -d "$body")
   echo "[seed] document '$name' -> HTTP $code"
 }
@@ -37,7 +39,7 @@ seed_document "dast-fixture-tombstone" "archived"
 # Replay fixture: the SAME idempotency key on a second POST must be answered
 # with the ORIGINAL response (RFC 9110 idempotency) - scanners probing
 # double-spend see a deterministic answer.
-IDEMPOTENT_KEY="fixture-replay-$(date +%s)"
+IDEMPOTENT_KEY="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen)"
 curl -s -o /dev/null -X POST "$DOCS_URL" \
   -H 'Content-Type: application/json' -H "Idempotency-Key: $IDEMPOTENT_KEY" \
   -d '{"title":"dast-fixture-replay","content":"replay target"}'
