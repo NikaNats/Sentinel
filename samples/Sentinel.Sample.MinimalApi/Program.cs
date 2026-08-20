@@ -523,6 +523,10 @@ builder.Services.AddSingleton<ISsfTokenValidator>(sp =>
 builder.Services
     .AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, SecurityAuthRevocationServiceAdapter>();
 builder.Services.AddScoped<Sentinel.Application.Auth.Interfaces.ISsfEventProcessor, SecuritySsfEventProcessorAdapter>();
+builder.Services.AddSingleton<Sentinel.Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
+    new SampleSessionBlacklistCacheAdapter(
+        sp.GetRequiredService<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>(),
+        sp.GetRequiredService<TimeProvider>()));
 
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("ScopeProfile", policy =>
@@ -662,4 +666,15 @@ internal sealed class SecuritySsfEventProcessorAdapter(
             ? SsfProcessResult.Success()
             : SsfProcessResult.Invalid(result.ErrorMessage ?? "SSF processing failed");
     }
+}
+
+internal sealed class SampleSessionBlacklistCacheAdapter(
+    Sentinel.Security.Abstractions.Session.ISessionBlacklistCache inner,
+    TimeProvider timeProvider) : Sentinel.Application.Common.Abstractions.ISessionBlacklistCache
+{
+    public Task BlacklistSessionAsync(string sessionId, TimeSpan ttl, CancellationToken ct) =>
+        inner.BlacklistSessionAsync(sessionId, timeProvider.GetUtcNow() + ttl, ct);
+
+    public ValueTask<bool> IsSessionBlacklistedAsync(string sessionId, CancellationToken ct) =>
+        new(inner.IsBlacklistedAsync(sessionId, ct));
 }

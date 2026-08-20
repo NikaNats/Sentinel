@@ -376,6 +376,7 @@
                         "clientId":  "sentinel-dast-scanner",
                         "name":  "DAST scanner (confidential, DPoP-bound)",
                         "clientAuthenticatorType":  "client-secret",
+                        "secret":  "9zmnLb5H7wJBZhN9vMfvZCHY0NV95udF",
                         "protocol":  "openid-connect",
                         "publicClient":  false,
                         "standardFlowEnabled":  true,
@@ -411,6 +412,20 @@
                                                                    "included.custom.audience":  "sentinel-api",
                                                                    "access.token.claim":  "true",
                                                                    "id.token.claim":  "false"
+                                                               }
+                                                },
+                                                {
+                                                    "name":  "acr-scanner",
+                                                    "protocol":  "openid-connect",
+                                                    "protocolMapper":  "oidc-hardcoded-claim-mapper",
+                                                    "consentRequired":  false,
+                                                    "config":  {
+                                                                   "claim.name":  "acr",
+                                                                   "claim.value":  "acr2",
+                                                                   "jsonType":  "String",
+                                                                   "access.token.claim":  "true",
+                                                                   "id.token.claim":  "true",
+                                                                   "userinfo.token.claim":  "true"
                                                                }
                                                 }
                                             ],
