@@ -37,7 +37,7 @@ public sealed partial class PlaywrightFapi2Fixture : IAsyncLifetime
     private string _baseAddress = string.Empty;
     private IPlaywright? _playwright;
     private IBrowser? _browser;
-private CallbackServer? _callbackServer;
+    private CallbackServer? _callbackServer;
 
     /// <summary>Dynamic redirect URI matching the dynamically allocated callback port.</summary>
     public string RedirectUri => $"http://localhost:{_callbackPort}/callback";
@@ -93,7 +93,7 @@ private CallbackServer? _callbackServer;
     public Uri RealmUrl => new($"{_baseAddress}/realms/{RealmName}");
     public int CallbackPort => _callbackPort;
 
-public static HttpClient CreateTrustingHttpClient(X509Certificate2 ca)
+    public static HttpClient CreateTrustingHttpClient(X509Certificate2 ca)
     {
         var handler = new HttpClientHandler
         {
@@ -118,11 +118,23 @@ public static HttpClient CreateTrustingHttpClient(X509Certificate2 ca)
         await WaitForRealmReadyAsync();
 
         _playwright = await Microsoft.Playwright.Playwright.CreateAsync();
-        _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        try
         {
-            Headless = true,
-            Args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
-        });
+            _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+            {
+                Headless = true,
+                Args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+            });
+        }
+        catch (PlaywrightException ex) when (ex.Message.Contains("Executable doesn't exist", StringComparison.OrdinalIgnoreCase))
+        {
+            Microsoft.Playwright.Program.Main(["install"]);
+            _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+            {
+                Headless = true,
+                Args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+            });
+        }
 
         _callbackServer = new CallbackServer(_callbackPort);
     }

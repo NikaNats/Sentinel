@@ -31,7 +31,7 @@ public sealed class ObservabilityContractTests(ObservabilityContractFactory fact
         var requestUrl = requestUri.ToString();
 
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var securityKey = new ECDsaSecurityKey(ecdsa) { KeyId = Guid.NewGuid().ToString("N") };
+        var securityKey = new ECDsaSecurityKey(ecdsa);
         var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(securityKey);
         var jwkObject = new Dictionary<string, string>
         {
@@ -97,7 +97,7 @@ public sealed class ObservabilityContractTests(ObservabilityContractFactory fact
         var requestUrl = requestUri.ToString();
 
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var securityKey = new ECDsaSecurityKey(ecdsa) { KeyId = Guid.NewGuid().ToString("N") };
+        var securityKey = new ECDsaSecurityKey(ecdsa);
         var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(securityKey);
         var jwkObject = new Dictionary<string, string>
         {
