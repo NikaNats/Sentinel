@@ -17,7 +17,46 @@
         "security": []
       }
     },
-    "/api/system/security/auth/account": {
+    "/api/v1/finance/transfer": {
+      "post": {
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key"
+          }
+        ],
+        "requestRequired": [
+          "amount",
+          "currency",
+          "destinationAccount",
+          "transactionId"
+        ],
+        "responses": [
+          "200",
+          "204",
+          "400",
+          "401",
+          "403",
+          "409",
+          "503"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "parameters": [],
+        "requestRequired": [],
+        "responses": [
+          "200"
+        ],
+        "security": []
+      }
+    },
+    "/v1/auth/account": {
       "delete": {
         "parameters": [
           {
@@ -39,20 +78,7 @@
         ]
       }
     },
-    "/api/system/security/auth/backchannel-logout": {
-      "post": {
-        "parameters": [],
-        "requestRequired": [
-          "logout_token"
-        ],
-        "responses": [
-          "200",
-          "400"
-        ],
-        "security": []
-      }
-    },
-    "/api/system/security/auth/change-password": {
+    "/v1/auth/change-password": {
       "post": {
         "parameters": [
           {
@@ -77,7 +103,7 @@
         ]
       }
     },
-    "/api/system/security/auth/logout": {
+    "/v1/auth/logout": {
       "post": {
         "parameters": [
           {
@@ -101,7 +127,7 @@
         ]
       }
     },
-    "/api/system/security/auth/logout-all": {
+    "/v1/auth/logout-all": {
       "post": {
         "parameters": [
           {
@@ -123,7 +149,7 @@
         ]
       }
     },
-    "/api/system/security/auth/mfa/recovery-codes": {
+    "/v1/auth/mfa/recovery-codes": {
       "get": {
         "parameters": [],
         "requestRequired": [],
@@ -137,7 +163,7 @@
         ]
       }
     },
-    "/api/system/security/auth/mfa/recovery-codes/regenerate": {
+    "/v1/auth/mfa/recovery-codes/regenerate": {
       "post": {
         "parameters": [],
         "requestRequired": [],
@@ -151,7 +177,7 @@
         ]
       }
     },
-    "/api/system/security/auth/mfa/totp": {
+    "/v1/auth/mfa/totp": {
       "delete": {
         "parameters": [],
         "requestRequired": [],
@@ -165,7 +191,7 @@
         ]
       }
     },
-    "/api/system/security/auth/mfa/totp/setup": {
+    "/v1/auth/mfa/totp/setup": {
       "post": {
         "parameters": [],
         "requestRequired": [
@@ -181,7 +207,7 @@
         ]
       }
     },
-    "/api/system/security/auth/mfa/totp/verify": {
+    "/v1/auth/mfa/totp/verify": {
       "post": {
         "parameters": [],
         "requestRequired": [
@@ -197,7 +223,7 @@
         ]
       }
     },
-    "/api/system/security/auth/refresh": {
+    "/v1/auth/refresh": {
       "post": {
         "parameters": [
           {
@@ -216,7 +242,7 @@
         "security": []
       }
     },
-    "/api/system/security/auth/sessions": {
+    "/v1/auth/sessions": {
       "get": {
         "parameters": [],
         "requestRequired": [],
@@ -230,7 +256,7 @@
         ]
       }
     },
-    "/api/system/security/auth/sessions/{sessionId}": {
+    "/v1/auth/sessions/{sessionId}": {
       "delete": {
         "parameters": [
           {
@@ -257,7 +283,7 @@
         ]
       }
     },
-    "/api/system/security/auth/token-exchange": {
+    "/v1/auth/token-exchange": {
       "post": {
         "parameters": [
           {
@@ -278,22 +304,7 @@
         "security": []
       }
     },
-    "/api/system/security/ssf/events": {
-      "post": {
-        "parameters": [],
-        "requestRequired": [
-          "set"
-        ],
-        "responses": [
-          "202",
-          "400",
-          "401",
-          "404"
-        ],
-        "security": []
-      }
-    },
-    "/api/v1/documents": {
+    "/v1/documents": {
       "get": {
         "parameters": [],
         "requestRequired": [],
@@ -331,7 +342,7 @@
         ]
       }
     },
-    "/api/v1/documents/{id}": {
+    "/v1/documents/{id}": {
       "delete": {
         "parameters": [
           {
@@ -370,36 +381,7 @@
         ]
       }
     },
-    "/api/v1/finance/transfer": {
-      "post": {
-        "parameters": [
-          {
-            "in": "header",
-            "name": "Idempotency-Key"
-          }
-        ],
-        "requestRequired": [
-          "amount",
-          "currency",
-          "destinationAccount",
-          "transactionId"
-        ],
-        "responses": [
-          "200",
-          "204",
-          "400",
-          "401",
-          "403",
-          "409",
-          "503"
-        ],
-        "security": [
-          "BearerAuth",
-          "DPoPProof"
-        ]
-      }
-    },
-    "/api/v1/showcase/profile": {
+    "/v1/profile": {
       "get": {
         "parameters": [],
         "requestRequired": [],
@@ -413,7 +395,7 @@
         ]
       }
     },
-    "/api/v1/showcase/security-context": {
+    "/v1/security-context": {
       "get": {
         "parameters": [],
         "requestRequired": [],
@@ -427,42 +409,47 @@
         ]
       }
     },
-    "/api/v1/showcase/test/protected": {
-      "get": {
+    "/v1/ssf/events": {
+      "post": {
         "parameters": [],
-        "requestRequired": [],
-        "responses": [
-          "200",
-          "401"
+        "requestRequired": [
+          "set"
         ],
-        "security": [
-          "BearerAuth",
-          "DPoPProof"
-        ]
-      }
-    },
-    "/api/v1/showcase/test/step-up": {
-      "get": {
-        "parameters": [],
-        "requestRequired": [],
         "responses": [
-          "200",
-          "401"
-        ],
-        "security": [
-          "BearerAuth",
-          "DPoPProof"
-        ]
-      }
-    },
-    "/healthz": {
-      "get": {
-        "parameters": [],
-        "requestRequired": [],
-        "responses": [
-          "200"
+          "202",
+          "400",
+          "401",
+          "404"
         ],
         "security": []
+      }
+    },
+    "/v1/test/protected": {
+      "get": {
+        "parameters": [],
+        "requestRequired": [],
+        "responses": [
+          "200",
+          "401"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
+      }
+    },
+    "/v1/test/step-up": {
+      "get": {
+        "parameters": [],
+        "requestRequired": [],
+        "responses": [
+          "200",
+          "401"
+        ],
+        "security": [
+          "BearerAuth",
+          "DPoPProof"
+        ]
       }
     }
   },
@@ -478,5 +465,5 @@
       "type": "apiKey"
     }
   },
-  "specVersion": "2026-06-16"
+  "specVersion": "2026-08-20"
 }

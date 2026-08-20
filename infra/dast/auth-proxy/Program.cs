@@ -81,8 +81,6 @@ app.Map("/{**catchAll}", async (HttpContext ctx, CancellationToken ct) =>
         bodyBytes = ms.ToArray();
     }
 
-    await Console.Error.WriteLineAsync($"[dbg] fwd {method} {url} body={bodyBytes.Length} bytes: {Encoding.UTF8.GetString(bodyBytes).Replace("\n", " ")}");
-
     HttpStatusCode status;
     HttpResponseMessage res;
     var attempts = 0;

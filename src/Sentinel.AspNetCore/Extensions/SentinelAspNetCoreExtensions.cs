@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Json;
@@ -28,6 +29,13 @@ public static class SentinelAspNetCoreExtensions
 
         services.Configure<JsonOptions>(options =>
         {
+            // G-XSS: ASP.NET Core's HTTP JSON pipeline defaults to
+            // UnsafeRelaxedJsonEscaping (raw <, >, &, ', " in output). When a
+            // consumer renders the JSON in an HTML context (innerHTML, v-html,
+            // ...), stored attacker markup would execute. Force the strict
+            // encoder so < becomes \u003C. Verified: .NET 10 Minimal APIs do
+            // NOT escape by default (JavaScriptEncoder.Default is NOT applied).
+            options.SerializerOptions.Encoder = JavaScriptEncoder.Default;
             options.SerializerOptions.TypeInfoResolverChain.Insert(0, AspNetCoreJsonContext.Default);
         });
         services.Configure<Microsoft.AspNetCore.Mvc.JsonOptions>(options =>

@@ -24,18 +24,16 @@ info:
 
 http:
   # Request 1: store an XSS payload as the document title (unique marker).
+  # SETUP-ONLY: no matchers here - a status-200/201 matcher on the POST would
+  # fire the finding on EVERY working API (the encoder fix makes the raw
+  # payload disappear from responses, so request 1 must not match by itself).
+  # Only request 2 decides: fire when the raw payload is reflected unencoded.
   - method: POST
     path:
       - "{{BaseURL}}/v1/documents"
     headers:
       Content-Type: application/json
     body: "{\"title\":\"SENTINELXSSPROBE<script>alert(1)</script>\",\"content\":\"xss-probe\"}"
-    matchers-condition: and
-    matchers:
-      - type: status
-        status:
-          - 200
-          - 201
 
   # Request 2: the list endpoint must NOT reflect the raw payload.
   # raw_body is case-preserving; the payload is echoed verbatim only when the

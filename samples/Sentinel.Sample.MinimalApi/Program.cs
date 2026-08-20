@@ -4,6 +4,7 @@ using System.Security.Authentication;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
@@ -147,6 +148,11 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 
 builder.Services.Configure<JsonOptions>(options =>
 {
+    // Force strict HTML-safe JSON output (see Sentinel.AspNetCore extension for
+    // the rationale): ASP.NET Core's Minimal API pipeline defaults to
+    // UnsafeRelaxedJsonEscaping, so stored <script> markup would be reflected
+    // raw. This host sets it again explicitly (belt-and-suspenders).
+    options.SerializerOptions.Encoder = JavaScriptEncoder.Default;
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, SampleJsonContext.Default);
 });
 

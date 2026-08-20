@@ -7,15 +7,13 @@
 # injected "owner" field, assigning the document to the attacker-controlled
 # subject and hiding it from the caller's own listing.
 #
-# Detection: create a document with an injected owner field, then list the
-# caller's documents. If the created document is MISSING from the listing,
-# the owner field was honored -> mass assignment finding. A hardened API
-# ignores the extra field: the document stays in the caller's list and the
-# template never fires.
-#
-# Fire-on-vulnerability semantics. Runs authenticated through the DPoP proxy
-# (both requests share the proxy's client identity); unauthenticated runs get
-# 401 and cannot match.
+# Detection: create a document with an injected owner field, then retrieve the
+# document by id. A hardened API ignores the extra field: the document stays
+# owned by the caller and GET /v1/documents/{id} returns 200. A vulnerable API
+# reassigns ownership away from the caller and the same GET returns 404.
+# Fire only on 404 (fire-on-vulnerability). Runs authenticated through the DPoP
+# proxy (both requests share the proxy's client identity); unauthenticated runs
+# get 401 on request 1 and cannot match.
 id: sentinel-mass-assignment
 info:
   name: Sentinel - mass assignment on entity creation must be rejected
@@ -29,22 +27,17 @@ info:
 
 http:
   # Request 1: create a document carrying an injected owner field.
-  # The id is extracted (internal variable) and re-checked in request 2.
+  # SETUP-ONLY: no matchers here (any matcher would fire the finding on every
+  # working API - the create always succeeds). The id is extracted as an
+  # internal variable; if the create fails the variable stays empty and
+  # request 2 falls back to the listing (200), which cannot match. Request 2
+  # carries the actual fire-on-vulnerability logic.
   - method: POST
     path:
       - "{{BaseURL}}/v1/documents"
     headers:
       Content-Type: application/json
     body: "{\"title\":\"mass-assignment-probe-{{randstr}}\",\"content\":\"probe\",\"owner\":\"attacker-controlled-sub\"}"
-    matchers-condition: and
-    matchers:
-      - type: status
-        status:
-          - 200
-          - 201
-      - type: dsl
-        dsl:
-          - "doc_id != ''"
     extractors:
       - type: regex
         part: body
@@ -54,18 +47,14 @@ http:
         internal: true
         name: doc_id
 
-  # Request 2: the caller's listing MUST still contain the document.
-  # If doc_id is absent from the list, the injected owner field was honored
-  # (the document was reassigned away from the caller) - mass assignment.
+  # Request 2: the caller MUST still be able to read the document it just
+  # created. A 404 means the injected owner field was honored (the document
+  # was reassigned away from the caller) - mass assignment. Any other status
+  # (200 on the doc, 200 on the fallback listing) is a non-result.
   - method: GET
     path:
-      - "{{BaseURL}}/v1/documents"
-    matchers-condition: and
+      - "{{BaseURL}}/v1/documents/{{doc_id}}"
     matchers:
       - type: status
         status:
-          - 200
-      - type: dsl
-        dsl:
-          - "doc_id != ''"
-          - "!contains(body, doc_id)"
+          - 404
