@@ -6,34 +6,34 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
-using Sentinel.EntityFrameworkCore;
 using Sentinel.EntityFrameworkCore.Models;
-using Sentinel.Redis;
-using Sentinel.Redis.Stores;
 using Sentinel.Security.Abstractions.Exceptions;
 using Sentinel.Security.Abstractions.Session;
 using StackExchange.Redis;
 
-namespace Sentinel.Infrastructure.Cache;
+namespace Sentinel.EntityFrameworkCore.Stores;
 
 /// <summary>
 ///     High-performance, secure, and allocation-optimized hybrid session blacklist cache.
-///     Uses PostgreSQL as the persistent source of truth, Redis as a volatile fast-path accelerator,
-///     and MemoryCache as a local L1 revocation-only fast-fail cache with thread-safe distributed
-///     proactive revocation propagation.
+///     Uses PostgreSQL as the persistent source of truth, an L2 <see cref="ISessionBlacklistCache"/>
+///     port adapter (e.g. Redis) as a volatile fast-path accelerator, and MemoryCache as a local
+///     L1 revocation-only fast-fail cache with thread-safe distributed proactive revocation propagation.
 /// </summary>
 /// <remarks>
 ///     SECURITY INVARIANT (P0): L1 NEVER caches a positive "session is active" decision. L1 stores only
 ///     confirmed revocations. Absence of an L1 entry is never treated as "session valid" – the common path
-///     still consults Redis (L2) and, on failure, PostgreSQL (L3). A strict 1-second degraded-mode marker is
-///     only stamped when Redis is unavailable, bounding any infrastructure-outage fail-open window to 1s.
+///     still consults the L2 cache and, on failure, PostgreSQL (L3). A strict 1-second degraded-mode marker is
+///     only stamped when L2 is unavailable, bounding any infrastructure-outage fail-open window to 1s.
 ///
-///     ISOLATION (P1): The proactive Pub/Sub channel is namespaced with the Redis <see cref="RedisOptions.KeyPrefix" />
-///     so that distinct environments (e.g. staging: vs prod:) sharing a single Redis cluster never cross-pollute
-///     each other's L1 revocation caches.
+///     ISOLATION (P1): The proactive Pub/Sub channel is namespaced by the composition-root-supplied
+///     <c>pubSubChannelPrefix</c> (pass the configured <c>RedisOptions.KeyPrefix</c> here) so that distinct environments
+///     (e.g. staging: vs prod:) sharing a single Redis cluster never cross-pollute each other's L1 revocation caches.
+///
+///     HEXAGONAL (DIP): This store depends strictly on the <see cref="ISessionBlacklistCache"/> port for its
+///     L2 accelerator - never on a concrete Redis adapter - so alternate L2 technologies are drop-in
+///     substitutable at the Composition Root.
 /// </remarks>
-public sealed class HybridSessionBlacklistCache : ISessionBlacklistCache,
-    Application.Common.Abstractions.ISessionBlacklistCache, IDisposable
+public sealed class HybridSessionBlacklistCache : ISessionBlacklistCache, IDisposable
 {
     // Strict 1-second cache used ONLY to prevent PostgreSQL stampedes when Redis is offline.
     private static readonly TimeSpan DegradedActiveTtl = TimeSpan.FromSeconds(1);
@@ -50,21 +50,21 @@ public sealed class HybridSessionBlacklistCache : ISessionBlacklistCache,
     private readonly ILogger<HybridSessionBlacklistCache> _logger;
     private readonly MemoryCache? _memoryCache;
     private readonly string _pubSubChannel;
-    private readonly RedisSessionBlacklistCache _redisCache;
+    private readonly ISessionBlacklistCache _l2Cache;
     private readonly IConnectionMultiplexer? _redisMultiplexer;
     private readonly TimeProvider _timeProvider;
 
     public HybridSessionBlacklistCache(
-        RedisSessionBlacklistCache redisCache,
+        ISessionBlacklistCache l2Cache,
         ILogger<HybridSessionBlacklistCache> logger,
         IDbContextFactory<SentinelSecurityDbContext> dbContextFactory,
         TimeProvider timeProvider,
-        IOptions<RedisOptions> redisOptions,
+        string pubSubChannelPrefix = "sentinel:",
         IMemoryCache? memoryCache = null,
         IOptions<MemoryCacheOptions>? memoryCacheOptions = null,
         IConnectionMultiplexer? redisMultiplexer = null)
     {
-        _redisCache = redisCache ?? throw new ArgumentNullException(nameof(redisCache));
+        _l2Cache = l2Cache ?? throw new ArgumentNullException(nameof(l2Cache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _dbContextFactory = dbContextFactory ?? throw new ArgumentNullException(nameof(dbContextFactory));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
@@ -78,8 +78,9 @@ public sealed class HybridSessionBlacklistCache : ISessionBlacklistCache,
         // P1 (Gap 2 fix): SetSize(1) is only permitted when the MemoryCache is strictly bounded by a SizeLimit.
         _hasSizeLimit = memoryCacheOptions?.Value?.SizeLimit.HasValue == true;
 
-        // P1 (Gap 1 fix): Namespace the pub/sub channel per environment/tenant using the Redis KeyPrefix.
-        var prefix = redisOptions?.Value.KeyPrefix ?? string.Empty;
+        // P1 (Gap 1 fix): Namespace the pub/sub channel per environment/tenant using the
+        // composition-root-supplied prefix (pass RedisOptions.KeyPrefix at registration).
+        var prefix = pubSubChannelPrefix ?? string.Empty;
         _pubSubChannel = string.IsNullOrWhiteSpace(prefix) ? "session:invalidations" : $"{prefix}session:invalidations";
 
         // P1 (Gap 3 fix): Eagerly subscribe during instantiation so idle replicas never miss broadcasts.
@@ -170,7 +171,7 @@ public sealed class HybridSessionBlacklistCache : ISessionBlacklistCache,
         // 3. Write-Through: Redis (Fast-Path Distributed Cache)
         try
         {
-            await _redisCache.BlacklistSessionAsync(hashedId, expiresAt, cancellationToken).ConfigureAwait(false);
+            await _l2Cache.BlacklistSessionAsync(hashedId, expiresAt, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -230,7 +231,7 @@ public sealed class HybridSessionBlacklistCache : ISessionBlacklistCache,
         try
         {
             var isRedisBlacklisted =
-                await _redisCache.IsBlacklistedAsync(hashedId, cancellationToken).ConfigureAwait(false);
+                await _l2Cache.IsBlacklistedAsync(hashedId, cancellationToken).ConfigureAwait(false);
             if (isRedisBlacklisted)
             {
                 SetL1Cache(l1RevokedKey, true, TimeSpan.FromMinutes(5));
@@ -282,7 +283,7 @@ public sealed class HybridSessionBlacklistCache : ISessionBlacklistCache,
                 {
                     try
                     {
-                        await _redisCache.BlacklistSessionAsync(hashedId, dbEntry.ExpiresAt, cancellationToken)
+                        await _l2Cache.BlacklistSessionAsync(hashedId, dbEntry.ExpiresAt, cancellationToken)
                             .ConfigureAwait(false);
                     }
                     catch (Exception ex) when (ex is RedisException or SocketException or TimeoutException
@@ -550,21 +551,6 @@ public sealed class HybridSessionBlacklistCache : ISessionBlacklistCache,
     private static readonly Action<ILogger, string, Exception?> _logPubSubError =
         LoggerMessage.Define<string>(LogLevel.Warning, new EventId(2012, "PubSubError"),
             "Failed to broadcast L1 proactive revocation event for Hashed ID: {HashedId}");
-
-    #endregion
-
-    #region Implicit/Interface Mappings
-
-    async Task Application.Common.Abstractions.ISessionBlacklistCache.BlacklistSessionAsync(string sessionId,
-        TimeSpan ttl, CancellationToken ct)
-    {
-        var expiresAt = _timeProvider.GetUtcNow().Add(ttl);
-        await BlacklistSessionAsync(sessionId, expiresAt, ct).ConfigureAwait(false);
-    }
-
-    async ValueTask<bool> Application.Common.Abstractions.ISessionBlacklistCache.IsSessionBlacklistedAsync(
-        string sessionId, CancellationToken ct) =>
-        await IsBlacklistedAsync(sessionId, ct).ConfigureAwait(false);
 
     #endregion
 }

@@ -9,8 +9,8 @@
     <!-- NuGet Package Metadata -->
     <IsPackable>true</IsPackable>
     <PackageId>NikaNats.Sentinel.Infrastructure</PackageId>
-    <Description>Infrastructure and integration layer for Sentinel OAuth 2.0 &amp; OpenID Connect including caching, cryptography, notifications, and persistence abstractions.</Description>
-    <PackageTags>sentinel;infrastructure;caching;cryptography;oauth2;openid;integration;</PackageTags>
+    <Description>Core infrastructure and integration layer for Sentinel OAuth 2.0 &amp; OpenID Connect including cryptography, notifications, and security abstractions.</Description>
+    <PackageTags>sentinel;infrastructure;cryptography;oauth2;openid;security;</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,17 +21,16 @@
     <PackageReference Include="Fluid.Core" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.Certificate" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
-    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
+    <!-- EF Core / Npgsql packages remain for SentinelDbContext + migrations only;
+         concrete adapter ASSEMBLIES and cache/Redis dependencies are fully decoupled (ADR-2026-002). -->
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
-    <PackageReference Include="StackExchange.Redis" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Sentinel.Application\Sentinel.Application.csproj" />
     <ProjectReference Include="..\Sentinel.Domain\Sentinel.Domain.csproj" />
-    <ProjectReference Include="..\Sentinel.EntityFrameworkCore\Sentinel.EntityFrameworkCore.csproj" />
-    <ProjectReference Include="..\Sentinel.Redis\Sentinel.Redis.csproj" />
     <ProjectReference Include="..\Sentinel.Security.Abstractions\Sentinel.Security.Abstractions.csproj" />
     <!-- <ProjectReference Include="..\Sentinel.Security.Captcha\Sentinel.Security.Captcha.csproj" /> -->
     <!-- <ProjectReference Include="..\Sentinel.Security.Tokens\Sentinel.Security.Tokens.csproj" /> -->

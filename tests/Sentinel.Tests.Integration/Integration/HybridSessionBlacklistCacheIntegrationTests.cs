@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 using Moq;
 using Sentinel.EntityFrameworkCore;
 using Sentinel.EntityFrameworkCore.Models;
-using Sentinel.Infrastructure.Cache;
+using Sentinel.EntityFrameworkCore.Stores;
 using Sentinel.Redis;
 using Sentinel.Redis.Stores;
 using Sentinel.Security.Abstractions.Exceptions;
@@ -81,7 +81,7 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
             NullLogger<HybridSessionBlacklistCache>.Instance,
             _dbContextFactory,
             TimeProvider.System,
-            Options.Create(_redisOptions),
+            _redisOptions.KeyPrefix,
             _memoryCache,
             _memoryCacheOptions,
             redisMultiplexer: _redisConnection);
@@ -168,7 +168,7 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
             NullLogger<HybridSessionBlacklistCache>.Instance,
             crashingDbFactoryMock.Object,
             TimeProvider.System,
-            Options.Create(_redisOptions),
+            _redisOptions.KeyPrefix,
             _memoryCache,
             _memoryCacheOptions);
 
@@ -221,7 +221,7 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
             NullLogger<HybridSessionBlacklistCache>.Instance,
             _dbContextFactory,
             TimeProvider.System,
-            Options.Create(_redisOptions),
+            _redisOptions.KeyPrefix,
             _memoryCache,
             _memoryCacheOptions);
 
@@ -257,7 +257,7 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
             NullLogger<HybridSessionBlacklistCache>.Instance,
             _dbContextFactory,
             TimeProvider.System,
-            Options.Create(_redisOptions),
+            _redisOptions.KeyPrefix,
             _memoryCache,
             _memoryCacheOptions);
 

@@ -82,7 +82,7 @@ This matrix maps international security standards, regulatory frameworks, and co
 - `src/Sentinel.Infrastructure/Cryptography/MlDsaSignatureVerifier.cs` (Native FIPS 204 ML-DSA Signature Verifier)
 - `src/Sentinel.Infrastructure/Cryptography/AesGcmEncryptionService.cs` (Envelope encryption + lazy re-wrap)
 - `src/Sentinel.Infrastructure/Cryptography/CryptographyOptions.cs` (KeyRing + ActiveKeyId config)
-- `src/Sentinel.Infrastructure/Cache/HybridSessionBlacklistCache.cs` (PostgreSQL + Redis Write-Through Cache)
+- `src/Sentinel.EntityFrameworkCore/Stores/HybridSessionBlacklistCache.cs` (PostgreSQL + L2-Port Write-Through Cache)
 - `src/Sentinel.AspNetCore/Infrastructure/KestrelCertificateReloader.cs` (TLS cert hot reload)
 - `src/Sentinel.AspNetCore/Stores/MtlsCertificateCache.cs` (mTLS cert cache)
 

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Sentinel.Redis.Stores;
 using Sentinel.Redis.Validators;
@@ -7,6 +8,7 @@ using Sentinel.Security.Abstractions.Idempotency;
 using Sentinel.Security.Abstractions.Nonce;
 using Sentinel.Security.Abstractions.Replay;
 using Sentinel.Security.Abstractions.Session;
+using Sentinel.Security.Abstractions.Token;
 
 namespace Sentinel.Redis.Extensions;
 
@@ -67,6 +69,21 @@ public static class RedisServiceExtensions
         services.AddSingleton<ISessionBlacklistCache>(sp => sp.GetRequiredService<RedisSessionBlacklistCache>());
 
         services.AddSingleton<IIdempotencyStore, RedisIdempotencyStore>();
+
+        return services;
+    }
+
+    /// <summary>
+    ///     Adds the Redis-backed <see cref="IEmailVerificationTokenStore" /> adapter (opt-in).
+    ///     Requires an <c>IConnectionMultiplexer</c> registration (provided by
+    ///     <see cref="AddRedisSecurityCaches(IServiceCollection, IConfiguration)" /> hosts).
+    /// </summary>
+    public static IServiceCollection AddRedisEmailVerificationTokens(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.TryAddSingleton<IEmailVerificationTokenStore>(sp =>
+            new EmailVerificationTokenStore(sp.GetRequiredService<IConnectionMultiplexer>()));
 
         return services;
     }

@@ -556,11 +556,13 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.EntityFrameworkCore": "[10.0.10, )",
+          "Microsoft.Extensions.Caching.Memory": "[10.0.10, )",
           "Microsoft.Extensions.DependencyInjection": "[10.0.10, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.10, )",
           "Microsoft.Extensions.Logging": "[10.0.10, )",
           "NikaNats.Sentinel.Security.Abstractions": "[1.0.0, )",
-          "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )"
+          "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )",
+          "StackExchange.Redis": "[3.0.17, )"
         }
       },
       "NikaNats.Sentinel.Infrastructure": {
@@ -570,16 +572,14 @@
           "Microsoft.AspNetCore.Authentication.Certificate": "[10.0.10, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.10, )",
           "Microsoft.EntityFrameworkCore": "[10.0.10, )",
-          "Microsoft.Extensions.Caching.StackExchangeRedis": "[10.0.10, )",
           "Microsoft.IdentityModel.JsonWebTokens": "[8.19.2, )",
           "NikaNats.Sentinel.Application": "[1.0.0, )",
           "NikaNats.Sentinel.DPoP": "[1.0.0, )",
           "NikaNats.Sentinel.Domain": "[1.0.0, )",
-          "NikaNats.Sentinel.EntityFrameworkCore": "[1.0.0, )",
           "NikaNats.Sentinel.Keycloak": "[1.0.0, )",
-          "NikaNats.Sentinel.Redis": "[1.0.0, )",
           "NikaNats.Sentinel.Security.Abstractions": "[1.0.0, )",
           "NikaNats.Sentinel.Security.Diagnostics": "[1.0.0, )",
+          "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )",
           "Sentinel.Providers.Vault": "[1.0.0, )",
           "StackExchange.Redis": "[3.0.17, )"
         }
@@ -691,9 +691,11 @@
         "dependencies": {
           "Microsoft.AspNetCore.Mvc.Testing": "[10.0.10, )",
           "Microsoft.EntityFrameworkCore": "[10.0.10, )",
+          "Microsoft.Extensions.Caching.StackExchangeRedis": "[10.0.10, )",
           "Microsoft.IdentityModel.JsonWebTokens": "[8.19.2, )",
           "NikaNats.Sentinel.Application": "[1.0.0, )",
           "NikaNats.Sentinel.AspNetCore": "[1.0.0, )",
+          "NikaNats.Sentinel.EntityFrameworkCore": "[1.0.0, )",
           "NikaNats.Sentinel.Infrastructure": "[1.0.0, )",
           "NikaNats.Sentinel.Redis": "[1.0.0, )",
           "NikaNats.Sentinel.SSF": "[1.0.0, )",

@@ -130,14 +130,6 @@
           "NikaNats.Sentinel.Security.Abstractions": "[1.0.0, )"
         }
       },
-      "NikaNats.Sentinel.EntityFrameworkCore": {
-        "type": "Project",
-        "dependencies": {
-          "Microsoft.EntityFrameworkCore": "[10.0.10, )",
-          "NikaNats.Sentinel.Security.Abstractions": "[1.0.0, )",
-          "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )"
-        }
-      },
       "NikaNats.Sentinel.Infrastructure": {
         "type": "Project",
         "dependencies": {
@@ -145,16 +137,14 @@
           "Microsoft.AspNetCore.Authentication.Certificate": "[10.0.10, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.10, )",
           "Microsoft.EntityFrameworkCore": "[10.0.10, )",
-          "Microsoft.Extensions.Caching.StackExchangeRedis": "[10.0.10, )",
           "Microsoft.IdentityModel.JsonWebTokens": "[8.19.2, )",
           "NikaNats.Sentinel.Application": "[1.0.0, )",
           "NikaNats.Sentinel.DPoP": "[1.0.0, )",
           "NikaNats.Sentinel.Domain": "[1.0.0, )",
-          "NikaNats.Sentinel.EntityFrameworkCore": "[1.0.0, )",
           "NikaNats.Sentinel.Keycloak": "[1.0.0, )",
-          "NikaNats.Sentinel.Redis": "[1.0.0, )",
           "NikaNats.Sentinel.Security.Abstractions": "[1.0.0, )",
           "NikaNats.Sentinel.Security.Diagnostics": "[1.0.0, )",
+          "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )",
           "Sentinel.Providers.Vault": "[1.0.0, )",
           "StackExchange.Redis": "[3.0.17, )"
         }
@@ -271,15 +261,6 @@
         "contentHash": "wNonj40aZxia+GtuBiiD6ZqVh4h6y5Nje1bGdmzZ8/ui0QRsAN+S0SIrLHFCEGbG9cDbeaE40sh+Lr7o9rRs6g==",
         "dependencies": {
           "Microsoft.EntityFrameworkCore": "10.0.10"
-        }
-      },
-      "Microsoft.Extensions.Caching.StackExchangeRedis": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.10, )",
-        "resolved": "10.0.10",
-        "contentHash": "E+3pfEY68WQh1ZVFTGDNK0JCoayzL3aIDgVHHM85HIbQO7MiABG14A7+ajHH2P/y3a4W2Rla5p2nzut3+mzoyQ==",
-        "dependencies": {
-          "StackExchange.Redis": "2.7.27"
         }
       },
       "Microsoft.IdentityModel.JsonWebTokens": {

@@ -68,10 +68,10 @@ flowchart TD
 - **Sentinel.Security.Diagnostics:** High-precision telemetry metrics, OpenTelemetry tracing, and HMAC-based privacy-preserving context hashers.
 
 ### 2.2 Integration Assemblies (Concrete Adapters - Decoupled)
-- **Sentinel.Redis:** Optional adapter implementing `IDpopNonceStore`, `IJtiReplayCache`, `ISessionBlacklistCache`, and `IIdempotencyStore` using high-speed StackExchange.Redis.
+- **Sentinel.Redis:** Optional adapter implementing `IDpopNonceStore`, `IJtiReplayCache`, `ISessionBlacklistCache`, `IIdempotencyStore`, and `IEmailVerificationTokenStore` using high-speed StackExchange.Redis.
 - **Sentinel.EntityFrameworkCore:** Optional relational database adapter implementing security stores using EF Core.
 - **Sentinel.Keycloak:** Integration adapter for Keycloak authority endpoints, OIDC token exchange, and backchannel logout, incl. `KeycloakTokenRefreshService` (implements `ITokenRefreshService`).
-- **Sentinel.Infrastructure:** Cross-cutting composition services (cryptography, notifications, template rendering) and the concrete Redis/EF Core adapter registrations. Note: it currently retains direct project references to `Sentinel.Redis` and `Sentinel.EntityFrameworkCore` (see ADR-2026-002).
+- **Sentinel.Infrastructure:** Cross-cutting composition services (cryptography, notifications, template rendering). Adapter assemblies are no longer referenced (see ADR-2026-002); concrete Redis/EF Core adapters are activated exclusively by the Host / Composition Root.
 
 ### 2.3 Host Integration & Composition
 - **Sentinel.AspNetCore:** Minimal API mapping extensions, request/response JSON serialization contexts, and core security middlewares.
@@ -136,11 +136,20 @@ Redis and database backends are treated as part of the security boundary. If the
   - *Negative:* Increased build-time code generation complexity; all custom DTOs must be explicitly annotated.
 
 ### ADR-2026-002: Pure Decoupled Hexagonal Architecture
-- **Context:** The previous infrastructure layer was tightly coupled to Redis, making it impossible for enterprise users to substitute other caching technologies without modifying the core codebase.
-- **Decision:** Core modules depend strictly on abstract ports defined in `Sentinel.Security.Abstractions`. Note: `Sentinel.Infrastructure` **still retains** project references to `Sentinel.Redis` and `Sentinel.EntityFrameworkCore` (`Sentinel.Infrastructure.csproj:33-34`) — the adapter decoupling intent is partially realized and remains tracked work.
+- **Context:** The previous infrastructure layer was tightly coupled to Redis and EF Core, violating the Dependency Inversion Principle. `Sentinel.Infrastructure` held direct project references to `Sentinel.Redis` and `Sentinel.EntityFrameworkCore`, and the multi-tier `HybridSessionBlacklistCache` depended on the concrete `RedisSessionBlacklistCache` adapter.
+- **Decision:** Core modules and `Sentinel.Infrastructure` depend strictly on abstract ports defined in `Sentinel.Security.Abstractions`. Direct project references to `Sentinel.Redis` and `Sentinel.EntityFrameworkCore` are removed from `Sentinel.Infrastructure.csproj`. The hybrid cache moved to `Sentinel.EntityFrameworkCore/Stores/` (its natural persistence home) and now depends on the `ISessionBlacklistCache` port for its L2 accelerator, with the Pub/Sub channel prefix supplied by the composition root (`RedisOptions.KeyPrefix`). Concrete persistence adapters remain registered exclusively at the Host / Composition Root level.
 - **Consequences:**
-  - *Positive:* Core modules can reference the adapter interfaces without compile-time coupling, enabling adapter substitution at the composition root.
-  - *Negative:* The remaining `Sentinel.Infrastructure` → `Sentinel.Redis`/`Sentinel.EntityFrameworkCore` references mean the composition layer is not yet fully DIP-clean; the host (Composition Root) registers the chosen concrete adapter during startup.
+  - *Positive:* Clean Hexagonal adapter boundaries - `Sentinel.Infrastructure` no longer compile-time couples to concrete storage adapters; the L2 cache behind the hybrid store is fully substitutable at the Composition Root.
+  - *Negative:* The host application must explicitly reference the storage adapters it activates, and pass environment namespacing (KeyPrefix) explicitly when wiring the hybrid cache.
+- **Composition Wiring (first-class):** `Sentinel.EntityFrameworkCore.Extensions.AddHybridSessionBlacklistCache()` decorates the registered L2 adapter with PostgreSQL write-through + L1 fail-closed caching. Registration-order contract (validated eagerly, fail-fast at startup):
+
+  ```csharp
+  builder.Services.AddRedisSecurityCaches(builder.Configuration.GetSection("Sentinel:Redis"));   // L2
+  builder.Services.AddDbContextFactory<SentinelSecurityDbContext>(o => o.UseNpgsql(securityCs)); // L3
+  builder.Services.AddHybridSessionBlacklistCache(o => o.PubSubChannelPrefix = "sentinel:");     // decorator (last)
+  ```
+
+- **Status:** ✅ COMPLETED / FULLY DECOUPLED
 
 ### ADR-2026-003: Timing Attack Jitter Injection
 - **Context:** Sub-millisecond execution deltas (0.8ms) between syntax checks and cryptographic signature verifications leak internal state, creating a timing oracle. Standard `Task.Delay` is bypassed by OS thread scheduling quantum jitter (15.6ms on Windows).
