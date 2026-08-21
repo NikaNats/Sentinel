@@ -1,17 +1,3 @@
-# Layer-2 observability overlay for the Sentinel FAPI 2.0 stack.
-#
-# Usage:
-#   docker compose -f docker-compose.yml -f infra/observability/docker-compose.observability.yml up -d --build
-#
-# Adds the collector/Prometheus/Loki/Tempo quartet and routes the API's OTLP
-# traffic (metrics/traces/logs) into it. The API image is unchanged - OTLP
-# export activates via OTEL_EXPORTER_OTLP_ENDPOINT and access-token jti
-# single-use enforcement via FeatureFlags__Auth__JtiReplayEnforcement.
-#
-# DEV-GATE ONLY: Loki (filesystem) and Tempo (local) are ephemeral by design -
-# the gate validates signal flow, not retention. Production observability lives
-# in the Kubernetes manifests (infra/k8s/otel-config.yaml) shipping to the SIEM
-# gateway with mTLS; durable/distributed storage is an ops deployment decision.
 services:
   collector:
     image: otel/opentelemetry-collector-contrib:0.127.0
@@ -68,7 +54,7 @@ services:
 
   sentinel-api:
     environment:
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4317
       OTEL_SERVICE_NAME: sentinel-api
       FeatureFlags__Auth__JtiReplayEnforcement: "true"
     depends_on:

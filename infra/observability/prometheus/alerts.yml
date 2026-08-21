@@ -10,8 +10,8 @@ groups:
   - name: sentinel-auth-attacks
     rules:
       - alert: HighDPoPFailures
-        expr: rate(auth_dpop_failures_total[1m]) > 0.1
-        for: 10s
+        expr: (increase(auth_dpop_failures_total[1m]) > 0) or (auth_dpop_failures_total > 0)
+        for: 0s
         labels:
           severity: warning
           team: security
@@ -19,8 +19,8 @@ groups:
           summary: "Elevated DPoP validation failures (possible replay or policy abuse)"
 
       - alert: TokenReplayDetected
-        expr: rate(auth_jti_replays_total[1m]) > 0
-        for: 10s
+        expr: (increase(auth_jti_replays_total[1m]) > 0) or (auth_jti_replays_total > 0)
+        for: 0s
         labels:
           severity: critical
           team: security

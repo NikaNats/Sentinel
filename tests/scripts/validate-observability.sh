@@ -91,29 +91,18 @@ GATE_CLIENT_ID="$(curl -ksf "$KEYCLOAK_URL/admin/realms/sentinel/clients?clientI
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   | node -p "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); d.length?d[0].id:''")"
 
-# sentinel-gate: PS256, direct access grants, DPoP-bound tokens, audience mapper
-# so the JWT's aud contains sentinel-api (Sentinel enforces Keycloak__Audience).
-CLIENT_JSON='{"clientId":"sentinel-gate","enabled":true,"publicClient":true,"standardFlowEnabled":false,"directAccessGrantsEnabled":true,"attributes":{"access.token.signed.response.alg":"PS256","access.token.lifespan":"300","dpop.bound.access.tokens":"true"},"protocolMappers":[{"name":"sentinel-api-audience","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","config":{"included.client.audience":"sentinel-api","access.token.claim":"true","id.token.claim":"false","access.tokenResponse.claim":"false"}}]}'
+# sentinel-gate: PS256, confidential client_credentials with ACR & Audience mappers
+CLIENT_JSON='{"clientId":"sentinel-gate","name":"Sentinel Gate Client","enabled":true,"publicClient":false,"secret":"gate-client-secret","clientAuthenticatorType":"client-secret","serviceAccountsEnabled":true,"standardFlowEnabled":false,"directAccessGrantsEnabled":false,"attributes":{"access.token.signed.response.alg":"PS256","access.token.lifespan":"300","dpop.bound.access.tokens":"true"},"defaultClientScopes":["roles","profile","email"],"protocolMappers":[{"name":"sentinel-api-audience","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","config":{"included.custom.audience":"sentinel-api","access.token.claim":"true","id.token.claim":"false"}},{"name":"acr-gate","protocol":"openid-connect","protocolMapper":"oidc-hardcoded-claim-mapper","config":{"claim.name":"acr","claim.value":"acr2","jsonType":"String","access.token.claim":"true","id.token.claim":"false"}}]}'
 if [ -z "$GATE_CLIENT_ID" ]; then
-  GATE_CLIENT_ID="$(curl -ksf -X POST "$KEYCLOAK_URL/admin/realms/sentinel/clients" \
+  curl -ksf -X POST "$KEYCLOAK_URL/admin/realms/sentinel/clients" \
     -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
-    -d "$CLIENT_JSON" -o /dev/null -w '%{redirect_url}' | sed 's#.*/##')"
+    -d "$CLIENT_JSON" >/dev/null
+  GATE_CLIENT_ID="$(curl -ksf "$KEYCLOAK_URL/admin/realms/sentinel/clients?clientId=sentinel-gate" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" \
+    | node -p "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); d.length?d[0].id:''")"
   ok "created sentinel-gate client (id=$GATE_CLIENT_ID)"
 else
   ok "sentinel-gate client exists (id=$GATE_CLIENT_ID)"
-fi
-
-GATE_USER_ID="$(curl -ksf "$KEYCLOAK_URL/admin/realms/sentinel/users?username=gate-user" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  | node -p "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); d.length?d[0].id:''")"
-if [ -z "$GATE_USER_ID" ]; then
-  curl -ksf -X POST "$KEYCLOAK_URL/admin/realms/sentinel/users" \
-    -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
-    -d "{\"username\":\"gate-user\",\"enabled\":true,\"emailVerified\":true,\"credentials\":[{\"type\":\"password\",\"value\":\"$KEYCLOAK_GATE_PASSWORD\",\"temporary\":false}]}" \
-    >/dev/null
-  ok "created gate-user"
-else
-  ok "gate-user exists"
 fi
 
 echo "==> [3/6] minting DPoP-bound token pool (fail-close on unbounded tokens)"
@@ -121,7 +110,7 @@ NODE_TLS_REJECT_UNAUTHORIZED=0 node tests/scripts/mint-dpop-pool.mjs \
   --count 2 --out "$POOL" \
   --keycloak-url "$KEYCLOAK_URL" \
   --realm sentinel --client sentinel-gate \
-  --username gate-user --password "$KEYCLOAK_GATE_PASSWORD"
+  --client-secret gate-client-secret
 ok "pool written to $POOL"
 
 echo "==> [4/6] emitting security events"
@@ -138,15 +127,22 @@ ok "10 malformed DPoP proofs rejected with 401"
 # Event B: access-token jti replay. Request 1 consumes the nonce rotation;
 # request 2 re-presents the SAME token with a FRESH proof -> TOKEN_REPLAY_ALERT.
 TOKEN="$(node tests/scripts/sign-dpop-proof.mjs --pool "$POOL" --index 0 --print-token \
-  --method GET --url "$API_URL/v1/profile" | head -n1)"
+  --method GET --url "$API_URL/v1/profile")"
 PROOF1="$(node tests/scripts/sign-dpop-proof.mjs --pool "$POOL" --index 0 \
   --method GET --url "$API_URL/v1/profile")"
 RESP1="$(curl -s -D - -o /dev/null \
   -H "Authorization: DPoP $TOKEN" -H "DPoP: $PROOF1" -H "X-Correlation-ID: $CORRELATION_ID" \
   "$API_URL/v1/profile")"
 STATUS1="$(printf '%s' "$RESP1" | head -n1 | awk '{print $2}')"
-NONCE="$(printf '%s' "$RESP1" | grep -i '^DPoP-Nonce:' | tr -d '\r' | sed 's/^[^:]*: *//')"
-[ "$STATUS1" = "200" ] || fail "first DPoP request failed (HTTP $STATUS1)"
+NONCE="$(printf '%s' "$RESP1" | grep -i '^DPoP-Nonce:' | tr -d '\r' | sed 's/^[^:]*: *//' || true)"
+
+if [ "$STATUS1" != "200" ]; then
+  echo "::error::First DPoP request failed with HTTP $STATUS1"
+  echo "Response headers: $RESP1"
+  "${COMPOSE_CMD[@]}" logs --tail=40 sentinel-api
+  fail "first DPoP request failed (HTTP $STATUS1)"
+fi
+
 [ -n "$NONCE" ] || fail "no DPoP-Nonce returned on first request"
 ok "first request accepted (200) with DPoP-Nonce rotation"
 
@@ -174,10 +170,19 @@ done
 ok "Prometheus: HighDPoPFailures + TokenReplayDetected firing"
 
 echo "==> [6/6] asserting Loki SIEM log + Tempo trace"
-sleep 5
-LOKI_JSON="$(curl -sf -G "$LOKI_URL/loki/api/v1/query_range" \
-  --data-urlencode 'query={service_name="sentinel-api"} |= "TOKEN_REPLAY_ALERT"' \
-  --data-urlencode 'limit=10' 2>/dev/null || true)"
+LOKI_FOUND=false
+LOKI_JSON=""
+for i in $(seq 1 15); do
+  LOKI_JSON="$(curl -sf -G "$LOKI_URL/loki/api/v1/query_range" \
+    --data-urlencode 'query={service_name="sentinel-api"} |= "TOKEN_REPLAY_ALERT"' \
+    --data-urlencode 'limit=10' 2>/dev/null || true)"
+  if printf '%s' "$LOKI_JSON" | grep -q 'TOKEN_REPLAY_ALERT'; then
+    LOKI_FOUND=true
+    break
+  fi
+  sleep 2
+done
+
 printf '%s' "$LOKI_JSON" | node -e "
   const d=JSON.parse(require('fs').readFileSync(0,'utf8'));
   const lines=[];
@@ -193,9 +198,19 @@ printf '%s' "$LOKI_JSON" | node -e "
 "
 ok "Loki SIEM alert verified (PII-safe)"
 
-TEMPO_JSON="$(curl -sf -G "$TEMPO_URL/api/search" \
-  --data-urlencode 'tags=service.name=sentinel-api' \
-  --data-urlencode 'limit=10' 2>/dev/null || true)"
+TEMPO_FOUND=false
+TEMPO_JSON=""
+for i in $(seq 1 15); do
+  TEMPO_JSON="$(curl -sf -G "$TEMPO_URL/api/search" \
+    --data-urlencode 'tags=service.name=sentinel-api' \
+    --data-urlencode 'limit=10' 2>/dev/null || true)"
+  if printf '%s' "$TEMPO_JSON" | grep -q 'traces'; then
+    TEMPO_FOUND=true
+    break
+  fi
+  sleep 2
+done
+
 printf '%s' "$TEMPO_JSON" | node -e "
   const d=JSON.parse(require('fs').readFileSync(0,'utf8'));
   const traces=(d.traces||[]).filter(t=>t.durationMs>0 && /^[0-9a-f]{32}\$/i.test(t.traceID||''));

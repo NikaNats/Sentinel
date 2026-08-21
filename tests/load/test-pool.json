@@ -1,0 +1,67 @@
+{
+  "generated_at": 1787262853,
+  "issuer": "self",
+  "token_url": null,
+  "keys": [
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "P_hro20zJDmW6tJGWXSAFLUxaIsMdNdVhOriVdh8RaM",
+        "y": "wKc3VZMaLXigiymbureAIsaDQTdq9qRaDofPWbv-6pk",
+        "d": "b2vDHmngpDEjPg-xgP5mQ329p6Qk2LdCIYz6DgW1Hew"
+      },
+      "jkt": "jleKzYVQyR2tvK_cRntZiFGPm9H-AslFkgdm6QnBYNk",
+      "token": null,
+      "mint_note": "self-signed pool (no Keycloak endpoint)"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "uAnvd4flwTA5Kra3V1_fEZNsFVFbIxIukcw96RoWA7E",
+        "y": "_Hnfd2D9xnk6a6FOgLIEhlyJDlp8IZAxissL6lcWb78",
+        "d": "syxgQYM_Rd28raQLovrL29Aa-xGH-9A7jk4CwROiL4I"
+      },
+      "jkt": "0Gw28pyNWYkedTxAc5AOPQ_GRYYJOoD0qW74ZFxCtPI",
+      "token": null,
+      "mint_note": "self-signed pool (no Keycloak endpoint)"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "BoTsf5d7ocKCq3FRIexUiSVGlgj21R1wTmsDFuttw60",
+        "y": "LlhXDWgURCe2C3dJKuHv7ffQTlsS2nuJSE9Wj9koE3U",
+        "d": "icDt_3l_80MhJW2VJhEEQ2pdQduLCmG0lTJE0XAmWNQ"
+      },
+      "jkt": "8gVor-c9S4BOY9ojhp66Xq_b4iq-_sKP7yCmPAMY-mY",
+      "token": null,
+      "mint_note": "self-signed pool (no Keycloak endpoint)"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "lfxqeXX-qNy98sgiqShr-OpaiUwA0NfxJEUGKvIrqt0",
+        "y": "CDeswARBk-0kZW0FudkzH9ain8N5T99WWD3oJQlLFF8",
+        "d": "XWx6FBqTVea4U8bhAdTIcVXtPiujQQ6OQrKJqaUE6e0"
+      },
+      "jkt": "M4lJDTda-HPCf_XT9i2Nmi7iJrAX8pX3l6z8oQGUflQ",
+      "token": null,
+      "mint_note": "self-signed pool (no Keycloak endpoint)"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "9Q9ypGmrIoVP65EiflV6v6B5PX2RLD7lq414TBs4-88",
+        "y": "0uLFmB3U9NW64bexhbeuFetWfj45i4SBaAHZCim_aqI",
+        "d": "uq72Sc7KA-JZvorJBWgDhOthMDjr15DLIutN9AexT9c"
+      },
+      "jkt": "BdiD26nzwjVV-KXBnzh8VR60xRxsNy1QFm95yNTva_A",
+      "token": null,
+      "mint_note": "self-signed pool (no Keycloak endpoint)"
+    }
+  ]
+}

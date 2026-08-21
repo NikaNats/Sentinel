@@ -89,34 +89,46 @@ if (builder.Configuration.GetSection("Kestrel:CertificateReloader:Path").Exists(
 
 builder.Services.AddOpenApi();
 
-    // OpenTelemetry configuration (docs/OTEL_DOTNET_INTEGRATION_SNIPPET.md)
-    builder.Services.AddOpenTelemetry()
-        .ConfigureResource(resource => resource
-            .AddService(serviceName: builder.Configuration["OTEL_SERVICE_NAME"] ?? "Sentinel.Sample.MinimalApi")
-            .AddAttributes(new Dictionary<string, object>
-            {
-                ["deployment.environment"] = builder.Environment.EnvironmentName,
-                ["service.version"] = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown"
-            }))
-        .WithMetrics(metrics => metrics
-            .AddMeter(AuthTelemetry.MeterName)
-            .AddPrometheusExporter())
-        .WithTracing(tracing => tracing
-            .AddSource(AuthTelemetry.SourceName)
-            .AddAspNetCoreInstrumentation()
-            .AddOtlpExporter())
-        .WithLogging(logging =>
-        {
-            // Structured security events (TOKEN_REPLAY_ALERT, DPOP_FAILURE, ...) are only
-            // shipped to the OTLP endpoint (collector -> Loki) when one is configured.
-            // Without an endpoint the in-process logger still emits them locally.
-            if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
-            {
-                logging.AddOtlpExporter();
-            }
-        });
+var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
 
-    var allowedCorsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+// OpenTelemetry configuration (docs/OTEL_DOTNET_INTEGRATION_SNIPPET.md)
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource
+        .AddService(serviceName: builder.Configuration["OTEL_SERVICE_NAME"] ?? "sentinel-api")
+        .AddAttributes(new Dictionary<string, object>
+        {
+            ["deployment.environment"] = builder.Environment.EnvironmentName,
+            ["service.version"] = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown"
+        }))
+    .WithMetrics(metrics => metrics
+        .AddMeter(AuthTelemetry.MeterName)
+        .AddPrometheusExporter())
+    .WithTracing(tracing => tracing
+        .AddSource(AuthTelemetry.SourceName)
+        .AddAspNetCoreInstrumentation()
+        .AddOtlpExporter(options =>
+        {
+            if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+            {
+                options.Endpoint = new Uri(otlpEndpoint);
+            }
+        }))
+    .WithLogging(logging =>
+    {
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+        {
+            logging.AddOtlpExporter(options =>
+            {
+                options.Endpoint = new Uri(otlpEndpoint);
+            });
+        }
+    }, options =>
+    {
+        options.IncludeFormattedMessage = true;
+        options.IncludeScopes = true;
+    });
+
+var allowedCorsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 if (allowedCorsOrigins.Length > 0)
 {
     builder.Services.AddCors(options =>
@@ -148,19 +160,11 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 
 builder.Services.Configure<JsonOptions>(options =>
 {
-    // Force strict HTML-safe JSON output (see Sentinel.AspNetCore extension for
-    // the rationale): ASP.NET Core's Minimal API pipeline defaults to
-    // UnsafeRelaxedJsonEscaping, so stored <script> markup would be reflected
-    // raw. This host sets it again explicitly (belt-and-suspenders).
     options.SerializerOptions.Encoder = JavaScriptEncoder.Default;
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, SampleJsonContext.Default);
 });
 
-// Loaded ONCE at startup and shared by every TLS 1.3 client (JwtBearer backchannel
-// + outbound HttpClient factories). Previously created per-factory-invocation and
-// captured in a callback closure, leaking one native X509Certificate2 handle per
-// client. Disposed on application stop via IHostApplicationLifetime.
-#pragma warning disable CA2000 // Ownership transfers to the handler closures; disposed via app.Lifetime.ApplicationStopped.
+#pragma warning disable CA2000 // Ownership transfers to handler closures; disposed via app.Lifetime.ApplicationStopping.
 X509Certificate2? trustedCa = null;
 if (!string.IsNullOrWhiteSpace(localCaPath) && File.Exists(localCaPath))
 {
@@ -169,8 +173,6 @@ if (!string.IsNullOrWhiteSpace(localCaPath) && File.Exists(localCaPath))
     var certEnd = pem.IndexOf("-----END CERTIFICATE-----", StringComparison.Ordinal);
     if (certStart >= 0 && certEnd >= 0)
     {
-        // Extract Base64 payload between PEM headers, strip ALL whitespace (handles CRLF/BOM),
-        // decode to raw DER bytes, then load certificate via X509CertificateLoader (no obsolescence).
         var headerLen = "-----BEGIN CERTIFICATE-----".Length;
         var base64 = pem.Substring(certStart + headerLen, certEnd - certStart - headerLen);
         base64 = Regex.Replace(base64, @"\s+", "");
@@ -179,7 +181,6 @@ if (!string.IsNullOrWhiteSpace(localCaPath) && File.Exists(localCaPath))
     }
     else
     {
-        // Fallback: assume DER file
         trustedCa = X509CertificateLoader.LoadCertificate(File.ReadAllBytes(localCaPath));
     }
 }
@@ -324,11 +325,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     detailedError = "Missing or invalid token";
                 }
 
-                // Static, safe header for WWW-Authenticate (RFC 6750) - no user-controlled content
                 context.Response.Headers.Append("WWW-Authenticate",
                     "Bearer error=\"invalid_token\", error_description=\"Authentication required\"");
 
-                // Detailed error goes ONLY into the JSON body (RFC 7807)
                 var problem = new ProblemDetails
                 {
                     Type = "/errors/unauthorized",
@@ -342,9 +341,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             },
             OnAuthenticationFailed = context =>
             {
-                // Enterprise Cryptographic & PKI Lifecycle: kid-miss telemetry
-                // JwtBearerHandler natively calls ConfigurationManager.RequestRefresh()
-                // on SecurityTokenSignatureKeyNotFoundException; we observe and record.
                 if (context.Exception is SecurityTokenSignatureKeyNotFoundException)
                 {
                     try
@@ -380,17 +376,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
         options.RequireHttpsMetadata = !string.Equals(keycloakSection["RequireHttpsMetadata"], "false",
             StringComparison.OrdinalIgnoreCase);
-        // Use default HttpClient (system trust store) for JWKS fetch; CA is in system trust store via update-ca-certificates.
-        // options.Backchannel = new HttpClient(tls13HandlerFactory());
 
         var configuredAuthority = keycloakSection["Authority"] ?? string.Empty;
         var allowedIssuers = new List<string> { configuredAuthority };
 
+        if (configuredAuthority.Contains("keycloak:8443", StringComparison.OrdinalIgnoreCase))
+        {
+            allowedIssuers.Add(configuredAuthority.Replace("keycloak:8443", "localhost:8443", StringComparison.OrdinalIgnoreCase));
+        }
+
         var testPublicKey = builder.Configuration["Security:TestPublicKey"];
-        // Zero Dev Bypasses: the static test key is honoured ONLY in development.
-        // In any other environment a stray Security__TestPublicKey config value must
-        // NOT downgrade validation (no static key, no 60s clock skew, no disabled
-        // OIDC discovery/JWKS rotation).
         if (isDevelopment &&
             !configuredAuthority.Contains("localhost:8443", StringComparison.OrdinalIgnoreCase))
         {
@@ -417,6 +412,11 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
 
     var allowedIssuers = new List<string> { configuredAuthority };
 
+    if (configuredAuthority.Contains("keycloak:8443", StringComparison.OrdinalIgnoreCase))
+    {
+        allowedIssuers.Add(configuredAuthority.Replace("keycloak:8443", "localhost:8443", StringComparison.OrdinalIgnoreCase));
+    }
+
     var testPublicKey = builder.Configuration["Security:TestPublicKey"];
     if (isDevelopment &&
         !configuredAuthority.Contains("localhost:8443", StringComparison.OrdinalIgnoreCase))
@@ -431,9 +431,6 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
     options.TokenValidationParameters.ValidateLifetime = true;
     options.TokenValidationParameters.ValidateIssuerSigningKey = true;
 
-    // Zero Dev Bypasses: static test-key validation (and its 60s clock skew) is
-    // strictly development-only. Production always validates against the Keycloak
-    // JWKS with ClockSkew = TimeSpan.Zero.
     if (isDevelopment && !string.IsNullOrWhiteSpace(testPublicKey))
     {
         options.TokenValidationParameters.ClockSkew = TimeSpan.FromSeconds(60);
@@ -443,26 +440,23 @@ builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.Authenticatio
 
         var key = new ECDsaSecurityKey(ecdsa) { KeyId = "test-authority-key" };
         options.TokenValidationParameters.IssuerSigningKey = key;
-        options.TokenValidationParameters.IssuerSigningKeys = new[] { key };
+        options.TokenValidationParameters.IssuerSigningKeys = [key];
 
         options.ConfigurationManager = null;
         options.MetadataAddress = null!;
         options.Authority = null!;
     }
-else
-        {
-            options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
-        }
+    else
+    {
+        options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
+    }
 
-        // Enterprise Cryptographic & PKI Lifecycle: configure JWKS refresh interval
-        // Default RefreshInterval=30s (DoS protection per ASP.NET Core team guidance).
-        // Shorter interval = faster rotation convergence; operator-tunable.
-        var refreshIntervalSeconds = keycloakSection.GetValue<int>("JwksRefreshIntervalSeconds");
-        if (refreshIntervalSeconds > 0 && options.ConfigurationManager is ConfigurationManager<OpenIdConnectConfiguration> cm)
-        {
-            cm.RefreshInterval = TimeSpan.FromSeconds(refreshIntervalSeconds);
-        }
-    });
+    var refreshIntervalSeconds = keycloakSection.GetValue<int>("JwksRefreshIntervalSeconds");
+    if (refreshIntervalSeconds > 0 && options.ConfigurationManager is ConfigurationManager<OpenIdConnectConfiguration> cm)
+    {
+        cm.RefreshInterval = TimeSpan.FromSeconds(refreshIntervalSeconds);
+    }
+});
 
 builder.Services
     .AddRedisSecurityCaches(builder.Configuration.GetSection("Sentinel:Redis"))
@@ -471,6 +465,10 @@ builder.Services
     .AddRarValidation(builder.Configuration)
     .AddKeycloakIntegration(builder.Configuration.GetSection("Sentinel:Keycloak"))
     .AddInfrastructureLayer(builder.Configuration);
+
+// Privacy-preserving hashing for GDPR/SIEM logging (64-hex daily-keyed HMAC)
+builder.Services.AddSingleton<IPrivacyKeyManager>(new DefaultPrivacyKeyManager());
+builder.Services.AddSingleton<IPrivacyPreservingHasher, PrivacyPreservingHasher>();
 
 _ = builder.Services.AddHttpClient("keycloak-admin").ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
 _ = builder.Services.AddHttpClient(typeof(IUmaPermissionService).FullName!)
@@ -515,10 +513,8 @@ builder.Services.AddSingleton<ISsfTokenValidator>(sp =>
     new SsfTokenValidator(
         sp.GetRequiredService<IConfiguration>(),
         sp.GetRequiredService<IWebHostEnvironment>(),
-        sp.GetService<
-            IConfigurationManager<OpenIdConnectConfiguration>>() // GetService უსაფრთხოდ დააბრუნებს null-ს თუ არ არსებობს
+        sp.GetService<IConfigurationManager<OpenIdConnectConfiguration>>()
     ));
-
 
 builder.Services
     .AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, SecurityAuthRevocationServiceAdapter>();
@@ -557,45 +553,42 @@ builder.Services.AddSingleton<DocumentRepository>();
 
 var app = builder.Build();
 
-// Release the single shared trusted-CA handle on shutdown (see tls13HandlerFactory above).
-// Use ApplicationStopping so in-flight outbound TLS calls during grace period still work.
 if (trustedCa is not null)
 {
     app.Lifetime.ApplicationStopping.Register(trustedCa.Dispose);
 }
 
-    // RFC 7807 ProblemDetails globally - no Developer Exception Page (Zero Dev Bypasses)
-    app.UseExceptionHandler(errorApp =>
+app.UseExceptionHandler(errorApp =>
+{
+    errorApp.Run(async context =>
     {
-        errorApp.Run(async context =>
+        if (context.Response.HasStarted)
         {
-            if (context.Response.HasStarted)
-            {
-                return;
-            }
+            return;
+        }
 
-            var statusCode = context.Response.StatusCode != StatusCodes.Status200OK
-                ? context.Response.StatusCode
-                : StatusCodes.Status500InternalServerError;
+        var statusCode = context.Response.StatusCode != StatusCodes.Status200OK
+            ? context.Response.StatusCode
+            : StatusCodes.Status500InternalServerError;
 
-            context.Response.StatusCode = statusCode;
-            context.Response.ContentType = "application/problem+json; charset=utf-8";
+        context.Response.StatusCode = statusCode;
+        context.Response.ContentType = "application/problem+json; charset=utf-8";
 
-            var problem = new ProblemDetails
-            {
-                Type = "/errors/internal",
-                Title = statusCode == StatusCodes.Status500InternalServerError
-                    ? "Unexpected error"
-                    : "Request failed",
-                Detail = "An unexpected error occurred while processing the request.",
-                Status = statusCode,
-                Extensions = { ["traceId"] = context.TraceIdentifier }
-            };
+        var problem = new ProblemDetails
+        {
+            Type = "/errors/internal",
+            Title = statusCode == StatusCodes.Status500InternalServerError
+                ? "Unexpected error"
+                : "Request failed",
+            Detail = "An unexpected error occurred while processing the request.",
+            Status = statusCode,
+            Extensions = { ["traceId"] = context.TraceIdentifier }
+        };
 
-            var json = JsonSerializer.Serialize(problem, SampleJsonContext.Default.ProblemDetails);
-            await context.Response.WriteAsync(json);
-        });
+        var json = JsonSerializer.Serialize(problem, SampleJsonContext.Default.ProblemDetails);
+        await context.Response.WriteAsync(json);
     });
+});
 
 app.UseForwardedHeaders();
 app.UseHttpsRedirection();
@@ -605,15 +598,12 @@ if (allowedCorsOrigins.Length > 0)
 }
 
 app.UseRateLimiter();
-// CorrelationId/DPoP must run BEFORE authentication so the correlation id baggage is
-// attached before token validation and SIEM security events (TOKEN_REPLAY_ALERT) emit.
 app.UseSentinelPreAuthenticationSecurity();
 app.UseAuthentication();
 app.UseAuthorization();
-// mTLS binding + ACR validation require an authenticated principal.
 app.UseSentinelPostAuthenticationSecurity();
 app.MapOpenApi();
-app.MapPrometheusScrapingEndpoint(); // GET /metrics - scraped by Prometheus (SRE soak/spike/capacity gates, sre-alerts.yaml)
+app.MapPrometheusScrapingEndpoint();
 app.MapScalarApiReference("/docs", options =>
 {
     options.Title = "Sentinel API Documentation";
@@ -642,6 +632,19 @@ app.MapFinanceEndpoints(financePrefix);
 app.MapShowcaseEndpoints(showcasePrefix);
 
 app.Run();
+
+internal sealed class DefaultPrivacyKeyManager : IPrivacyKeyManager
+{
+    private static readonly byte[] MasterPepper =
+    [
+        0x5E, 0x2A, 0xC1, 0x9B, 0x77, 0x44, 0xD8, 0x13,
+        0xA6, 0x0F, 0x3B, 0xE9, 0x81, 0x50, 0xCC, 0x27,
+        0x92, 0x4D, 0x1E, 0xB0, 0x63, 0xFA, 0x09, 0x35,
+        0xC8, 0x72, 0xE5, 0x14, 0x8D, 0x4A, 0x6F, 0xD1
+    ];
+
+    public ReadOnlySpan<byte> GetMasterPepper() => MasterPepper;
+}
 
 internal sealed record SampleInfoResponse(string Service, string Docs, EndpointMap Endpoints);
 

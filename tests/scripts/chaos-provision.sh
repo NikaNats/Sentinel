@@ -139,14 +139,16 @@ provision_keycloak_gate() {
     -H "Authorization: Bearer $ADMIN_TOKEN" \
     | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[0]["id"] if d else "")')
 
-  # sentinel-gate: PS256, direct access grants, DPoP-bound tokens, and an
-  # audience mapper so the JWT's aud contains sentinel-api (Sentinel enforces
-  # Keycloak__Audience - a token without it is rejected with invalid_token).
-  CLIENT_JSON='{"clientId":"sentinel-gate","enabled":true,"publicClient":true,"standardFlowEnabled":false,"directAccessGrantsEnabled":true,"attributes":{"access.token.signed.response.alg":"PS256","access.token.lifespan":"300","dpop.bound.access.tokens":"true"},"protocolMappers":[{"name":"sentinel-api-audience","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","config":{"included.client.audience":"sentinel-api","access.token.claim":"true","id.token.claim":"false","access.tokenResponse.claim":"false"}}]}'
+  # sentinel-gate: PS256, confidential client_credentials (service account), DPoP-bound tokens, audience mapper
+  # so the JWT's aud contains sentinel-api (Sentinel enforces Keycloak__Audience).
+  CLIENT_JSON='{"clientId":"sentinel-gate","enabled":true,"publicClient":false,"secret":"gate-client-secret","clientAuthenticatorType":"client-secret","serviceAccountsEnabled":true,"standardFlowEnabled":false,"directAccessGrantsEnabled":false,"attributes":{"access.token.signed.response.alg":"PS256","access.token.lifespan":"300","dpop.bound.access.tokens":"true"},"protocolMappers":[{"name":"sentinel-api-audience","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","config":{"included.custom.audience":"sentinel-api","access.token.claim":"true","id.token.claim":"false"}}]}'
   if [ -z "$GATE_CLIENT_ID" ]; then
-    GATE_CLIENT_ID=$(curl -ksf -X POST "$KEYCLOAK_URL/admin/realms/sentinel/clients" \
+    curl -ksf -X POST "$KEYCLOAK_URL/admin/realms/sentinel/clients" \
       -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
-      -d "$CLIENT_JSON" -o /dev/null -w '%{redirect_url}' | sed 's#.*/##')
+      -d "$CLIENT_JSON" >/dev/null
+    GATE_CLIENT_ID=$(curl -ksf "$KEYCLOAK_URL/admin/realms/sentinel/clients?clientId=sentinel-gate" \
+      -H "Authorization: Bearer $ADMIN_TOKEN" \
+      | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[0]["id"] if d else "")')
     echo "created sentinel-gate client (id=$GATE_CLIENT_ID)"
   else
     MAPPER_NAME=$(curl -ksf "$KEYCLOAK_URL/admin/realms/sentinel/clients/$GATE_CLIENT_ID/protocol-mappers/models" \
@@ -155,7 +157,7 @@ provision_keycloak_gate() {
     if [ -z "$MAPPER_NAME" ]; then
       curl -ksf -X POST "$KEYCLOAK_URL/admin/realms/sentinel/clients/$GATE_CLIENT_ID/protocol-mappers/models" \
         -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
-        -d '{"name":"sentinel-api-audience","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","config":{"included.client.audience":"sentinel-api","access.token.claim":"true","id.token.claim":"false","access.tokenResponse.claim":"false"}}' \
+        -d '{"name":"sentinel-api-audience","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","config":{"included.custom.audience":"sentinel-api","access.token.claim":"true","id.token.claim":"false"}}' \
         >/dev/null
       echo "added sentinel-api-audience mapper to existing client"
     fi
@@ -181,7 +183,7 @@ mint_pool() {
     --out "$POOL_OUT" \
     --keycloak-url "$KEYCLOAK_URL" \
     --realm sentinel --client sentinel-gate \
-    --username gate-user --password "$KEYCLOAK_GATE_PASSWORD"
+    --client-secret gate-client-secret
   echo "OK: DPoP-bound pool written to $POOL_OUT"
 }
 
