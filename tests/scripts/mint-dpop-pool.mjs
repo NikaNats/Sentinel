@@ -81,7 +81,7 @@ async function mintViaKeycloak(cfg, jwk) {
     const bodyParams = {
         grant_type: grantType,
         client_id: cfg.client,
-        scope: 'openid profile',
+        scope: 'openid profile email',
     };
 
     if (grantType === 'client_credentials') {
@@ -96,15 +96,12 @@ async function mintViaKeycloak(cfg, jwk) {
         }
     }
 
-    const hostHeader = new URL(cfg.keycloak_url).host.replace('localhost', 'keycloak');
-
     const body = new URLSearchParams(bodyParams);
     const res = await fetch(tokenUrl, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'DPoP': proof,
-            'Host': hostHeader,
         },
         body,
     });

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Playwright;
+using Xunit;
 
 namespace Sentinel.Tests.Integration.Federation;
 
@@ -39,6 +40,8 @@ public sealed class WebAuthnMds3Tests : IAsyncLifetime
         payloadJson.Should().Contain("Sentinel hermetic test authenticator",
             "MDS3 mock must be serving the expected blob JWT");
 
+        // Allow the probe request to settle in the mock counter
+        await Task.Delay(100, TestContext.Current.CancellationToken);
         var fetchesBefore = _fixture.Mds3FetchCount();
         _output.WriteLine($"MDS3 fetch count before test: {fetchesBefore}");
 
@@ -66,9 +69,9 @@ public sealed class WebAuthnMds3Tests : IAsyncLifetime
         session.Page.Url.Should().NotContain($"localhost:{_fixture.CallbackPort}",
             "Registration must not succeed — callback should never be reached");
 
-        // Assert: MDS3 mock was NEVER queried (Keycloak uses truststore, not metadata)
-        var fetchesAfter = _fixture.Mds3FetchCount();
-        fetchesAfter.Should().Be(fetchesBefore,
+        // Assert: MDS3 mock was NEVER queried by Keycloak during registration
+        var delta = _fixture.Mds3FetchCount() - fetchesBefore;
+        delta.Should().Be(0,
             "Keycloak 26.6.4 has no MDS3 acquisition feature (keycloak/keycloak#9509); " +
             "attestation trust is anchored on the configured truststore, so the mock is never queried");
 

@@ -9,10 +9,10 @@
 // Usage:
 //   node tests/scripts/sign-dpop-proof.mjs --pool <pool.json> --index 0 \
 //     --method GET --url http://localhost:5260/v1/profile [--nonce <n>] \
-//     [--print-token]
+//     [--token-only]
 //
-// Prints the signed proof on one line. With --print-token the pool entry's
-// access token is printed alone on a single line.
+// Prints the signed proof on one line. With --token-only (or --print-token)
+// the pool entry's access token is printed on a single line.
 import { readFileSync } from 'node:fs';
 import { signProof } from './mint-dpop-pool.mjs';
 
@@ -30,14 +30,7 @@ function parseArgs(argv) {
             opts[name] = 'true';
         }
     }
-    return {
-        pool: opts.pool ?? null,
-        url: opts.url ?? null,
-        method: opts.method ?? 'GET',
-        index: Number(opts.index ?? 0),
-        nonce: opts.nonce ?? null,
-        print_token: ['1', 'true'].includes(opts.print_token) || ['1', 'true'].includes(opts.token_only),
-    };
+    return opts;
 }
 
 async function main() {
@@ -46,21 +39,22 @@ async function main() {
     if (!opts.url) throw new Error('--url is required');
 
     const pool = JSON.parse(readFileSync(opts.pool, 'utf8'));
-    const entry = pool.keys[opts.index];
-    if (!entry) throw new Error(`pool has no key at index ${opts.index}`);
+    const index = Number(opts.index ?? 0);
+    const entry = pool.keys[index];
+    if (!entry) throw new Error(`pool has no key at index ${index}`);
     if (!entry.token) {
-        throw new Error(`pool entry ${opts.index} has no DPoP-bound access token (mint with --keycloak-url)`);
+        throw new Error(`pool entry ${index} has no DPoP-bound access token (mint with --keycloak-url)`);
     }
 
-    if (opts.print_token) {
+    if (opts.print_token || opts.token_only) {
         console.log(entry.token);
         return;
     }
 
     const proof = signProof(entry.jwk, {
-        method: opts.method,
+        method: opts.method ?? 'GET',
         url: opts.url,
-        nonce: opts.nonce,
+        nonce: opts.nonce ?? null,
     });
 
     console.log(proof);

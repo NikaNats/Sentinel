@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -eu
+export MSYS_NO_PATHCONV=1
 
 # Self-locating: always write artifacts next to this script regardless of the
 # invoking CWD (CI runs `bash infra/certs/generate-certs.sh` from the repo root).
@@ -36,9 +37,11 @@ openssl req -x509 \
   -extensions ca_ext \
   -sha384
 
-openssl req -nodes \
-  -newkey ec:<(openssl ecparam -name secp384r1) \
-  -keyout keycloak.key \
+# Generate EC private key portably (no /dev/fd process substitution)
+openssl ecparam -name secp384r1 -genkey -noout -out keycloak.key
+
+openssl req -new \
+  -key keycloak.key \
   -out keycloak.csr \
   -subj "/CN=keycloak/O=Sentinel Security/C=GE"
 
@@ -68,12 +71,6 @@ openssl x509 -req \
   -sha256
 
 chmod 400 ca.key
-# keycloak.key must be readable by the Keycloak container (runs as UID 1000 /
-# 'jboss'), which reads it through a bind-mount at /etc/x509/https/tls.key.
-# 400 would only grant read to the host owner (e.g. CI runner UID 1001), so the
-# container process would hit AccessDeniedException on startup. 444 keeps it
-# read-only for everyone (dev/CI cert; never production) and rm -f still allows
-# regeneration since unlink only needs directory write permission.
 chmod 444 keycloak.key
 chmod 444 ca.crt keycloak.crt
 

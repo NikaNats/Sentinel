@@ -23,6 +23,8 @@
 #
 # Requires: kubectl, openssl, node, python3 (mint mode), dotnet (stack mode).
 set -euo pipefail
+export MSYS_NO_PATHCONV=1
+
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
@@ -60,9 +62,10 @@ provision_stack() {
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
   # API serving cert signed by the repo CA (SAN covers the in-cluster DNS names).
-  openssl req -new -newkey ec:<(openssl ecparam -name secp384r1) -nodes \
-    -keyout "$WORK/api.key" -out "$WORK/api.csr" \
+  openssl ecparam -name secp384r1 -genkey -noout -out "$WORK/api.key" >/dev/null 2>&1
+  openssl req -new -key "$WORK/api.key" -out "$WORK/api.csr" \
     -subj "/CN=sentinel-api/O=Sentinel Security/C=GE" >/dev/null 2>&1
+
   cat > "$WORK/api.ext" <<EOF
 authorityKeyIdentifier=keyid,issuer
 basicConstraints=CA:FALSE

@@ -24,6 +24,7 @@
 # Requires: docker, curl, node (24+), sed/awk, openssl-free (certs via repo).
 # Used by the observability-gate job in .github/workflows/security-pipeline.yml.
 set -euo pipefail
+export MSYS_NO_PATHCONV=1
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
@@ -37,13 +38,12 @@ KEYCLOAK_GATE_PASSWORD="${KEYCLOAK_GATE_PASSWORD:-gate-pass}"
 
 COMPOSE_CMD=(docker compose -f docker-compose.yml -f infra/observability/docker-compose.observability.yml)
 
-WORK="$(mktemp -d)"
-POOL="$WORK/pool.json"
+POOL="tests/load/dpop-pool-obs.json"
 CORRELATION_ID="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen)"
 
 cleanup() {
   "${COMPOSE_CMD[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
-  rm -rf "$WORK"
+  rm -f "$POOL"
 }
 trap cleanup EXIT
 
@@ -114,27 +114,26 @@ NODE_TLS_REJECT_UNAUTHORIZED=0 node tests/scripts/mint-dpop-pool.mjs \
 ok "pool written to $POOL"
 
 echo "==> [4/6] emitting security events"
-# Event A: burst of malformed DPoP proofs -> auth_dpop_failures_total
+# Event A: burst of malformed DPoP proofs -> auth_dpop_failures_total (with 100ms spacing to avoid rate-limiter 429)
 for _ in $(seq 1 10); do
   STATUS="$(curl -s -o /dev/null -w '%{http_code}' \
     -H 'Authorization: DPoP not.a.jwt' \
     -H 'DPoP: not.a.real.dpop.proof' \
-    "$API_URL/v1/profile")"
+    "$API_URL/v1/profile" || true)"
   [ "$STATUS" = "401" ] || fail "malformed DPoP proof was not rejected (HTTP $STATUS)"
+  sleep 0.1
 done
 ok "10 malformed DPoP proofs rejected with 401"
 
 # Event B: access-token jti replay. Request 1 consumes the nonce rotation;
 # request 2 re-presents the SAME token with a FRESH proof -> TOKEN_REPLAY_ALERT.
-TOKEN="$(node tests/scripts/sign-dpop-proof.mjs --pool "$POOL" --index 0 --print-token \
-  --method GET --url "$API_URL/v1/profile")"
-PROOF1="$(node tests/scripts/sign-dpop-proof.mjs --pool "$POOL" --index 0 \
-  --method GET --url "$API_URL/v1/profile")"
+TOKEN="$(node tests/scripts/sign-dpop-proof.mjs --pool "$POOL" --index 0 --token-only --method GET --url "$API_URL/v1/profile")"
+PROOF1="$(node tests/scripts/sign-dpop-proof.mjs --pool "$POOL" --index 0 --method GET --url "$API_URL/v1/profile")"
 RESP1="$(curl -s -D - -o /dev/null \
   -H "Authorization: DPoP $TOKEN" -H "DPoP: $PROOF1" -H "X-Correlation-ID: $CORRELATION_ID" \
-  "$API_URL/v1/profile")"
-STATUS1="$(printf '%s' "$RESP1" | head -n1 | awk '{print $2}')"
-NONCE="$(printf '%s' "$RESP1" | grep -i '^DPoP-Nonce:' | tr -d '\r' | sed 's/^[^:]*: *//' || true)"
+  "$API_URL/v1/profile" || true)"
+STATUS1="$(printf '%s\n' "$RESP1" | awk '/^HTTP\// {code=$2} END {print code}')"
+NONCE="$(printf '%s\n' "$RESP1" | awk -F': ' 'tolower($1) == "dpop-nonce" {print $2}' | tr -d '\r\n' || true)"
 
 if [ "$STATUS1" != "200" ]; then
   echo "::error::First DPoP request failed with HTTP $STATUS1"
@@ -146,11 +145,12 @@ fi
 [ -n "$NONCE" ] || fail "no DPoP-Nonce returned on first request"
 ok "first request accepted (200) with DPoP-Nonce rotation"
 
-PROOF2="$(node tests/scripts/sign-dpop-proof.mjs --pool "$POOL" --index 0 \
-  --method GET --url "$API_URL/v1/profile" --nonce "$NONCE")"
-STATUS2="$(curl -s -o /dev/null -w '%{http_code}' \
+PROOF2="$(node tests/scripts/sign-dpop-proof.mjs --pool "$POOL" --index 0 --method GET --url "$API_URL/v1/profile" --nonce "$NONCE")"
+RESP2="$(curl -s -D - -o /dev/null \
   -H "Authorization: DPoP $TOKEN" -H "DPoP: $PROOF2" -H "X-Correlation-ID: $CORRELATION_ID" \
-  "$API_URL/v1/profile")"
+  "$API_URL/v1/profile" || true)"
+STATUS2="$(printf '%s\n' "$RESP2" | awk '/^HTTP\// {code=$2} END {print code}')"
+
 [ "$STATUS2" = "401" ] || fail "replayed access token was NOT rejected (HTTP $STATUS2)"
 ok "replayed access token rejected with 401 (auth_jti_replays_total + TOKEN_REPLAY_ALERT)"
 
