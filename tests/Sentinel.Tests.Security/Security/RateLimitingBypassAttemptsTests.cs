@@ -13,17 +13,21 @@ namespace Sentinel.Tests.Security;
 [Collection("Sentinel Integration")]
 public sealed class RateLimitingBypassAttemptsTests(SentinelApiFactory factory)
 {
-    private readonly HttpClient client = factory.CreateClient();
+    private readonly HttpClient _client = factory.CreateClient();
 
-    [Fact(Skip = "Rate limiter not working in TestServer environment - all 200 requests succeed instead of ~25. Tracking issue: #XXX")]
+    [Fact(DisplayName =
+        "🛡️ Rate Limiting: Spoofed X-Forwarded-For headers with same user token MUST NOT bypass rate limit (Permit=20, Queue=5 -> Max 25 Success)")]
     public async Task RepeatedRequests_WithSpoofedXForwardedForHeaders_DoNotBypassRateLimit()
     {
-        var requestUrl = new Uri(client.BaseAddress!, "/v1/test/protected").ToString();
+        var requestUrl = new Uri(_client.BaseAddress!, "/v1/test/protected").ToString();
 
         var successCount = 0;
         var rateLimitedCount = 0;
+        var totalRequests = 200;
 
-        var tasks = Enumerable.Range(0, 200).Select(async i =>
+        // 200 concurrent requests from the same identity (sub: rate-limit-user),
+        // each presenting a different spoofed source IP via X-Forwarded-For.
+        var tasks = Enumerable.Range(0, totalRequests).Select(async i =>
         {
             using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new ECDsaSecurityKey(ecdsa));
@@ -37,10 +41,14 @@ public sealed class RateLimitingBypassAttemptsTests(SentinelApiFactory factory)
 
             var jkt = ComputeEcThumbprint(jwkObject);
             var token = TestTokenIssuer.MintAccessToken(jkt, subject: "rate-limit-user");
+
             using var request = CreateSignedRequest(ecdsa, jwkObject, token, HttpMethod.Get, requestUrl);
+
+            // Attempt to evade the rate limiter by rotating source IPs.
             request.Headers.TryAddWithoutValidation("X-Forwarded-For", $"203.0.113.{i % 254 + 1}");
 
-            using var response = await client.SendAsync(request, CancellationToken.None);
+            using var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
+
             if (response.StatusCode == HttpStatusCode.OK)
             {
                 Interlocked.Increment(ref successCount);
@@ -53,11 +61,18 @@ public sealed class RateLimitingBypassAttemptsTests(SentinelApiFactory factory)
 
         await Task.WhenAll(tasks);
 
-        // TODO: Rate limiting not working in test environment - all 200 requests succeed instead of ~25 (20 permits + 5 queue)
-        // With per-IP SlidingWindowLimiter (PermitLimit=20, QueueLimit=5), expect ~25 successes
-        // Investigating why rate limiter middleware isn't invoked in TestServer environment
-        successCount.Should().BeLessThanOrEqualTo(25);
-        rateLimitedCount.Should().BeGreaterThan(0);
+        // 1. The identity partition (sub:rate-limit-user) must cap the user:
+        //    20 permits (PermitLimit) + 5 queued (QueueLimit) = at most 25 successes.
+        successCount.Should().BeLessThanOrEqualTo(25,
+            "Authenticated users must not bypass rate limits by rotating IP addresses. Identity partitioning must restrict them to permit + queue limit.");
+
+        // 2. Requests exceeding the identity quota must be throttled with HTTP 429.
+        rateLimitedCount.Should().BeGreaterThan(0,
+            "Requests exceeding the identity quota must be throttled with HTTP 429.");
+
+        // 3. Every request must either succeed within quota or be throttled - no 5xx leaks.
+        (successCount + rateLimitedCount).Should().Be(totalRequests,
+            "Every request must either succeed within quota or fail with 429 (no 500 errors).");
     }
 
     private static HttpRequestMessage CreateSignedRequest(
@@ -93,13 +108,14 @@ public sealed class RateLimitingBypassAttemptsTests(SentinelApiFactory factory)
 
     private static string ComputeEcThumbprint(Dictionary<string, string> jwk)
     {
-var canonical = JsonSerializer.Serialize(new Dictionary<string, string>
+        var canonical = JsonSerializer.Serialize(new Dictionary<string, string>
         {
             ["crv"] = jwk["crv"] ?? "P-256",
             ["kty"] = jwk["kty"] ?? "EC",
             ["x"] = jwk["x"]!,
             ["y"] = jwk["y"]!
         }, TestJsonContext.Default.DictionaryStringString);
+
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
         return Base64UrlEncoder.Encode(hash);
     }
