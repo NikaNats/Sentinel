@@ -267,7 +267,11 @@ jobs:
         if: matrix.test-project == 'tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj'
         run: |
           CLI="tests/Sentinel.Tests.Integration/bin/Release/net10.0/playwright.ps1"
-          sudo pwsh "$CLI" install --with-deps chromium
+          # Browsers MUST be installed as the runner user (HOME=/home/runner) - running
+          # `install` under sudo places them in /root/.cache where the test process
+          # cannot find them. Only the system library dependencies need root.
+          pwsh "$CLI" install chromium
+          sudo pwsh "$CLI" install-deps chromium
 
       - name: Test
         if: matrix.test-project != 'tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj'

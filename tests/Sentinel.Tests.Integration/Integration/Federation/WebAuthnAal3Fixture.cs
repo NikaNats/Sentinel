@@ -946,11 +946,25 @@ public sealed class WebAuthnAal3Fixture : IAsyncLifetime
         await CreateUserAsync(RogueUsername, TestPassword, ["webauthn-register"], Mds3RealmName);
 
         _playwright = await Microsoft.Playwright.Playwright.CreateAsync();
-        _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        try
         {
-            Headless = true,
-            Args = ["--no-sandbox", "--disable-dev-shm-usage"]
-        });
+            _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+            {
+                Headless = true,
+                Args = ["--no-sandbox", "--disable-dev-shm-usage"]
+            });
+        }
+        catch (PlaywrightException ex) when (ex.Message.Contains("Executable doesn't exist", StringComparison.OrdinalIgnoreCase))
+        {
+            // Self-healing: the workflow-level browser install may land in a different
+            // user cache (e.g. sudo HOME=/root). Re-install as THIS process' user, then retry.
+            Microsoft.Playwright.Program.Main(["install", "chromium"]);
+            _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+            {
+                Headless = true,
+                Args = ["--no-sandbox", "--disable-dev-shm-usage"]
+            });
+        }
 
         _callbackServer = new CallbackServer(_callbackPort);
     }
