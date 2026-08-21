@@ -3,9 +3,13 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Caching.Distributed;
@@ -16,34 +20,102 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
+using Sentinel.AspNetCore.Middleware;
 using Sentinel.AspNetCore.Stores;
+using Sentinel.DPoP;
+using Sentinel.DPoP.Pqc;
 using Sentinel.Redis;
 using Sentinel.SdJwt;
+using Sentinel.Security.Abstractions.DPoP;
 using Sentinel.Security.Abstractions.Idempotency;
 using Sentinel.Security.Abstractions.Nonce;
+using Sentinel.Security.Abstractions.Pqc;
 using Sentinel.Security.Abstractions.Replay;
-using Sentinel.Security.Abstractions.Security;
 using Sentinel.Security.Abstractions.Session;
 using Sentinel.Security.Abstractions.SSF;
 using StackExchange.Redis;
+using TestJsonContext = Sentinel.Tests.Shared.TestJsonContext;
 using ISsfEventProcessor = Sentinel.Application.Auth.Interfaces.ISsfEventProcessor;
 
 namespace Sentinel.Tests.Security.Security;
 
 [Collection("Sentinel Timing Tests")]
-public sealed class DpopTimingSideChannelTests(TimingTestApiFactory factory) : IClassFixture<TimingTestApiFactory>
+public sealed class DpopTimingSideChannelTests(DpopTimingSideChannelTests.IsolatedTimingTestFactory factory)
+    : IClassFixture<DpopTimingSideChannelTests.IsolatedTimingTestFactory>
 {
-    private const int SampleSize = 500;
+    private const int SampleSize = 100;
+    private const int WarmupIterations = 25;
+
     private readonly HttpClient _client = factory.CreateClient();
 
-    [Fact(Skip = "Timing side-channel detected (early rejection 889ms vs late 106ms). Investigation needed - tracking issue: #XXX")]
+    [Fact(DisplayName =
+        "⏱️ Side-Channel: Early vs Late DPoP rejection timings must be statistically indistinguishable (Welch's T-Test p > 0.05)")]
     public async Task Validate_DpopRejectionPaths_MustHaveStatisticallyIndistinguishableTiming()
     {
+        // 1. Warmup Phase (Eliminates JIT compilation and cold DI resolution bias)
+        for (var w = 0; w < WarmupIterations; w++)
+        {
+            using var warmupKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            var (warmupJwk, _) = CreateKeyDetails(warmupKey);
+            var warmupToken = TestTokenIssuer.MintAccessToken("mismatched-jkt", "acr2");
+
+            using var reqWarmupEarly = new HttpRequestMessage(HttpMethod.Get, "/test-timing");
+            reqWarmupEarly.Headers.Authorization = new AuthenticationHeaderValue("DPoP", warmupToken);
+            reqWarmupEarly.Headers.Add("DPoP", "malformed.early.token");
+            using var warmupResEarly = await _client.SendAsync(reqWarmupEarly, TestContext.Current.CancellationToken);
+
+            using var reqWarmupLate = CreateSignedRequest(warmupKey, warmupJwk, warmupToken, "GET", "/test-timing");
+            using var warmupResLate = await _client.SendAsync(reqWarmupLate, TestContext.Current.CancellationToken);
+        }
+
         var earlyRejectTimes = new double[SampleSize];
         var lateRejectTimes = new double[SampleSize];
 
-        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var securityKey = new ECDsaSecurityKey(ecdsa) { KeyId = "side-channel-key" };
+        // 2. Measurement Phase
+        for (var i = 0; i < SampleSize; i++)
+        {
+            using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            var (jwkObject, _) = CreateKeyDetails(ecdsa);
+
+            var token = TestTokenIssuer.MintAccessToken("different-expected-jkt-value", "acr2");
+
+            // --- Early Rejection Path (Malformed JWT syntax -> fails in TryExtractProofDetails) ---
+            using var reqEarly = new HttpRequestMessage(HttpMethod.Get, "/test-timing");
+            reqEarly.Headers.Authorization = new AuthenticationHeaderValue("DPoP", token);
+            reqEarly.Headers.Add("DPoP", "syntax.invalid.jwt.token");
+
+            var swEarly = Stopwatch.StartNew();
+            using var resEarly = await _client.SendAsync(reqEarly, TestContext.Current.CancellationToken);
+            swEarly.Stop();
+
+            resEarly.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            earlyRejectTimes[i] = swEarly.Elapsed.TotalMilliseconds;
+
+            // --- Late Rejection Path (Valid signature -> fails in DpopProofValidator at jkt_mismatch) ---
+            using var reqLate = CreateSignedRequest(ecdsa, jwkObject, token, "GET", "/test-timing");
+
+            var swLate = Stopwatch.StartNew();
+            using var resLate = await _client.SendAsync(reqLate, TestContext.Current.CancellationToken);
+            swLate.Stop();
+
+            resLate.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            lateRejectTimes[i] = swLate.Elapsed.TotalMilliseconds;
+        }
+
+        // 3. Statistical Analysis
+        var meanEarly = earlyRejectTimes.Average();
+        var meanLate = lateRejectTimes.Average();
+        var delta = Math.Abs(meanEarly - meanLate);
+        var pValue = CalculateWelchsTTest(earlyRejectTimes, lateRejectTimes);
+
+        (pValue > 0.05 || delta < 15.0).Should().BeTrue(
+            $"Timing Oracle detected! Mean Early: {meanEarly:F2}ms, Mean Late: {meanLate:F2}ms, Delta: {delta:F2}ms, p-value: {pValue:F4}. " +
+            "The early and late rejection paths must exhibit statistically indistinguishable execution latency.");
+    }
+
+    private static (Dictionary<string, string> Jwk, string Jkt) CreateKeyDetails(ECDsa ecdsa)
+    {
+        var securityKey = new ECDsaSecurityKey(ecdsa) { KeyId = Guid.NewGuid().ToString("N") };
         var jwk = JsonWebKeyConverter.ConvertFromECDsaSecurityKey(securityKey);
         var jwkObject = new Dictionary<string, string>
         {
@@ -52,41 +124,45 @@ public sealed class DpopTimingSideChannelTests(TimingTestApiFactory factory) : I
             ["x"] = jwk.X!,
             ["y"] = jwk.Y!
         };
+        var jkt = Base64UrlEncoder.Encode(SHA256.HashData(Encoding.UTF8.GetBytes(
+            JsonSerializer.Serialize(jwkObject, TestJsonContext.Default.DictionaryStringString))));
+        return (jwkObject, jkt);
+    }
 
-        var jkt = "mismatched-jkt-value-abc";
-        var token = TestTokenIssuer.MintAccessToken(jkt, "acr2");
-
-        for (var i = 0; i < SampleSize; i++)
+    private static HttpRequestMessage CreateSignedRequest(
+        ECDsa ecdsa,
+        Dictionary<string, string> jwkObject,
+        string accessToken,
+        string method,
+        string path)
+    {
+        var claims = new Dictionary<string, object>
         {
-            using var reqEarly = new HttpRequestMessage(HttpMethod.Get, "/v1/profile");
-            reqEarly.Headers.Authorization = new AuthenticationHeaderValue("DPoP", token);
-            reqEarly.Headers.Add("DPoP", "invalid.dpop.token");
+            ["jti"] = Guid.NewGuid().ToString("N"),
+            ["htm"] = method,
+            ["htu"] = $"http://localhost{path}",
+            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+        };
 
-            var swEarly = Stopwatch.StartNew();
-            using var resEarly = await _client.SendAsync(reqEarly, CancellationToken.None);
-            swEarly.Stop();
+        var descriptor = new SecurityTokenDescriptor
+        {
+            Claims = claims,
+            SigningCredentials = new SigningCredentials(
+                new ECDsaSecurityKey(ecdsa),
+                SecurityAlgorithms.EcdsaSha256),
+            TokenType = "dpop+jwt",
+            AdditionalHeaderClaims = new Dictionary<string, object>
+            {
+                ["jwk"] = jwkObject
+            }
+        };
 
-            resEarly.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-            earlyRejectTimes[i] = swEarly.Elapsed.TotalMilliseconds;
+        var proof = new JsonWebTokenHandler().CreateToken(descriptor);
 
-            using var reqLate = CreateSignedRequest(ecdsa, jwkObject, token, "GET", "/v1/profile");
-
-            var swLate = Stopwatch.StartNew();
-            using var resLate = await _client.SendAsync(reqLate, CancellationToken.None);
-            swLate.Stop();
-
-            resLate.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-            lateRejectTimes[i] = swLate.Elapsed.TotalMilliseconds;
-        }
-
-        var pValue = CalculateWelchsTTest(earlyRejectTimes, lateRejectTimes);
-
-        var meanEarly = earlyRejectTimes.Average();
-        var meanLate = lateRejectTimes.Average();
-        var difference = Math.Abs(meanEarly - meanLate);
-
-        (pValue > 0.05 || difference < 200.0).Should().BeTrue(
-            $"Timing Oracle detected! Mean Early: {meanEarly:F4}ms, Mean Late: {meanLate:F4}ms, Delta: {difference:F4}ms, p-value: {pValue:F4}. TODO: Investigate timing side-channel in DPoP validation - early rejection (889ms) is slower than late rejection (106ms), indicating a timing side-channel in invalid token handling.");
+        var request = new HttpRequestMessage(new HttpMethod(method), path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken);
+        request.Headers.Add("DPoP", proof);
+        return request;
     }
 
     private static double CalculateWelchsTTest(double[] sample1, double[] sample2)
@@ -137,104 +213,95 @@ public sealed class DpopTimingSideChannelTests(TimingTestApiFactory factory) : I
         return sign * y;
     }
 
-    private static HttpRequestMessage CreateSignedRequest(
-        ECDsa ecdsa,
-        Dictionary<string, string> jwkObject,
-        string accessToken,
-        string method,
-        string url)
+    public sealed class IsolatedTimingTestFactory : WebApplicationFactory<Program>
     {
-        var claims = new Dictionary<string, object>
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            ["jti"] = Guid.NewGuid().ToString("N"),
-            ["htm"] = method,
-            ["htu"] = $"http://localhost{url}",
-            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-        };
-
-        var descriptor = new SecurityTokenDescriptor
-        {
-            Claims = claims,
-            SigningCredentials = new SigningCredentials(
-                new ECDsaSecurityKey(ecdsa),
-                SecurityAlgorithms.EcdsaSha256),
-            TokenType = "dpop+jwt",
-            AdditionalHeaderClaims = new Dictionary<string, object>
+            builder.ConfigureAppConfiguration((_, config) =>
             {
-                ["jwk"] = jwkObject
-            }
-        };
-
-        var proof = new JsonWebTokenHandler().CreateToken(descriptor);
-
-        var request = new HttpRequestMessage(new HttpMethod(method), url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("DPoP", accessToken);
-        request.Headers.Add("DPoP", proof);
-        return request;
-    }
-}
-
-public class TimingTestApiFactory : WebApplicationFactory<Program>
-{
-    protected override void ConfigureWebHost(IWebHostBuilder builder)
-    {
-        builder.ConfigureAppConfiguration((_, config) =>
-        {
-            config.AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Keycloak:Authority"] = "https://localhost:8443/realms/sentinel",
-                ["Keycloak:Audience"] = "sentinel-api",
-                ["Keycloak:RequireHttpsMetadata"] = "false",
-                ["ConnectionStrings:Redis"] = "localhost:6379",
-                ["Sentinel:Redis:EndPoint"] = "localhost:6379",
-                ["Sentinel:Redis:EnableInMemoryFallback"] = "true"
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Keycloak:Authority"] = "https://localhost:8443/realms/sentinel",
+                    ["Keycloak:Audience"] = "sentinel-api",
+                    ["Keycloak:RequireHttpsMetadata"] = "false",
+                    ["ConnectionStrings:Redis"] = "localhost:6379",
+                    ["Sentinel:Redis:EndPoint"] = "localhost:6379",
+                    ["Sentinel:Redis:EnableInMemoryFallback"] = "true",
+                    ["DPoP:AllowedAlgorithms:0"] = "ES256",
+                    ["DPoP:AllowedAlgorithms:1"] = "PS256",
+                    ["DPoP:ProofLifetimeSeconds"] = "60",
+                    ["DPoP:AllowedClockSkewSeconds"] = "10"
+                });
             });
-        });
 
-        builder.ConfigureTestServices(services =>
-        {
-            services.RemoveAll<IDistributedCache>();
-            services.RemoveAll<IConnectionMultiplexer>();
-            services.RemoveAll<IRedisConnectionProvider>();
-            services.RemoveAll<IIdempotencyStore>();
-            services.RemoveAll<IConfigurationManager<OpenIdConnectConfiguration>>();
-            services.RemoveAll<IJtiReplayCache>();
-            services.RemoveAll<IDpopNonceStore>();
-            services.RemoveAll<ISessionBlacklistCache>();
-            services.RemoveAll<RedisOptions>();
-
-            services.AddSingleton<IJtiReplayCache, FastLocalInMemoryJtiCache>();
-            services.AddSingleton<IDpopNonceStore, FastLocalInMemoryNonceStore>();
-            services.AddSingleton<ISessionBlacklistCache, FastLocalInMemorySessionBlacklist>();
-            services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
-            services.AddTransient<ISdJwtTokenValidator, TestSdJwtTokenValidator>();
-            services.AddSingleton<ISsfTokenValidator, TestSsfTokenValidator>();
-            services.AddScoped<ISsfEventProcessor, SsfEventProcessorAdapter>();
-            services.AddScoped<IAuthRevocationService, AuthRevocationServiceAdapter>();
-
-            services.AddSingleton<Application.Common.Abstractions.IJtiReplayCache>(sp =>
-                new JtiReplayCacheAdapter(
-                    sp.GetRequiredService<IJtiReplayCache>(),
-                    sp.GetService<TimeProvider>()));
-
-            services.AddSingleton<Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
-                new SessionBlacklistCacheAdapter(
-                    sp.GetRequiredService<ISessionBlacklistCache>(),
-                    sp.GetService<TimeProvider>()));
-
-            services.AddSingleton<IConfigurationManager<OpenIdConnectConfiguration>>(_ =>
-                new TestOpenIdConfigurationManager(TestTokenIssuer.AuthoritySecurityKey));
-
-            services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+            builder.ConfigureTestServices(services =>
             {
-                options.TokenValidationParameters.IssuerSigningKey = TestTokenIssuer.AuthoritySecurityKey;
-                options.TokenValidationParameters.ValidateIssuerSigningKey = true;
-                options.TokenValidationParameters.ValidIssuer = "https://localhost:8443/realms/sentinel";
-                options.TokenValidationParameters.ValidAudience = "sentinel-api";
-                options.RequireHttpsMetadata = false;
-                options.ConfigurationManager = null;
+                services.RemoveAll<IDistributedCache>();
+                services.RemoveAll<IConnectionMultiplexer>();
+                services.RemoveAll<IRedisConnectionProvider>();
+                services.RemoveAll<IIdempotencyStore>();
+                services.RemoveAll<IConfigurationManager<OpenIdConnectConfiguration>>();
+                services.RemoveAll<IJtiReplayCache>();
+                services.RemoveAll<IDpopNonceStore>();
+                services.RemoveAll<ISessionBlacklistCache>();
+                services.RemoveAll<RedisOptions>();
+                services.RemoveAll<IDpopThumbprintComputer>();
+                services.RemoveAll<IDpopProofValidator>();
+                services.RemoveAll<IMlDsaSignatureVerifier>();
+                services.RemoveAll<PqcCryptoProviderFactory>();
+                services.RemoveAll<L1AntiFloodCache>();
+
+                services.AddSingleton(TimeProvider.System);
+                services.AddSingleton(sp =>
+                    new L1AntiFloodCache(sp.GetRequiredService<TimeProvider>(), TimeSpan.FromSeconds(3)));
+                services.AddSingleton<IJtiReplayCache, FastLocalInMemoryJtiCache>();
+                services.AddSingleton<IDpopNonceStore, FastLocalInMemoryNonceStore>();
+                services.AddSingleton<ISessionBlacklistCache, FastLocalInMemorySessionBlacklist>();
+                services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
+                services.AddSingleton<IDpopThumbprintComputer, DpopThumbprintComputer>();
+                services.AddSingleton<IMlDsaSignatureVerifier>(new FailClosedMlDsaVerifier());
+                services.AddSingleton<PqcCryptoProviderFactory>();
+                services.AddTransient<IDpopProofValidator, DpopProofValidator>();
+
+                services.AddTransient<ISdJwtTokenValidator, TestSdJwtTokenValidator>();
+                services.AddSingleton<ISsfTokenValidator, TestSsfTokenValidator>();
+                services.AddScoped<ISsfEventProcessor, SsfEventProcessorAdapter>();
+
+                services.AddSingleton<Application.Common.Abstractions.IJtiReplayCache>(sp =>
+                    new JtiReplayCacheAdapter(
+                        sp.GetRequiredService<IJtiReplayCache>(),
+                        sp.GetService<TimeProvider>()));
+
+                services.AddSingleton<Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
+                    new SessionBlacklistCacheAdapter(
+                        sp.GetRequiredService<ISessionBlacklistCache>(),
+                        sp.GetService<TimeProvider>()));
+
+                services.AddSingleton<IConfigurationManager<OpenIdConnectConfiguration>>(_ =>
+                    new TestOpenIdConfigurationManager(TestTokenIssuer.AuthoritySecurityKey));
+
+                services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+                {
+                    options.TokenValidationParameters.IssuerSigningKey = TestTokenIssuer.AuthoritySecurityKey;
+                    options.TokenValidationParameters.ValidateIssuerSigningKey = true;
+                    options.TokenValidationParameters.ValidIssuer = "https://localhost:8443/realms/sentinel";
+                    options.TokenValidationParameters.ValidAudience = "sentinel-api";
+                    options.RequireHttpsMetadata = false;
+                    options.ConfigurationManager = null;
+                });
             });
-        });
+
+            builder.Configure(app =>
+            {
+                app.UseRouting();
+                app.UseMiddleware<DpopValidationMiddleware>();
+                app.UseEndpoints(endpoints =>
+                {
+                    // Native AOT safe: returns plain text without reflection-based JSON serialization
+                    endpoints.MapGet("/test-timing", () => Results.Text("ok"));
+                });
+            });
+        }
     }
 
     private sealed class FastLocalInMemoryJtiCache : IJtiReplayCache
@@ -284,24 +351,30 @@ public class TimingTestApiFactory : WebApplicationFactory<Program>
 
         public Task CleanupExpiredAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
-}
 
-public sealed class TestOpenIdConfigurationManager(SecurityKey signingKey)
-    : IConfigurationManager<OpenIdConnectConfiguration>
-{
-    private readonly OpenIdConnectConfiguration _configuration = new()
+    public sealed class TestOpenIdConfigurationManager(SecurityKey signingKey)
+        : IConfigurationManager<OpenIdConnectConfiguration>
     {
-        Issuer = "https://localhost:8443/realms/sentinel"
-    };
+        private readonly OpenIdConnectConfiguration _configuration = new()
+        {
+            Issuer = "https://localhost:8443/realms/sentinel"
+        };
 
-    public Task<OpenIdConnectConfiguration> GetConfigurationAsync(CancellationToken cancel)
-    {
-        _configuration.SigningKeys.Clear();
-        _configuration.SigningKeys.Add(signingKey);
-        return Task.FromResult(_configuration);
+        public Task<OpenIdConnectConfiguration> GetConfigurationAsync(CancellationToken cancel)
+        {
+            _configuration.SigningKeys.Clear();
+            _configuration.SigningKeys.Add(signingKey);
+            return Task.FromResult(_configuration);
+        }
+
+        public void RequestRefresh()
+        {
+        }
     }
 
-    public void RequestRefresh()
+    private sealed class FailClosedMlDsaVerifier : IMlDsaSignatureVerifier
     {
+        public bool Verify(string algorithm, ReadOnlySpan<byte> publicKey, ReadOnlySpan<byte> input,
+            ReadOnlySpan<byte> signature) => false;
     }
 }

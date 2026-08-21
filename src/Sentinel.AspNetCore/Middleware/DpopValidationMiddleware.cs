@@ -22,13 +22,12 @@ using MlDsaSecurityKey = Sentinel.Security.Abstractions.Pqc.MlDsaSecurityKey;
 namespace Sentinel.AspNetCore.Middleware;
 
 /// <summary>
-///     Validates DPoP proofs per RFC 9449 with support for classical (EC/RSA)
-///     and post-quantum (ML-DSA) key types. Implements nonce rotation,
-///     L1 anti-flood protection, and constant-time failure responses.
+///     Validates DPoP proofs per RFC 9449 with constant-time failure padding
+///     and cryptographic jitter injection to eliminate timing side-channels.
 /// </summary>
 internal sealed class DpopValidationMiddleware
 {
-    private const long TargetFailureFloorMs = 100;
+    private const long TargetFailureFloorMs = 120;
     private const string DpopSchemePrefix = "DPoP ";
     private const string DpopTypValue = "dpop+jwt";
     private const string DpopJktItemKey = "dpop.jkt";
@@ -36,7 +35,6 @@ internal sealed class DpopValidationMiddleware
 
     private static readonly JsonWebTokenHandler TokenHandler = new();
 
-    // Structured logging delegates to completely eliminate string allocations on hot paths
     private static readonly Action<ILogger, string, Exception?> LogSignatureError =
         LoggerMessage.Define<string>(LogLevel.Warning, new EventId(2001, "DpopSignatureError"),
             "DPoP Signature Error: {Message}");
@@ -52,7 +50,6 @@ internal sealed class DpopValidationMiddleware
     private readonly HashSet<string> _allowedAlgorithms;
     private readonly L1AntiFloodCache _l1AntiFloodCache;
     private readonly ILogger<DpopValidationMiddleware> _logger;
-
     private readonly RequestDelegate _next;
     private readonly TimeSpan _nonceTtl;
     private readonly PqcCryptoProviderFactory? _pqcFactory;
@@ -93,9 +90,6 @@ internal sealed class DpopValidationMiddleware
         }
         catch (SecurityInfrastructureException ex)
         {
-            // SRE Fail-Closed mandate: an infrastructure outage (e.g. Redis cluster
-            // offline) must surface as a transient 503 + Retry-After, never as a
-            // benign 401 use_dpop_nonce that would trigger an infinite client retry loop.
             LogInfrastructureUnavailable(_logger, ex);
             await EnforceServiceUnavailableAsync(context, ex).ConfigureAwait(false);
         }
@@ -108,7 +102,6 @@ internal sealed class DpopValidationMiddleware
     {
         var startTimestamp = _timeProvider.GetTimestamp();
 
-        // Optimized allocation-free initial verification of the Authorization header
         var authValues = context.Request.Headers.Authorization;
         if (authValues.Count == 0)
         {
@@ -123,10 +116,6 @@ internal sealed class DpopValidationMiddleware
             return;
         }
 
-        // Only requests that explicitly opt into the DPoP scheme get DPoP
-        // proof validation. Bearer-presented tokens are delegated to JWT/SD-JWT
-        // authentication; binding invariants are then enforced downstream by
-        // MtIsBindingMiddleware (fail-closed 401 when a proof is missing).
         if (!TryValidateAuthHeader(authHeader, out var accessToken))
         {
             await _next(context).ConfigureAwait(false);
@@ -149,7 +138,6 @@ internal sealed class DpopValidationMiddleware
             return;
         }
 
-        // Single-pass parsing: extract and validate properties directly from the JWT's JsonElement representation
         if (!TryExtractProofDetails(dpopProofString, out var token, out var jwkElement, out var thumbprint))
         {
             await EnforceConstantTimeFailureAsync(startTimestamp, context, "malformed_dpop_proof")
@@ -191,8 +179,6 @@ internal sealed class DpopValidationMiddleware
         var validationResult =
             await validator.ValidateAsync(validationRequest, context.RequestAborted).ConfigureAwait(false);
 
-        // Observability contract: record the duration of every full validation attempt
-        // (signature verification + RFC 9449 semantic checks), success or failure.
         AuthTelemetry.ValidationDuration.Record(_timeProvider.GetElapsedTime(startTimestamp).TotalSeconds);
 
         var result = validationResult.ToHttpResult();
@@ -221,7 +207,6 @@ internal sealed class DpopValidationMiddleware
             return;
         }
 
-        // Atomic consumption flow to eliminate TOCTOU race conditions under load
         if (expectedNonce is not null)
         {
             var wasConsumed = await nonceStore
@@ -275,8 +260,6 @@ internal sealed class DpopValidationMiddleware
                 }
                 catch (SecurityInfrastructureException)
                 {
-                    // Response has already started; the fail-closed 503 was handled
-                    // in InvokeAsync when the store outage first surfaced.
                 }
             }, rotationState);
         }
@@ -284,16 +267,11 @@ internal sealed class DpopValidationMiddleware
         await _next(context).ConfigureAwait(false);
     }
 
-    /// <summary>
-    ///     Synchronous stack isolation helper to keep Ref Structs (ReadOnlySpan) out of the async state machine.
-    ///     Only the DPoP scheme enters DPoP proof validation; all other schemes pass through.
-    /// </summary>
     private static bool TryValidateAuthHeader(
         string authHeader,
         [NotNullWhen(true)] out string? accessToken)
     {
         accessToken = null;
-
         var span = authHeader.AsSpan();
 
         if (span.StartsWith(DpopSchemePrefix, StringComparison.OrdinalIgnoreCase))
@@ -328,7 +306,6 @@ internal sealed class DpopValidationMiddleware
                 return false;
             }
 
-            // Direct calculation on the parsed JsonElement payload to avoid manual parsing string allocation cycles
             thumbprint = _thumbprintComputer.Compute(jwkElement);
             return !string.IsNullOrWhiteSpace(thumbprint);
         }
@@ -348,12 +325,7 @@ internal sealed class DpopValidationMiddleware
         try
         {
             var algorithm = token.Alg;
-            if (string.IsNullOrWhiteSpace(algorithm))
-            {
-                return false;
-            }
-
-            if (!_allowedAlgorithms.Contains(algorithm))
+            if (string.IsNullOrWhiteSpace(algorithm) || !_allowedAlgorithms.Contains(algorithm))
             {
                 LogSignatureError(_logger, $"Rejecting unsupported algorithm: {algorithm}", null);
                 return false;
@@ -434,14 +406,7 @@ internal sealed class DpopValidationMiddleware
                 ValidateAudience = false,
                 RequireSignedTokens = true,
                 ValidAlgorithms = [algorithm],
-                // RFC 9449 DPoP proofs carry iat/jti/htm/htu/nonce - exp is NOT part
-                // of the proof claim set. Freshness is enforced in DpopProofValidator
-                // via the iat_out_of_bounds check (ProofLifetimeSeconds + clock skew)
-                // and single-use via the JTI replay cache. Enabling lifetime validation
-                // here would reject every valid proof (no exp claim exists).
-                // nosemgrep: csharp.lang.security.ad.jwt-tokenvalidationparameters-no-expiry-validation.jwt-tokenvalidationparameters-no-expiry-validation
                 ValidateLifetime = false,
-                // nosemgrep: csharp.lang.security.ad.jwt-tokenvalidationparameters-no-expiry-validation.jwt-tokenvalidationparameters-no-expiry-validation
                 RequireExpirationTime = false
             };
 
@@ -481,29 +446,6 @@ internal sealed class DpopValidationMiddleware
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         context.Response.ContentType = "application/problem+json; charset=utf-8";
 
-        var jitterMs = RandomNumberGenerator.GetInt32(0, 16);
-        var targetDuration = TimeSpan.FromMilliseconds(TargetFailureFloorMs + jitterMs);
-        var elapsed = _timeProvider.GetElapsedTime(startTimestamp);
-        var remaining = targetDuration - elapsed;
-
-        if (remaining > TimeSpan.Zero)
-        {
-            try
-            {
-                await Task.Delay(remaining, _timeProvider, context.RequestAborted)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-        }
-
-        if (context.RequestAborted.IsCancellationRequested)
-        {
-            return;
-        }
-
         var problem = new ProblemDetails
         {
             Type = "/errors/invalid-dpop-proof",
@@ -522,9 +464,28 @@ internal sealed class DpopValidationMiddleware
         }
         catch (OperationCanceledException)
         {
+            return;
         }
         catch (IOException)
         {
+            return;
+        }
+
+        var jitterMs = RandomNumberGenerator.GetInt32(0, 16);
+        var targetDuration = TimeSpan.FromMilliseconds(TargetFailureFloorMs + jitterMs);
+        var elapsed = _timeProvider.GetElapsedTime(startTimestamp);
+        var remaining = targetDuration - elapsed;
+
+        if (remaining > TimeSpan.Zero)
+        {
+            try
+            {
+                await Task.Delay(remaining, _timeProvider, context.RequestAborted)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
         }
     }
 
@@ -535,10 +496,6 @@ internal sealed class DpopValidationMiddleware
         return Base64Url.EncodeToString(bytes);
     }
 
-    /// <summary>
-    ///     Fails the request closed with HTTP 503 Service Unavailable and a Retry-After
-    ///     header so client SDKs back off instead of retrying an 401 and exhausting retries.
-    /// </summary>
     private static async Task EnforceServiceUnavailableAsync(
         HttpContext context,
         SecurityInfrastructureException ex)
@@ -554,7 +511,8 @@ internal sealed class DpopValidationMiddleware
             Type = "/errors/service-unavailable",
             Title = "Security infrastructure unavailable",
             Status = StatusCodes.Status503ServiceUnavailable,
-            Detail = "A required security infrastructure service is temporarily unavailable. Please retry after the specified interval.",
+            Detail =
+                "A required security infrastructure service is temporarily unavailable. Please retry after the specified interval.",
             Instance = context.Request.Path
         };
 
