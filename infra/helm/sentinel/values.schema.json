@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SentinelValues",
+  "type": "object",
+  "required": ["api"],
+  "properties": {
+    "api": {
+      "type": "object",
+      "required": ["image", "resources", "config"],
+      "properties": {
+        "replicaCount": { "type": "integer", "minimum": 1 },
+        "image": {
+          "type": "object",
+          "required": ["repository", "pullPolicy"],
+          "properties": {
+            "repository": { "type": "string" },
+            "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] },
+            "tag": { "type": "string" }
+          }
+        },
+        "resources": {
+          "type": "object",
+          "required": ["requests", "limits"]
+        },
+        "config": {
+          "type": "object",
+          "required": ["keycloak", "redis"],
+          "properties": {
+            "keycloak": {
+              "type": "object",
+              "required": ["authority", "audience", "requireHttpsMetadata"],
+              "properties": {
+                "authority": { "type": "string" },
+                "audience": { "type": "string" },
+                "requireHttpsMetadata": { "type": "boolean" }
+              }
+            },
+            "redis": {
+              "type": "object",
+              "required": ["endpoint", "keyPrefix"],
+              "properties": {
+                "endpoint": { "type": "string" },
+                "keyPrefix": { "type": "string" }
+              }
+            },
+            "otel": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    }
+  }
+}

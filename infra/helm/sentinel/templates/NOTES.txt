@@ -1,0 +1,25 @@
+======================================================================
+  Sentinel FAPI 2.0 Security API Gateway
+  Release: {{ .Release.Name }}
+  Chart Version: {{ .Chart.Version }}
+  App Version: {{ .Chart.AppVersion }}
+======================================================================
+
+1. Status of deployed components:
+   - Security API Pods: {{ .Values.api.replicaCount }} replicas (autoscaling {{ if .Values.api.autoscaling.enabled }}ENABLED: {{ .Values.api.autoscaling.minReplicas }}-{{ .Values.api.autoscaling.maxReplicas }}{{ else }}disabled{{ end }})
+   - PSS Restricted Security Profile: Active (UID 1654, Rootless, Read-Only RootFS)
+   - Network Policy Isolation: {{ if .Values.networkPolicy.enabled }}ENABLED (Default-Deny){{ else }}DISABLED{{ end }}
+
+2. Endpoint Access:
+{{- if .Values.api.ingress.enabled }}
+   Public Gateway URL: https://{{ (index .Values.api.ingress.hosts 0).host }}
+{{- else }}
+   Cluster Internal Service: https://{{ include "sentinel.fullname" . }}:8080
+   Port-forward to test locally:
+     kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "sentinel.fullname" . }} 8080:8080
+{{- end }}
+
+3. Health Check:
+   curl -k https://127.0.0.1:8080/healthz
+
+Thank you for deploying Sentinel with 2026 High-Assurance standards!

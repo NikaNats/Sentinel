@@ -251,6 +251,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         options.MapInboundClaims = false;
+
+        // Attach CA-aware TLS 1.3 handler so JwtBearer's OIDC discovery backchannel
+        // trusts the same root CA as all other named HTTP clients. Without this,
+        // metadata/JWKS fetches fail with untrusted-root errors in bundled-TLS mode.
+        options.BackchannelHttpHandler = tls13HandlerFactory();
+
         options.Events = new JwtBearerEvents
         {
             OnMessageReceived = context =>

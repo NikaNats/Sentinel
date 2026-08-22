@@ -1,0 +1,78 @@
+{{- if .Values.networkPolicy.enabled }}
+
+{{- if .Values.bundledServices.redis.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sentinel.fullname" . }}-redis-allow
+  labels:
+    {{- include "sentinel.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: identity-gateway
+      ports:
+        - protocol: TCP
+          port: 6379
+---
+{{- end }}
+
+{{- if .Values.bundledServices.postgres.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sentinel.fullname" . }}-postgres-allow
+  labels:
+    {{- include "sentinel.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: identity-gateway
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+{{- end }}
+
+{{- if .Values.bundledServices.keycloak.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sentinel.fullname" . }}-keycloak-allow
+  labels:
+    {{- include "sentinel.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+  policyTypes:
+    - Ingress
+  ingress:
+    # Access to Keycloak is allowed from Ingress and Sentinel API
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNginxNamespace | default "ingress-nginx" }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: identity-gateway
+      ports:
+        - protocol: TCP
+          port: 8443
+{{- end }}
+
+{{- end }}

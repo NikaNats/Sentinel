@@ -1,0 +1,56 @@
+# Production Tier-0 Enterprise Configuration
+
+api:
+  replicaCount: 3
+
+  image:
+    pullPolicy: "Always"
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+  config:
+    keycloak:
+      authority: "https://auth.agency.gov.ge/realms/sentinel"
+      audience: "sentinel-api"
+      requireHttpsMetadata: true
+    redis:
+      endpoint: "redis-cluster.database.svc.cluster.local:6379"
+      keyPrefix: "sentinel_prod:"
+    otel:
+      endpoint: "http://otel-collector.observability.svc.cluster.local:4317"
+
+  ingress:
+    enabled: true
+    hosts:
+      - host: "api.sentinel.ge"
+        paths:
+          - path: "/"
+            pathType: "Prefix"
+    tls:
+      - secretName: "sentinel-api-prod-tls"
+        hosts:
+          - "api.sentinel.ge"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+
+networkPolicy:
+  enabled: true
+
+bundledServices:
+  redis:
+    enabled: false
+  postgres:
+    enabled: false
+  keycloak:
+    enabled: false
+  otelCollector:
+    enabled: false

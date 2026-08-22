@@ -1,0 +1,123 @@
+# Default values for Sentinel Helm Chart (Production Baseline)
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # create specifies whether a ServiceAccount should be created
+  create: true
+  # name is the name of the ServiceAccount to use
+  name: ""
+  # annotations to add to the ServiceAccount (e.g. for AWS IRSA / Azure Workload Identity)
+  annotations: {}
+
+api:
+  # replicaCount is the initial number of Pod replicas
+  replicaCount: 2
+
+  image:
+    repository: "ghcr.io/nikanats/sentinel-api"
+    pullPolicy: "IfNotPresent"
+    tag: ""
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1654
+    runAsGroup: 1654
+    fsGroup: 1654
+    fsGroupChangePolicy: "OnRootMismatch"
+    seccompProfile:
+      type: "RuntimeDefault"
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1654
+    runAsGroup: 1654
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - "ALL"
+    seccompProfile:
+      type: "RuntimeDefault"
+
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+  env:
+    ASPNETCORE_ENVIRONMENT: "Production"
+    DOTNET_EnableDiagnostics: "0"
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
+    FeatureFlags__Auth__JtiReplayEnforcement: "true"
+    DPoP__AllowedAlgorithms__0: "PS256"
+    DPoP__AllowedAlgorithms__1: "ES256"
+
+  config:
+    keycloak:
+      authority: "https://keycloak.sentinel.svc.cluster.local:8443/realms/sentinel"
+      audience: "sentinel-api"
+      requireHttpsMetadata: true
+    redis:
+      endpoint: "redis:6379"
+      keyPrefix: "sentinel_prod:"
+    otel:
+      endpoint: "http://otel-collector:4317"
+      serviceName: "sentinel-api"
+
+  secrets:
+    existingSecret: "sentinel-runtime-secrets"
+    postgresKey: "postgres-connection-string"
+    redisKey: "redis-connection-string"
+    keycloakClientSecretKey: "keycloak-client-secret"
+
+  tls:
+    secretName: "sentinel-api-tls"
+    caSecretName: "sentinel-ca-bundle"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    hosts:
+      - host: "api.sentinel.ge"
+        paths:
+          - path: "/"
+            pathType: "Prefix"
+    tls:
+      - secretName: "sentinel-api-public-tls"
+        hosts:
+          - "api.sentinel.ge"
+
+networkPolicy:
+  enabled: true
+  ingressNginxNamespace: "ingress-nginx"
+  observabilityNamespace: "observability"
+
+bundledServices:
+  redis:
+    enabled: false
+  postgres:
+    enabled: false
+  keycloak:
+    enabled: false
+  otelCollector:
+    enabled: false

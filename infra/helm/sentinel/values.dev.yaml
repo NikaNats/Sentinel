@@ -1,0 +1,49 @@
+# Development Environment Overrides
+
+api:
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"
+
+  env:
+    ASPNETCORE_ENVIRONMENT: "Development"
+    FeatureFlags__Auth__DpopFlow: "true"
+
+  config:
+    keycloak:
+      authority: "https://keycloak:8443/realms/sentinel"
+      audience: "sentinel-api"
+      requireHttpsMetadata: false
+    redis:
+      endpoint: "redis:6379"
+      keyPrefix: "sentinel_dev:"
+
+  autoscaling:
+    enabled: false
+
+  podDisruptionBudget:
+    enabled: false
+
+  ingress:
+    enabled: false
+
+networkPolicy:
+  enabled: false
+
+bundledServices:
+  redis:
+    enabled: true
+    image: "redis:7.4-alpine"
+  postgres:
+    enabled: true
+    image: "postgres:17-alpine"
+    dbName: "sentinel_dev"
+  keycloak:
+    enabled: true
+    image: "quay.io/keycloak/keycloak:26.6.4"

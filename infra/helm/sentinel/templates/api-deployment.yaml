@@ -1,0 +1,128 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sentinel.fullname" . }}
+  labels:
+    {{- include "sentinel.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.api.autoscaling.enabled }}
+  replicas: {{ .Values.api.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "sentinel.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        {{- include "sentinel.selectorLabels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/scheme: "https"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8080"
+    spec:
+      serviceAccountName: {{ include "sentinel.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        {{- toYaml .Values.api.podSecurityContext | nindent 8 }}
+      containers:
+        - name: sentinel-api
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          ports:
+            - name: https
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: ASPNETCORE_URLS
+              value: "https://+:8080"
+            - name: ASPNETCORE_Kestrel__Certificates__Default__Path
+              value: "/var/run/sentinel/tls/tls.crt"
+            - name: ASPNETCORE_Kestrel__Certificates__Default__KeyPath
+              value: "/var/run/sentinel/tls/tls.key"
+            - name: Keycloak__Authority
+              value: {{ .Values.api.config.keycloak.authority | quote }}
+            - name: Keycloak__Audience
+              value: {{ .Values.api.config.keycloak.audience | quote }}
+            - name: Keycloak__RequireHttpsMetadata
+              value: {{ .Values.api.config.keycloak.requireHttpsMetadata | quote }}
+            - name: Sentinel__Redis__EndPoint
+              value: {{ .Values.api.config.redis.endpoint | quote }}
+            - name: Sentinel__Redis__KeyPrefix
+              value: {{ .Values.api.config.redis.keyPrefix | quote }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.api.config.otel.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.api.config.otel.serviceName | quote }}
+            - name: Security__TrustedRootCaPath
+              value: "/var/run/sentinel/ca/ca.crt"
+            - name: ConnectionStrings__Postgres
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.api.secrets.existingSecret }}
+                  key: {{ .Values.api.secrets.postgresKey }}
+            - name: ConnectionStrings__Redis
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.api.secrets.existingSecret }}
+                  key: {{ .Values.api.secrets.redisKey }}
+            - name: Sentinel__Keycloak__ClientSecret
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.api.secrets.existingSecret }}
+                  key: {{ .Values.api.secrets.keycloakClientSecretKey }}
+            {{- range $key, $val := .Values.api.env }}
+            - name: {{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.api.securityContext | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: tls
+              mountPath: /var/run/sentinel/tls
+              readOnly: true
+            - name: sentinel-ca
+              mountPath: /var/run/sentinel/ca
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        - name: tls
+          secret:
+            secretName: {{ .Values.api.tls.secretName }}
+            defaultMode: 0440
+        - name: sentinel-ca
+          secret:
+            secretName: {{ .Values.api.tls.caSecretName }}
+            defaultMode: 0440

@@ -1,0 +1,15 @@
+apiVersion: v2
+name: sentinel
+description: High-Assurance FAPI 2.0 Sender-Constrained Security API Gateway
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - security
+  - oauth2
+  - fapi2
+  - dpop
+  - zero-trust
+maintainers:
+  - name: Sentinel Security Team
+    email: sec-team@sentinel.ge

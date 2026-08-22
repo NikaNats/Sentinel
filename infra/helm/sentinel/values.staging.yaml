@@ -1,0 +1,42 @@
+# Staging Environment (for OIDF Conformance & DAST Gating)
+
+api:
+  replicaCount: 2
+
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+  config:
+    keycloak:
+      authority: "https://keycloak.staging.sentinel.io/realms/sentinel-dast"
+      audience: "sentinel-api"
+      requireHttpsMetadata: true
+    redis:
+      endpoint: "redis:6379"
+      keyPrefix: "sentinel_staging:"
+
+  ingress:
+    enabled: true
+    hosts:
+      - host: "api.staging.sentinel.io"
+        paths:
+          - path: "/"
+            pathType: "Prefix"
+    tls:
+      - secretName: "sentinel-api-staging-tls"
+        hosts:
+          - "api.staging.sentinel.io"
+
+bundledServices:
+  redis:
+    enabled: true
+  postgres:
+    enabled: true
+    dbName: "sentinel_staging"
+  keycloak:
+    enabled: true
