@@ -6,6 +6,15 @@ metadata:
   labels:
     app.kubernetes.io/name: dpop-e2e-runner
     app.kubernetes.io/component: test-runner
+  annotations:
+    checkov.io/skip1: CKV_K8S_8=Ephemeral test runner does not require liveness probe
+    checkov.io/skip2: CKV_K8S_9=Ephemeral test runner does not require readiness probe
+    checkov.io/skip3: CKV_K8S_10=Ephemeral test runner CPU requests not required
+    checkov.io/skip4: CKV_K8S_11=Ephemeral test runner CPU limits not required
+    checkov.io/skip5: CKV_K8S_12=Ephemeral test runner Memory requests not required
+    checkov.io/skip6: CKV_K8S_13=Ephemeral test runner Memory limits not required
+    checkov.io/skip7: CKV_K8S_15=Ephemeral test runner pull policy
+    checkov.io/skip8: CKV_K8S_22=Ephemeral test runner requires writable temp storage
 spec:
   automountServiceAccountToken: false
   restartPolicy: Never
