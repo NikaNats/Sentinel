@@ -556,76 +556,14 @@ builder.Services.AddRateLimiter(options =>
             cancellationToken: token);
     };
 
-    // FAPI 2.0 / NIST SP 800-63B Dual-Partition Rate Limiter:
-    // authenticated traffic is keyed by the token's `sub` claim (parsed pre-auth,
-    // WITHOUT signature verification - validity is enforced downstream by the DPoP
-    // and JWT bearer middlewares), so rotating or spoofing X-Forwarded-For cannot
-    // open fresh partitions for a valid token holder. Anonymous or malformed
-    // traffic falls back to the real remote address floor.
-    options.AddPolicy("profile", context => RateLimitPartition.GetSlidingWindowLimiter(
-        ResolveRateLimitPartitionKey(context),
-        _ => new SlidingWindowRateLimiterOptions
-        {
-            PermitLimit = 20,
-            Window = TimeSpan.FromSeconds(10),
-            SegmentsPerWindow = 2,
-            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-            QueueLimit = 5
-        }));
+    // FAPI 2.0 / NIST SP 800-63B dual-partition CHAINED rate limiting:
+    // a request is admitted only when BOTH dimensions grant; a rejection at either
+    // releases any permits held at the other and surfaces as 429 Too Many Requests.
+    // See DualPartitionRateLimiting for the full threat model.
+    options.GlobalLimiter = PartitionedRateLimiter.CreateChained(
+        DualPartitionRateLimiting.BuildPrimaryQuota(),
+        DualPartitionRateLimiting.BuildNetworkFloor());
 });
-
-static string ResolveRateLimitPartitionKey(HttpContext context)
-{
-    // 1. Prefer the authenticated principal when authentication already ran.
-    var sub = context.User.FindFirst("sub")?.Value;
-    if (!string.IsNullOrWhiteSpace(sub))
-    {
-        return $"sub:{sub}";
-    }
-
-    // 2. Pre-authentication parsing: read `sub` straight from the presented JWT
-    //    without verifying its signature (UseRateLimiter runs before UseAuthentication).
-    //    A spoofed value only buys the attacker an isolated partition for a request
-    //    that fails signature validation downstream anyway.
-    var authHeader = context.Request.Headers.Authorization.ToString();
-    if (!string.IsNullOrWhiteSpace(authHeader))
-    {
-        string? rawToken = null;
-        if (authHeader.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase))
-        {
-            rawToken = authHeader["DPoP ".Length..].Trim();
-        }
-        else if (authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-        {
-            rawToken = authHeader["Bearer ".Length..].Trim();
-        }
-
-        if (!string.IsNullOrWhiteSpace(rawToken))
-        {
-            try
-            {
-                var handler = new JsonWebTokenHandler();
-                if (handler.CanReadToken(rawToken))
-                {
-                    var jwt = handler.ReadJsonWebToken(rawToken);
-                    var tokenSub = jwt.Subject ?? jwt.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
-                    if (!string.IsNullOrWhiteSpace(tokenSub))
-                    {
-                        return $"sub:{tokenSub}";
-                    }
-                }
-            }
-            catch
-            {
-                // Malformed tokens fall back to IP-based partitioning below.
-            }
-        }
-    }
-
-    // 3. Anonymous requests are floored by the real remote address.
-    var remoteIp = context.Connection.RemoteIpAddress?.ToString();
-    return !string.IsNullOrWhiteSpace(remoteIp) ? $"ip:{remoteIp}" : "ip:anonymous";
-}
 
 builder.Services.AddSentinelAspNetCore().AddAll().ConfigureAcrRanking();
 builder.Services.AddSingleton<DocumentRepository>();

@@ -406,7 +406,14 @@ internal sealed class DpopValidationMiddleware
                 ValidateAudience = false,
                 RequireSignedTokens = true,
                 ValidAlgorithms = [algorithm],
+                // RFC 9449 DPoP proofs carry iat/jti/htm/htu/nonce - exp is NOT part
+                // of the proof claim set. Freshness is enforced in DpopProofValidator
+                // via the iat_out_of_bounds check (ProofLifetimeSeconds + clock skew)
+                // and single-use via the JTI replay cache. Enabling lifetime validation
+                // here would reject every valid proof (no exp claim exists).
+                // nosemgrep: csharp.lang.security.ad.jwt-tokenvalidationparameters-no-expiry-validation.jwt-tokenvalidationparameters-no-expiry-validation
                 ValidateLifetime = false,
+                // nosemgrep: csharp.lang.security.ad.jwt-tokenvalidationparameters-no-expiry-validation.jwt-tokenvalidationparameters-no-expiry-validation
                 RequireExpirationTime = false
             };
 

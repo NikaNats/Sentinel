@@ -26,6 +26,18 @@
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 
+# Ensure node is discoverable in minimal environments (e.g. Git Bash on Windows,
+# where "C:\Program Files\nodejs" is often absent from the inherited PATH).
+if ! command -v node >/dev/null 2>&1; then
+  for _candidate in "/c/Program Files/nodejs" "/c/Program Files (x86)/nodejs"; do
+    if [ -x "$_candidate/node.exe" ]; then
+      PATH="$_candidate:$PATH"
+      export PATH
+      break
+    fi
+  done
+fi
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
@@ -35,6 +47,15 @@ LOKI_URL="${LOKI_URL:-http://localhost:3100}"
 TEMPO_URL="${TEMPO_URL:-http://localhost:3200}"
 KEYCLOAK_URL="${KEYCLOAK_URL:-https://localhost:8443}"
 KEYCLOAK_GATE_PASSWORD="${KEYCLOAK_GATE_PASSWORD:-gate-pass}"
+
+# Portable UUID v4 for environments without util-linux uuidgen (e.g. Git Bash on Windows).
+if ! command -v uuidgen >/dev/null 2>&1; then
+  uuidgen() {
+    local hex
+    hex="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    echo "${hex:0:8}-${hex:8:4}-4${hex:12:3}-a${hex:16:3}-${hex:19:12}"
+  }
+fi
 
 COMPOSE_CMD=(docker compose -f docker-compose.yml -f infra/observability/docker-compose.observability.yml)
 

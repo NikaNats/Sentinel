@@ -23,14 +23,12 @@ internal static class ShowcaseEndpoints
 
         group.MapGet("/profile", GetProfileAsync)
             .AllowAnonymous()
-            .RequireRateLimiting("profile")
             .WithName($"GetProfile:{prefix}")
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden);
 
         group.MapGet("/test/protected", GetProtected)
-            .RequireRateLimiting("profile")
             .WithName($"GetProtected:{prefix}")
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized);
