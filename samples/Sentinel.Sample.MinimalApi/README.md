@@ -24,7 +24,7 @@ This sample demonstrates a production-ready Minimal API application built entire
 | **Startup Time** | < 50ms (before first request) |
 | **Native AOT** | ✅ Compatible (`<PublishAot>true</PublishAot>`) |
 | **Reflection Usage** | 0 (achieved through IEndpointFilter) |
-| **Test Coverage** | 141 security tests (zero MVC dependencies) |
+| **Test Coverage** | 662 automated tests across 8 suites (100% pass rate) |
 
 ---
 
