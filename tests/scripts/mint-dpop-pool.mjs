@@ -6,6 +6,7 @@ import { createHash, createPrivateKey, createSign, generateKeyPairSync, randomUU
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import https from 'node:https';
 
 const b64url = (buf) => Buffer.from(buf).toString('base64url');
 
@@ -97,6 +98,8 @@ async function mintViaKeycloak(cfg, jwk) {
     }
 
     const body = new URLSearchParams(bodyParams);
+    // Allow self-signed certs for local development (NODE_TLS_REJECT_UNAUTHORIZED=0)
+    const agent = new https.Agent({ rejectUnauthorized: false });
     const res = await fetch(tokenUrl, {
         method: 'POST',
         headers: {
@@ -104,6 +107,7 @@ async function mintViaKeycloak(cfg, jwk) {
             'DPoP': proof,
         },
         body,
+        agent,
     });
     if (res.status !== 200) {
         throw new Error(`Keycloak mint failed (HTTP ${res.status}): ${(await res.text()).slice(0, 240)}`);

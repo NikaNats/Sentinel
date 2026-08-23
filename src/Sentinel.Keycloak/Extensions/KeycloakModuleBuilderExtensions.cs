@@ -42,10 +42,12 @@ public static class KeycloakModuleBuilderExtensions
             var options = sp.GetRequiredService<IOptions<KeycloakOptions>>().Value;
             var authority = options.Authority.TrimEnd('/');
             var metadataEndpoint = $"{authority}/.well-known/openid-configuration";
+            var handler = sp.GetService<HttpMessageHandler>() ?? new HttpClientHandler();
+            var httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) };
             return new ConfigurationManager<OpenIdConnectConfiguration>(
                 metadataEndpoint,
                 new OpenIdConnectConfigurationRetriever(),
-                new HttpDocumentRetriever { RequireHttps = options.RequireHttpsMetadata });
+                new HttpDocumentRetriever(httpClient) { RequireHttps = options.RequireHttpsMetadata });
         });
 
         builder.Services.TryAddSingleton<KeycloakAdminCircuitBreakerState>();

@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
@@ -48,6 +49,7 @@ using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var keycloakSection = builder.Configuration.GetSection("Keycloak");
 var isDevelopment = builder.Environment.IsDevelopment();
 var localCaPath = builder.Configuration["Security:TrustedRootCaPath"];
 
@@ -80,7 +82,6 @@ builder.WebHost.ConfigureKestrel(options =>
     options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
 });
 
-// Certificate hot reload (Enterprise Cryptographic & PKI Lifecycle)
 if (builder.Configuration.GetSection("Kestrel:CertificateReloader:Path").Exists())
 {
     builder.Services.AddKestrelCertificateReloader(builder.Configuration);
@@ -91,7 +92,6 @@ builder.Services.AddOpenApi();
 
 var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
 
-// OpenTelemetry configuration (docs/OTEL_DOTNET_INTEGRATION_SNIPPET.md)
 builder.Services.AddOpenTelemetry()
     .ConfigureResource(resource => resource
         .AddService(serviceName: builder.Configuration["OTEL_SERVICE_NAME"] ?? "sentinel-api")
@@ -164,7 +164,7 @@ builder.Services.Configure<JsonOptions>(options =>
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, SampleJsonContext.Default);
 });
 
-#pragma warning disable CA2000 // Ownership transfers to handler closures; disposed via app.Lifetime.ApplicationStopping.
+#pragma warning disable CA2000
 X509Certificate2? trustedCa = null;
 if (!string.IsNullOrWhiteSpace(localCaPath) && File.Exists(localCaPath))
 {
@@ -183,10 +183,6 @@ if (!string.IsNullOrWhiteSpace(localCaPath) && File.Exists(localCaPath))
     {
         trustedCa = X509CertificateLoader.LoadCertificate(File.ReadAllBytes(localCaPath));
     }
-}
-else
-{
-    Console.WriteLine($"[WARN] CA path not configured or file not found: {localCaPath}");
 }
 #pragma warning restore CA2000
 
@@ -247,17 +243,88 @@ var tls13HandlerFactory = () =>
     return handler;
 };
 
+var sharedTlsHandler = tls13HandlerFactory();
+builder.Services.AddSingleton<HttpMessageHandler>(sharedTlsHandler);
+
+var authority = keycloakSection["Authority"]?.TrimEnd('/');
+var audience = keycloakSection["Audience"];
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         options.MapInboundClaims = false;
+        options.Authority = authority;
+        options.Audience = audience;
+        options.RequireHttpsMetadata = !string.Equals(keycloakSection["RequireHttpsMetadata"], "false", StringComparison.OrdinalIgnoreCase);
 
-        // Attach CA-aware TLS 1.3 handler so JwtBearer's OIDC discovery backchannel
-        // trusts the same root CA as all other named HTTP clients. Without this,
-        // metadata/JWKS fetches fail with untrusted-root errors in bundled-TLS mode.
-        options.BackchannelHttpHandler = tls13HandlerFactory();
+        options.BackchannelHttpHandler = sharedTlsHandler;
+        options.Backchannel = new HttpClient(sharedTlsHandler) { Timeout = TimeSpan.FromSeconds(15) };
 
-        options.Events = new JwtBearerEvents
+        // CRITICAL: Provide a ConfigurationManager that uses a CA-aware HttpClientHandler
+        // for JWKS fetch. Without this, JwtBearer creates its own ConfigurationManager
+        // with a default HttpClient that rejects self-signed certs.
+        if (!string.IsNullOrWhiteSpace(authority))
+        {
+            var metadataEndpoint = $"{authority}/.well-known/openid-configuration";
+
+            // Use HttpClientHandler (not SocketsHttpHandler) for HttpDocumentRetriever compatibility
+            var configManagerHandler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (sender, cert, chain, errors) =>
+                {
+                    if (errors == SslPolicyErrors.None)
+                    {
+                        return true;
+                    }
+
+                    if (trustedCa is not null)
+                    {
+                        using var customChain = new X509Chain();
+                        customChain.ChainPolicy.RevocationMode = isDevelopment
+                            ? X509RevocationMode.NoCheck
+                            : X509RevocationMode.Online;
+                        customChain.ChainPolicy.DisableCertificateDownloads = true;
+                        customChain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+                        customChain.ChainPolicy.CustomTrustStore.Add(trustedCa);
+                        return customChain.Build((X509Certificate2)cert!);
+                    }
+
+                    return false;
+                }
+            };
+
+            options.ConfigurationManager = new ConfigurationManager<OpenIdConnectConfiguration>(
+                metadataEndpoint,
+                new OpenIdConnectConfigurationRetriever(),
+                new HttpDocumentRetriever(new HttpClient(configManagerHandler) { Timeout = TimeSpan.FromSeconds(15) })
+                {
+                    RequireHttps = true
+                });
+        }
+
+        var allowedIssuers = new List<string>();
+        if (!string.IsNullOrWhiteSpace(authority))
+        {
+            allowedIssuers.Add(authority);
+            if (authority.Contains("keycloak:8443", StringComparison.OrdinalIgnoreCase))
+            {
+                allowedIssuers.Add(authority.Replace("keycloak:8443", "localhost:8443", StringComparison.OrdinalIgnoreCase));
+            }
+        }
+
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuers = allowedIssuers,
+            ValidateAudience = true,
+            ValidAudience = audience,
+            ValidateLifetime = true,
+            ClockSkew = isDevelopment ? TimeSpan.FromSeconds(60) : TimeSpan.Zero,
+            ValidateIssuerSigningKey = true,
+            ValidAlgorithms = ["PS256", "ES256"]
+        };
+
+options.Events = new JwtBearerEvents
         {
             OnMessageReceived = context =>
             {
@@ -306,14 +373,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     identity.AddClaim(new Claim("scope", scopeClaim));
                 }
 
-                var validationService =
-                    context.HttpContext.RequestServices.GetRequiredService<TokenValidationService>();
-                var outcome = await validationService.ValidateAsync(context.Principal!, context.HttpContext,
-                    context.HttpContext.RequestAborted);
+                var validationService = context.HttpContext.RequestServices.GetRequiredService<TokenValidationService>();
+                var outcome = await validationService.ValidateAsync(context.Principal!, context.HttpContext, context.HttpContext.RequestAborted);
                 if (!outcome.IsSuccess)
                 {
-                    context.Fail(outcome.FailureException ??
-                                 new SecurityTokenException(outcome.FailureReason ?? "Token validation failed."));
+                    context.Fail(outcome.FailureException ?? new SecurityTokenException(outcome.FailureReason ?? "Token validation failed."));
                 }
             },
             OnChallenge = async context =>
@@ -375,94 +439,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 return Task.CompletedTask;
             }
         };
-
-        var keycloakSection = builder.Configuration.GetSection("Keycloak");
-        options.Authority = keycloakSection["Authority"];
-        options.Audience = keycloakSection["Audience"];
-
-        options.RequireHttpsMetadata = !string.Equals(keycloakSection["RequireHttpsMetadata"], "false",
-            StringComparison.OrdinalIgnoreCase);
-
-        var configuredAuthority = keycloakSection["Authority"] ?? string.Empty;
-        var allowedIssuers = new List<string> { configuredAuthority };
-
-        if (configuredAuthority.Contains("keycloak:8443", StringComparison.OrdinalIgnoreCase))
-        {
-            allowedIssuers.Add(configuredAuthority.Replace("keycloak:8443", "localhost:8443", StringComparison.OrdinalIgnoreCase));
-        }
-
-        var testPublicKey = builder.Configuration["Security:TestPublicKey"];
-        if (isDevelopment &&
-            !configuredAuthority.Contains("localhost:8443", StringComparison.OrdinalIgnoreCase))
-        {
-            allowedIssuers.Add("https://localhost:8443/realms/sentinel");
-        }
-
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidIssuers = allowedIssuers,
-            ValidateAudience = true,
-            ValidAudience = keycloakSection["Audience"],
-            ValidateLifetime = true,
-            ClockSkew = TimeSpan.Zero,
-            RequireSignedTokens = true,
-            ValidAlgorithms = ["PS256", "ES256"]
-        };
     });
-
-builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
-{
-    var keycloakSection = builder.Configuration.GetSection("Keycloak");
-    var configuredAuthority = keycloakSection["Authority"] ?? string.Empty;
-
-    var allowedIssuers = new List<string> { configuredAuthority };
-
-    if (configuredAuthority.Contains("keycloak:8443", StringComparison.OrdinalIgnoreCase))
-    {
-        allowedIssuers.Add(configuredAuthority.Replace("keycloak:8443", "localhost:8443", StringComparison.OrdinalIgnoreCase));
-    }
-
-    var testPublicKey = builder.Configuration["Security:TestPublicKey"];
-    if (isDevelopment &&
-        !configuredAuthority.Contains("localhost:8443", StringComparison.OrdinalIgnoreCase))
-    {
-        allowedIssuers.Add("https://localhost:8443/realms/sentinel");
-    }
-
-    options.TokenValidationParameters.ValidateIssuer = true;
-    options.TokenValidationParameters.ValidIssuers = allowedIssuers;
-    options.TokenValidationParameters.ValidateAudience = true;
-    options.TokenValidationParameters.ValidAudience = keycloakSection["Audience"];
-    options.TokenValidationParameters.ValidateLifetime = true;
-    options.TokenValidationParameters.ValidateIssuerSigningKey = true;
-
-    if (isDevelopment && !string.IsNullOrWhiteSpace(testPublicKey))
-    {
-        options.TokenValidationParameters.ClockSkew = TimeSpan.FromSeconds(60);
-
-        var ecdsa = ECDsa.Create();
-        ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(testPublicKey), out _);
-
-        var key = new ECDsaSecurityKey(ecdsa) { KeyId = "test-authority-key" };
-        options.TokenValidationParameters.IssuerSigningKey = key;
-        options.TokenValidationParameters.IssuerSigningKeys = [key];
-
-        options.ConfigurationManager = null;
-        options.MetadataAddress = null!;
-        options.Authority = null!;
-    }
-    else
-    {
-        options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
-    }
-
-    var refreshIntervalSeconds = keycloakSection.GetValue<int>("JwksRefreshIntervalSeconds");
-    if (refreshIntervalSeconds > 0 && options.ConfigurationManager is ConfigurationManager<OpenIdConnectConfiguration> cm)
-    {
-        cm.RefreshInterval = TimeSpan.FromSeconds(refreshIntervalSeconds);
-    }
-});
 
 builder.Services
     .AddRedisSecurityCaches(builder.Configuration.GetSection("Sentinel:Redis"))
@@ -472,29 +449,19 @@ builder.Services
     .AddKeycloakIntegration(builder.Configuration.GetSection("Sentinel:Keycloak"))
     .AddInfrastructureLayer(builder.Configuration);
 
-// Privacy-preserving hashing for GDPR/SIEM logging (64-hex daily-keyed HMAC)
 builder.Services.AddSingleton<IPrivacyKeyManager>(new DefaultPrivacyKeyManager());
 builder.Services.AddSingleton<IPrivacyPreservingHasher, PrivacyPreservingHasher>();
 
 _ = builder.Services.AddHttpClient("keycloak-admin").ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(IUmaPermissionService).FullName!)
-    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(ITokenRefreshService).FullName!)
-    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(ITokenExchangeService).FullName!)
-    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(IIdentityRegistry).FullName!)
-    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(IUserProfileManager).FullName!)
-    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(IIdentityFederationProvider).FullName!)
-    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(IAuthRevocationService).FullName!)
-    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(KeycloakConfigurationManager).FullName!)
-    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
-_ = builder.Services.AddHttpClient(typeof(ICaptchaService).FullName!)
-    .ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IUmaPermissionService).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(ITokenRefreshService).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(ITokenExchangeService).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IIdentityRegistry).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IUserProfileManager).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IIdentityFederationProvider).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(IAuthRevocationService).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(KeycloakConfigurationManager).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
+_ = builder.Services.AddHttpClient(typeof(ICaptchaService).FullName!).ConfigurePrimaryHttpMessageHandler(tls13HandlerFactory);
 
 builder.Services.AddSingleton(Options.Create(new SdJwtVerificationOptions
 {
@@ -503,11 +470,9 @@ builder.Services.AddSingleton(Options.Create(new SdJwtVerificationOptions
     AllowedClockSkewSeconds = 60,
     AllowedDisclosureHashAlgorithms = ["sha-256"]
 }));
-builder.Services.AddSingleton<SdJwtVerificationOptions>(sp =>
-    sp.GetRequiredService<IOptions<SdJwtVerificationOptions>>().Value);
+builder.Services.AddSingleton<SdJwtVerificationOptions>(sp => sp.GetRequiredService<IOptions<SdJwtVerificationOptions>>().Value);
 
 builder.Services.AddTransient<SdJwtPresenter>();
-
 builder.Services.AddTransient<ISdJwtTokenValidator>(sp =>
     new SampleSdJwtTokenValidator(
         sp.GetRequiredService<IConfiguration>(),
@@ -522,8 +487,7 @@ builder.Services.AddSingleton<ISsfTokenValidator>(sp =>
         sp.GetService<IConfigurationManager<OpenIdConnectConfiguration>>()
     ));
 
-builder.Services
-    .AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, SecurityAuthRevocationServiceAdapter>();
+builder.Services.AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, SecurityAuthRevocationServiceAdapter>();
 builder.Services.AddScoped<Sentinel.Application.Auth.Interfaces.ISsfEventProcessor, SecuritySsfEventProcessorAdapter>();
 builder.Services.AddSingleton<Sentinel.Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
     new SampleSessionBlacklistCacheAdapter(
@@ -562,14 +526,49 @@ builder.Services.AddRateLimiter(options =>
             cancellationToken: token);
     };
 
-    // FAPI 2.0 / NIST SP 800-63B dual-partition CHAINED rate limiting:
-    // a request is admitted only when BOTH dimensions grant; a rejection at either
-    // releases any permits held at the other and surfaces as 429 Too Many Requests.
-    // See DualPartitionRateLimiting for the full threat model.
-    options.GlobalLimiter = PartitionedRateLimiter.CreateChained(
-        DualPartitionRateLimiting.BuildPrimaryQuota(),
-        DualPartitionRateLimiting.BuildNetworkFloor());
+    options.AddPolicy("profile", context => RateLimitPartition.GetSlidingWindowLimiter(
+        ResolveRateLimitPartitionKey(context),
+        _ => new SlidingWindowRateLimiterOptions
+        {
+            PermitLimit = 20,
+            Window = TimeSpan.FromSeconds(10),
+            SegmentsPerWindow = 2,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 5
+        }));
 });
+
+static string ResolveRateLimitPartitionKey(HttpContext context)
+{
+    var authHeader = context.Request.Headers.Authorization.ToString();
+    if (!string.IsNullOrWhiteSpace(authHeader))
+    {
+        string? rawToken = null;
+        if (authHeader.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase))
+            rawToken = authHeader["DPoP ".Length..].Trim();
+        else if (authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            rawToken = authHeader["Bearer ".Length..].Trim();
+
+        if (!string.IsNullOrWhiteSpace(rawToken))
+        {
+            try
+            {
+                var handler = new JsonWebTokenHandler();
+                if (handler.CanReadToken(rawToken))
+                {
+                    var jwt = handler.ReadJsonWebToken(rawToken);
+                    var tokenSub = jwt.Subject ?? jwt.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
+                    if (!string.IsNullOrWhiteSpace(tokenSub))
+                        return $"sub:{tokenSub}";
+                }
+            }
+            catch { /* fallback to IP below */ }
+        }
+    }
+
+    var remoteIp = context.Connection.RemoteIpAddress?.ToString();
+    return !string.IsNullOrWhiteSpace(remoteIp) ? $"ip:{remoteIp}" : "ip:anonymous";
+}
 
 builder.Services.AddSentinelAspNetCore().AddAll().ConfigureAcrRanking();
 builder.Services.AddSingleton<DocumentRepository>();
@@ -600,9 +599,7 @@ app.UseExceptionHandler(errorApp =>
         var problem = new ProblemDetails
         {
             Type = "/errors/internal",
-            Title = statusCode == StatusCodes.Status500InternalServerError
-                ? "Unexpected error"
-                : "Request failed",
+            Title = statusCode == StatusCodes.Status500InternalServerError ? "Unexpected error" : "Request failed",
             Detail = "An unexpected error occurred while processing the request.",
             Status = statusCode,
             Extensions = { ["traceId"] = context.TraceIdentifier }
@@ -631,8 +628,7 @@ app.MapScalarApiReference("/docs", options =>
 {
     options.Title = "Sentinel API Documentation";
     options.Theme = ScalarTheme.Moon;
-    options.DefaultHttpClient =
-        new KeyValuePair<ScalarTarget, ScalarClient>(ScalarTarget.CSharp, ScalarClient.HttpClient);
+    options.DefaultHttpClient = new KeyValuePair<ScalarTarget, ScalarClient>(ScalarTarget.CSharp, ScalarClient.HttpClient);
 });
 
 const string securityPrefix = "v1";
@@ -643,8 +639,7 @@ const string showcasePrefix = "v1";
 app.MapGet("/", () => TypedResults.Ok(new SampleInfoResponse(
         "Sentinel.Sample.MinimalApi",
         "/docs",
-        new EndpointMap("/healthz", $"/{securityPrefix}", $"/{documentsPrefix}", $"/{financePrefix}",
-            $"/{showcasePrefix}"))))
+        new EndpointMap("/healthz", $"/{securityPrefix}", $"/{documentsPrefix}", $"/{financePrefix}", $"/{showcasePrefix}"))))
     .AllowAnonymous();
 
 app.MapGet("/healthz", () => TypedResults.Ok(new HealthResponse("ok", DateTimeOffset.UtcNow))).AllowAnonymous();
@@ -670,9 +665,7 @@ internal sealed class DefaultPrivacyKeyManager : IPrivacyKeyManager
 }
 
 internal sealed record SampleInfoResponse(string Service, string Docs, EndpointMap Endpoints);
-
 internal sealed record EndpointMap(string Health, string Security, string Documents, string Finance, string Showcase);
-
 internal sealed record HealthResponse(string Status, DateTimeOffset Utc);
 
 internal sealed class SecurityAuthRevocationServiceAdapter(
