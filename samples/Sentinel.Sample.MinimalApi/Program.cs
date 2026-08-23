@@ -506,6 +506,14 @@ builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
+    // Use the dual-partition chained limiter from DualPartitionRateLimiting
+    // Dimension 1 (primary quota): identity-based (sub claim) with 20 permits + 5 queue
+    // Dimension 2 (network floor): IP-based with 100 permits + 2 queue
+    var primaryQuota = DualPartitionRateLimiting.BuildPrimaryQuota();
+    var networkFloor = DualPartitionRateLimiting.BuildNetworkFloor();
+
+    options.GlobalLimiter = PartitionedRateLimiter.CreateChained(primaryQuota, networkFloor);
+
     options.OnRejected = static async (context, token) =>
     {
         context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
@@ -525,50 +533,7 @@ builder.Services.AddRateLimiter(options =>
             SampleJsonContext.Default.ProblemDetails,
             cancellationToken: token);
     };
-
-    options.AddPolicy("profile", context => RateLimitPartition.GetSlidingWindowLimiter(
-        ResolveRateLimitPartitionKey(context),
-        _ => new SlidingWindowRateLimiterOptions
-        {
-            PermitLimit = 20,
-            Window = TimeSpan.FromSeconds(10),
-            SegmentsPerWindow = 2,
-            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-            QueueLimit = 5
-        }));
 });
-
-static string ResolveRateLimitPartitionKey(HttpContext context)
-{
-    var authHeader = context.Request.Headers.Authorization.ToString();
-    if (!string.IsNullOrWhiteSpace(authHeader))
-    {
-        string? rawToken = null;
-        if (authHeader.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase))
-            rawToken = authHeader["DPoP ".Length..].Trim();
-        else if (authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-            rawToken = authHeader["Bearer ".Length..].Trim();
-
-        if (!string.IsNullOrWhiteSpace(rawToken))
-        {
-            try
-            {
-                var handler = new JsonWebTokenHandler();
-                if (handler.CanReadToken(rawToken))
-                {
-                    var jwt = handler.ReadJsonWebToken(rawToken);
-                    var tokenSub = jwt.Subject ?? jwt.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
-                    if (!string.IsNullOrWhiteSpace(tokenSub))
-                        return $"sub:{tokenSub}";
-                }
-            }
-            catch { /* fallback to IP below */ }
-        }
-    }
-
-    var remoteIp = context.Connection.RemoteIpAddress?.ToString();
-    return !string.IsNullOrWhiteSpace(remoteIp) ? $"ip:{remoteIp}" : "ip:anonymous";
-}
 
 builder.Services.AddSentinelAspNetCore().AddAll().ConfigureAcrRanking();
 builder.Services.AddSingleton<DocumentRepository>();
