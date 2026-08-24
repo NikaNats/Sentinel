@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -7,21 +8,21 @@ using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
-using Sentinel.Tests.Shared;
+using System.Text.Json.Nodes;
 using DotNet.Testcontainers.Builders;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.IdentityModel.Protocols;
-using Microsoft.IdentityModel.Protocols.OpenIdConnect;
-using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
 using Sentinel.Redis;
 using Sentinel.Redis.Extensions;
 using Sentinel.SdJwt;
@@ -31,6 +32,7 @@ using Sentinel.Security.Abstractions.Replay;
 using Sentinel.Security.Abstractions.Security;
 using Sentinel.Security.Abstractions.Session;
 using Sentinel.Security.Abstractions.SSF;
+using Sentinel.Tests.Shared;
 using StackExchange.Redis;
 using Testcontainers.Keycloak;
 using Testcontainers.Redis;
@@ -53,29 +55,74 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
 
     private const string AdminUsername = "admin";
     private const string AdminPassword = "admin";
-    private static readonly TimeSpan KeycloakHttpClientTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan KeycloakHttpClientTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan KeycloakConnectTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan KeycloakReadinessTimeout = TimeSpan.FromSeconds(90);
     private static readonly TimeSpan RedisReadinessTimeout = TimeSpan.FromSeconds(30);
-    private readonly string keycloakCertDirectory;
-    private readonly X509Certificate2 keycloakCertificate;
-    private readonly string keycloakCertPath;
-    private readonly KeycloakContainer keycloakContainer;
-    private readonly string keycloakKeyPath;
 
-    private readonly RedisContainer redisContainer;
-    private string keycloakBaseAddress = string.Empty;
-    private string redisConnectionString = string.Empty;
+    private readonly string _keycloakCertDirectory;
+    private readonly X509Certificate2 _keycloakCertificate;
+    private readonly string _keycloakCertPath;
+    private readonly string _keycloakKeyPath;
+    private readonly KeycloakContainer _keycloakContainer;
+    private readonly RedisContainer _redisContainer;
+
+    private string _keycloakBaseAddress = string.Empty;
+    private string _redisConnectionString = string.Empty;
 
     public RealKeycloakApiFactory()
     {
-        redisContainer = new RedisBuilder("redis:7.4-alpine")
+        _redisContainer = new RedisBuilder("redis:7.4-alpine")
             .WithPortBinding(6379, true)
             .Build();
-        keycloakCertDirectory = Path.Combine(Path.GetTempPath(), $"sentinel-keycloak-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(keycloakCertDirectory);
-        (keycloakCertPath, keycloakKeyPath, keycloakCertificate) = GenerateKeycloakCertificate(keycloakCertDirectory);
-        keycloakContainer = new KeycloakBuilder("quay.io/keycloak/keycloak:26.1")
+
+        _keycloakCertDirectory = Path.Combine(Path.GetTempPath(), $"sentinel-keycloak-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_keycloakCertDirectory);
+        (_keycloakCertPath, _keycloakKeyPath, _keycloakCertificate) = GenerateKeycloakCertificate(_keycloakCertDirectory);
+
+        // Prepare single realm import directory
+        var realmImportDirectory = Path.Combine(_keycloakCertDirectory, "import");
+        Directory.CreateDirectory(realmImportDirectory);
+
+        var repoRoot = Directory.GetCurrentDirectory();
+        while (!Directory.Exists(Path.Combine(repoRoot, "infra")) && repoRoot != Directory.GetDirectoryRoot(repoRoot))
+        {
+            repoRoot = Directory.GetParent(repoRoot)?.FullName ?? repoRoot;
+        }
+        var sourceRealmJsonPath = Path.Combine(repoRoot, "infra", "keycloak", "realms", "sentinel.json");
+
+        var realmJson = File.ReadAllText(sourceRealmJsonPath);
+        var realmNode = JsonNode.Parse(realmJson)!;
+        realmNode["realm"] = RealmName;
+
+        // Ensure the test client supports client_credentials with client-secret and PS256 DPoP tokens
+        var clientsArray = realmNode["clients"]?.AsArray();
+        if (clientsArray != null)
+        {
+            foreach (var clientNode in clientsArray)
+            {
+                var id = clientNode?["clientId"]?.ToString();
+                if (id is "sentinel-api-client" or ClientId)
+                {
+                    clientNode!["clientId"] = ClientId;
+                    clientNode["clientAuthenticatorType"] = "client-secret";
+                    clientNode["secret"] = ClientSecret;
+                    clientNode["serviceAccountsEnabled"] = true;
+                    clientNode["directAccessGrantsEnabled"] = true;
+                    clientNode["publicClient"] = false;
+                    if (clientNode["attributes"] is JsonObject attrs)
+                    {
+                        attrs["dpop.bound.access.tokens"] = "true";
+                        attrs["access.token.signed.response.alg"] = "PS256";
+                    }
+                }
+            }
+        }
+
+        var importRealmPath = Path.Combine(realmImportDirectory, $"{RealmName}.json");
+        File.WriteAllText(importRealmPath, realmNode.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        _keycloakContainer = new KeycloakBuilder("quay.io/keycloak/keycloak:26.6.4")
             .WithUsername(AdminUsername)
             .WithPassword(AdminPassword)
             .WithEnvironment("KC_HTTP_ENABLED", "false")
@@ -83,12 +130,14 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
             .WithEnvironment("KC_HTTPS_PROTOCOLS", "TLSv1.3")
             .WithEnvironment("KC_HTTPS_CERTIFICATE_FILE", KeycloakCertContainerPath)
             .WithEnvironment("KC_HTTPS_CERTIFICATE_KEY_FILE", KeycloakKeyContainerPath)
-            .WithEnvironment("KC_FEATURES", "dpop")
-            .WithBindMount(keycloakCertPath, KeycloakCertContainerPath)
-            .WithBindMount(keycloakKeyPath, KeycloakKeyContainerPath)
+            .WithEnvironment("KC_FEATURES", "dpop,par")
+            .WithCommand("--import-realm") // Pass ONLY --import-realm (KeycloakBuilder sets start-dev automatically)
+            .WithBindMount(_keycloakCertPath, KeycloakCertContainerPath)
+            .WithBindMount(_keycloakKeyPath, KeycloakKeyContainerPath)
+            .WithBindMount(realmImportDirectory, "/opt/keycloak/data/import")
             .WithPortBinding(KeycloakHttpsPort, true)
             .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilMessageIsLogged("Listening on:", wait => wait.WithTimeout(KeycloakReadinessTimeout)))
+                .UntilMessageIsLogged(".*Keycloak .* started in .*", wait => wait.WithTimeout(KeycloakReadinessTimeout)))
             .Build();
     }
 
@@ -96,12 +145,12 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
     {
         get
         {
-            if (string.IsNullOrWhiteSpace(keycloakBaseAddress))
+            if (string.IsNullOrWhiteSpace(_keycloakBaseAddress))
             {
                 throw new InvalidOperationException("Keycloak base address is not available before container startup.");
             }
 
-            return $"{keycloakBaseAddress}/realms/{RealmName}";
+            return $"{_keycloakBaseAddress}/realms/{RealmName}";
         }
     }
 
@@ -111,12 +160,12 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
     {
         get
         {
-            if (string.IsNullOrWhiteSpace(keycloakBaseAddress))
+            if (string.IsNullOrWhiteSpace(_keycloakBaseAddress))
             {
                 throw new InvalidOperationException("Keycloak base address is not available before container startup.");
             }
 
-            return new Uri(keycloakBaseAddress).Host;
+            return new Uri(_keycloakBaseAddress).Host;
         }
     }
 
@@ -124,42 +173,80 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
     {
         get
         {
-            if (string.IsNullOrWhiteSpace(keycloakBaseAddress))
+            if (string.IsNullOrWhiteSpace(_keycloakBaseAddress))
             {
                 throw new InvalidOperationException("Keycloak base address is not available before container startup.");
             }
 
-            return new Uri(keycloakBaseAddress).Port;
+            return new Uri(_keycloakBaseAddress).Port;
         }
     }
 
     public async ValueTask InitializeAsync()
     {
-        await redisContainer.StartAsync();
-        var redisHostPort = redisContainer.GetMappedPublicPort(6379);
-        redisConnectionString =
+        await _redisContainer.StartAsync();
+        var redisHostPort = _redisContainer.GetMappedPublicPort(6379);
+        _redisConnectionString =
             $"localhost:{redisHostPort},abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000";
         await WaitForRedisReadinessAsync("127.0.0.1", redisHostPort, RedisReadinessTimeout);
-        await keycloakContainer.StartAsync();
-        keycloakBaseAddress = BuildKeycloakBaseAddress();
-        var masterAuthority = $"{keycloakBaseAddress}/realms/master";
+
+        await _keycloakContainer.StartAsync();
+        _keycloakBaseAddress = BuildKeycloakBaseAddress();
+
+        var masterAuthority = $"{_keycloakBaseAddress}/realms/master";
         await WaitForDiscoveryDocumentAsync(masterAuthority, KeycloakReadinessTimeout);
-        await EnsureRealmProvisionedAsync();
         await WaitForDiscoveryDocumentAsync(Authority, KeycloakReadinessTimeout);
+
+        await PreFetchJwksAsync();
     }
 
-    // Overriding DisposeAsync instead of shadowing it avoids warnings and ensures base host cleanup.
+    private async Task PreFetchJwksAsync()
+    {
+        using var httpClient = CreateKeycloakHttpClient();
+        var jwksUri = $"{Authority}/protocol/openid-connect/certs";
+
+        for (int attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                var response = await httpClient.GetAsync(jwksUri, CancellationToken.None);
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    if (!string.IsNullOrWhiteSpace(content) && content.Contains("\"keys\""))
+                    {
+                        return;
+                    }
+                }
+            }
+            catch
+            {
+                // Retry on transient network glitches
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(2));
+        }
+
+        var finalResponse = await httpClient.GetAsync(jwksUri, CancellationToken.None);
+        finalResponse.EnsureSuccessStatusCode();
+        var finalContent = await finalResponse.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(finalContent) || !finalContent.Contains("\"keys\""))
+        {
+            throw new InvalidOperationException("Failed to pre-fetch JWKS from Keycloak");
+        }
+    }
+
     public override async ValueTask DisposeAsync()
     {
-        await DisposeAsyncCore();
+        await _keycloakContainer.DisposeAsync();
+        await _redisContainer.DisposeAsync();
+        _keycloakCertificate.Dispose();
         await base.DisposeAsync();
-    }
 
-    private async ValueTask DisposeAsyncCore()
-    {
-        await keycloakContainer.DisposeAsync();
-        await redisContainer.DisposeAsync();
-        keycloakCertificate.Dispose();
+        if (Directory.Exists(_keycloakCertDirectory))
+        {
+            try { Directory.Delete(_keycloakCertDirectory, true); } catch { /* best effort */ }
+        }
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -171,7 +258,7 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
                 ["Keycloak:Authority"] = Authority,
                 ["Keycloak:Audience"] = ClientId,
                 ["Keycloak:RequireHttpsMetadata"] = "true",
-                ["Sentinel:Redis:EndPoint"] = redisConnectionString,
+                ["Sentinel:Redis:EndPoint"] = _redisConnectionString,
                 ["FeatureFlags:Auth:DpopFlow"] = "true",
                 ["Sentinel:Security:Captcha:SecretKey"] = "0x4AAAAAAABB-MOCK-SECRET",
                 ["Sentinel:Security:Captcha:Enabled"] = "false"
@@ -198,21 +285,20 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
             services.RemoveAll<RedisOptions>();
 
             services.AddSingleton<IDistributedCache>(_ =>
-                new RedisCache(Options.Create(new RedisCacheOptions { Configuration = redisConnectionString })));
+                new RedisCache(Options.Create(new RedisCacheOptions { Configuration = _redisConnectionString })));
 
             services.AddSingleton<IConnectionMultiplexer>(_ =>
             {
-                var options = ConfigurationOptions.Parse(redisConnectionString);
+                var options = ConfigurationOptions.Parse(_redisConnectionString);
                 options.AbortOnConnectFail = false;
                 options.ConnectRetry = 3;
                 return ConnectionMultiplexer.Connect(options);
             });
 
-            // Register Redis security caches using configuration-based approach
             var redisConfig = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["EndPoint"] = redisConnectionString
+                    ["EndPoint"] = _redisConnectionString
                 })
                 .Build();
             services.AddRedisSecurityCaches(redisConfig);
@@ -221,19 +307,16 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
             services.AddScoped<ISsfEventProcessor, SsfEventProcessorAdapter>();
             services.AddScoped<IAuthRevocationService, AuthRevocationServiceAdapter>();
 
-            // Bridge Application layer IJtiReplayCache to Security layer implementation via adapter
             services.AddSingleton<Application.Common.Abstractions.IJtiReplayCache>(sp =>
                 new JtiReplayCacheAdapter(
                     sp.GetRequiredService<IJtiReplayCache>(),
                     sp.GetService<TimeProvider>()));
 
-            // Bridge Application layer ISessionBlacklistCache to Security layer implementation via adapter
             services.AddSingleton<Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
                 new SessionBlacklistCacheAdapter(
                     sp.GetRequiredService<ISessionBlacklistCache>(),
                     sp.GetService<TimeProvider>()));
 
-            // Real-Keycloak tests should validate JWTs against live Keycloak signing keys.
             services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
             {
                 options.RequireHttpsMetadata = true;
@@ -253,49 +336,63 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
                 options.TokenValidationParameters.IssuerSigningKeys = null;
                 options.TokenValidationParameters.ValidIssuer = Authority;
                 options.TokenValidationParameters.ValidAudience = ClientId;
+                options.TokenValidationParameters.ValidateLifetime = true;
+                options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
+                options.TokenValidationParameters.RequireSignedTokens = true;
+                options.TokenValidationParameters.ValidAlgorithms = ["PS256", "ES256"];
             });
         });
     }
 
-    public HttpClient CreateKeycloakHttpClient() => CreateKeycloakHttpClient(SslProtocols.Tls13);
+#pragma warning disable CA1822
+    public static HttpClient CreateKeycloakHttpClient() => CreateKeycloakHttpClient(SslProtocols.Tls13);
 
-    public HttpClient CreateKeycloakHttpClient(SslProtocols protocols)
+    public static HttpClient CreateKeycloakHttpClient(SslProtocols protocols)
     {
 #pragma warning disable CA2000
-        return new HttpClient(
-            new SocketsHttpHandler
+        var handler = new SocketsHttpHandler
+        {
+            ConnectTimeout = KeycloakConnectTimeout,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+            PooledConnectionIdleTimeout = TimeSpan.FromSeconds(30),
+            SslOptions = new SslClientAuthenticationOptions
             {
-                ConnectTimeout = KeycloakConnectTimeout,
-                PooledConnectionLifetime = TimeSpan.FromMinutes(2),
-                PooledConnectionIdleTimeout = TimeSpan.FromSeconds(30),
-                SslOptions = new SslClientAuthenticationOptions
-                {
-                    EnabledSslProtocols = protocols,
-                    CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
-                    RemoteCertificateValidationCallback = ValidateKeycloakCertificate
-                }
-            },
-            true)
+                EnabledSslProtocols = protocols,
+                CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
+                RemoteCertificateValidationCallback = ValidateKeycloakCertificate
+            }
+        };
+
+        return new HttpClient(handler, true)
         {
             Timeout = KeycloakHttpClientTimeout
         };
 #pragma warning restore CA2000
     }
+#pragma warning restore CA1822
 
-    public bool ValidateKeycloakCertificate(object _, X509Certificate? certificate, X509Chain? __,
-        SslPolicyErrors ___)
+    public static bool ValidateKeycloakCertificate(object _, X509Certificate? certificate, X509Chain? __, SslPolicyErrors sslPolicyErrors)
     {
         if (certificate is null)
         {
             return false;
         }
 
-        return IsExpectedKeycloakCertificate(certificate);
+        if (certificate is X509Certificate2 cert2)
+        {
+            var now = DateTime.UtcNow;
+            if (cert2.NotAfter < now || cert2.NotBefore > now)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public bool IsExpectedKeycloakCertificate(X509Certificate certificate)
     {
-        var expectedThumbprint = keycloakCertificate.GetCertHashString(HashAlgorithmName.SHA256);
+        var expectedThumbprint = _keycloakCertificate.GetCertHashString(HashAlgorithmName.SHA256);
         var actualThumbprint = certificate.GetCertHashString(HashAlgorithmName.SHA256);
 
         return string.Equals(actualThumbprint, expectedThumbprint, StringComparison.OrdinalIgnoreCase);
@@ -303,8 +400,8 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
 
     private string BuildKeycloakBaseAddress()
     {
-        var baseAddress = new Uri(keycloakContainer.GetBaseAddress());
-        var port = keycloakContainer.GetMappedPublicPort(KeycloakHttpsPort);
+        var baseAddress = new Uri(_keycloakContainer.GetBaseAddress());
+        var port = _keycloakContainer.GetMappedPublicPort(KeycloakHttpsPort);
         return new UriBuilder(Uri.UriSchemeHttps, baseAddress.Host, port).ToString().TrimEnd('/');
     }
 
@@ -345,7 +442,7 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
         return (certPath, keyPath, keycloakCertificate);
     }
 
-    private async Task WaitForDiscoveryDocumentAsync(string authority, TimeSpan timeout)
+    private static async Task WaitForDiscoveryDocumentAsync(string authority, TimeSpan timeout)
     {
         using var http = CreateKeycloakHttpClient();
         var metadataEndpoint = $"{authority}/.well-known/openid-configuration";
@@ -373,109 +470,6 @@ public sealed class RealKeycloakApiFactory : WebApplicationFactory<Program>, IAs
         }
 
         throw new TimeoutException($"Keycloak discovery endpoint did not become ready: {metadataEndpoint}", lastError);
-    }
-
-    private async Task EnsureRealmProvisionedAsync()
-    {
-        using var http = CreateKeycloakHttpClient();
-        var adminToken = await GetAdminAccessTokenAsync(http);
-        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
-
-        var realmResponse = await http.GetAsync($"{keycloakBaseAddress}/admin/realms/{RealmName}");
-        if (realmResponse.IsSuccessStatusCode)
-        {
-            return;
-        }
-
-        var createRealm = await http.PostAsJsonAsync(
-            $"{keycloakBaseAddress}/admin/realms",
-            new KeycloakRealmPayload(RealmName, true, "none"),
-            TestJsonContext.Default.Options);
-        createRealm.EnsureSuccessStatusCode();
-
-        var createClient = await http.PostAsJsonAsync(
-            $"{keycloakBaseAddress}/admin/realms/{RealmName}/clients",
-            new KeycloakClientPayload(
-                ClientId,
-                "openid-connect",
-                false,
-                ClientSecret,
-                false,
-                false,
-                true,
-                new Dictionary<string, string>
-                {
-                    ["dpop.bound.access.tokens"] = "true",
-                    ["access.token.signed.response.alg"] = "ES256"
-                },
-                [
-                    new KeycloakProtocolMapper(
-                        "audience-sentinel-api",
-                        "openid-connect",
-                        "oidc-audience-mapper",
-                        false,
-                        new Dictionary<string, string>
-                        {
-                            ["access.token.claim"] = "true",
-                            ["id.token.claim"] = "false",
-                            ["included.client.audience"] = ClientId
-                        }),
-                    new KeycloakProtocolMapper(
-                        "acr-hardcoded",
-                        "openid-connect",
-                        "oidc-hardcoded-claim-mapper",
-                        false,
-                        new Dictionary<string, string>
-                        {
-                            ["access.token.claim"] = "true",
-                            ["id.token.claim"] = "false",
-                            ["claim.name"] = "acr",
-                            ["claim.value"] = "acr3",
-                            ["jsonType.label"] = "String"
-                        }),
-                    new KeycloakProtocolMapper(
-                        "profile-scope-hardcoded",
-                        "openid-connect",
-                        "oidc-hardcoded-claim-mapper",
-                        false,
-                        new Dictionary<string, string>
-                        {
-                            ["access.token.claim"] = "true",
-                            ["id.token.claim"] = "false",
-                            ["claim.name"] = "scope",
-                            ["claim.value"] = "profile",
-                            ["jsonType.label"] = "String"
-                        })
-                ]),
-            TestJsonContext.Default.Options);
-        createClient.EnsureSuccessStatusCode();
-    }
-
-    private async Task<string> GetAdminAccessTokenAsync(HttpClient http)
-    {
-        var tokenEndpoint = $"{keycloakBaseAddress}/realms/master/protocol/openid-connect/token";
-        using var request = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint)
-        {
-            Content = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("grant_type", "password"),
-                new KeyValuePair<string, string>("client_id", "admin-cli"),
-                new KeyValuePair<string, string>("username", AdminUsername),
-                new KeyValuePair<string, string>("password", AdminPassword)
-            ])
-        };
-
-        using var response = await http.SendAsync(request);
-        response.EnsureSuccessStatusCode();
-
-        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var token = payload.RootElement.GetProperty("access_token").GetString();
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            throw new InvalidOperationException("Unable to acquire Keycloak admin token for integration setup.");
-        }
-
-        return token;
     }
 
     private static async Task WaitForRedisReadinessAsync(string host, int port, TimeSpan timeout)
