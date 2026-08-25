@@ -52,6 +52,7 @@ var builder = WebApplication.CreateBuilder(args);
 var keycloakSection = builder.Configuration.GetSection("Keycloak");
 var isDevelopment = builder.Environment.IsDevelopment();
 var localCaPath = builder.Configuration["Security:TrustedRootCaPath"];
+var testPublicKey = builder.Configuration["Security:TestPublicKey"];
 
 if (isDevelopment)
 {
@@ -260,14 +261,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.BackchannelHttpHandler = sharedTlsHandler;
         options.Backchannel = new HttpClient(sharedTlsHandler) { Timeout = TimeSpan.FromSeconds(15) };
 
-        // CRITICAL: Provide a ConfigurationManager that uses a CA-aware HttpClientHandler
-        // for JWKS fetch. Without this, JwtBearer creates its own ConfigurationManager
-        // with a default HttpClient that rejects self-signed certs.
-        if (!string.IsNullOrWhiteSpace(authority))
+        if (!string.IsNullOrWhiteSpace(authority) && string.IsNullOrWhiteSpace(testPublicKey))
         {
             var metadataEndpoint = $"{authority}/.well-known/openid-configuration";
 
-            // Use HttpClientHandler (not SocketsHttpHandler) for HttpDocumentRetriever compatibility
             var configManagerHandler = new HttpClientHandler
             {
                 ServerCertificateCustomValidationCallback = (sender, cert, chain, errors) =>
@@ -312,6 +309,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             }
         }
 
+        if (isDevelopment && !allowedIssuers.Contains("https://localhost:8443/realms/sentinel"))
+        {
+            allowedIssuers.Add("https://localhost:8443/realms/sentinel");
+        }
+
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -324,7 +326,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAlgorithms = ["PS256", "ES256"]
         };
 
-options.Events = new JwtBearerEvents
+        // Support test public key when testing without Keycloak discovery (Acceptance Tests)
+        if (isDevelopment && !string.IsNullOrWhiteSpace(testPublicKey))
+        {
+            var ecdsa = ECDsa.Create();
+            ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(testPublicKey), out _);
+            var key = new ECDsaSecurityKey(ecdsa) { KeyId = "test-authority-key" };
+            options.TokenValidationParameters.IssuerSigningKey = key;
+            options.TokenValidationParameters.IssuerSigningKeys = [key];
+            options.ConfigurationManager = null;
+        }
+
+        options.Events = new JwtBearerEvents
         {
             OnMessageReceived = context =>
             {
@@ -506,14 +519,6 @@ builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-    // Use the dual-partition chained limiter from DualPartitionRateLimiting
-    // Dimension 1 (primary quota): identity-based (sub claim) with 20 permits + 5 queue
-    // Dimension 2 (network floor): IP-based with 100 permits + 2 queue
-    var primaryQuota = DualPartitionRateLimiting.BuildPrimaryQuota();
-    var networkFloor = DualPartitionRateLimiting.BuildNetworkFloor();
-
-    options.GlobalLimiter = PartitionedRateLimiter.CreateChained(primaryQuota, networkFloor);
-
     options.OnRejected = static async (context, token) =>
     {
         context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
@@ -533,7 +538,65 @@ builder.Services.AddRateLimiter(options =>
             SampleJsonContext.Default.ProblemDetails,
             cancellationToken: token);
     };
+
+    var primaryQuota = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            ResolveRateLimitPartitionKey(context),
+            _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                Window = TimeSpan.FromSeconds(10),
+                SegmentsPerWindow = 2,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 5
+            }));
+
+    var networkFloor = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "anonymous-ip",
+            _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 100,
+                Window = TimeSpan.FromSeconds(10),
+                SegmentsPerWindow = 2,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 2
+            }));
+
+    options.GlobalLimiter = PartitionedRateLimiter.CreateChained(primaryQuota, networkFloor);
 });
+
+static string ResolveRateLimitPartitionKey(HttpContext context)
+{
+    var authHeader = context.Request.Headers.Authorization.ToString();
+    if (!string.IsNullOrWhiteSpace(authHeader))
+    {
+        string? rawToken = null;
+        if (authHeader.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase))
+            rawToken = authHeader["DPoP ".Length..].Trim();
+        else if (authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            rawToken = authHeader["Bearer ".Length..].Trim();
+
+        if (!string.IsNullOrWhiteSpace(rawToken))
+        {
+            try
+            {
+                var handler = new JsonWebTokenHandler();
+                if (handler.CanReadToken(rawToken))
+                {
+                    var jwt = handler.ReadJsonWebToken(rawToken);
+                    var tokenSub = jwt.Subject ?? jwt.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
+                    if (!string.IsNullOrWhiteSpace(tokenSub))
+                        return $"sub:{tokenSub}";
+                }
+            }
+            catch { /* fallback to IP */ }
+        }
+    }
+
+    var remoteIp = context.Connection.RemoteIpAddress?.ToString();
+    return !string.IsNullOrWhiteSpace(remoteIp) ? $"ip:{remoteIp}" : "ip:anonymous";
+}
 
 builder.Services.AddSentinelAspNetCore().AddAll().ConfigureAcrRanking();
 builder.Services.AddSingleton<DocumentRepository>();

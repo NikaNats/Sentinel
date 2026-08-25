@@ -90,19 +90,34 @@ public sealed class MigrationChaosTests(MigrationTestFixture fixture, ITestOutpu
     [Fact(DisplayName = "🌪️ MIGRATION CHAOS: Migration timeout during long-running operation")]
     public async Task Chaos_MigrationTimeout_Resumable()
     {
-        using var context = MigrationTestFixture.CreateContext(_connectionString);
-        var migrator = context.Database.GetInfrastructure().GetRequiredService<IMigrator>();
+        await MigrationTestFixture.RollbackToBaselineAsync(_connectionString, TestCancellationToken);
 
-        await migrator.MigrateAsync("0", TestCancellationToken);
+        // 1. Trigger simulated timeout via CancellationToken
+        using (var timeoutCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(80)))
+        using (var timeoutContext = MigrationTestFixture.CreateContext(_connectionString))
+        {
+            try
+            {
+                await timeoutContext.Database.MigrateAsync(timeoutCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected timeout cancellation
+            }
+            catch (Exception)
+            {
+                // Transport break expected
+            }
+        }
 
-        var migrateTask = context.Database.MigrateAsync(TestCancellationToken);
+        await Task.Delay(300, TestCancellationToken);
 
-        await Task.Delay(100, TestCancellationToken);
-
-        try { await migrateTask; } catch (OperationCanceledException) { }
-
-        Func<Task> resumeAction = async () => await context.Database.MigrateAsync(TestCancellationToken);
-        await resumeAction.Should().NotThrowAsync("migration should resume after timeout");
+        // 2. Recovery on fresh context
+        using (var recoveryContext = MigrationTestFixture.CreateContext(_connectionString))
+        {
+            Func<Task> resumeAction = async () => await recoveryContext.Database.MigrateAsync(TestCancellationToken);
+            await resumeAction.Should().NotThrowAsync("migration should resume cleanly after timeout");
+        }
 
         _output.WriteLine("Migration timeout simulated, recovery successful");
     }
@@ -366,20 +381,32 @@ public sealed class MigrationChaosTests(MigrationTestFixture fixture, ITestOutpu
     [Fact(DisplayName = "🌪️ MIGRATION CHAOS: Connection loss during migration")]
     public async Task Chaos_ConnectionLossDuringMigration_Recovers()
     {
-        using var context = MigrationTestFixture.CreateContext(_connectionString);
-        var migrator = context.Database.GetInfrastructure().GetRequiredService<IMigrator>();
+        await MigrationTestFixture.RollbackToBaselineAsync(_connectionString, TestCancellationToken);
 
-        await migrator.MigrateAsync("0", TestCancellationToken);
+        // 1. Simulate connection loss
+        using (var breakCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50)))
+        using (var breakContext = MigrationTestFixture.CreateContext(_connectionString))
+        {
+            try
+            {
+                await breakContext.Database.MigrateAsync(breakCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception)
+            {
+            }
+        }
 
-        var migrateTask = context.Database.MigrateAsync(TestCancellationToken);
+        await Task.Delay(300, TestCancellationToken);
 
-        await Task.Delay(50, TestCancellationToken);
-        await context.DisposeAsync();
-
-        using var newContext = MigrationTestFixture.CreateContext(_connectionString);
-
-        Func<Task> resumeAction = async () => await newContext.Database.MigrateAsync(TestCancellationToken);
-        await resumeAction.Should().NotThrowAsync("migration should recover after connection loss");
+        // 2. Verify new context can cleanly acquire lock and complete migration
+        using (var newContext = MigrationTestFixture.CreateContext(_connectionString))
+        {
+            Func<Task> resumeAction = async () => await newContext.Database.MigrateAsync(TestCancellationToken);
+            await resumeAction.Should().NotThrowAsync("migration should recover after connection loss");
+        }
 
         _output.WriteLine("Connection loss during migration - recovered successfully");
     }

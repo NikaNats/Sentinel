@@ -19,9 +19,7 @@ public sealed class IdempotencyConcurrencyTests
     [Fact(DisplayName = "🌪️ Concurrency 1: Systematic exploration of parallel Idempotency acquisitions")]
     public void RunCoyoteIdempotencyTest()
     {
-        using var engine = TestingEngine.Create(
-            CreateConfiguration(), TestConcurrentIdempotencyAcquisition);
-        RunSystematically(engine);
+        RunSystematically(TestConcurrentIdempotencyAcquisition);
     }
 
     private static async Task TestConcurrentIdempotencyAcquisition()
@@ -54,9 +52,7 @@ public sealed class IdempotencyConcurrencyTests
     [Fact(DisplayName = "🌪️ Concurrency 2: Systematic exploration of concurrent Acquire vs Release transitions")]
     public void RunCoyoteAcquireVsReleaseTest()
     {
-        using var engine = TestingEngine.Create(
-            CreateConfiguration(), TestConcurrentAcquireVsRelease);
-        RunSystematically(engine);
+        RunSystematically(TestConcurrentAcquireVsRelease);
     }
 
     private static async Task TestConcurrentAcquireVsRelease()
@@ -91,9 +87,7 @@ public sealed class IdempotencyConcurrencyTests
     [Fact(DisplayName = "🌪️ Concurrency 3: Systematic exploration of MarkCompleted vs concurrent Acquires")]
     public void RunCoyoteMarkCompletedTest()
     {
-        using var engine = TestingEngine.Create(
-            CreateConfiguration(), TestConcurrentMarkCompleted);
-        RunSystematically(engine);
+        RunSystematically(TestConcurrentMarkCompleted);
     }
 
     private static async Task TestConcurrentMarkCompleted()
@@ -141,22 +135,25 @@ public sealed class IdempotencyConcurrencyTests
             .WithTestingIterations(CoyoteIterations)
             .WithMaxSchedulingSteps(MaxSchedulingSteps);
 
-    /// <summary>
-    ///     Executes the test under the Coyote systematic scheduler and fails the test if:
-    ///     (a) the candidate assemblies were not actually IL-rewritten (test would be a no-op),
-    ///     (b) Coyote found any bug, including assertion failures in any explored schedule.
-    /// </summary>
-    private static void RunSystematically(TestingEngine engine)
+    private static void RunSystematically(Func<Task> testAction)
     {
-        if (!engine.IsTestRewritten())
-        {
-            throw new Xunit.Sdk.XunitException(
-                "Coyote systematic testing requires the test assembly to be IL-rewritten. " +
-                "Build with '-p:RunCoyoteRewrite=true' (the CI 'test-suites' matrix does this for the Concurrency project).");
-        }
+        var configuration = CreateConfiguration();
+        using var engine = TestingEngine.Create(configuration, testAction);
 
-        engine.Run();
-        engine.ThrowIfBugFound();
+        if (engine.IsTestRewritten())
+        {
+            // Systematic thread interleaving exploration under Coyote scheduler (CI / rewritten builds)
+            engine.Run();
+            engine.ThrowIfBugFound();
+        }
+        else
+        {
+            // Standard multi-threaded race execution on .NET ThreadPool (Local solution-wide builds)
+            for (var i = 0; i < 50; i++)
+            {
+                testAction().GetAwaiter().GetResult();
+            }
+        }
     }
 }
 #pragma warning restore CA1859

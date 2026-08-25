@@ -454,17 +454,36 @@ public sealed class ComprehensiveMigrationTests(MigrationTestFixture fixture, IT
     [Fact(DisplayName = "🛡️ MIGRATION: Recovery - Migration timeout/kill leaves database in recoverable state")]
     public async Task PartialMigrationRecovery_KillLeavesRecoverableState()
     {
-        using var context = MigrationTestFixture.CreateContext(_connectionString);
-
+        // 1. Initial rollback to baseline
         await MigrationTestFixture.RollbackToBaselineAsync(_connectionString, TestCancellationToken);
 
-        var migrateTask = context.Database.MigrateAsync(TestCancellationToken);
+        // 2. Simulate interrupted migration using a short-lived cancellation token
+        using (var cancelCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(80)))
+        using (var interruptedContext = MigrationTestFixture.CreateContext(_connectionString))
+        {
+            try
+            {
+                await interruptedContext.Database.MigrateAsync(cancelCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected interruption
+            }
+            catch (Exception)
+            {
+                // Connection/pipeline break expected
+            }
+        }
 
-        await Task.Delay(100, TestCancellationToken);
-        try { await migrateTask; } catch (OperationCanceledException) { }
+        // Allow PostgreSQL backend connection to cleanly reset
+        await Task.Delay(300, TestCancellationToken);
 
-        Func<Task> resumeAction = async () => await context.Database.MigrateAsync(TestCancellationToken);
-        await resumeAction.Should().NotThrowAsync("migration should be resumable after interruption");
+        // 3. Resume migration with a fresh DbContext - must recover and succeed
+        using (var resumeContext = MigrationTestFixture.CreateContext(_connectionString))
+        {
+            Func<Task> resumeAction = async () => await resumeContext.Database.MigrateAsync(TestCancellationToken);
+            await resumeAction.Should().NotThrowAsync("migration should be resumable after interruption");
+        }
 
         _output.WriteLine("Migration recovered successfully after simulated interruption");
     }
