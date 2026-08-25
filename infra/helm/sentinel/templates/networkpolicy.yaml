@@ -48,16 +48,18 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # Allowed Backend Protocols & External HTTPS (Keycloak / Vault / Cloud APIs)
+    # Allowed Backend Protocols, External HTTPS & Redis Sentinel HA
     - ports:
         - protocol: TCP
-          port: 443
+          port: 443     # External HTTPS (Turnstile CAPTCHA, Vault, Cloud APIs)
         - protocol: TCP
-          port: 8443
+          port: 8443    # Internal Keycloak HTTPS
         - protocol: TCP
-          port: 6379
+          port: 6379    # Redis Server (Data Port)
         - protocol: TCP
-          port: 5432
+          port: 26379   # Redis Sentinel (HA Quorum & Failover Port)
         - protocol: TCP
-          port: 4317
+          port: 5432    # PostgreSQL Database
+        - protocol: TCP
+          port: 4317    # OpenTelemetry Collector (gRPC)
 {{- end }}

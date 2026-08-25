@@ -1,4 +1,6 @@
-# Production Tier-0 Enterprise Configuration
+global:
+  environment: "production"
+  namespace: "sentinel-prod"
 
 api:
   replicaCount: 3
@@ -20,13 +22,23 @@ api:
       audience: "sentinel-api"
       requireHttpsMetadata: true
     redis:
-      endpoint: "redis-cluster.database.svc.cluster.local:6379"
+      # Redis Sentinel HA pool (3 Quorum nodes)
+      endpoint: "sentinel-redis-ha-0.sentinel-redis-ha:26379,sentinel-redis-ha-1.sentinel-redis-ha:26379,sentinel-redis-ha-2.sentinel-redis-ha:26379"
+      serviceName: "mymaster"
       keyPrefix: "sentinel_prod:"
+      syncTimeout: 2000
+      connectTimeout: 4000
     otel:
       endpoint: "http://otel-collector.observability.svc.cluster.local:4317"
+      serviceName: "sentinel-api"
 
   ingress:
     enabled: true
+    className: "nginx"
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
     hosts:
       - host: "api.sentinel.ge"
         paths:
@@ -41,16 +53,24 @@ api:
     enabled: true
     minReplicas: 3
     maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
 
 networkPolicy:
   enabled: true
 
 bundledServices:
   redis:
-    enabled: false
+    enabled: false      # Standalone single-node disabled
+  redisHA:
+    enabled: true       # 3-Node Redis Sentinel HA cluster enabled
   postgres:
-    enabled: false
+    enabled: false      # Uses managed PostgreSQL in production
   keycloak:
-    enabled: false
+    enabled: false      # Uses dedicated Keycloak cluster in production
   otelCollector:
     enabled: false
