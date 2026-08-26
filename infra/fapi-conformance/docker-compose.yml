@@ -52,6 +52,12 @@ services:
       TOKEN: "${FAPI_SUITE_TOKEN:?Set FAPI_SUITE_TOKEN in infra/fapi-conformance/.env}"
       # --- Local dev profile: suite runs without its own OIDC login ---
       SPRING_PROFILES_ACTIVE: "dev"
+      # Dummy OIDC credentials: newer suite images validate gitlab/google client
+      # registrations even in dev profile; dummy values satisfy BeanCreation.
+      OIDC_GITLAB_CLIENTID: "dummy-client-id-for-local-dev"
+      OIDC_GITLAB_SECRET: "dummy-client-secret-for-local-dev"
+      OIDC_GOOGLE_CLIENTID: "dummy-google-client-id"
+      OIDC_GOOGLE_SECRET: "dummy-google-secret"
       # --- TLS inside the container ---
       SERVER_SSL_ENABLED: "true"
       SERVER_SSL_KEY_STORE: "file:/app/certs/keystore.p12"
@@ -69,7 +75,7 @@ services:
     ports:
       - "9443:9443"
     healthcheck:
-      test: ["CMD", "curl", "-k", "-sf", "https://localhost:9443/api/info"]
+      test: ["CMD", "curl", "-k", "-sf", "https://localhost:9443/actuator/health"]
       interval: 15s
       timeout: 10s
       retries: 10

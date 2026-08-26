@@ -39,17 +39,35 @@
 #   FAPI_PLAN_CONFIG  path to a full custom plan configuration JSON (overrides defaults)
 #   FAPI_PROVISION_HOOK  path to a script that provisions client JWKS into Keycloak;
 #                        invoked with FAPI_CLIENT_JWKS / FAPI_CLIENT2_JWKS file paths
+#   FAPI_CLIENT_PRIVATE_JWKS / FAPI_CLIENT2_PRIVATE_JWKS
+#                        optional private JWKS files; generated ephemerally when omitted
+#   FAPI_CLIENT_JWKS / FAPI_CLIENT2_JWKS
+#                        optional public JWKS files for Keycloak provisioning; generated when omitted
 #   FAPI_MAX_POLL     max seconds to poll (default 3600)
-#   PLAN_NAME         plan name (default fapi2-security-profile-dpop)
+#   PLAN_NAME         plan name (default fapi2-security-profile-final-test-plan)
 #   ARTIFACTS_DIR     evidence output dir (default artifacts/fapi)
 #
 # Exit codes: 0 = PASSED (or REVIEW), 1 = FAILED/ERROR/timeout/provisioning required.
 set -euo pipefail
 
+# Load local settings when invoked from PowerShell through WSL/Git Bash.
+# Existing environment variables win and .env values only fill missing values.
+FAPI_ENV_FILE="${FAPI_ENV_FILE:-infra/fapi-conformance/.env}"
+if [ -f "$FAPI_ENV_FILE" ]; then
+  while IFS='=' read -r env_name env_value; do
+    case "$env_name" in
+      ''|\#*) continue ;;
+    esac
+    if [ -z "${!env_name+x}" ]; then
+      export "$env_name=$env_value"
+    fi
+  done < "$FAPI_ENV_FILE"
+fi
+
 FAPI_MODE="${FAPI_MODE:-local}"
 case "$FAPI_MODE" in
   local)
-    SUITE_URL="${FAPI_SUITE_URL:-https://localhost:8443}"
+    SUITE_URL="${FAPI_SUITE_URL:-https://localhost:${FAPI_PROXY_PORT:-8443}}"
     SUITE_TOKEN="${FAPI_SUITE_TOKEN:-local-dev-token}"
     ;;
   remote)
@@ -61,24 +79,103 @@ case "$FAPI_MODE" in
     exit 1
     ;;
 esac
-ISSUER_URL="${ISSUER_URL:?ISSUER_URL is required - must be reachable by the OIDF suite}"
+ISSUER_URL="${ISSUER_URL:-${KEYCLOAK_ISSUER:-}}"
+ISSUER_URL="${ISSUER_URL:?ISSUER_URL or KEYCLOAK_ISSUER is required - must be reachable by the OIDF suite}"
 CLIENT_ID="${FAPI_CLIENT_ID:-sentinel-fapi-conformance}"
 CLIENT2_ID="${FAPI_CLIENT2_ID:-sentinel-fapi-conformance-mixup}"
-PLAN_NAME="${PLAN_NAME:-fapi2-security-profile-dpop}"
+PLAN_NAME="${PLAN_NAME:-${FAPI_PLAN_NAME:-fapi2-security-profile-final-test-plan}}"
+RESOURCE_URL="${RESOURCE_URL:-${SENTINEL_API_URL:-}}"
+if [ "$FAPI_MODE" = "local" ]; then
+  FAPI_PROVISION_HOOK="${FAPI_PROVISION_HOOK:-infra/keycloak/scripts/provision-fapi-conformance-clients.sh}"
+  DOCKER_FALLBACK="${DOCKER_FALLBACK:-true}"
+  KC_TRUSTSTORE_HOST="${KC_TRUSTSTORE_HOST:-$(pwd)/infra/fapi-conformance/certs/truststore.p12}"
+  KC_TRUSTSTORE_PASS="${KC_TRUSTSTORE_PASS:-${FAPI_KEYSTORE_PASSWORD:-sentinel-fapi}}"
+  export FAPI_PROVISION_HOOK DOCKER_FALLBACK KC_TRUSTSTORE_HOST KC_TRUSTSTORE_PASS
+fi
+# In local dev mode the suite injects a dummy user (SPRING_PROFILES_ACTIVE=dev)
+# so the API token is not required and sending a Bearer token triggers
+# OAuth resource-server validation (401). Only send the header in remote mode.
+AUTH_HDR=()
+if [ "$FAPI_MODE" = "remote" ]; then
+  AUTH_HDR=(-H "Authorization: Bearer $SUITE_TOKEN")
+fi
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-artifacts/fapi}"
 MAX_POLL="${FAPI_MAX_POLL:-3600}"
 POLL_EVERY="${FAPI_POLL_INTERVAL:-15}"
 REPORT_DIR="$ARTIFACTS_DIR/report"
 JWKS_DIR="$ARTIFACTS_DIR/jwks"
 
-for cmd in jq curl unzip; do
+for cmd in jq curl; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "::error::$cmd is required but not installed (preinstalled on GitHub-hosted runners)" >&2
     exit 1
   fi
 done
+if ! command -v unzip >/dev/null 2>&1; then
+  echo "::warning::unzip not found - report extraction will be skipped (install unzip for full evidence pack)" >&2
+fi
 
 mkdir -p "$REPORT_DIR" "$JWKS_DIR"
+
+if { [ -n "${FAPI_CLIENT_PRIVATE_JWKS:-}" ] && [ -z "${FAPI_CLIENT_JWKS:-}" ]; } || \
+   { [ -z "${FAPI_CLIENT_PRIVATE_JWKS:-}" ] && [ -n "${FAPI_CLIENT_JWKS:-}" ]; } || \
+   { [ -n "${FAPI_CLIENT2_PRIVATE_JWKS:-}" ] && [ -z "${FAPI_CLIENT2_JWKS:-}" ]; } || \
+   { [ -z "${FAPI_CLIENT2_PRIVATE_JWKS:-}" ] && [ -n "${FAPI_CLIENT2_JWKS:-}" ]; }; then
+  echo "::error::Each FAPI client requires both matching private and public JWKS files." >&2
+  exit 1
+fi
+
+# Current local suite images require private client signing keys in the plan
+# configuration. Generate ephemeral keys per run unless callers provide them.
+if [ -z "${FAPI_CLIENT_PRIVATE_JWKS:-}" ] || [ -z "${FAPI_CLIENT2_PRIVATE_JWKS:-}" ]; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "::error::python3 is required to generate ephemeral FAPI client JWKS." >&2
+    exit 1
+  fi
+  PRIVATE_JWKS_DIR="${TMPDIR:-/tmp}/sentinel-fapi-jwks-$$"
+  mkdir -m 700 "$PRIVATE_JWKS_DIR"
+  trap 'rm -rf "$PRIVATE_JWKS_DIR"' EXIT
+  python3 - "$PRIVATE_JWKS_DIR" "$JWKS_DIR" <<'PY'
+import base64, hashlib, json, os, sys
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
+
+def b64u(value):
+    return base64.urlsafe_b64encode(value).decode().rstrip("=")
+
+def generate(path, public_path):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public = key.public_key()
+    numbers = public.public_numbers()
+    private = key.private_numbers()
+    der = public.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    kid = b64u(hashlib.sha256(der).digest())
+    jwk = {
+        "kty": "RSA", "kid": kid, "use": "sig", "alg": "PS256",
+        "n": b64u(numbers.n.to_bytes((numbers.n.bit_length() + 7) // 8, "big")),
+        "e": b64u(numbers.e.to_bytes((numbers.e.bit_length() + 7) // 8, "big")),
+        "d": b64u(private.d.to_bytes((private.d.bit_length() + 7) // 8, "big")),
+        "p": b64u(private.p.to_bytes((private.p.bit_length() + 7) // 8, "big")),
+        "q": b64u(private.q.to_bytes((private.q.bit_length() + 7) // 8, "big")),
+        "dp": b64u(private.dmp1.to_bytes((private.dmp1.bit_length() + 7) // 8, "big")),
+        "dq": b64u(private.dmq1.to_bytes((private.dmq1.bit_length() + 7) // 8, "big")),
+        "qi": b64u(private.iqmp.to_bytes((private.iqmp.bit_length() + 7) // 8, "big")),
+    }
+    with open(path, "w") as f:
+        json.dump({"keys": [jwk]}, f)
+    with open(public_path, "w") as f:
+        json.dump({"keys": [{k: jwk[k] for k in ("kty", "kid", "use", "alg", "n", "e")}]}, f)
+
+private_root = sys.argv[1]
+public_root = sys.argv[2]
+generate(os.path.join(private_root, "client-private-jwks.json"), os.path.join(public_root, "client-jwks.json"))
+generate(os.path.join(private_root, "client2-private-jwks.json"), os.path.join(public_root, "client2-jwks.json"))
+PY
+  FAPI_CLIENT_PRIVATE_JWKS="${FAPI_CLIENT_PRIVATE_JWKS:-$PRIVATE_JWKS_DIR/client-private-jwks.json}"
+  FAPI_CLIENT2_PRIVATE_JWKS="${FAPI_CLIENT2_PRIVATE_JWKS:-$PRIVATE_JWKS_DIR/client2-private-jwks.json}"
+  FAPI_CLIENT_JWKS="${FAPI_CLIENT_JWKS:-$JWKS_DIR/client-jwks.json}"
+  FAPI_CLIENT2_JWKS="${FAPI_CLIENT2_JWKS:-$JWKS_DIR/client2-jwks.json}"
+fi
 
 # ---------------------------------------------------------------------------
 # Pre-flight: the suite must be reachable before we attempt plan creation.
@@ -88,7 +185,7 @@ mkdir -p "$REPORT_DIR" "$JWKS_DIR"
 echo "==> Pre-flight: verifying suite reachable at ${SUITE_URL}"
 SUITE_REACHABLE=false
 for _ in $(seq 1 30); do
-  if curl -ksf "${SUITE_URL}/api/info" >/dev/null 2>&1; then
+  if curl -ksf "${SUITE_URL}/actuator/health" >/dev/null 2>&1 || curl -ksf "${SUITE_URL}/api/info" >/dev/null 2>&1; then
     SUITE_REACHABLE=true
     break
   fi
@@ -120,13 +217,22 @@ else
     --arg resource "${RESOURCE_URL:-}" \
     '{server:{discoveryUrl:$issuer}, client:{client_id:$cid, client_name:"Sentinel FAPI Conformance"}, client2:{client_id:$c2id, client_name:"Sentinel FAPI Conformance (mixup)"}} + (if $resource != "" then {resource:{resourceUrl:$resource}} else {} end)')
 fi
+# The suite needs the private signing keys in the plan configuration. These
+# optional files are also useful with local suite images that do not generate
+# client keys automatically.
+if [ -n "${FAPI_CLIENT_PRIVATE_JWKS:-}" ]; then
+  CONFIG_JSON=$(printf '%s' "$CONFIG_JSON" | jq --slurpfile jwks "$FAPI_CLIENT_PRIVATE_JWKS" '.client.jwks = $jwks[0]')
+fi
+if [ -n "${FAPI_CLIENT2_PRIVATE_JWKS:-}" ]; then
+  CONFIG_JSON=$(printf '%s' "$CONFIG_JSON" | jq --slurpfile jwks "$FAPI_CLIENT2_PRIVATE_JWKS" '.client2.jwks = $jwks[0]')
+fi
 
 echo "==> [1/6] Creating FAPI 2.0 plan '${PLAN_NAME}' on ${SUITE_URL}"
 echo "    variant: ${VARIANT_JSON}"
 PLAN_NAME_ENC=$(jq -rn --arg v "$PLAN_NAME" '$v | @uri')
 VARIANT_ENC=$(jq -rn --arg v "$VARIANT_JSON" '$v | @uri')
 PLAN_RESPONSE=$(curl -kfsS -X POST "$SUITE_URL/api/plan?planName=${PLAN_NAME_ENC}&variant=${VARIANT_ENC}" \
-  -H "Authorization: Bearer $SUITE_TOKEN" \
+  "${AUTH_HDR[@]}" \
   -H 'Content-Type: application/json' \
   -d "$CONFIG_JSON") || {
   echo "::error::Failed to create plan (is FAPI_SUITE_URL/FAPI_SUITE_TOKEN correct?)" >&2
@@ -142,70 +248,81 @@ echo "==> [2/6] Plan created: ${PLAN_ID}"
 echo "    plan page: ${SUITE_URL}/plan-detail.html?plan=${PLAN_ID}"
 
 # ---------------------------------------------------------------------------
-# [3/6] Extract the suite-generated client signing JWKS and provision into
-# Keycloak (the AS must trust the suite's private_key_jwt keys BEFORE the plan
-# is started). The suite generates per-plan keypairs; the plan object carries
-# the public JWKS in client.jwks / client2.jwks.
+# [3/6] Provision the per-run client signing JWKS into Keycloak. The AS must
+# trust the public keys before private_key_jwt tests start; the current local
+# suite image does not generate these keys automatically.
 # ---------------------------------------------------------------------------
-printf '%s' "$PLAN_RESPONSE" | jq -r '.client.jwks // empty' > "$JWKS_DIR/client-jwks.json" 2>/dev/null || true
-printf '%s' "$PLAN_RESPONSE" | jq -r '.client2.jwks // empty' > "$JWKS_DIR/client2-jwks.json" 2>/dev/null || true
-
-if [ ! -s "$JWKS_DIR/client-jwks.json" ]; then
-  # Fallback: fetch the plan object if the create response omits the keys.
-  PLAN_OBJ=$(curl -kfsS "$SUITE_URL/api/plan/$PLAN_ID" -H "Authorization: Bearer $SUITE_TOKEN" || echo "")
-  [ -n "$PLAN_OBJ" ] && printf '%s' "$PLAN_OBJ" | jq -r '.client.jwks // empty' > "$JWKS_DIR/client-jwks.json" 2>/dev/null || true
-  [ -n "$PLAN_OBJ" ] && printf '%s' "$PLAN_OBJ" | jq -r '.client2.jwks // empty' > "$JWKS_DIR/client2-jwks.json" 2>/dev/null || true
-fi
-
-if [ -s "$JWKS_DIR/client-jwks.json" ]; then
-  echo "    extracted suite client JWKS -> $JWKS_DIR"
-  if [ -n "${FAPI_PROVISION_HOOK:-}" ]; then
-    echo "==> [3b/6] Provisioning client JWKS into Keycloak via ${FAPI_PROVISION_HOOK}"
-    FAPI_CLIENT_JWKS="$JWKS_DIR/client-jwks.json" \
-    FAPI_CLIENT2_JWKS="$JWKS_DIR/client2-jwks.json" \
-    FAPI_CLIENT_ID="$CLIENT_ID" FAPI_CLIENT2_ID="$CLIENT2_ID" \
-      bash "$FAPI_PROVISION_HOOK"
-  else
-    echo "::warning::FAPI_PROVISION_HOOK not set - Keycloak must trust these JWKS manually"
-    echo "          before the plan is started, otherwise private_key_jwt fails."
-  fi
-else
-  echo "::warning::Plan response carried no client.jwks; using FAPI_CLIENT_JWKS if provided."
-  if [ -n "${FAPI_CLIENT_JWKS:-}" ] && [ -s "${FAPI_CLIENT_JWKS:-/dev/null}" ]; then
+if [ -n "${FAPI_CLIENT_JWKS:-}" ] && [ -s "$FAPI_CLIENT_JWKS" ]; then
+  if [ "$FAPI_CLIENT_JWKS" != "$JWKS_DIR/client-jwks.json" ]; then
     cp "$FAPI_CLIENT_JWKS" "$JWKS_DIR/client-jwks.json"
   fi
-  if [ -n "${FAPI_CLIENT2_JWKS:-}" ] && [ -s "${FAPI_CLIENT2_JWKS:-/dev/null}" ]; then
+else
+  printf '%s' "$PLAN_RESPONSE" | jq -r '.client.jwks // empty' > "$JWKS_DIR/client-jwks.json" 2>/dev/null || true
+fi
+if [ -n "${FAPI_CLIENT2_JWKS:-}" ] && [ -s "$FAPI_CLIENT2_JWKS" ]; then
+  if [ "$FAPI_CLIENT2_JWKS" != "$JWKS_DIR/client2-jwks.json" ]; then
     cp "$FAPI_CLIENT2_JWKS" "$JWKS_DIR/client2-jwks.json"
   fi
-fi
-
-# ---------------------------------------------------------------------------
-# [4/6] Start the plan (idempotent; 4xx if already started) and poll the
-# plan-level aggregate result.
-# ---------------------------------------------------------------------------
-STARTED=$(curl -kfsS "$SUITE_URL/api/plan/$PLAN_ID" -H "Authorization: Bearer $SUITE_TOKEN" 2>/dev/null \
-  | jq -r '.started // false' 2>/dev/null || echo false)
-if [ "$STARTED" != "true" ]; then
-  echo "==> [4/6] Starting plan ${PLAN_ID}"
-  curl -kfsS -X POST "$SUITE_URL/api/plan/$PLAN_ID/start" -H "Authorization: Bearer $SUITE_TOKEN" >/dev/null 2>&1 \
-    || echo "::warning::start endpoint not available (4xx) - plan may auto-run; continuing to poll."
 else
-  echo "==> [4/6] Plan already started."
+  printf '%s' "$PLAN_RESPONSE" | jq -r '.client2.jwks // empty' > "$JWKS_DIR/client2-jwks.json" 2>/dev/null || true
+fi
+if [ -n "${FAPI_PROVISION_HOOK:-}" ]; then
+  if [ ! -s "$JWKS_DIR/client-jwks.json" ] || [ ! -s "$JWKS_DIR/client2-jwks.json" ]; then
+    echo "::error::Both public client JWKS files are required for FAPI_PROVISION_HOOK provisioning." >&2
+    exit 1
+  fi
+  echo "==> [3b/6] Provisioning client JWKS into Keycloak via ${FAPI_PROVISION_HOOK}"
+  FAPI_CLIENT_JWKS="$JWKS_DIR/client-jwks.json" \
+  FAPI_CLIENT2_JWKS="$JWKS_DIR/client2-jwks.json" \
+  FAPI_CLIENT_ID="$CLIENT_ID" FAPI_CLIENT2_ID="$CLIENT2_ID" \
+    bash "$FAPI_PROVISION_HOOK"
 fi
 
-echo "==> [5/6] Polling plan result (every ${POLL_EVERY}s, up to ${MAX_POLL}s)"
-STATUS=""
-RESULT_JSON=""
-for _ in $(seq 1 $((MAX_POLL / POLL_EVERY))); do
-  RESULT_JSON=$(curl -kfsS "$SUITE_URL/api/plan/$PLAN_ID/result" \
-    -H "Authorization: Bearer $SUITE_TOKEN" -H 'Accept: application/json' || echo "{}")
-  STATUS=$(printf '%s' "$RESULT_JSON" | jq -r '.result // "RUNNING"' 2>/dev/null || echo "RUNNING")
-  echo "    status: ${STATUS}"
-  case "$STATUS" in
-    PASSED|FAILED|REVIEW|ERROR|INTERRUPTED|COMPLETED) break ;;
-  esac
+# ---------------------------------------------------------------------------
+# [4/6] Create one runner instance per module. The current suite executes
+# plans through /api/runner and exposes status/results through /api/info.
+# ---------------------------------------------------------------------------
+RUNNERS_FILE="$ARTIFACTS_DIR/runner-ids.tsv"
+: > "$RUNNERS_FILE"
+MODULES_JSON=$(printf '%s' "$PLAN_RESPONSE" | jq -c '.modules // []')
+MODULE_COUNT=$(printf '%s' "$MODULES_JSON" | jq 'length')
+[ "$MODULE_COUNT" -gt 0 ] || { echo "::error::Plan contains no test modules." >&2; exit 1; }
+
+echo "==> [4/6] Creating ${MODULE_COUNT} test module runners"
+while IFS=$'\t' read -r module variant; do
+  [ -n "$module" ] || continue
+  MODULE_ENC=$(jq -rn --arg v "$module" '$v | @uri')
+  VARIANT_ENC=$(jq -rn --arg v "$variant" '$v | @uri')
+  RUNNER_RESPONSE=$(curl -kfsS -X POST "$SUITE_URL/api/runner?test=${MODULE_ENC}&plan=${PLAN_ID}&variant=${VARIANT_ENC}" \
+    "${AUTH_HDR[@]}") || { echo "::error::Failed to create runner for ${module}" >&2; exit 1; }
+  RUNNER_ID=$(printf '%s' "$RUNNER_RESPONSE" | jq -r '.id // empty')
+  [ -n "$RUNNER_ID" ] || { echo "::error::No runner id for ${module}: $RUNNER_RESPONSE" >&2; exit 1; }
+  printf '%s\t%s\n' "$RUNNER_ID" "$module" >> "$RUNNERS_FILE"
+done < <(printf '%s' "$MODULES_JSON" | jq -r '.[] | [.testModule, ((.variant // {}) | tojson)] | @tsv')
+
+echo "==> [5/6] Polling module results (every ${POLL_EVERY}s, up to ${MAX_POLL}s)"
+DEADLINE=$(( $(date +%s) + MAX_POLL ))
+RESULT_JSON='[]'
+STATUS="RUNNING"
+while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+  RESULT_JSON='[]'
+  ALL_FINISHED=true
+  while IFS=$'\t' read -r runner_id module; do
+    INFO=$(curl -kfsS "$SUITE_URL/api/info/$runner_id" "${AUTH_HDR[@]}" || echo '{}')
+    RESULT_JSON=$(jq -c --arg module "$module" --arg id "$runner_id" --argjson info "$INFO" '. + [{module:$module,id:$id,status:($info.status // "UNKNOWN"),result:($info.result // null)}]' <<< "$RESULT_JSON")
+    state=$(printf '%s' "$INFO" | jq -r '.status // "UNKNOWN"')
+    case "$state" in FINISHED|INTERRUPTED) ;; *) ALL_FINISHED=false ;; esac
+  done < "$RUNNERS_FILE"
+  echo "    completed: $(printf '%s' "$RESULT_JSON" | jq '[.[] | select(.status == "FINISHED" or .status == "INTERRUPTED")] | length')/${MODULE_COUNT}"
+  if [ "$ALL_FINISHED" = true ]; then break; fi
   sleep "$POLL_EVERY"
 done
+if [ "$ALL_FINISHED" != true ]; then
+  STATUS="ERROR"
+  echo "::error::FAPI conformance timed out after ${MAX_POLL}s" >&2
+else
+  STATUS=$(printf '%s' "$RESULT_JSON" | jq -r 'if any(.[]; .result == "FAILED" or .result == "UNKNOWN") then "FAILED" elif any(.[]; .result == "REVIEW" or .result == "WARNING") then "REVIEW" else "PASSED" end')
+fi
 
 if [ "$STATUS" != "PASSED" ] && [ "$STATUS" != "FAILED" ] && [ "$STATUS" != "REVIEW" ] && \
    [ "$STATUS" != "ERROR" ] && [ "$STATUS" != "INTERRUPTED" ] && [ "$STATUS" != "COMPLETED" ]; then
@@ -222,9 +339,13 @@ echo "==> [6/6] Downloading and verifying evidence artifacts"
 printf '%s' "$RESULT_JSON" > "$ARTIFACTS_DIR/fapi-result.json"
 
 EXPORT_ZIP="$ARTIFACTS_DIR/fapi-report.zip"
-if curl -kfsS "$SUITE_URL/api/plan/exporthtml/$PLAN_ID" -H "Authorization: Bearer $SUITE_TOKEN" \
+if curl -kfsS "$SUITE_URL/api/plan/exporthtml/$PLAN_ID" "${AUTH_HDR[@]}" \
     -o "$EXPORT_ZIP" 2>/dev/null; then
-  (cd "$REPORT_DIR" && unzip -oq "$EXPORT_ZIP" 2>/dev/null) || echo "::warning::report zip is not a valid archive"
+  if command -v unzip >/dev/null 2>&1; then
+    (cd "$REPORT_DIR" && unzip -oq "$EXPORT_ZIP" 2>/dev/null) || echo "::warning::report zip is not a valid archive"
+  else
+    python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$EXPORT_ZIP" "$REPORT_DIR" 2>/dev/null || echo "::warning::report zip extraction failed (python fallback)"
+  fi
   echo "    report pack: $EXPORT_ZIP (+ extracted $REPORT_DIR)"
 else
   echo "::warning::report export unavailable (plan may not be finished); continuing."
@@ -233,7 +354,7 @@ fi
 CERT_FILE="$ARTIFACTS_DIR/fapi-certificate.pdf"
 if [ "$STATUS" = "PASSED" ] || [ "$STATUS" = "COMPLETED" ]; then
   if curl -kfsS "$SUITE_URL/api/plan/$PLAN_ID/certificate" \
-      -H "Authorization: Bearer $SUITE_TOKEN" -H 'Accept: application/pdf' \
+      "${AUTH_HDR[@]}" -H 'Accept: application/pdf' \
       -o "$CERT_FILE" 2>/dev/null && [ -s "$CERT_FILE" ]; then
     if [ "$(head -c 4 "$CERT_FILE")" = "%PDF" ]; then
       echo "    certificate: $CERT_FILE (valid PDF)"

@@ -54,9 +54,11 @@ if ! command -v "$KCADM" >/dev/null 2>&1; then
     # invocations (each kcadm call is a separate container).
     # --network host lets the container reach a local Keycloak at
     # https://localhost:8443; the truststore is mounted read-only.
+    # KC_CLI_TRUSTSTORE env ensures all kcadm subcommands (get/create/update)
+    # trust the local CA, not just config credentials.
     KCADM="docker run --rm -u root --network host -v kcadm-credentials:/root/.keycloak"
     if [ -n "$KC_TRUSTSTORE_HOST" ]; then
-      KCADM="$KCADM -v $KC_TRUSTSTORE_HOST:$TRUSTSTORE_IN_CONTAINER:ro"
+      KCADM="$KCADM -e KC_CLI_TRUSTSTORE=$TRUSTSTORE_IN_CONTAINER -e KC_CLI_TRUSTSTORE_PASSWORD=$KC_TRUSTSTORE_PASS -v $KC_TRUSTSTORE_HOST:$TRUSTSTORE_IN_CONTAINER:ro"
     fi
     KCADM="$KCADM --entrypoint /opt/keycloak/bin/kcadm.sh quay.io/keycloak/keycloak:26.6.4"
   else
@@ -83,9 +85,9 @@ else
 fi
 
 if [ -n "${MSYSTEM:-}" ]; then
-  kcadm() { MSYS_NO_PATHCONV=1 $KCADM "${KC_TRUST_ARGS[@]}" "$@"; }
+  kcadm() { MSYS_NO_PATHCONV=1 $KCADM "$@" "${KC_TRUST_ARGS[@]}"; }
 else
-  kcadm() { $KCADM "${KC_TRUST_ARGS[@]}" "$@"; }
+  kcadm() { $KCADM "$@" "${KC_TRUST_ARGS[@]}"; }
 fi
 
 # python3 is a Windows Store alias stub under Git Bash; prefer the real interpreter.
@@ -153,7 +155,14 @@ provision_client() {
       standardFlowEnabled:true, serviceAccountsEnabled:false, directAccessGrantsEnabled:false,
       clientAuthenticatorType:"client-jwt",
       redirectUris:["https://www.certification.openid.net/test/a/*/callback",
-                   "https://www.certification.openid.net/test/a/*/callback?dummy1=lorem&dummy2=ipsum"],
+                   "https://www.certification.openid.net/test/a/*/callback?dummy1=lorem&dummy2=ipsum",
+                   "https://localhost:8443/test/a/*/callback",
+                   "https://localhost:8444/test/a/*/callback",
+                   "https://localhost:8443/test/*",
+                   "https://localhost:8444/test/*",
+                   "http://localhost:8080/*",
+                   "https://localhost:8443/*",
+                   "https://localhost:8444/*"],
       attributes:{
         "jwt.credential.public.key":$pem,
         "token.endpoint.auth.signing.alg":"PS256",
@@ -183,3 +192,6 @@ provision_client "$CLIENT2_ID" "$JWKS2"
 echo "==> conformance clients provisioned. Redirect URIs:"
 echo "    https://www.certification.openid.net/test/a/*/callback"
 echo "    https://www.certification.openid.net/test/a/*/callback?dummy1=lorem&dummy2=ipsum"
+echo "    https://localhost:8443/test/a/*/callback"
+echo "    https://localhost:8444/test/a/*/callback"
+echo "    https://localhost:8443/test/*"
