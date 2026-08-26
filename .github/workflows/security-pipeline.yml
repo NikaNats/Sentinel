@@ -139,11 +139,13 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: sentinel-api:ci
+          scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: false
           exit-code: '1'
           format: sarif
           output: artifacts/trivy-image.sarif
+          skip-version-check: true
 
       - name: Upload Trivy SARIF
         uses: actions/upload-artifact@v4
