@@ -20,7 +20,7 @@
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
-<PackageReference Include="xunit.v3.core" ExcludeAssets="all" />
+    <PackageReference Include="xunit.v3.core" ExcludeAssets="all" />
     <PackageReference Include="xunit.v3.assert" ExcludeAssets="all" />
     <PackageReference Include="xunit.v3.extensibility.core" ExcludeAssets="all" />
   </ItemGroup>
