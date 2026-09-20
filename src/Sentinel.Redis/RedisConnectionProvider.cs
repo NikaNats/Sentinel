@@ -27,12 +27,11 @@ internal sealed class RedisConnectionProvider : IRedisConnectionProvider
 
         _options.AbortOnConnectFail = false;
         _options.ConnectRetry = 5;
-        _options.KeepAlive = 60;
+        _options.KeepAlive = 30;
 
-        var timeout = redisOptions.SyncTimeout > 0 ? redisOptions.SyncTimeout : 3000;
-        _options.ConnectTimeout = timeout;
-        _options.SyncTimeout = timeout;
-        _options.AsyncTimeout = timeout;
+        _options.ConnectTimeout = redisOptions.ConnectTimeout > 0 ? redisOptions.ConnectTimeout : 5000;
+        _options.SyncTimeout = redisOptions.SyncTimeout > 0 ? redisOptions.SyncTimeout : 3000;
+        _options.AsyncTimeout = redisOptions.SyncTimeout > 0 ? redisOptions.SyncTimeout : 3000;
 
         // Security Guard: Block dangerous administrative commands from application layer
         _options.CommandMap = CommandMap.Create(new Dictionary<string, string?>
