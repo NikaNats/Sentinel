@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # verify-fapi-readiness.sh - pre-flight verification that the staging Keycloak
 # is ready for a FAPI 2.0 OIDF Conformance Suite run (DOC-0017 Phase 3).

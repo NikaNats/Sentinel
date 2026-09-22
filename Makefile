@@ -16,7 +16,7 @@ lint:
 
 sec-scan:
 	@echo "Running local container scan (requires Trivy installed)..."
-	docker build -t sentinel-api:local -f src/Sentinel.AspNetCore/Dockerfile .
+	docker build -t sentinel-api:local -f samples/Sentinel.Sample.MinimalApi/Dockerfile .
 	trivy image --severity CRITICAL,HIGH --ignore-unfixed sentinel-api:local
 
 up:
@@ -116,7 +116,7 @@ CHAOS_POOL ?= tests/load/chaos-dpop-pool.json
 chaos-up:
 	@test -n "$$CLUSTER_NAME" || echo "Using cluster sentinel-chaos"
 	kind create cluster --name sentinel-chaos || true
-	docker build -t sentinel-api:chaos -f src/Sentinel.AspNetCore/Dockerfile .
+	docker build -t sentinel-api:chaos -f samples/Sentinel.Sample.MinimalApi/Dockerfile .
 	kind load docker-image sentinel-api:chaos --name sentinel-chaos
 	MODE=stack SENTINEL_API_IMAGE=sentinel-api:chaos tests/scripts/chaos-provision.sh
 	helm repo add chaos-mesh https://charts.chaos-mesh.org || true

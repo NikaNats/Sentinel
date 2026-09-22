@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # build-xk6-dpop.sh - builds the distributed k6 runner image with the
 # Go-native DPoP signer (tests/load/xk6-dpop) via tests/load/Dockerfile.xk6.

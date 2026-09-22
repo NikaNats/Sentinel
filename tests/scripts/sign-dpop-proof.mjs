@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+// Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 //
 // sign-dpop-proof.mjs - sign an RFC 9449 DPoP proof for a pool entry minted by
 // mint-dpop-pool.mjs. Used by the observability gate to present the SAME access

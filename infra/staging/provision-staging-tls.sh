@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # provision-staging-tls.sh - provisions a public-CA TLS certificate for the
 # staging Keycloak used by the OIDF FAPI 2.0 Conformance Gate (DOC-0017 Phase 1).

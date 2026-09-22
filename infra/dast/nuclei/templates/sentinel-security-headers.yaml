@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # Sentinel - Security header baseline (Constitution §III.5 / PLAN-0001 §4.5).
 # Verifies the exact hardened header set from

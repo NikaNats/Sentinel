@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # SRE Verification Gate: validates Memory, Sockets, and Latency SLAs after
 # soak / spike / capacity runs, using REAL Sentinel OTel metric names.

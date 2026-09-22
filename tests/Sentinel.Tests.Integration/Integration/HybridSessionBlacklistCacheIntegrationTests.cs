@@ -208,7 +208,8 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
         var brokenConnectionProviderMock = new Mock<IRedisConnectionProvider>(MockBehavior.Strict);
         brokenConnectionProviderMock
             .Setup(p => p.GetConnectionAsync(It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect, "Redis offline"));
+            .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect,
+                CommandFlags.None, "Redis offline", null, CommandStatus.Unknown));
 
         var brokenRedisCache = new RedisSessionBlacklistCache(
             brokenConnectionProviderMock.Object,
@@ -244,7 +245,7 @@ public sealed class HybridSessionBlacklistCacheIntegrationTests : IAsyncLifetime
         brokenConnectionProviderMock
             .Setup(p => p.GetConnectionAsync(It.IsAny<CancellationToken>()))
             .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect,
-                "Redis connection timed out"));
+                CommandFlags.None, "Redis connection timed out", null, CommandStatus.Unknown));
 
         var brokenRedisCache = new RedisSessionBlacklistCache(
             brokenConnectionProviderMock.Object,

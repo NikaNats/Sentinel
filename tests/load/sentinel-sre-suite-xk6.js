@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+// Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 //
 // sentinel-sre-suite-xk6.js - SRE suite entry point for the distributed k6
 // runner built with the Go-native DPoP signer (tests/load/xk6-dpop).

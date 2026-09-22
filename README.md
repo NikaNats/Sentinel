@@ -7,11 +7,23 @@
     <br>
     Sentinel
   </h1>
-  <p><strong>A security-focused ASP.NET Core Web API enforcing sender-constrained token validation.</strong></p>
+  <p><strong>Sentinel Security Framework for ASP.NET Core enforcing sender-constrained token validation.</strong></p>
   <p>Aligned with FAPI 2.0 Baseline and Advanced hardening goals.</p>
 </div>
 
-Sentinel is a security-focused ASP.NET Core Web API that enforces sender-constrained token validation patterns aligned with FAPI 2.0 Baseline and Advanced hardening goals.
+Sentinel is a Sentinel Security Framework for ASP.NET Core that enforces sender-constrained token validation patterns aligned with FAPI 2.0 Baseline and Advanced hardening goals.
+
+Sentinel ships purely as versioned, deterministic, strong-name signed NuGet packages (`.nupkg` / `.snupkg`). The reference host (`samples/Sentinel.Sample.MinimalApi`) is strictly a developer demonstration and testing harness — not a production server. Downstream enterprise applications consume the libraries and provide their own host composition root.
+
+## Installation
+
+```bash
+dotnet add package NikaNats.Sentinel.AspNetCore
+dotnet add package NikaNats.Sentinel.DPoP
+dotnet add package NikaNats.Sentinel.Redis
+```
+
+`samples/Sentinel.Sample.MinimalApi` is a runnable reference host demonstrating how downstream services integrate the Sentinel middleware, rate limiters, and DPoP proof validators.
 
 The current implementation provides:
 - DPoP access token handling with proof validation and nonce issuance
@@ -593,4 +605,4 @@ All changes should:
 
 ## License
 
-Proprietary. See LICENSE for usage terms.
+Distributed under the Apache-2.0 License. See LICENSE for more information.

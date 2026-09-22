@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+// Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 //
 // ZAP Authentication Script for DPoP-authenticated scanning through sentinel-dast-auth-proxy.
 // The proxy handles all DPoP signing transparently (fresh token + proof per request).

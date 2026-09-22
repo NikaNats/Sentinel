@@ -7,6 +7,11 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- NuGet Package Metadata (Option A: shipping library) -->
+    <IsPackable>true</IsPackable>
+    <PackageId>NikaNats.Sentinel.Providers.Vault</PackageId>
+    <Description>HashiCorp Vault secret provider for Sentinel OAuth 2.0 &amp; OpenID Connect key and secret management.</Description>
   </PropertyGroup>
 
   <ItemGroup>

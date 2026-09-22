@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # provision-fapi-conformance-clients.sh - registers the OIDF Conformance clients
 # in Keycloak with the exact FAPI 2.0 posture the suite exercises.

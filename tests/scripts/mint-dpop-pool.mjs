@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+// Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 //
 // mint-dpop-pool.mjs - 2026 SRE DPoP token pool provisioner.
 import { createHash, createPrivateKey, createSign, generateKeyPairSync, randomUUID } from 'node:crypto';

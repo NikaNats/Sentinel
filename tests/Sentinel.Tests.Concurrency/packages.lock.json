@@ -423,10 +423,10 @@
           "NikaNats.Sentinel.DPoP": "[1.0.0, )",
           "NikaNats.Sentinel.Domain": "[1.0.0, )",
           "NikaNats.Sentinel.Keycloak": "[1.0.0, )",
+          "NikaNats.Sentinel.Providers.Vault": "[1.0.0, )",
           "NikaNats.Sentinel.Security.Abstractions": "[1.0.0, )",
           "NikaNats.Sentinel.Security.Diagnostics": "[1.0.0, )",
-          "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )",
-          "Sentinel.Providers.Vault": "[1.0.0, )"
+          "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )"
         }
       },
       "NikaNats.Sentinel.Keycloak": {
@@ -446,6 +446,13 @@
           "NikaNats.Sentinel.Security.Abstractions": "[1.0.0, )",
           "NikaNats.Sentinel.Security.Diagnostics": "[1.0.0, )",
           "System.IdentityModel.Tokens.Jwt": "[8.23.0, )"
+        }
+      },
+      "NikaNats.Sentinel.Providers.Vault": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
+          "NikaNats.Sentinel.Security.Abstractions": "[1.0.0, )"
         }
       },
       "NikaNats.Sentinel.Rar": {
@@ -497,13 +504,6 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )",
-          "NikaNats.Sentinel.Security.Abstractions": "[1.0.0, )"
-        }
-      },
-      "sentinel.providers.vault": {
-        "type": "Project",
-        "dependencies": {
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
           "NikaNats.Sentinel.Security.Abstractions": "[1.0.0, )"
         }
       },

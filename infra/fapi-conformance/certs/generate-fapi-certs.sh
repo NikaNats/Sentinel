@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # Generates a self-signed CA + server cert + PKCS#12 keystore for the local
 # OIDF FAPI 2.0 Conformance Suite stack. Idempotent: overwrites its own

@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # DAST compose overlay - runs the REAL Sentinel stack (no control relaxed)
 # with an ephemeral test-only DPoP Signing Proxy in front, plus a dedicated

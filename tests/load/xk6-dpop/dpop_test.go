@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+// Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 //
 // Unit test for the xk6-dpop signer: signs a proof from a P-256 private JWK
 // (same shape minted by tests/scripts/mint-dpop-pool.mjs), then verifies the

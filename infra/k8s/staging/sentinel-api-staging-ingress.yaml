@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # Staging ingress for the Sentinel API (resource server) - FAPI 2.0 OIDF
 # Conformance Gate, DOC-0017 §1. Requires ingress-nginx and the

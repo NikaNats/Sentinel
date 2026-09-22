@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # PostgreSQL deployment for the chaos gate. Label contract for
 # tests/chaos/postgres-network-partition.yaml: app.kubernetes.io/name: postgres.

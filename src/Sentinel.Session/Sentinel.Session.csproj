@@ -14,7 +14,6 @@
     <PackageId>NikaNats.Sentinel.Session</PackageId>
     <Authors>Sentinel Security Team</Authors>
     <RepositoryUrl>https://github.com/NikaNats/Sentinel</RepositoryUrl>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Description>High-assurance session and lifecycle management for Sentinel OAuth 2.0 &amp; OpenID Connect flows.</Description>
     <PackageTags>sentinel;session;oauth2;openid;security;fapi;dpop</PackageTags>
   </PropertyGroup>

@@ -149,6 +149,12 @@
           "System.IdentityModel.Tokens.Jwt": "[8.23.0, )"
         }
       },
+      "NikaNats.Sentinel.Providers.Vault": {
+        "type": "Project",
+        "dependencies": {
+          "NikaNats.Sentinel.Security.Abstractions": "[1.0.0, )"
+        }
+      },
       "NikaNats.Sentinel.Rar": {
         "type": "Project",
         "dependencies": {
@@ -174,12 +180,6 @@
         }
       },
       "NikaNats.Sentinel.SSF": {
-        "type": "Project",
-        "dependencies": {
-          "NikaNats.Sentinel.Security.Abstractions": "[1.0.0, )"
-        }
-      },
-      "sentinel.providers.vault": {
         "type": "Project",
         "dependencies": {
           "NikaNats.Sentinel.Security.Abstractions": "[1.0.0, )"

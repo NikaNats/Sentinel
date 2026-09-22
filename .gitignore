@@ -23,6 +23,7 @@ obj/
 
 # User-specific files
 *.user
+*.suo
 *.userosscache
 *.sln.docstates
 .vscode-test/
@@ -79,6 +80,7 @@ user-secrets.json
 *.srl
 *.crt
 *.snk
+Sentinel.snk
 !Sentinel.public.snk
 
 # OS files
@@ -88,6 +90,7 @@ Thumbs.db
 
 # Build artifacts
 publish/
+publish-output/
 PublishProfiles/
 
 # Package files
@@ -110,8 +113,9 @@ StyleCopCache/
 
 # NPM
 node_modules/
-npm-debug.log
+npm-debug.log*
 package-lock.json
+.playwright/
 
 # Webpack
 dist/

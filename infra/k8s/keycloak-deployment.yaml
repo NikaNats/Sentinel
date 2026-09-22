@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # Keycloak deployment for the chaos gate. Deployed in the "keycloak" namespace
 # so the DNS pattern keycloak.keycloak.svc.cluster.local (used by

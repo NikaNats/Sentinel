@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+// Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 //
 // sre-summary-metric.mjs - jq-free single-value reader for k6 --summary-export
 // JSON (which is written as ONE LINE; naive grep approaches break).

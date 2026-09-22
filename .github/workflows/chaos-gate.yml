@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # Distributed Chaos Resilience Gate — 2026 Enterprise Best Practice.
 #
@@ -90,7 +90,7 @@ jobs:
 
       - name: Build Sentinel API image
         run: |
-          docker build -t sentinel-api:chaos -f src/Sentinel.AspNetCore/Dockerfile .
+          docker build -t sentinel-api:chaos -f samples/Sentinel.Sample.MinimalApi/Dockerfile .
           kind load docker-image sentinel-api:chaos --name sentinel-chaos
 
       - name: Deploy Sentinel stack (Redis, PG, Keycloak 26.6.4 TLS, API, schema)

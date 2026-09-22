@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # chaos-provision.sh - provision the FULL Sentinel fail-closed stack in KinD
 # for the Distributed Chaos Resilience Gate (used by chaos-gate.yml AND the

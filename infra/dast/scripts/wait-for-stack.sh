@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # wait-for-stack.sh - blocks until the DAST stack is ready:
 #   1. sentinel-api /healthz            (host port 5260)

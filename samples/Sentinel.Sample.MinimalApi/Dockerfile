@@ -1,3 +1,7 @@
+# TEST HARNESS ONLY
+# This Dockerfile containerizes the reference sample (Sentinel.Sample.MinimalApi)
+# strictly for ephemeral test execution (DAST, Chaos Engineering, and Reqnroll E2E).
+# This container is NOT a shipping product artifact.
 # syntax=docker/dockerfile:1.7
 # checkov:skip=CKV_DOCKER_2:Chiseled runtime has no shell/curl/wget by design (distroless); liveness/readiness is enforced by the orchestrator probes in infra/k8s/sentinel-api-deployment.yaml, not by docker HEALTHCHECK
 

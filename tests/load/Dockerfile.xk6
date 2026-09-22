@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # Builds the distributed k6 runner with the Go-native DPoP signer
 # (tests/load/xk6-dpop). Stock k6 caps per-runner proof signing at ~2-3k

@@ -131,6 +131,7 @@ Redis and database backends are treated as part of the security boundary. If the
 ### ADR-2026-001: Minimal APIs Migration for Native AOT
 - **Context:** Legacy MVC controllers rely heavily on reflection-based assembly scanning and runtime JIT compilation, which are incompatible with Native AOT compilation and increase cold-start latency.
 - **Decision:** Replaced all legacy MVC Controllers with Minimal API group mappings using explicit JSON Source Generation contexts (`JsonSerializerContext`).
+- **Option A (Pure NuGet Framework):** Sentinel ships as a decoupled NuGet library framework (`NikaNats.Sentinel.*`); consuming applications provide their own host composition root. `samples/Sentinel.Sample.MinimalApi` is a non-shipping reference host and test harness only.
 - **Consequences:**
   - *Positive:* Faster startup times (<50ms), an 82% reduction in memory footprint, and compile-time trim-safety.
   - *Negative:* Increased build-time code generation complexity; all custom DTOs must be explicitly annotated.
@@ -138,6 +139,7 @@ Redis and database backends are treated as part of the security boundary. If the
 ### ADR-2026-002: Pure Decoupled Hexagonal Architecture
 - **Context:** The previous infrastructure layer was tightly coupled to Redis and EF Core, violating the Dependency Inversion Principle. `Sentinel.Infrastructure` held direct project references to `Sentinel.Redis` and `Sentinel.EntityFrameworkCore`, and the multi-tier `HybridSessionBlacklistCache` depended on the concrete `RedisSessionBlacklistCache` adapter.
 - **Decision:** Core modules and `Sentinel.Infrastructure` depend strictly on abstract ports defined in `Sentinel.Security.Abstractions`. Direct project references to `Sentinel.Redis` and `Sentinel.EntityFrameworkCore` are removed from `Sentinel.Infrastructure.csproj`. The hybrid cache moved to `Sentinel.EntityFrameworkCore/Stores/` (its natural persistence home) and now depends on the `ISessionBlacklistCache` port for its L2 accelerator, with the Pub/Sub channel prefix supplied by the composition root (`RedisOptions.KeyPrefix`). Concrete persistence adapters remain registered exclusively at the Host / Composition Root level.
+- **Option A (Pure NuGet Framework):** Sentinel is a decoupled NuGet library framework and consuming applications provide their own host composition root; only `src/` libraries are packable (`IsPackable=true`), while `samples/` and `tests/` are explicitly non-packable. Docker/compose remain only as ephemeral integration-test fixtures.
 - **Consequences:**
   - *Positive:* Clean Hexagonal adapter boundaries - `Sentinel.Infrastructure` no longer compile-time couples to concrete storage adapters; the L2 cache behind the hybrid store is fully substitutable at the Composition Root.
   - *Negative:* The host application must explicitly reference the storage adapters it activates, and pass environment namespacing (KeyPrefix) explicitly when wiring the hybrid cache.

@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # Chaos Scenario 2: PostgreSQL Network Partition (Hybrid Cache Resilience)
 # ------------------------------------------------------------------------

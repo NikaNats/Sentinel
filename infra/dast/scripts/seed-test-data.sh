@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # seed-test-data.sh - seeds deterministic synthetic test data through the
 # DPoP auth proxy (localhost:8081) so scanners have stable targets:

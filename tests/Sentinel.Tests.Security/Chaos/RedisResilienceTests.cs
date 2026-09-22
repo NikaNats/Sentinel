@@ -42,7 +42,7 @@ public sealed class RedisResilienceTests
         Exception exception = failureKind switch
         {
             "redis_connection" => new RedisConnectionException(ConnectionFailureType.UnableToConnect,
-                "Infrastructure melting"),
+                CommandFlags.None, "Infrastructure melting", null, CommandStatus.Unknown),
             "timeout" => new TimeoutException("Infrastructure melting"),
             "socket" => new SocketException((int)SocketError.NetworkUnreachable),
             _ => new InvalidOperationException($"Unsupported failure kind: {failureKind}")
@@ -71,7 +71,7 @@ public sealed class RedisResilienceTests
             .Setup(x => x.BlacklistSessionAsync(sessionId, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new RedisConnectionException(
                 ConnectionFailureType.UnableToConnect,
-                "No cluster quorum reached"))
+                CommandFlags.None, "No cluster quorum reached", null, CommandStatus.Unknown))
             .Verifiable();
 
         var act = async () => await _cacheServiceMock.Object.BlacklistSessionAsync(

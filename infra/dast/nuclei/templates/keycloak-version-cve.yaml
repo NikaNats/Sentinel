@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # Keycloak version regression screening.
 # Sentinel pins quay.io/keycloak/keycloak:26.6.4 (docker-compose.yml). This

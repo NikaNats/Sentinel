@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Sentinel contributors. Licensed under the MIT License.
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
 #
 # Sentinel - Bearer downgrade on a DPoP-bound API MUST be rejected.
 # RFC 9449 section 5.1: a DPoP-bound access token must be presented with the
