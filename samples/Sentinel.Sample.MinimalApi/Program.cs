@@ -515,10 +515,22 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("ScopeDocumentsWrite", policy =>
         policy.RequireAuthenticatedUser().AddRequirements(new ScopeRequirement("documents:write")));
 
+// TEST-HARNESS ONLY tuning knobs (Option A): the reference host enforces
+// strict demo quotas by default, but SRE load legs override them via
+// Sentinel__RateLimiting__* env vars so load signal is not drowned in 429s.
+// Quota ENFORCEMENT itself is covered by dedicated tests (S07, bypass suites),
+// not by the load gate. Defaults preserve the documented demo behavior.
+var rateLimitSection = builder.Configuration.GetSection("Sentinel:RateLimiting");
+var primaryPermitLimit = rateLimitSection.GetValue<int?>("PrimaryPermitLimit") ?? 20;
+var primaryQueueLimit = rateLimitSection.GetValue<int?>("PrimaryQueueLimit") ?? 5;
+var primaryWindowSeconds = rateLimitSection.GetValue<int?>("PrimaryWindowSeconds") ?? 10;
+var floorPermitLimit = rateLimitSection.GetValue<int?>("FloorPermitLimit") ?? 100;
+var floorQueueLimit = rateLimitSection.GetValue<int?>("FloorQueueLimit") ?? 2;
+var floorWindowSeconds = rateLimitSection.GetValue<int?>("FloorWindowSeconds") ?? 10;
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-
     options.OnRejected = static async (context, token) =>
     {
         context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
@@ -544,11 +556,11 @@ builder.Services.AddRateLimiter(options =>
             ResolveRateLimitPartitionKey(context),
             _ => new SlidingWindowRateLimiterOptions
             {
-                PermitLimit = 20,
-                Window = TimeSpan.FromSeconds(10),
+                PermitLimit = primaryPermitLimit,
+                Window = TimeSpan.FromSeconds(primaryWindowSeconds),
                 SegmentsPerWindow = 2,
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                QueueLimit = 5
+                QueueLimit = primaryQueueLimit
             }));
 
     var networkFloor = PartitionedRateLimiter.Create<HttpContext, string>(context =>
@@ -556,11 +568,11 @@ builder.Services.AddRateLimiter(options =>
             context.Connection.RemoteIpAddress?.ToString() ?? "anonymous-ip",
             _ => new SlidingWindowRateLimiterOptions
             {
-                PermitLimit = 100,
-                Window = TimeSpan.FromSeconds(10),
+                PermitLimit = floorPermitLimit,
+                Window = TimeSpan.FromSeconds(floorWindowSeconds),
                 SegmentsPerWindow = 2,
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                QueueLimit = 2
+                QueueLimit = floorQueueLimit
             }));
 
     options.GlobalLimiter = PartitionedRateLimiter.CreateChained(primaryQuota, networkFloor);

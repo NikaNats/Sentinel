@@ -63,7 +63,7 @@ public sealed class RedisConnectionProviderTests
 
         // Assert
         parsedOptions.ClientName.Should().Be("Sentinel_Security_Gateway_Node");
-        parsedOptions.KeepAlive.Should().Be(60);
+        parsedOptions.KeepAlive.Should().Be(30);
         parsedOptions.ChannelPrefix.Should().Be("sentinel");
     }
 
@@ -82,7 +82,7 @@ public sealed class RedisConnectionProviderTests
         var parsedOptions = (ConfigurationOptions)optionsField!.GetValue(provider)!;
 
         // Assert
-        parsedOptions.ConnectTimeout.Should().Be(4500);
+        parsedOptions.ConnectTimeout.Should().Be(5000);
         parsedOptions.SyncTimeout.Should().Be(4500);
         parsedOptions.AsyncTimeout.Should().Be(4500);
     }

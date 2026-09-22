@@ -156,10 +156,25 @@ function requestHeaders(token, proof, nonce) {
     Authorization: `DPoP ${token}`,
     DPoP: proof,
     'Content-Type': 'application/json',
+    // The transfer endpoint enforces RequireIdempotency (UUID key, 5-min
+    // TTL): without it every request is 400 and no 200 is possible. Keys must
+    // be unique per request - reuse replays the cached response (409 while
+    // in-flight). Built manually from getRandomValues so this works on the
+    // pinned k6 v0.52 (no crypto.randomUUID dependency).
+    'Idempotency-Key': newUuid(),
   };
   if (USE_RAR) headers['Authorization-Details'] = JSON.stringify({ type: 'urn:sentinel:transfer', actions: ['execute'] });
   if (nonce) headers['DPoP-Nonce'] = nonce; // informational; the proof itself carries the nonce
   return headers;
+}
+
+// UUID v4 from webcrypto randomness (k6 v0.52 compatible).
+function newUuid() {
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
 async function doTransfer(token, nonce) {
@@ -192,6 +207,18 @@ export function setup() {
   }
 }
 
+// Case-insensitive response header lookup (k6 v0.52 preserves the server's
+// header casing, e.g. Go-canonicalized "Dpop-Nonce", so direct lowercase
+// indexing misses). Shared with the chaos suite.
+export function responseHeader(res, name) {
+  const want = name.toLowerCase();
+  const headers = res.headers || {};
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === want) return headers[key];
+  }
+  return null;
+}
+
 export default async function () {
   const entry = poolKeys[__VU % poolKeys.length];
   const token = entry.token || __ENV.K6_BEARER || '';
@@ -203,7 +230,10 @@ export default async function () {
   let { res } = await doTransfer(token, null);
   let attempts = 1;
   while (USE_NONCE && attempts < MAX_NONCE_RETRIES && (res.status === 401 || res.status === 400)) {
-    const nonceHeader = res.headers['dpop-nonce'];
+    // k6 v0.52 preserves server header casing (Go canonical form:
+    // "Dpop-Nonce"), so match case-insensitively - res.headers['dpop-nonce']
+    // is ALWAYS undefined and the loop would never retry.
+    const nonceHeader = responseHeader(res, 'dpop-nonce');
     if (!nonceHeader) break;
     nonceChallenges.add(1);
     const next = await doTransfer(token, nonceHeader);
@@ -215,9 +245,11 @@ export default async function () {
 
   if (res.status === 200 || res.status === 503) {
     // expected resilient / fail-closed responses
-  } else if (res.status === 401 || res.status === 400) {
-    socketErrors.add(1); // persistent auth rejection from a supposedly valid pool
-  } else if (res.error_code === 1000 || res.error_code === 1050 || res.status === 0) {
+  } else {
+    // Anything else is unexpected: persistent 401/400 after nonce retries,
+    // 403 policy rejections, 429 quota breaches, 5xx, or transport errors
+    // (status 0). Transient 401 use_dpop_nonce challenges never reach here -
+    // they are consumed by the retry loop above.
     socketErrors.add(1);
   }
 
@@ -282,7 +314,11 @@ export const options = {
   scenarios: getScenarios(),
   insecureSkipTLSVerify: __ENV.K6_INSECURE === '1', // KinD/dev self-signed certs (never in prod)
   thresholds: {
-    'http_req_failed': ['rate<0.001'],
+    // NOTE: no http_req_failed threshold by design. Expected 401
+    // use_dpop_nonce challenges (one per nonce rotation) count as failed
+    // requests in k6 and would breach any sub-1% bar by construction (~50%
+    // of requests under per-request rotation). Unexpected failures are
+    // funneled into sentinel_socket_exhaustion_errors instead (see above).
     'sentinel_socket_exhaustion_errors': ['count==0'],
     'http_req_duration{scenario:soak_scenario}': ['p(99)<35'],
     'http_req_duration{scenario:spike_scenario}': ['p(99)<100'],

@@ -185,7 +185,16 @@ internal sealed class DpopValidationMiddleware
 
         if (!result.IsValid)
         {
-            _l1AntiFloodCache.RecordFailedAttempt(thumbprint);
+            // A nonce challenge is RFC 9449 protocol - not an attack signal.
+            // Recording it would blacklist the thumbprint and break the
+            // challenge-response round-trip for every conformant client that
+            // retries within the flood TTL. Malformed proofs, bad signatures
+            // and replayed JTIs are still recorded below; volumetric abuse is
+            // backstopped by the dual-partition rate limiter (429s).
+            if (!string.Equals(result.Error, "use_dpop_nonce", StringComparison.Ordinal))
+            {
+                _l1AntiFloodCache.RecordFailedAttempt(thumbprint);
+            }
 
             if (string.Equals(result.Error, "use_dpop_nonce", StringComparison.Ordinal))
             {

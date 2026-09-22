@@ -1,0 +1,18 @@
+# Copyright (c) 2026 Sentinel contributors. Licensed under the Apache License, Version 2.0.
+#
+# SRE load-gate compose overlay - raises the reference host's demo rate quotas
+# so load signal is not drowned in 429s. Quota ENFORCEMENT is covered by
+# dedicated suites (S07, bypass tests), not by the load gate. The DPoP/auth
+# pipeline (the actual load target) is unchanged.
+#
+# Usage (mirrors the DAST/observability overlays):
+#   docker compose -f docker-compose.yml -f infra/sre/docker-compose.sre.yml up -d --build
+name: sentinel-fapi2-stack
+
+services:
+  sentinel-api:
+    environment:
+      Sentinel__RateLimiting__PrimaryPermitLimit: "100000"
+      Sentinel__RateLimiting__PrimaryQueueLimit: "10000"
+      Sentinel__RateLimiting__FloorPermitLimit: "100000"
+      Sentinel__RateLimiting__FloorQueueLimit: "10000"

@@ -10,9 +10,14 @@
 #   - auth_token_validation_duration_seconds_bucket (OTel histogram, seconds)
 #   - container_memory_working_set_bytes (cAdvisor)
 #
-# NOTE: this gate RUNS against the live cluster's Prometheus
-# (sentinel-prod). The 48h soak CRD (infra/k8s/sre/crd-soak-48h.yaml) is a
-# scheduled on-cluster workload, not part of this CI job.
+# NOTE: this gate is SELF-CONTAINED: each leg stands up the compose stack
+# (Keycloak + Redis + API with the SRE quota overlay), provisions an
+# ephemeral sentinel-sre client, mints a Keycloak-bound pool, and batters
+# http://localhost:5260. No live-cluster vars/secrets required. Prometheus
+# gates in validate-sre-soak.sh WARN-skip without PROM_URL; the k6-side
+# socket counter is authoritative. The 48h soak CRD
+# (infra/k8s/sre/crd-soak-48h.yaml) remains a scheduled on-cluster workload,
+# not part of this CI job.
 name: SRE Load Gate
 
 on:
@@ -36,8 +41,12 @@ jobs:
     timeout-minutes: 45
     strategy:
       fail-fast: false
+      # NOTE: capacity-smoke is intentionally NOT scheduled: its fixed 14-min
+      # stage plan cannot satisfy the 5-min ACR step-up freshness window with a
+      # statically minted pool (VUs cannot re-authenticate mid-run). It stays
+      # available via workflow_dispatch once VU re-authentication support lands.
       matrix:
-        mode: [soak-smoke, spike-smoke, capacity-smoke]
+        mode: [soak-smoke, spike-smoke]
         include:
           - mode: soak-smoke
             test-mode: soak
@@ -46,9 +55,6 @@ jobs:
           - mode: spike-smoke
             test-mode: spike
             duration: "2m"
-          - mode: capacity-smoke
-            test-mode: capacity
-            duration: "10m"
 
     steps:
       - name: Checkout Repository
@@ -56,11 +62,73 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Mint DPoP pool
+      - name: Setup NodeJS (pool mint + Keycloak admin calls)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Generate CA/Keycloak certificates
+        shell: bash
+        run: bash infra/certs/generate-certs.sh
+
+      - name: Start SRE stack (Keycloak + Redis + API)
         shell: bash
         run: |
-          node tests/scripts/mint-dpop-pool.mjs \
-            --count 120 --out tests/load/dpop-pool-gate.json
+          docker compose -f docker-compose.yml -f infra/sre/docker-compose.sre.yml up -d --build
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:5260/healthz >/dev/null 2>&1 && break
+            [ "$i" -eq 60 ] && { echo "CRITICAL: sentinel-api failed to start"; docker compose logs --tail=40 sentinel-api; exit 1; }
+            sleep 3
+          done
+          for i in $(seq 1 60); do
+            curl -ksf https://localhost:8443/realms/sentinel/.well-known/openid-configuration >/dev/null 2>&1 && break
+            [ "$i" -eq 60 ] && { echo "CRITICAL: keycloak failed to start"; docker compose logs --tail=40 keycloak; exit 1; }
+            sleep 3
+          done
+
+      - name: Provision SRE gate client (ephemeral test fixture)
+        # Creates sentinel-sre (client_credentials, DPoP-bound tokens,
+        # sentinel-api audience) with load-fixture mappers: acr3 (transfer
+        # step-up), RAR authorization_details (surgical filter), and auth_time
+        # pinned at provisioning. Load VUs cannot re-authenticate mid-run, so
+        # auth_time freshness bounds every leg to the 5-min step-up window -
+        # the reason only short smoke legs are scheduled (see matrix note).
+        shell: bash
+        env:
+          KEYCLOAK_URL: https://localhost:8443
+        run: |
+          ADMIN_TOKEN="$(curl -ksf -X POST \
+            "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
+            -d 'grant_type=password&client_id=admin-cli&username=admin&password=admin' \
+            | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).access_token")"
+          GATE_ID="$(curl -ksf "$KEYCLOAK_URL/admin/realms/sentinel/clients?clientId=sentinel-sre" \
+            -H "Authorization: Bearer $ADMIN_TOKEN" \
+            | node -p "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); d.length?d[0].id:''")"
+          if [ -z "$GATE_ID" ]; then
+            curl -ksf -X POST "$KEYCLOAK_URL/admin/realms/sentinel/clients" \
+              -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+              -d '{"clientId":"sentinel-sre","enabled":true,"publicClient":false,"secret":"sre-client-secret","clientAuthenticatorType":"client-secret","serviceAccountsEnabled":true,"standardFlowEnabled":false,"directAccessGrantsEnabled":false,"attributes":{"access.token.signed.response.alg":"PS256","access.token.lifespan":"3600","dpop.bound.access.tokens":"true"},"defaultClientScopes":["roles","profile","email"],"protocolMappers":[{"name":"sentinel-api-audience","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","config":{"included.custom.audience":"sentinel-api","access.token.claim":"true","id.token.claim":"false"}},{"name":"acr-sre","protocol":"openid-connect","protocolMapper":"oidc-hardcoded-claim-mapper","config":{"claim.name":"acr","claim.value":"acr3","jsonType.label":"String","access.token.claim":"true","id.token.claim":"false"}},{"name":"rar-transfer","protocol":"openid-connect","protocolMapper":"oidc-hardcoded-claim-mapper","config":{"claim.name":"authorization_details","claim.value":"[{\"type\":\"urn:sentinel:finance:transfer\"}]","jsonType.label":"JSON","access.token.claim":"true","id.token.claim":"false"}}]}' >/dev/null
+            GATE_ID="$(curl -ksf "$KEYCLOAK_URL/admin/realms/sentinel/clients?clientId=sentinel-sre" \
+              -H "Authorization: Bearer $ADMIN_TOKEN" \
+              | node -p "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); d.length?d[0].id:''")"
+          fi
+          [ -n "$GATE_ID" ] || { echo "CRITICAL: sentinel-sre client provisioning failed"; exit 1; }
+          EPOCH="$(date +%s)"
+          curl -ksf -X POST "$KEYCLOAK_URL/admin/realms/sentinel/clients/$GATE_ID/protocol-mappers/models" \
+            -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+            -d "{\"name\":\"auth-time-sre\",\"protocol\":\"openid-connect\",\"protocolMapper\":\"oidc-hardcoded-claim-mapper\",\"config\":{\"claim.name\":\"auth_time\",\"claim.value\":\"$EPOCH\",\"jsonType.label\":\"long\",\"access.token.claim\":\"true\",\"id.token.claim\":\"false\"}}" >/dev/null \
+            || { echo "CRITICAL: auth_time mapper provisioning failed"; exit 1; }
+          echo "sentinel-sre client ready (id=$GATE_ID, auth_time=$EPOCH)"
+
+      - name: Mint DPoP pool (Keycloak-bound, per-leg fresh)
+        shell: bash
+        run: |
+          NODE_TLS_REJECT_UNAUTHORIZED=0 node tests/scripts/mint-dpop-pool.mjs \
+            --count 120 --out tests/load/dpop-pool-gate.json \
+            --keycloak-url https://localhost:8443 \
+            --realm sentinel --client sentinel-sre \
+            --client-secret sre-client-secret
 
       - name: Install k6 CLI
         shell: bash
@@ -75,13 +143,12 @@ jobs:
           /tmp/k6-v0.52.0-linux-amd64/k6 run \
             --quiet \
             --summary-export tests/load/sre-summary-${{ matrix.mode }}.json \
-            -e TARGET_URL=${{ vars.SENTINEL_LOAD_URL }} \
+            -e TARGET_URL=http://localhost:5260 \
             -e TEST_MODE=${{ matrix.test-mode }} \
             -e SOAK_RPS=${{ matrix.rate }} \
             -e SPIKE_MAX_RPS=${{ vars.SRE_SPIKE_RPS }} \
             -e CAPACITY_MAX_RPS=${{ vars.SRE_CAPACITY_RPS }} \
             -e K6_POOL_FILE=tests/load/dpop-pool-gate.json \
-            -e K6_BEARER="${{ secrets.SENTINEL_GATE_TOKEN }}" \
             -e SOAK_DURATION=${{ matrix.duration }} \
             -e K6_NONCE=1 \
             -e K6_INSECURE=1 \
@@ -91,9 +158,13 @@ jobs:
         shell: bash
         run: |
           chmod +x tests/scripts/validate-sre-soak.sh
-          PROM_URL=${{ vars.SENTINEL_PROM_URL }} \
-            tests/scripts/validate-sre-soak.sh \
+          tests/scripts/validate-sre-soak.sh \
             tests/load/sre-summary-${{ matrix.mode }}.json
+
+      - name: Tear down SRE stack
+        if: always()
+        shell: bash
+        run: docker compose -f docker-compose.yml -f infra/sre/docker-compose.sre.yml down -v --remove-orphans || true
 
       - name: Upload SRE summary artifact
         if: always()

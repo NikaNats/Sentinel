@@ -28,7 +28,7 @@
 import http from 'k6/http';
 import { check } from 'k6';
 import { Counter } from 'k6/metrics';
-import { getPoolEntry, signProofFor } from './sentinel-sre-core.js';
+import { getPoolEntry, responseHeader, signProofFor } from './sentinel-sre-core.js';
 
 const BASE_URL = __ENV.K6_LOAD_URL || 'https://sentinel-api.sentinel-prod.svc.cluster.local';
 const RATE = Number(__ENV.K6_RATE || 5000);
@@ -98,7 +98,7 @@ export default async function () {
 
   let attempts = 1;
   while (USE_NONCE && attempts < MAX_NONCE_RETRIES && (res.status === 401 || res.status === 400)) {
-    const nonceHeader = res.headers['dpop-nonce'];
+    const nonceHeader = responseHeader(res, 'dpop-nonce');
     if (!nonceHeader) break;
     const next = await doTransfer(entry, token, nonceHeader);
     res = next.res;
