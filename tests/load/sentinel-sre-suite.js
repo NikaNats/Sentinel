@@ -6,7 +6,7 @@
 //
 // Shared logic lives in sentinel-sre-core.js; see its header comment for
 // the corrections vs the 2026 Enterprise guide and the full ENV surface.
-import coreRun, { options } from './sentinel-sre-core.js';
+import coreRun, { options, setup } from './sentinel-sre-core.js';
 
-export { options };
+export { options, setup };
 export default coreRun;

@@ -175,6 +175,23 @@ async function doTransfer(token, nonce) {
   return { res, proof };
 }
 
+// Fail-fast environment preflight (runs once before VUs start; entry points
+// re-export this as setup). Without a reachable target or bearer material,
+// every VU would spin iterations that only trip the socket-exhaustion
+// threshold - millions of error iterations and a cryptic exit 99. Abort here
+// with a diagnostic instead. Reachability only requires a TCP/TLS-level
+// answer (any HTTP status passes); only status 0 (dial/DNS/TLS failure) aborts.
+export function setup() {
+  const hasBearer = poolKeys.some((k) => k.token) || (__ENV.K6_BEARER || '') !== '';
+  if (!hasBearer) {
+    throw new Error('[SRE-SUITE] no bearer material: pool entries carry no tokens and K6_BEARER is empty. Mint a token pool or set K6_BEARER / SENTINEL_GATE_TOKEN.');
+  }
+  const probe = http.get(`${BASE_URL}/healthz`, { timeout: '10s' });
+  if (probe.status === 0) {
+    throw new Error(`[SRE-SUITE] target unreachable: ${BASE_URL} (error ${probe.error_code}: ${probe.error}). Set TARGET_URL / SENTINEL_LOAD_URL to a reachable staging endpoint.`);
+  }
+}
+
 export default async function () {
   const entry = poolKeys[__VU % poolKeys.length];
   const token = entry.token || __ENV.K6_BEARER || '';

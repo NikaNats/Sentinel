@@ -141,17 +141,26 @@ jobs:
           ls -lh ./artifacts/packages/*.nupkg
 
       - name: Gate 10 - Cryptographic Lifecycle & Rotation Tests
+        # NOTE: dotnet test --filter executes ZERO tests for xunit.v3 under the
+        # default Microsoft.Testing.Platform runner (discovery lists them,
+        # execution matches none -> exit 5), so use the VSTest console path
+        # where --TestCaseFilter is honored. Filter names refreshed to living
+        # test classes: KestrelCertificateHotReload / MtlsCertificateRotation /
+        # EnvelopeRewrap no longer exist; mTLS lifecycle is covered by
+        # MtlsCertificateCache and envelope crypto by AesGcmEncryptionService.
         run: |
-          dotnet test tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj \
-            --configuration Release --no-restore \
-            --filter "FullyQualifiedName~JwksRotation|FullyQualifiedName~KestrelCertificateHotReload|FullyQualifiedName~MtlsCertificateRotation|FullyQualifiedName~EnvelopeRewrap" \
-            --logger "console;verbosity=detailed" \
+          dotnet build tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj \
+            --configuration Release --no-restore --nologo \
             -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
-          dotnet test tests/Sentinel.Tests.Unit/Sentinel.Tests.Unit.csproj \
-            --configuration Release --no-restore \
-            --filter "FullyQualifiedName~MtlsCertificateRotation|FullyQualifiedName~EnvelopeRewrap" \
-            --logger "console;verbosity=detailed" \
+          dotnet vstest tests/Sentinel.Tests.Integration/bin/Release/net10.0/Sentinel.Tests.Integration.dll \
+            --TestCaseFilter:"FullyQualifiedName~JwksRotation" \
+            --logger:"console;verbosity=detailed"
+          dotnet build tests/Sentinel.Tests.Unit/Sentinel.Tests.Unit.csproj \
+            --configuration Release --no-restore --nologo \
             -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
+          dotnet vstest tests/Sentinel.Tests.Unit/bin/Release/net10.0/Sentinel.Tests.Unit.dll \
+            --TestCaseFilter:"FullyQualifiedName~MtlsCertificateCache|FullyQualifiedName~AesGcmEncryptionService" \
+            --logger:"console;verbosity=detailed"
 
   contract-gate:
     name: Contract Compliance Gate

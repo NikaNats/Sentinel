@@ -90,15 +90,23 @@ jobs:
           docker pull redis:7.4-alpine
           docker pull quay.io/keycloak/keycloak:26.6.4
 
-      - name: Run ${{ matrix.suite }} Contract Tests
+      - name: Build Contract Tests
         run: >
-          dotnet test tests/Sentinel.Contracts/Sentinel.Contracts.csproj
+          dotnet build tests/Sentinel.Contracts/Sentinel.Contracts.csproj
           --configuration Release --no-restore
-          --filter "FullyQualifiedName~Sentinel.Contracts.${{ matrix.suite }}"
-          --results-directory tests/Sentinel.Contracts/TestResults
-          --logger "console;verbosity=detailed"
-          --logger "trx;LogFileName=contract-${{ matrix.suite }}.trx"
           -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
+
+      - name: Run ${{ matrix.suite }} Contract Tests
+        # NOTE: dotnet test --filter executes ZERO tests for xunit.v3 under the
+        # default Microsoft.Testing.Platform runner (discovery lists them, execution
+        # matches none -> exit 5), so run the VSTest console path where
+        # --TestCaseFilter is honored (verified 12/12 locally).
+        run: >
+          dotnet vstest tests/Sentinel.Contracts/bin/Release/net10.0/Sentinel.Contracts.dll
+          --TestCaseFilter:"FullyQualifiedName~Sentinel.Contracts.${{ matrix.suite }}"
+          --ResultsDirectory:tests/Sentinel.Contracts/TestResults
+          --logger:"console;verbosity=detailed"
+          --logger:"trx;LogFileName=contract-${{ matrix.suite }}.trx"
 
       - name: Upload Contract Test Results
         if: always()

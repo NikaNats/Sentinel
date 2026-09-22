@@ -63,8 +63,13 @@
             NU3000;NU3001;NU3002;NU3003;NU3004;NU3005;NU3006;NU3007;NU3008;NU3009;NU3010;NU3011;NU3012;NU3013;NU3014;NU3015;NU3016;NU3017;NU3018;NU3019;NU3020;NU3021;NU3022;NU3023;NU3024;NU3025;NU3026;NU3027;NU3028;NU3029;NU3030;NU3031;NU3032;NU3033;NU3034;NU3035;NU3036;NU3037;NU3038
         </NoWarn>
         
+        <!-- NU5104 demoted (not suppressed): OpenTelemetry.Exporter.Prometheus.AspNetCore
+             ships ONLY prerelease versions upstream (no stable exists), so stable Sentinel
+             packages necessarily carry a prerelease dependency. The warning stays visible
+             in pack logs but must not fail Release builds. -->
         <WarningsNotAsErrors>
             $(WarningsNotAsErrors);
+            NU5104;
             NU3000;NU3001;NU3002;NU3003;NU3004;NU3005;NU3006;NU3007;NU3008;NU3009;NU3010;NU3011;NU3012;NU3013;NU3014;NU3015;NU3016;NU3017;NU3018;NU3019;NU3020;NU3021;NU3022;NU3023;NU3024;NU3025;NU3026;NU3027;NU3028;NU3029;NU3030;NU3031;NU3032;NU3033;NU3034;NU3035;NU3036;NU3037;NU3038
         </WarningsNotAsErrors>
     </PropertyGroup>

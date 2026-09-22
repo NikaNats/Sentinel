@@ -37,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [soak-smoke, spike-smoke, capacity]
+        mode: [soak-smoke, spike-smoke, capacity-smoke]
         include:
           - mode: soak-smoke
             test-mode: soak

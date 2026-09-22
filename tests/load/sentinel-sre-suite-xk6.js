@@ -13,9 +13,9 @@
 // (see docs/SRE_LOAD_TESTING_RUNBOOK.md §6). The static import below fails
 // on stock k6 by design - the CRDs (infra/k8s/sre/) select this entry.
 import dpop from 'k6/x/dpop';
-import coreRun, { options, setSigner } from './sentinel-sre-core.js';
+import coreRun, { options, setSigner, setup } from './sentinel-sre-core.js';
 
 setSigner((method, url, jwkJson, opts) => dpop.sign(method, url, jwkJson, opts));
 
-export { options };
+export { options, setup };
 export default coreRun;
