@@ -100,7 +100,12 @@ $suites = @(
 
 foreach ($suite in $suites) {
     $name = [System.IO.Path]::GetFileNameWithoutExtension($suite)
-    dotnet test $suite -c Release --no-restore --logger "console;verbosity=normal"
+    # NOTE: plain `dotnet test` executes ZERO tests for some xunit.v3 assemblies
+    # under the default MTP runner (exit 5); build then run via VSTest instead.
+    dotnet build $suite -c Release --no-restore --nologo
+    if ($LASTEXITCODE -ne 0) { Write-Fail "Test suite $name build failed." }
+    $dll = Join-Path (Split-Path $suite) "bin/Release/net10.0/$name.dll"
+    dotnet vstest $dll --logger:"console;verbosity=normal"
     if ($LASTEXITCODE -ne 0) { Write-Fail "Test suite $name failed." }
     Write-Pass "Suite $name passed."
 }
@@ -124,7 +129,11 @@ Write-Pass "Systematic thread-scheduling concurrency exploration passed (0 race 
 # -----------------------------------------------------------------------------
 Write-Stage "STAGE 4/9: External Dependency Contracts (Keycloak, Postgres, Redis, OpenAPI)"
 
-dotnet test tests/Sentinel.Contracts/Sentinel.Contracts.csproj -c Release --no-restore --logger "console;verbosity=normal"
+# NOTE: plain `dotnet test` executes ZERO tests for this assembly under the
+# default MTP runner (exit 5); build then run via VSTest instead.
+dotnet build tests/Sentinel.Contracts/Sentinel.Contracts.csproj -c Release --no-restore --nologo
+if ($LASTEXITCODE -ne 0) { Write-Fail "Contract test build failed." }
+dotnet vstest tests/Sentinel.Contracts/bin/Release/net10.0/Sentinel.Contracts.dll --logger:"console;verbosity=normal"
 if ($LASTEXITCODE -ne 0) { Write-Fail "Contract compliance tests failed." }
 Write-Pass "All CONTRACT-001 boundary contracts validated."
 
@@ -133,7 +142,11 @@ Write-Pass "All CONTRACT-001 boundary contracts validated."
 # -----------------------------------------------------------------------------
 Write-Stage "STAGE 5/9: End-to-End Integration Suite"
 
-dotnet test tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj -c Release --no-restore --logger "console;verbosity=normal"
+# NOTE: plain `dotnet test` executes ZERO tests for some xunit.v3 assemblies
+# under the default MTP runner (exit 5); build then run via VSTest instead.
+dotnet build tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj -c Release --no-restore --nologo
+if ($LASTEXITCODE -ne 0) { Write-Fail "Integration test build failed." }
+dotnet vstest tests/Sentinel.Tests.Integration/bin/Release/net10.0/Sentinel.Tests.Integration.dll --logger:"console;verbosity=normal"
 if ($LASTEXITCODE -ne 0) { Write-Fail "Integration test suite failed." }
 Write-Pass "Integration suite passed against live container topologies."
 
@@ -142,7 +155,11 @@ Write-Pass "Integration suite passed against live container topologies."
 # -----------------------------------------------------------------------------
 Write-Stage "STAGE 6/9: Reqnroll BDD Acceptance (FAPI 2.0 & CAEP User Journeys)"
 
-dotnet test tests/Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release --no-restore --logger "console;verbosity=detailed"
+# NOTE: plain `dotnet test` executes ZERO tests for some xunit.v3 assemblies
+# under the default MTP runner (exit 5); build then run via VSTest instead.
+dotnet build tests/Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance.csproj -c Release --no-restore --nologo
+if ($LASTEXITCODE -ne 0) { Write-Fail "Acceptance test build failed." }
+dotnet vstest tests/Sentinel.Tests.Acceptance/bin/Release/net10.0/Sentinel.Tests.Acceptance.dll --logger:"console;verbosity=detailed"
 if ($LASTEXITCODE -ne 0) { Write-Fail "Acceptance suite failed." }
 Write-Pass "Reqnroll end-to-end acceptance scenarios approved."
 

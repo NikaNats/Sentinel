@@ -5,7 +5,20 @@ build:
 	dotnet build Sentinel.slnx -c Release
 
 test:
-	dotnet test Sentinel.slnx --logger "console;verbosity=detailed"
+	dotnet build Sentinel.slnx -c Release --nologo
+	for proj in \
+		tests/Sentinel.Tests.Unit/Sentinel.Tests.Unit \
+		tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration \
+		tests/Sentinel.Tests.Security/Sentinel.Tests.Security \
+		tests/Sentinel.Tests.DPoP/Sentinel.Tests.DPoP \
+		tests/Sentinel.Tests.Session/Sentinel.Tests.Session \
+		tests/Sentinel.Tests.SSF/Sentinel.Tests.SSF \
+		tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency \
+		tests/Sentinel.Contracts/Sentinel.Contracts \
+		tests/Sentinel.Tests.Acceptance/Sentinel.Tests.Acceptance \
+	; do \
+		dotnet vstest "$$proj/bin/Release/net10.0/$$(basename $$proj).dll" --logger:"console;verbosity=detailed" || exit 1; \
+	done
 
 mutation:
 	dotnet tool restore
@@ -198,25 +211,29 @@ all: build lint test sec-scan infra-audit
 # - Chaos engineering for migration edge cases
 
 migration-test:
-	dotnet test tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj \
-		--logger "console;verbosity=detailed" \
-		--filter "FullyQualifiedName~Sentinel.Tests.Integration.Database.ComprehensiveMigrationTests"
+	dotnet build tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj -c Release --nologo
+	dotnet vstest tests/Sentinel.Tests.Integration/bin/Release/net10.0/Sentinel.Tests.Integration.dll \
+		--logger:"console;verbosity=detailed" \
+		--TestCaseFilter:"FullyQualifiedName~Sentinel.Tests.Integration.Database.ComprehensiveMigrationTests"
 
 migration-chaos:
-	dotnet test tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj \
-		--logger "console;verbosity=detailed" \
-		--filter "FullyQualifiedName~Sentinel.Tests.Integration.Database.MigrationChaosTests"
+	dotnet build tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj -c Release --nologo
+	dotnet vstest tests/Sentinel.Tests.Integration/bin/Release/net10.0/Sentinel.Tests.Integration.dll \
+		--logger:"console;verbosity=detailed" \
+		--TestCaseFilter:"FullyQualifiedName~Sentinel.Tests.Integration.Database.MigrationChaosTests"
 
 migration-cross-version:
-	dotnet test tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj \
-		--logger "console;verbosity=detailed" \
-		--filter "FullyQualifiedName~Sentinel.Tests.Integration.Database.CrossVersionCompatibilityTests"
+	dotnet build tests/Sentinel.Tests.Integration/Sentinel.Tests.Integration.csproj -c Release --nologo
+	dotnet vstest tests/Sentinel.Tests.Integration/bin/Release/net10.0/Sentinel.Tests.Integration.dll \
+		--logger:"console;verbosity=detailed" \
+		--TestCaseFilter:"FullyQualifiedName~Sentinel.Tests.Integration.Database.CrossVersionCompatibilityTests"
 
 migration-all: migration-test migration-chaos migration-cross-version
 	@echo "All migration tests passed"
 
 # ─── Contract Tests (PostgreSQL schema pinning) ────────────────────────────────
 contract-test:
-	dotnet test tests/Sentinel.Contracts/Sentinel.Contracts.csproj \
-		--logger "console;verbosity=detailed" \
-		--filter "FullyQualifiedName~Sentinel.Contracts.Postgres"
+	dotnet build tests/Sentinel.Contracts/Sentinel.Contracts.csproj -c Release --nologo
+	dotnet vstest tests/Sentinel.Contracts/bin/Release/net10.0/Sentinel.Contracts.dll \
+		--logger:"console;verbosity=detailed" \
+		--TestCaseFilter:"FullyQualifiedName~Sentinel.Contracts.Postgres"
