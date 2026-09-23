@@ -103,7 +103,17 @@ builder.Services.AddOpenTelemetry()
         }))
     .WithMetrics(metrics => metrics
         .AddMeter(AuthTelemetry.MeterName)
-        .AddPrometheusExporter())
+        .AddPrometheusExporter()
+        // Metrics MUST also flow via OTLP: the Layer-2 gate evaluates the
+        // collector-fanned series in Prometheus (alerts.yml), and the direct
+        // scrape endpoint alone does not feed them. Mirrors the tracing setup.
+        .AddOtlpExporter(options =>
+        {
+            if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+            {
+                options.Endpoint = new Uri(otlpEndpoint);
+            }
+        }))
     .WithTracing(tracing => tracing
         .AddSource(AuthTelemetry.SourceName)
         .AddAspNetCoreInstrumentation()
