@@ -41,11 +41,13 @@ ok() {
 [ -f "$SUMMARY_FILE" ] || fail "k6 summary not found: $SUMMARY_FILE"
 
 if command -v jq >/dev/null 2>&1; then
-  COUNT_200=$(jq -r '.metrics.sentinel_http_success_200.values.count // 0' "$SUMMARY_FILE")
-  COUNT_401=$(jq -r '.metrics.sentinel_http_auth_401.values.count // 0' "$SUMMARY_FILE")
-  COUNT_503=$(jq -r '.metrics.sentinel_http_fail_closed_503.values.count // 0' "$SUMMARY_FILE")
-  COUNT_500=$(jq -r '.metrics.sentinel_http_server_500.values.count // 0' "$SUMMARY_FILE")
-  HTTP_FAILED=$(jq -r '.metrics.http_req_failed.values.rate // 0' "$SUMMARY_FILE")
+  # k6 v0.52 --summary-export writes metrics FLAT ({count, rate} at the metric
+  # level); other versions nest them under .values. Read both.
+  COUNT_200=$(jq -r '(.metrics.sentinel_http_success_200.values.count // .metrics.sentinel_http_success_200.count) // 0' "$SUMMARY_FILE")
+  COUNT_401=$(jq -r '(.metrics.sentinel_http_auth_401.values.count // .metrics.sentinel_http_auth_401.count) // 0' "$SUMMARY_FILE")
+  COUNT_503=$(jq -r '(.metrics.sentinel_http_fail_closed_503.values.count // .metrics.sentinel_http_fail_closed_503.count) // 0' "$SUMMARY_FILE")
+  COUNT_500=$(jq -r '(.metrics.sentinel_http_server_500.values.count // .metrics.sentinel_http_server_500.count) // 0' "$SUMMARY_FILE")
+  HTTP_FAILED=$(jq -r '(.metrics.http_req_failed.values.rate // .metrics.http_req_failed.rate) // 0' "$SUMMARY_FILE")
 else
   echo "WARN: jq not found; parsing summary with awk (counts may under-report)" >&2
   count_of() {

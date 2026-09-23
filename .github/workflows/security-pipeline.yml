@@ -277,15 +277,16 @@ jobs:
             -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
 
       - name: Coyote Systematic Concurrency Proof (1000 iterations, IL-rewritten)
+        # NOTE: dotnet test --no-build takes the MTP direct-launch path, which
+        # executes ZERO tests for xunit.v3 (exit 5). The Coyote-rewritten
+        # binary is already built above, so run it via the VSTest console.
         if: matrix.test-project == 'tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj'
         run: |
           dotnet tool restore
           dotnet build tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj \
             --configuration Release -p:RunCoyoteRewrite=true --no-restore --nologo
-          dotnet test tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj \
-            --configuration Release --no-build --no-restore \
-            --logger "console;verbosity=detailed" \
-            -p:SkipGetBuildVersion=true -p:NBGV_Disable=true
+          dotnet vstest tests/Sentinel.Tests.Concurrency/bin/Release/net10.0/Sentinel.Tests.Concurrency.dll \
+            --logger:"console;verbosity=detailed"
 
   schemathesis-fuzzing:
     name: Dynamic OpenAPI Schema Fuzzing

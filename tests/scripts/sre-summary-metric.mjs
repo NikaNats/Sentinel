@@ -28,8 +28,9 @@ try {
   process.exit(2);
 }
 
-// k6 v0.52 exported metrics as { values: { count, ... } } while k6 v2.x
-// exports them FLAT ({ count, rate, ... } at the metric level). Read both.
+// k6 --summary-export metric shapes vary by version: some nest values under
+// .values ({ values: { count, ... } }), while k6 v0.52 writes them FLAT
+// ({ count, rate, ... } at the metric level). Read both.
 const metricObj = summary.metrics?.[metric] ?? {};
 const bucket = metricObj.values ?? metricObj;
 console.log(bucket[field] ?? 0);

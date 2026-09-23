@@ -42,8 +42,10 @@ echo "=== Sentinel SRE Post-Test Health Analysis ==="
 metric_value() {
   local metric="$1" path="$2"
   if command -v jq >/dev/null 2>&1; then
+    # k6 v0.52 --summary-export writes metrics FLAT ({count, rate} at the
+    # metric level); other versions nest them under .values. Read both.
     jq -r --arg m "$metric" --arg p "$path" \
-      ".metrics[\$m].values[\$p] // 0" "$SUMMARY_FILE"
+      '(.metrics[$m].values[$p] // .metrics[$m][$p]) // 0' "$SUMMARY_FILE"
   else
     node "$(dirname "$0")/sre-summary-metric.mjs" "$SUMMARY_FILE" "$metric" "$path"
   fi

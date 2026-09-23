@@ -113,7 +113,9 @@ Write-Stage "STAGE 3/9: Microsoft Coyote Concurrency Proof (1,000 Iterations)"
 dotnet build tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj -c Release -p:RunCoyoteRewrite=true --no-restore
 if ($LASTEXITCODE -ne 0) { Write-Fail "Coyote IL rewrite failed." }
 
-dotnet test tests/Sentinel.Tests.Concurrency/Sentinel.Tests.Concurrency.csproj -c Release --no-build --no-restore
+# NOTE: dotnet test --no-build takes the MTP direct-launch path, which executes
+# ZERO tests for xunit.v3 (exit 5). Run the rewritten binary via VSTest instead.
+dotnet vstest tests/Sentinel.Tests.Concurrency/bin/Release/net10.0/Sentinel.Tests.Concurrency.dll --logger:"console;verbosity=normal"
 if ($LASTEXITCODE -ne 0) { Write-Fail "Coyote systematic concurrency verification failed." }
 Write-Pass "Systematic thread-scheduling concurrency exploration passed (0 race conditions)."
 
