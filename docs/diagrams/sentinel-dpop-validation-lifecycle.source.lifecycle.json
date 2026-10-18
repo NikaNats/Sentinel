@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Sentinel DPoP Proof Lifecycle",
+    "output": "sentinel-dpop-validation-lifecycle.html",
+    "quality_profile": "showcase",
+    "viewBox": [1080, 640]
+  },
+  "lanes": [
+    {"id": "main", "label": "Proof validation path"},
+    {"id": "terminal", "label": "Rejected outcomes"}
+  ],
+  "states": [
+    {"id": "incoming", "type": "start", "label": "DPoP request", "sublabel": "token + proof", "lane": "main", "col": 0, "step": "01", "tag": "middleware entry"},
+    {"id": "proof", "type": "decision", "label": "Proof parsed", "sublabel": "header + JWK", "lane": "main", "col": 1, "step": "02", "tag": "structure gate"},
+    {"id": "validate", "type": "active", "label": "Validate proof", "sublabel": "htm / htu / iat / jti", "lane": "main", "col": 2, "step": "03", "tag": "ordered checks"},
+    {"id": "nonce", "type": "decision", "label": "Nonce policy", "sublabel": "required or conditional", "lane": "main", "col": 3, "step": "04", "tag": "conditional gate"},
+    {"id": "accepted", "type": "success", "label": "Proof accepted", "sublabel": "next middleware", "lane": "main", "col": 4, "step": "05", "tag": "validation result"},
+    {"id": "challenge", "type": "failure", "label": "401 nonce challenge", "sublabel": "required or mismatch", "lane": "terminal", "col": 0, "tag": "protocol branch"},
+    {"id": "invalid", "type": "failure", "label": "401 invalid proof", "sublabel": "claims / JTI", "lane": "terminal", "col": 1, "tag": "rejected proof"},
+    {"id": "outage", "type": "failure", "label": "503 state outage", "sublabel": "synchronous path", "lane": "terminal", "col": 2, "tag": "fail closed"}
+  ],
+  "transitions": [
+    {"id": "incoming-proof", "from": "incoming", "to": "proof", "variant": "emphasis"},
+    {"id": "proof-validate", "from": "proof", "to": "validate", "variant": "security"},
+    {"id": "validate-nonce", "from": "validate", "to": "nonce", "variant": "security"},
+    {"id": "nonce-accepted", "from": "nonce", "to": "accepted", "variant": "emphasis"},
+    {"id": "validate-challenge", "from": "validate", "to": "challenge", "variant": "security", "fromSide": "bottom", "toSide": "top", "route": "bottom-channel", "channelY": 392},
+    {"id": "validate-invalid", "from": "validate", "to": "invalid", "variant": "security", "fromSide": "bottom", "toSide": "top", "route": "bottom-channel", "channelY": 392},
+    {"id": "nonce-outage", "from": "nonce", "to": "outage", "variant": "security", "fromSide": "bottom", "toSide": "top", "via": [[556, 188], [556, 340], [820, 340], [820, 430], [710, 430], [710, 450]]}
+  ],
+  "cards": [
+    {"dot": "emerald", "title": "Accepted path", "items": ["When no nonce is required and none is expected, success does not consume a nonce", "When an expected nonce exists, matching proof acceptance is followed by atomic consume before the next middleware"]},
+    {"dot": "amber", "title": "Rotation boundary", "items": ["After downstream execution, 2xx/3xx schedules a best-effort OnStarting rotation", "SecurityInfrastructureException and cancellation in that callback are suppressed; a 2xx/3xx may complete without a persisted or emitted next nonce"]},
+    {"dot": "rose", "title": "Failure / evidence", "items": ["Invalid claims or JTI replay returns 401; synchronous state-store failures return 503", "Sources: DpopProofValidator.cs:193-281; DpopValidationMiddleware.cs:170-276; DPoPOptions.cs:30-33"]}
+  ]
+}

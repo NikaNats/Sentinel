@@ -1,0 +1,506 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Sentinel Cryptographic Lifecycle — Keys, Certificates, and JWKS",
+    "output": "sentinel-cryptographic-lifecycle.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1100,
+      600
+    ],
+    "repository": {
+      "url": "https://github.com/NikaNats/Sentinel.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "b4c63a86cdf9dab593d5556868f62b83953c304a"
+    }
+  },
+  "components": [
+    {
+      "id": "operator",
+      "type": "external",
+      "label": "Operator",
+      "sublabel": "config plane",
+      "pos": [
+        30,
+        300
+      ],
+      "size": [
+        120,
+        62
+      ],
+      "tag": "external control plane",
+      "sources": [
+        {
+          "path": "src/Sentinel.Infrastructure/Cryptography/CryptographyOptions.cs",
+          "line": 18,
+          "end_line": 47,
+          "label": "key-ring configuration"
+        }
+      ]
+    },
+    {
+      "id": "idp",
+      "type": "external",
+      "label": "IdP / JWKS",
+      "sublabel": "external signing state",
+      "pos": [
+        30,
+        90
+      ],
+      "size": [
+        170,
+        62
+      ],
+      "tag": "external IdP",
+      "sources": [
+        {
+          "path": "src/Sentinel.Keycloak/Extensions/KeycloakModuleBuilderExtensions.cs",
+          "line": 40,
+          "end_line": 50,
+          "label": "DI OIDC metadata manager"
+        },
+        {
+          "path": "src/Sentinel.Keycloak/Extensions/KeycloakServiceExtensions.cs",
+          "line": 31,
+          "end_line": 32,
+          "label": "separate custom manager"
+        }
+      ]
+    },
+    {
+      "id": "validator",
+      "type": "backend",
+      "label": "JWT bearer",
+      "sublabel": "kid miss; counters only",
+      "pos": [
+        500,
+        90
+      ],
+      "size": [
+        180,
+        62
+      ],
+      "tag": "reference-host path",
+      "sources": [
+        {
+          "path": "samples/Sentinel.Sample.MinimalApi/Program.cs",
+          "line": 303,
+          "end_line": 309,
+          "label": "separate bearer manager"
+        },
+        {
+          "path": "samples/Sentinel.Sample.MinimalApi/Program.cs",
+          "line": 437,
+          "end_line": 460,
+          "label": "kid-miss telemetry only"
+        }
+      ]
+    },
+    {
+      "id": "tls",
+      "type": "security",
+      "label": "TLS cert",
+      "sublabel": "opt-in; initial / options",
+      "pos": [
+        220,
+        300
+      ],
+      "size": [
+        170,
+        62
+      ],
+      "tag": "configuration-dependent",
+      "sources": [
+        {
+          "path": "samples/Sentinel.Sample.MinimalApi/Program.cs",
+          "line": 86,
+          "end_line": 90,
+          "label": "registration requires Path"
+        },
+        {
+          "path": "src/Sentinel.AspNetCore/Infrastructure/KestrelCertificateReloaderExtensions.cs",
+          "line": 18,
+          "end_line": 26,
+          "label": "path validation gate"
+        },
+        {
+          "path": "src/Sentinel.AspNetCore/Infrastructure/KestrelCertificateReloader.cs",
+          "line": 74,
+          "end_line": 123,
+          "label": "watcher disabled; reload paths"
+        }
+      ]
+    },
+    {
+      "id": "kestrel",
+      "type": "backend",
+      "label": "Kestrel",
+      "sublabel": "certificate selector",
+      "pos": [
+        500,
+        300
+      ],
+      "size": [
+        180,
+        62
+      ],
+      "tag": "runtime consumer",
+      "sources": [
+        {
+          "path": "src/Sentinel.AspNetCore/Infrastructure/KestrelCertificateReloaderExtensions.cs",
+          "line": 33,
+          "end_line": 64,
+          "label": "configuration-dependent selector"
+        }
+      ]
+    },
+    {
+      "id": "envelope",
+      "type": "security",
+      "label": "envelope contract",
+      "sublabel": "versioned key IDs",
+      "pos": [
+        220,
+        510
+      ],
+      "size": [
+        170,
+        62
+      ],
+      "tag": "implementation / unverified wiring",
+      "sources": [
+        {
+          "path": "src/Sentinel.Application/Common/Abstractions/IEnvelopeEncryptionService.cs",
+          "line": 9,
+          "end_line": 18,
+          "label": "caller-owned re-wrap persistence"
+        },
+        {
+          "path": "src/Sentinel.Infrastructure/Cryptography/AesGcmEncryptionService.cs",
+          "line": 50,
+          "end_line": 94,
+          "label": "versioned key-ID envelope write"
+        },
+        {
+          "path": "src/Sentinel.Infrastructure/Cryptography/AesGcmEncryptionService.cs",
+          "line": 121,
+          "end_line": 164,
+          "label": "lazy re-wrap and fallback"
+        }
+      ]
+    },
+    {
+      "id": "crypto",
+      "type": "backend",
+      "label": "AES-GCM implementation",
+      "sublabel": "DI registration gap",
+      "pos": [
+        500,
+        510
+      ],
+      "size": [
+        180,
+        62
+      ],
+      "tag": "unverified wiring",
+      "sources": [
+        {
+          "path": "src/Sentinel.Infrastructure/Cryptography/AesGcmEncryptionService.cs",
+          "line": 28,
+          "end_line": 46,
+          "label": "options-change state rebuild"
+        },
+        {
+          "path": "src/Sentinel.Infrastructure/Cryptography/AesGcmEncryptionService.cs",
+          "line": 166,
+          "end_line": 202,
+          "label": "key-ring state validation"
+        },
+        {
+          "path": "src/Sentinel.Infrastructure/DependencyInjection/SentinelModuleBuilderExtensions.cs",
+          "line": 64,
+          "end_line": 67,
+          "label": "envelope DI resolve-time gap"
+        }
+      ]
+    },
+    {
+      "id": "retirement",
+      "type": "external",
+      "label": "External key retirement",
+      "sublabel": "operator / runbook",
+      "pos": [
+        800,
+        300
+      ],
+      "size": [
+        190,
+        62
+      ],
+      "tag": "operator authority",
+      "sources": [
+        {
+          "path": "src/Sentinel.Infrastructure/Cryptography/CryptographyOptions.cs",
+          "line": 40,
+          "end_line": 47,
+          "label": "legacy key removable only after convergence"
+        },
+        {
+          "path": "src/Sentinel.Infrastructure/Cryptography/CryptographyOptions.cs",
+          "line": 18,
+          "end_line": 38,
+          "label": "key-retirement configuration"
+        }
+      ]
+    },
+    {
+      "id": "telemetry",
+      "type": "backend",
+      "label": "Auth telemetry",
+      "sublabel": "in-process meter; host export",
+      "pos": [
+        800,
+        510
+      ],
+      "size": [
+        190,
+        62
+      ],
+      "tag": "optional export",
+      "sources": [
+        {
+          "path": "src/Sentinel.Security.Diagnostics/AuthTelemetry.cs",
+          "line": 103,
+          "end_line": 163,
+          "label": "metric definitions"
+        },
+        {
+          "path": "src/Sentinel.Security.Diagnostics/Extensions/SecurityDiagnosticsBuilderExtensions.cs",
+          "line": 13,
+          "end_line": 27,
+          "label": "Prometheus wiring"
+        },
+        {
+          "path": "samples/Sentinel.Sample.MinimalApi/Program.cs",
+          "line": 94,
+          "end_line": 116,
+          "label": "host Prometheus / OTLP"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Sentinel runtime",
+      "wraps": [
+        "validator",
+        "tls",
+        "kestrel",
+        "envelope",
+        "crypto"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "idp-validator",
+      "from": "idp",
+      "to": "validator",
+      "label": "metadata / JWKS",
+      "variant": "emphasis",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        350,
+        170
+      ]
+    },
+    {
+      "id": "operator-idp",
+      "from": "operator",
+      "to": "idp",
+      "label": "rotate external keys",
+      "variant": "security",
+      "route": "orthogonal-v",
+      "fromSide": "left",
+      "toSide": "left",
+      "via": [
+        [
+          30,
+          331
+        ],
+        [
+          15,
+          331
+        ],
+        [
+          15,
+          121
+        ],
+        [
+          30,
+          121
+        ]
+      ],
+      "labelAt": [
+        82,
+        225
+      ]
+    },
+    {
+      "id": "operator-tls",
+      "from": "operator",
+      "to": "tls",
+      "label": "options / restart",
+      "variant": "security",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        185,
+        380
+      ]
+    },
+    {
+      "id": "operator-envelope",
+      "from": "operator",
+      "to": "envelope",
+      "label": "change key ring",
+      "variant": "security",
+      "route": "orthogonal-v",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          90,
+          362
+        ],
+        [
+          90,
+          541
+        ],
+        [
+          220,
+          541
+        ]
+      ],
+      "labelAt": [
+        155,
+        533
+      ]
+    },
+    {
+      "id": "tls-kestrel",
+      "from": "tls",
+      "to": "kestrel",
+      "label": "current cert",
+      "variant": "emphasis",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        450,
+        340
+      ]
+    },
+    {
+      "id": "envelope-crypto",
+      "from": "envelope",
+      "to": "crypto",
+      "label": "DI gap",
+      "variant": "emphasis",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        445,
+        541
+      ]
+    },
+    {
+      "id": "crypto-telemetry",
+      "from": "crypto",
+      "to": "telemetry",
+      "label": "rewrap metrics",
+      "variant": "dashed",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        735,
+        550
+      ]
+    },
+    {
+      "id": "envelope-retirement",
+      "from": "envelope",
+      "to": "retirement",
+      "label": "conditional: verified persistence",
+      "variant": "security",
+      "route": "orthogonal-v",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [
+        [
+          305,
+          510
+        ],
+        [
+          305,
+          450
+        ],
+        [
+          740,
+          450
+        ],
+        [
+          740,
+          331
+        ],
+        [
+          800,
+          331
+        ]
+      ],
+      "labelAt": [
+        540,
+        440
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Three lifecycles",
+      "items": [
+        "External IdP/JWKS",
+        "Opt-in TLS; versioned AES-GCM"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Operational boundary",
+      "items": [
+        "Watcher disabled; initial/options only",
+        "Kid miss counts; no callback refresh",
+        "EF cleanup separate/opt-in",
+        "Resolve-time concrete-service DI gap"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Failure and persistence",
+      "items": [
+        "Invalid config retains prior state",
+        "No production re-wrap caller found",
+        "Retirement needs verified persistence",
+        "Unrecognized input may fall back or throw",
+        "Retirement cites options doc-comment, not runbook"
+      ]
+    }
+  ]
+}

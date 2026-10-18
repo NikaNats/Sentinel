@@ -74,7 +74,7 @@ The current implementation provides:
 | Idempotency enforcement | Implemented | Logout idempotency with state machine (IN_PROGRESS→409, COMPLETED→204) |
 | Session management | Implemented | Refresh token rotation; session blacklist on logout; TTL aligned with Keycloak (8h default) |
 | OpenTelemetry and metrics endpoint | Implemented | Tracing, metrics counters/histograms, Prometheus scrape endpoint; security event telemetry |
-| Integration and unit testing | Implemented | 496 tests across 8 suites (Unit 290, Contracts 77, Security 63, Integration 46, DPoP 29, Session 22, SSF 7, Concurrency 3) — 100% pass rate |
+| Integration and unit testing | Implemented (repository-reported) | Historical snapshot: 496 tests across 8 suites, 100% pass rate; not independently rerun by the current documentation review. Treat this as a historical repository claim, not a current result. |
 | Full OAuth PAR and PKCE orchestration endpoint set | Planned/Externalized | Keycloak-driven flow orchestration remains infrastructure and client-driven |
 
 ## Architecture Overview
@@ -444,7 +444,7 @@ Focus areas:
 ### Integration Tests
 
 Focus areas:
-- End-to-end FAPI2-compliant authenticated flow with DPoP proof per request
+- End-to-end FAPI 2.0-oriented authenticated flow with DPoP proof per request (repository-described scenario; external conformance is not established here)
 - DPoP nonce challenge flow: unauthenticated 400 → nonce in header → prove with nonce → success
 - Token replay detection (JTI already used within 60s window)
 - DPoP proof replay detection (proof JTI + nonce reuse)
@@ -457,9 +457,7 @@ Focus areas:
 - DPoP key mismatch attack scenario rejection
 - Real Keycloak integration (non-DPoP binding tests)
 
-**Current Test Status:**
-- **496 tests passing** (100% pass rate) across 8 suites: Unit (290), Contracts (77), Security (63), Integration (46), DPoP (29), Session (22), SSF (7), Concurrency (3)
-- All security scenario paths exercised (DPoP nonce, token replay, proof replay, rate limits, ACR, scope validation)
+**Historical repository-reported test snapshot:** the root `README.md` lists “496 tests passing (100% pass rate)” across eight suites. This documentation review did not rerun that snapshot; the separate seven-assembly VSTest batch recorded in [docs/diagrams/README.md](docs/diagrams/README.md) returned exit 1 for every inner suite. Treat the 496/8/100% figures as repository-reported, not current execution evidence.
 
 ### Acceptance Tests (Reqnroll E2E)
 
@@ -568,8 +566,8 @@ This project follows a spec-driven workflow with comprehensive documentation:
 2. Plan implementation scope in PLAN-0001
 3. Track execution in TASK-0001
 4. Implement code and tests together (unit + integration)
-5. Validate with full test suite (496 tests across 8 suites, 100% passing)
-6. Security scan for vulnerabilities (Trivy)
+5. Validate with the full test suite; the historical repository-reported `496 tests / 8 suites / 100%` snapshot is not a current result. Run the relevant suites and record each result before making a pass claim.
+6. Run the separately configured vulnerability scan (the repository README's operator procedure mentions Trivy); no image scan was executed by this documentation review.
 7. Update architecture documentation ([ARCHITECTURE.md](./docs/ARCHITECTURE.md)) when decisions change
 8. Update operational runbooks ([SRE_SOC_RUNBOOKS.md](./docs/SRE_SOC_RUNBOOKS.md)) when behavior changes
 9. Update compliance matrix ([COMPLIANCE_AUDIT_MATRIX.md](./docs/COMPLIANCE_AUDIT_MATRIX.md)) if standards impact
@@ -583,8 +581,8 @@ All changes should:
 2. Maintain or improve fail-closed security posture (e.g., 503 on cache unavailability, not bypass)
 3. Include comprehensive tests for both happy path and abuse-path behavior
 4. Maintain structured logging and OpenTelemetry telemetry semantics
-5. Pass full test suite (unit + integration); target 100% pass rate
-6. Pass security scan (Trivy; no critical/high vulnerabilities)
+5. Run the full test suite (unit + integration) and record the actual result before claiming a pass; the historical repository-reported `496 tests / 8 suites / 100%` figure is not a current result.
+6. Run the configured security scan and record the scan scope/result; the operator procedure mentions Trivy, but no image scan was executed by this documentation review.
 7. Update architecture decisions ([ARCHITECTURE.md](./docs/ARCHITECTURE.md)) if design rationale changes
 8. Update threat model ([LIVING_THREAT_MODEL.md](./docs/LIVING_THREAT_MODEL.md)) if new threats identified
 9. Update compliance matrix ([COMPLIANCE_AUDIT_MATRIX.md](./docs/COMPLIANCE_AUDIT_MATRIX.md)) if framework alignment changes

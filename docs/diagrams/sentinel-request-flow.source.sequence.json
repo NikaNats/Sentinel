@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Sentinel Request Lifecycle — Authenticated API Call",
+    "output": "sentinel-request-flow.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1500,
+      760
+    ],
+    "column_fit": "spread"
+  },
+  "participants": [
+    {
+      "id": "client",
+      "type": "external",
+      "label": "Client"
+    },
+    {
+      "id": "host",
+      "type": "backend",
+      "label": "Host"
+    },
+    {
+      "id": "preauth",
+      "type": "security",
+      "label": "Pre-auth"
+    },
+    {
+      "id": "identity",
+      "type": "security",
+      "label": "Authentication"
+    },
+    {
+      "id": "authorization",
+      "type": "security",
+      "label": "Authorization"
+    },
+    {
+      "id": "postauth",
+      "type": "security",
+      "label": "mTLS / ACR"
+    },
+    {
+      "id": "state",
+      "type": "database",
+      "label": "State"
+    },
+    {
+      "id": "endpoint",
+      "type": "backend",
+      "label": "Endpoint"
+    }
+  ],
+  "messages": [
+    {
+      "id": "request",
+      "from": "client",
+      "to": "host",
+      "y": 180,
+      "label": "HTTPS request + DPoP headers",
+      "variant": "emphasis"
+    },
+    {
+      "id": "forward",
+      "from": "host",
+      "to": "preauth",
+      "y": 228,
+      "label": "SecurityHeaders → Correlation → DPoP",
+      "variant": "security"
+    },
+    {
+      "id": "nonce",
+      "from": "preauth",
+      "to": "state",
+      "y": 276,
+      "label": "DPoP nonce / replay state",
+      "variant": "security"
+    },
+    {
+      "id": "auth",
+      "from": "host",
+      "to": "identity",
+      "y": 324,
+      "label": "JwtBearer authentication",
+      "variant": "security"
+    },
+    {
+      "id": "session",
+      "from": "identity",
+      "to": "state",
+      "y": 372,
+      "label": "Token validation: exp / sub / sid / JTI",
+      "variant": "security"
+    },
+    {
+      "id": "principal",
+      "from": "identity",
+      "to": "authorization",
+      "y": 420,
+      "label": "Authenticated principal",
+      "variant": "security"
+    },
+    {
+      "id": "authz",
+      "from": "authorization",
+      "to": "postauth",
+      "y": 468,
+      "label": "Endpoint policies + step-up",
+      "variant": "security"
+    },
+    {
+      "id": "invoke",
+      "from": "postauth",
+      "to": "endpoint",
+      "y": 516,
+      "label": "mTLS cnf binding; then ACR gate; execute",
+      "variant": "emphasis"
+    },
+    {
+      "id": "response",
+      "from": "endpoint",
+      "to": "client",
+      "y": 564,
+      "label": "Downstream result; 2xx/3xx best-effort candidate nonce",
+      "variant": "return"
+    },
+    {
+      "id": "failure",
+      "from": "preauth",
+      "to": "client",
+      "y": 612,
+      "label": "401 / 503 failure branch",
+      "variant": "return",
+      "note": "Proof acceptance is distinct from the final HTTP outcome."
+    }
+  ],
+  "activations": [
+    {
+      "participant": "host",
+      "from": 180,
+      "to": 700,
+      "type": "backend"
+    },
+    {
+      "participant": "preauth",
+      "from": 228,
+      "to": 500,
+      "type": "security"
+    },
+    {
+      "participant": "identity",
+      "from": 276,
+      "to": 420,
+      "type": "security"
+    },
+    {
+      "participant": "authorization",
+      "from": 372,
+      "to": 516,
+      "type": "security"
+    },
+    {
+      "participant": "postauth",
+      "from": 420,
+      "to": 564,
+      "type": "security"
+    },
+    {
+      "participant": "endpoint",
+      "from": 516,
+      "to": 650,
+      "type": "backend"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Ordered host path",
+      "items": [
+        "Request enters the host, then pre-authentication security, authentication, authorization, and post-authentication binding/ACR",
+        "Token revocation/replay validation occurs inside JwtBearer OnTokenValidated before authorization",
+        "mTLS validates cnf binding; AcrValidationMiddleware separately requires acr for authenticated requests"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Response semantics",
+      "items": [
+        "Proof acceptance is distinct from the final endpoint response",
+        "2xx/3xx attempts best-effort nonce rotation; the OnStarting callback suppresses state-store failures",
+        "Synchronous DPoP state failures return 503; later failures follow their own host/response path"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Evidence boundary",
+      "items": [
+        "The reference host is a test harness; this is source-inspected pipeline order, not live-service proof",
+        "Open DPoP, JTI, and refresh findings remain review items",
+        "AOT and live-service behavior remain unverified"
+      ]
+    }
+  ]
+}

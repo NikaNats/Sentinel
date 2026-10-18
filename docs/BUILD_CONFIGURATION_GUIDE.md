@@ -113,10 +113,10 @@ dotnet pack Sentinel.slnx -c Release -p:SignSentinelRelease=true -o ./artifacts
 
 ## 5. Native AOT & Trimming Considerations
 
-The reference Minimal API host (`Sentinel.Sample.MinimalApi`) is configured with `<PublishAot>true</PublishAot>` to prove Native AOT compatibility.
+The reference Minimal API host (`Sentinel.Sample.MinimalApi`) is configured with `<PublishAot>true</PublishAot>` as an AOT-oriented design target. The current documentation review did not execute the AOT gate or a production runtime.
 
 ### CI Gate: `tests/scripts/validate-native-aot.sh`
-CI publishes `Sentinel.Tests.Load/AdversarialTestHost` as a **true Native AOT** binary (the host wires the full `Sentinel.AspNetCore`/DPoP/Redis/SSF/SdJwt pipeline and deliberately avoids EF Core) and sweeps its endpoint matrix at runtime, failing on any HTTP 5xx, on a `NotSupportedException` or "Reflection-based serialization has been disabled" entry in the host log, and on a failed boot:
+CI publishes `Sentinel.Tests.Load/AdversarialTestHost` as a **Native AOT gate target** (the host wires the full `Sentinel.AspNetCore`/DPoP/Redis/SSF/SdJwt pipeline and deliberately avoids EF Core) and sweeps its endpoint matrix at runtime, failing on any HTTP 5xx, on a `NotSupportedException` or "Reflection-based serialization has been disabled" entry in the host log, and on a failed boot. This is a documented CI procedure; it is not a result of the current documentation review:
 ```bash
 ./tests/scripts/validate-native-aot.sh linux-x64   # also: win-x64, linux-arm64
 ```
@@ -142,10 +142,10 @@ The `native-aot-gate` job in `.github/workflows/security-pipeline.yml` runs this
 
 ## 6. Hardened Container Packaging
 
-The repository contains a production-ready, highly secure multi-stage Docker build located at `src/Sentinel.AspNetCore/Dockerfile`.
+The repository contains a hardened, rootless multi-stage Docker build for the reference sample at `samples/Sentinel.Sample.MinimalApi/Dockerfile`; the file marks it as a test-harness image, not a shipping product artifact. The image has documented hardening controls, but current image scan results, deployment evidence, and production readiness require separate execution evidence.
 
 ### Hardening Controls Deployed:
-- **Distroless Runtime:** Uses `mcr.microsoft.com/dotnet/aspnet:10.0.10-noble-chiseled` as the minimal execution layer (no shell, no package manager, minimizing attack surface).
+- **Distroless Runtime:** The reference sample Dockerfile uses `mcr.microsoft.com/dotnet/aspnet:10.0.11-noble-chiseled` as the minimal execution layer (no shell, no package manager, minimizing attack surface).
 - **Non-Root Execution:** Runs under a dedicated unprivileged user (`USER app` / UID 1654) to mitigate container escape exploits.
 - **Disabled Diagnostics:** `DOTNET_EnableDiagnostics=0` is set to block runtime profiling, heap dumps, and memory scanning vectors.
 - **TLS 1.3 & mTLS Ready:** Hardened to negotiate TLS 1.3 exclusively for service-to-service secure mesh topologies.

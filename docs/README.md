@@ -5,7 +5,7 @@
 > **Code Baseline**: .NET 10.0 (SDK 10.0.302)
 > **Architecture**: Modular security platform with decoupled Hexagonal (Ports & Adapters) integration surface
 
-This folder serves as the authoritative, FAPI 2.0-compliant documentation suite for Sentinel's runtime behavior, cryptographic security controls, integration contracts, and SRE operations.
+This folder serves as the documentation suite for Sentinel's runtime behavior, cryptographic security controls, integration contracts, and SRE operations. This suite describes a FAPI 2.0-oriented design, not an external conformance result; conformance status and production promotion require separate evidence.
 
 ---
 
@@ -18,17 +18,19 @@ If you are new to the repository, read these documents in the recommended order 
 3.  **[OPENAPI_3_1.yaml](OPENAPI_3_1.yaml):** Formal, machine-readable OpenAPI 3.1 specification for SDK generation and gateway routing.
 4.  **[SRE_SOC_RUNBOOKS.md](SRE_SOC_RUNBOOKS.md):** Operational monitoring, alerting, incident response playbooks, and cache-degradation recovery checklists.
 
+The interactive [Archify documentation diagrams](diagrams/README.md) provide a visual companion to the architecture, request lifecycle, and security data-flow sections.
+
 ---
 
 ## Document Map
 
 | File | Audience | Purpose | Status |
 |---|---|---|---|
-| **[ARCHITECTURE.md](ARCHITECTURE.md)** | Architects, Senior Engineers | System topology, dependency inversion model, request pipeline, and ADRs. | Verified |
-| **[BUILD_CONFIGURATION_GUIDE.md](BUILD_CONFIGURATION_GUIDE.md)** | Platform Engineers, CI/CD | MSBuild configurations, CPM versioning, strong-name signing, and AOT setup. | Verified |
-| **[COMPLIANCE_AUDIT_MATRIX.md](COMPLIANCE_AUDIT_MATRIX.md)** | GRC, Security Auditors | Mapping of international standards (RFC/NIST) to concrete code evidence. | Verified |
-| **[KEYCLOAK_FAPI_ENFORCEMENT.md](KEYCLOAK_FAPI_ENFORCEMENT.md)** | IAM Operators, Platform Engineers | Keycloak 26.6.4 realm policy structure, 26.x executor IDs, DPoP runtime support, and documented enforcement gaps. | Verified |
-| **[CONTAINER_BUILD_READINESS.md](CONTAINER_BUILD_READINESS.md)** | DevOps, SRE | Multi-stage, rootless, and hardened Docker container release readiness. | **RELEASE-READY** |
+| **[ARCHITECTURE.md](ARCHITECTURE.md)** | Architects, Senior Engineers | System topology, dependency inversion model, request pipeline, and ADRs. | Documentation baseline; execution claims remain separately evidenced. |
+| **[BUILD_CONFIGURATION_GUIDE.md](BUILD_CONFIGURATION_GUIDE.md)** | Platform Engineers, CI/CD | MSBuild configurations, CPM versioning, strong-name signing, and AOT setup. | Documentation baseline; execution claims remain separately evidenced. |
+| **[COMPLIANCE_AUDIT_MATRIX.md](COMPLIANCE_AUDIT_MATRIX.md)** | GRC, Security Auditors | Mapping of international standards (RFC/NIST) to concrete code evidence. | Documentation baseline; execution claims remain separately evidenced. |
+| **[KEYCLOAK_FAPI_ENFORCEMENT.md](KEYCLOAK_FAPI_ENFORCEMENT.md)** | IAM Operators, Platform Engineers | Keycloak 26.6.4 realm policy structure, 26.x executor IDs, DPoP runtime support, and documented enforcement gaps. | Documentation baseline; execution claims remain separately evidenced. |
+| **[CONTAINER_BUILD_READINESS.md](CONTAINER_BUILD_READINESS.md)** | DevOps, SRE | Multi-stage, rootless, and hardened Docker container build procedures; current image scan/signing and production-readiness claims require separate evidence. | **DOCUMENTATION BASELINE** |
 | **[DISTRIBUTED_CONCURRENCY_SPEC.md](DISTRIBUTED_CONCURRENCY_SPEC.md)** | Architects, SRE | Distributed state atomicity, TOCTOU mitigation, Coyote & Chaos Mesh verification. | **APPROVED** |
 | **[OIDF_FAPI_CONFORMANCE_RUNBOOK.md](OIDF_FAPI_CONFORMANCE_RUNBOOK.md)** | DevOps, Architects, Security | OIDF FAPI 2.0 conformance gate: network topology, Keycloak hardening, suite API integration, evidence custody, failure triage. | **ACTIVE** |
 | **[PENTEST_PROGRAM.md](PENTEST_PROGRAM.md)** | Security Auditors, Release Managers, SOC | Independent penetration test program (Constitution §VIII.4): 10 mandated attack scenarios, CVSS SLAs, findings JSON schema, evidence chain, release gate. | **ACTIVE** |
@@ -38,7 +40,7 @@ If you are new to the repository, read these documents in the recommended order 
 | **[OPENAPI_3_1.yaml](OPENAPI_3_1.yaml)** | API Consumers, Gateway | Machine-readable API contracts and schemas for gateway routing. | Active |
 | **[SDK_LESS_INTEGRATION_GUIDE.md](SDK_LESS_INTEGRATION_GUIDE.md)** | API Consumers | Handshake protocols, Nonce challenge-response, and raw HTTP examples. | Active |
 | **[SRE_SOC_RUNBOOKS.md](SRE_SOC_RUNBOOKS.md)** | SRE, On-Call Operators | Incident triage, logging, telemetry, and disaster recovery playbooks. | Active |
-| **[CRYPTO_LIFECYCLE_RUNBOOK.md](CRYPTO_LIFECYCLE_RUNBOOK.md)** | Crypto Operators, SRE | JWKS rotation, TLS hot reload, mTLS cache, envelope re-wrap, metrics, alerting. | Active |
+| **`CRYPTO_LIFECYCLE_RUNBOOK.md`** | Crypto Operators, SRE | JWKS rotation, TLS reload boundaries, mTLS cache, envelope re-wrap, metrics, alerting. | Active |
 | **`runbooks/auth-token-issuance.md`** | IAM Operators | Token issuance, trust-chain validation, and key-rotation playbooks. | Active |
 | **`archive/*`** | Compliance Auditors | Historical audit artifacts retained for end-to-end traceability. | Archived |
 

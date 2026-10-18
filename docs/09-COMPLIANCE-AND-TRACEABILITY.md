@@ -13,7 +13,7 @@
 | `htm`/`htu` binding to request | checks #13–#14; htu normalization (query/fragment stripped, default port dropped, trailing slash trimmed) | `DpopProofValidatorTests`, `ProtocolFuzzTests` |
 | `iat` freshness + single-use `jti` | checks #16–#17 (`ProofLifetimeSeconds=60`, skew 10 default), #21 atomic replay mark with TTL = lifetime+skew | `TemporalBoundaryTests`, `JtiSetNxContractTests` |
 | Server nonce challenge–response (`use_dpop_nonce`, `DPoP-Nonce` header) | Middleware challenge/rotation flow; Lua CAS-delete consumption (`RedisDpopNonceStore.ConsumeNonceScript`) | `NonceLuaScriptContractTests`, `DpopValidationMiddlewareTests`, E2E `dpop-dance.sh` |
-| `ath` binding for refresh with DPoP | `KeycloakDpopProofFactory.CreateProof(…, accessToken)` stamps `ath = base64url(SHA-256(token))` on refresh calls | `KeycloakDpopProofFactoryTests` |
+| `ath` binding for refresh with DPoP | The factory supports an optional `ath` argument, but the current outbound `DpopProofDelegatingHandler` uses the two-argument proof factory path, so generated refresh proofs omit `ath` | `KeycloakDpopProofFactoryTests` proves the factory option; live end-to-end refresh binding remains unverified |
 | `cnf.jkt` access-token binding | checks #19–#20 (`missing_cnf_jkt`, `jkt_mismatch`) | `DpopProofValidatorTests`, `RealParPkceDpopFlowTests` |
 | Error/challenge grammar | §2.3 of [03](./03-SECURITY-AND-CRYPTOGRAPHY.md) (exact `WWW-Authenticate` strings, `algs=` parameter) | `SecuritySchemeContractTests`, nuclei `sentinel-dpop-*` templates |
 
@@ -25,7 +25,7 @@
 | Thumbprint taken only from authenticated token, never client input | `TryGetThumbprintFromAuthenticatedPrincipal` (fail-closed 403 on missing `cnf`) |
 | Certificate chain + clientAuth EKU validation | `ValidateCertificateChain` (OID `1.3.6.1.5.5.7.3.2`, offline revocation, `ExcludeRoot`) |
 | mTLS-bound tokens at the IdP | Keycloak client `sentinel-m2m-worker` attribute `tls.client.certificate.bound.access.tokens: true` (`infra/keycloak/realms/sentinel.json`) |
-| Tests | `MtlsBindingMiddlewareTests`, `MtlsCertificateCacheTests`, Gate 10 filter `MtlsCertificateRotation` |
+| Tests | `MtlsBindingMiddlewareTests`, `MtlsCertificateCacheTests`; Gate 10 VSTest filters cover `JwksRotation`, `MtlsCertificateCache`, and `AesGcmEncryptionService` |
 
 ### 1.3 RFC 7638 — JWK Thumbprint
 
@@ -50,7 +50,7 @@
 
 ### 1.6 SSF / CAEP event intake (source-cited RFC 8936)
 
-`SsfEventProcessor` + `SsfEndpoints`: SET signature/issuer validation (`ISsfTokenValidator`), temporal bounding (`MaxEventAgeSeconds` 300 + skew 300), CAEP event types `session-revoked` / `user-status-changed` / `credential-change` (exact `https://schemas.openid.net/secevent/caep/...` URIs), fail-closed whole-SET semantics, webhook shared-secret with constant-time compare, route obfuscation (404). Tests: `SsfEventProcessorTests`, `SsfEventProcessorResiliencyTests`, `SsfIntegrationTests`, `SsfEndpointsTests`; acceptance evidence via `acceptance-e2e` job ("FAPI + CAEP Evidence").
+`SsfEventProcessor` + `SsfEndpoints`: SET signature/issuer validation (`ISsfTokenValidator`), temporal bounding (`MaxEventAgeSeconds` 300 + skew 300), CAEP event types `session-revoked` / `user-status-changed` / `credential-change` (exact `https://schemas.openid.net/secevent/caep/...` URIs), webhook shared-secret with constant-time compare, route obfuscation (404), and a reference-host outcome boundary in which processor failures map to 400 while a discarded Keycloak false result can still yield 202. Tests: `SsfEventProcessorTests`, `SsfEventProcessorResiliencyTests`, `SsfIntegrationTests`, `SsfEndpointsTests`; acceptance evidence via `acceptance-e2e` job ("FAPI + CAEP Evidence").
 
 ### 1.7 OIDC Back-Channel Logout (source-cited RFC 9413)
 
@@ -58,7 +58,7 @@
 
 ### 1.8 OAuth Token Exchange & refresh rotation
 
-`KeycloakTokenExchangeService` posts `grant_type=urn:ietf:params:oauth:grant-type:token-exchange` with `subject_token_type`/`requested_token_type = urn:ietf:params:oauth:token-type:access_token`; `KeycloakTokenRefreshService` performs `grant_type=refresh_token` and detects rotation; reuse detection surfaces `/errors/token-theft-detected`. Tests: `TokenExchangeWithRealKeycloakTests`, `TokenResponseContractTests` (+ schema), `KeycloakServicesTests`.
+`KeycloakTokenExchangeService` posts `grant_type=urn:ietf:params:oauth:grant-type:token-exchange` with `subject_token_type`/`requested_token_type = urn:ietf:params:oauth:token-type:access_token`; `KeycloakTokenRefreshService` performs `grant_type=refresh_token` and returns the optional rotated refresh token when present; heuristic reuse detection surfaces `/errors/token-theft-detected`, but is not independent proof of reuse or provider-side revocation. Tests: `TokenExchangeWithRealKeycloakTests`, `TokenResponseContractTests` (+ schema), `KeycloakServicesTests`.
 
 ### 1.9 NIST SP 800-63B — authenticator assurance & step-up
 
@@ -70,7 +70,7 @@ Native `System.Security.Cryptography.MLDsa` verification; `MLDsa.IsSupported` pl
 
 ### 1.11 NIST SP 800-57 — key management
 
-Versioned key ring, active-key designation, lazy re-wrap with telemetry (`crypto.lazy_rewraps_total`, `crypto.keyring.active_key_mismatch`), legacy-key migration path, hot reload without restart (`CryptographyOptions` doc-comment claims FedRAMP High alignment via auditable key-version metadata). Evidence: `AesGcmEncryptionServiceTests`, Gate 10 `EnvelopeRewrap` filter.
+Versioned key ring, active-key designation, lazy re-wrap with telemetry (`crypto.lazy_rewraps_total`, `crypto.keyring.active_key_mismatch`), legacy-key migration path, and `IOptionsMonitor`-based configuration reload are present. The inspected `IEnvelopeEncryptionService` concrete-service registration and caller-owned persistence remain unresolved, and TLS file-watch hot reload is not established because `EnableRaisingEvents = false`. Evidence: `AesGcmEncryptionServiceTests`; Gate 10 VSTest filter `AesGcmEncryptionService`; this is source/test evidence, not live rotation proof.
 
 ### 1.12 RFC 7807 / RFC 6750 — error & challenge formats
 
@@ -91,10 +91,10 @@ All error bodies are `application/problem+json` with the type-URI catalog in [04
 | Secret scanning | Gate 1 TruffleHog v3.95.9 |
 | SAST | Gate 2 Semgrep (justified `nosemgrep` suppressions inline) |
 | Dependency audit | Gate 3 (`dotnet` NuGet audit) |
-| SBOM | Gate 6/7 Anchore `sbom-action` v0.17.9 (SPDX), attached to release images via `cosign attach sbom` |
+| SBOM | Gate 6/7 Anchore `sbom-action` v0.17.9 (SPDX); `publish-nuget` also generates a package SBOM |
 | IaC scanning | Gate 8 Checkov |
-| Image scanning | Gate 9 Trivy v0.36.0 + SARIF artifact; `.trivyignore` requires expiry+ticket per entry (currently empty — "base images are kept up to date") |
-| Image provenance | Keyless **cosign** signature (Sigstore) on `release/*`; `cosign verify` gated on workflow identity regexp + `token.actions.githubusercontent.com` OIDC issuer |
+| Image scanning | No container-image scan step in the current `security-pipeline.yml`; any local image scan is an unverified documentation procedure |
+| Image provenance | No container-image signing job in the current `security-pipeline.yml`; `publish-nuget` uses `actions/attest-build-provenance` for NuGet packages |
 | Assembly integrity | Strong-name hybrid model (`SignSentinelRelease`, `Sentinel.snk` from CI secret; PublicSign fallback with committed `Sentinel.public.snk`) |
 | Contract integrity | OpenAPI generated from the running host (Gate 4), drift-audited against committed baseline (Gate 5), compatibility contract tests |
 | Minimal runtime | Chiseled/distroless image, non-root UID 1654, diagnostics IPC disabled, invariant globalization |
@@ -134,7 +134,7 @@ Severity scale: **Info** (documented trade-off), **Low** (hardening opportunity)
 |---|---|
 | OAuth 2.0 / JWT / DPoP / FAPI 2.0 checklist (40+ items) | `docs/COMPLIANCE_AUDIT_MATRIX.md` |
 | Threat model (21 threats, 7 categories, likelihood×impact, residual risk) | `docs/LIVING_THREAT_MODEL.md` |
-| FedRAMP-style risk acceptance trail | `.trivyignore` policy header (expiry + ticket required per entry) |
+| Image-scan exception policy | `.trivyignore` policy header (expiry + ticket required per entry); a separate operator scan is required before relying on it |
 | FIPS 204 PQC audit | `docs/MLDSA_AUDIT_CHECKLIST.md` |
 | Crypto/PKI lifecycle governance | `docs/CRYPTO_LIFECYCLE_RUNBOOK.md` |
 | K8s secrets governance | `docs/KUBERNETES_SECRET_MANAGEMENT_STRATEGY.md` |

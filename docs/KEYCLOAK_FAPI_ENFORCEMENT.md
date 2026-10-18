@@ -3,7 +3,7 @@
 > **Document ID**: DOC-0016
 > **Last Updated**: 2026-08-16
 > **Applies To**: `infra/keycloak/realms/sentinel.json`, `infra/keycloak/realms/sentinel-dast.json`, `src/Sentinel.Keycloak`
-> **Status**: Live enforcement verified by `Sentinel.Contracts` Keycloak suite (41/41), live probes, and the browser-mediated FAPI 2.0 E2E suite (8/8, `Sentinel.Tests.Integration.Federation`)
+> **Status**: Repository documentation records prior live-enforcement evidence from `Sentinel.Contracts` Keycloak (41/41), live probes, and the browser-mediated FAPI 2.0 E2E suite (8/8, `Sentinel.Tests.Integration.Federation`); this review did not independently rerun those suites or probes.
 
 ## Context
 
@@ -31,18 +31,16 @@ active.
 | Signature | `secure-signature-algorithm` | NOT `secure-signing-algorithm`; config `default-algorithm` + `algorithm` |
 | Session | `secure-session` | – |
 | HoK (mTLS) | `holder-of-key-enforcer` | NOT deployed, see Gaps |
-| PAR | `secure-par-content` | Deployed in `sentinel-dast` (`sentinel-dast.json:231`); main realm enforces via `require.pushed.authorization.requests: true` on `sentinel-api-client` (`sentinel.json:260`) |
+| PAR | `secure-par-content` | Configured in `sentinel-dast` (`sentinel-dast.json:231`); main realm config includes `require.pushed.authorization.requests: true` on `sentinel-api-client` (`sentinel.json:260`); live enforcement not independently rerun here |
 | Implicit | `reject-implicit-grant` | `auto-configure: "true"` required |
 | ROPC | `reject-ropc-grant` | `auto-configure: "true"` required |
 
-## Live enforcement (verified)
+## Live enforcement (prior repository evidence; not rerun in this review)
 
 - **DPoP universal**: every token-endpoint call without an RFC 9449 proof →
   `400 DPoP proof is missing`. Access tokens carry `typ: DPoP`, and
   `token_type: "DPoP"` in token responses.
-- **Signing**: default/single algorithm PS256 — no RS256 key is ever generated
-  because `components` ships a PS256 primary + RSA-OAEP encryption key provider
-  (verified via `/admin/realms/sentinel/keys` and JWKS).
+- **Signing**: the repository records a PS256 default/single algorithm and no RS256 signing key in the inspected Keycloak state because `components` shipped a PS256 primary + RSA-OAEP encryption key provider; prior admin `/admin/realms/sentinel/keys` and JWKS introspection are repository evidence, not a fresh live check.
 - **PKCE**: S256 auto-configured on all clients.
 - **Audiences**: `sentinel-api-client` and `sentinel-m2m-worker` token
   audiences via `oidc-audience-mapper`; correct 26.6.4 config keys are
@@ -55,8 +53,7 @@ active.
 
 ## WebAuthn AAL3 (NIST 800-63B) — realm configuration
 
-Added 2026-08-15, verified against a live Keycloak **26.6.4** container
-(`--import-realm`, admin API introspection). Both realm files carry the same
+Added 2026-08-15; the repository records prior verification against a Keycloak **26.6.4** container (`--import-realm`, admin API introspection). This review did not independently rerun that container verification. Both realm files carry the same
 configuration; the DAST realm keeps `rpId localhost` and no client binding.
 
 ### WebAuthn policy (realm `attributes`)
@@ -133,21 +130,22 @@ path, and `python3` is detected with a `python` fallback (Windows Store alias).
 
 ## Runtime DPoP client support
 
-The Sentinel runtime signs every outbound token-endpoint call:
+The Sentinel runtime ensures every outbound token-endpoint call carries a DPoP proof:
 
 - `KeycloakDpopProofFactory` (`src/Sentinel.Keycloak/Dpop/`): single per-process
   RSA key, PS256 (FAPI baseline) RFC 9449 proofs, unique `jti`/`iat` per call,
-  optional `ath` claim for refresh.
+  optional `ath` claim is supported by the factory, but the current
+  `DpopProofDelegatingHandler` uses the two-argument proof path, so generated
+  refresh proofs omit `ath`; live end-to-end refresh binding is not established.
 - `DpopProofDelegatingHandler`: attached to the `keycloak-admin`,
   `KeycloakUmaPermissionService`, `KeycloakTokenRefreshService`, and
   `KeycloakTokenExchangeService` HTTP clients. Caller-supplied `DPoP` headers
   (e.g. a browser-held key forwarded for refresh) are preserved, never
   overwritten.
 
-Verified live against Keycloak 26.6.4: PS256-proof client_credentials → 200,
-`token_type=DPoP`; no-proof → 400.
+Prior repository evidence reports Keycloak 26.6.4 client_credentials with a PS256 proof returned 200 with `token_type=DPoP`, while a no-proof request returned 400; this review did not independently rerun those probes.
 
-## Browser-mediated FAPI 2.0 E2E (Playwright, added 2026-08-16)
+## Browser-mediated FAPI 2.0 E2E (Playwright, added 2026-08-16; prior repository run, not rerun in this review)
 
 `tests/Sentinel.Tests.Integration/Integration/Federation/` runs the full
 interactive flow against a real Keycloak **26.6.4** container (repo-pinned
@@ -159,7 +157,7 @@ registered `http://localhost:8081/callback` (served by an in-fixture
 `CallbackServer`, see below) → DPoP-bound token exchange → protected resource
 (Keycloak userinfo).
 
-| # | Asserted behavior | Live-verified result |
+| # | Asserted behavior | Repository-reported result (not independently rerun here) |
 |---|---|---|
 | 1 | PAR returns RFC 9126 `request_uri`, TTL ≤ 60 s | passes |
 | 2 | Full flow issues a code, `token_type=DPoP`, `cnf.jkt` == the `dpop_jkt` thumbprint sent in PAR | passes (sender constraint enforced) |
@@ -172,7 +170,7 @@ registered `http://localhost:8081/callback` (served by an in-fixture
 | 9 | `plain` PKCE method | passes — `400 Invalid parameter: code challenge method is not matching the configured one` |
 | 10 | DPoP proof replay (`jti` reuse) against the Keycloak userinfo endpoint | documented — KC performs no jti-replay check of its own; Sentinel's Redis-backed `JtiReplayCache` covers replay rejection |
 
-Corrections applied to the original ADR-2026-004 plan after live probing:
+Corrections applied to the original ADR-2026-004 plan after the prior live probing described in this document:
 
 1. **`nonce` is required** in the pushed authorization request — authorize
    rejects PAR without it (`Missing parameter: nonce`). The client always
@@ -183,8 +181,7 @@ Corrections applied to the original ADR-2026-004 plan after live probing:
    `Fapi2BrowserClient` exists for RFC 9449 completeness but is a no-op here;
    tests assert absence.
 4. **Playwright route interception does not catch 302-followed navigations**
-   (verified empirically on 1.52.0: the redirect request is sent un-routed and
-   fails with `ERR_CONNECTION_REFUSED`). The callback is served by an in-test
+   (a prior empirical run on 1.52.0 reported that the redirect request is sent un-routed and fails with `ERR_CONNECTION_REFUSED`). The callback is served by an in-test
    `CallbackServer` (raw `TcpListener` on `127.0.0.1:8081` answering empty
    200s) instead — this is the ADR's "dummy app", embedded in the fixture.
 5. **`Microsoft.Playwright` requires reflection-based System.Text.Json** for
@@ -207,16 +204,14 @@ Integration project and installs Chromium with `--with-deps` before testing.
 
 ## Gaps (documented deviations)
 
-1. **Interactive login DPoP in the Sentinel runtime**: the browser-mediated
-   flow is proven end-to-end by the Playwright suite (PAR + PKCE S256 + DPoP
-   against a real client); what is still missing is the runtime-side
+1. **Interactive login DPoP in the Sentinel runtime**: the repository documents a prior Playwright run described as end-to-end (PAR + PKCE S256 + DPoP against a real client); this review did not rerun it. What is still missing is the runtime-side
    (backend-for-frontend) browser-layer proof signing, so Sentinel's own
    interactive logins cannot yet present DPoP proofs at the token endpoint.
 2. **holder-of-key (mTLS)**: `holder-of-key-enforcer` is intentionally not in
    the profiles — no mTLS ingress is provisioned, and enabling it yields
    `400 Client Certification missing for MTLS HoK Token Binding`. Configured
    mTLS is a prerequisite.
-3. **PAR client flow**: pushed authorization requests are *enforced* server-side — `secure-par-content` is deployed in `sentinel-dast` (`sentinel-dast.json:231`) and the main-realm `sentinel-api-client` sets `require.pushed.authorization.requests: true` (`sentinel.json:260`). The Sentinel runtime contains no PAR **client** implementation (the `/protocol/openid-connect/par` POST) — any API-driven browser flow that cannot push needs the PAR client-side work before interactive login is exercised against this posture.
+3. **PAR client flow**: the repository configuration deploys `secure-par-content` in `sentinel-dast` (`sentinel-dast.json:231`) and sets `require.pushed.authorization.requests: true` for the main-realm `sentinel-api-client` (`sentinel.json:260`); live behavior was not independently rerun in this review. The Sentinel runtime contains no PAR **client** implementation (the `/protocol/openid-connect/par` POST) — any API-driven browser flow that cannot push needs the PAR client-side work before interactive login is exercised against this posture.
 4. **DAST realm**: `sentinel-dast` deliberately omits `reject-ropc-grant` /
    `reject-implicit-grant` — `sentinel-dast-victim` uses ROPC by design for
    gray-box scanning.

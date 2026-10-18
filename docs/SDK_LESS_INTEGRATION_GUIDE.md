@@ -3,7 +3,7 @@
 > **Document ID**: INT-0001
 > **Last Updated**: 2026-06-16
 > **Audience**: Client developers integrating plain HTTP clients (JS, Mobile, Go, Python, C#)
-> **Target Baseline**: FAPI 2.0 Compliant (PAR + PKCE + DPoP)
+> **Target Baseline**: FAPI 2.0-oriented integration (PAR + PKCE + DPoP); external conformance is not established by this guide.
 
 This guide provides instructions and raw HTTP wire-format examples to integrate with the Sentinel-protected API gateway without requiring any proprietary SDK.
 

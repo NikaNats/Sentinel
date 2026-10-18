@@ -49,19 +49,26 @@ Canonical type URIs from `ErrorCodes` plus middleware/filter-emitted types:
 
 Domain-level error codes (non-HTTP) are centralized in `SecurityErrors` (`src/Sentinel.Security.Abstractions/Results/SecurityErrors.cs`), e.g. `identity.conflict`, `validation.weak_password`, `captcha.invalid`, `token.invalid`, `dpop.proof_invalid`, `dpop.nonce_invalid`, `dpop.signature_invalid`, `session.expired`.
 
+### Archify interactive views
+
+- [Sentinel DPoP proof lifecycle](diagrams/sentinel-dpop-validation-lifecycle.html)
+- [Sentinel idempotency lifecycle](diagrams/sentinel-idempotency-lifecycle.html)
+
+Both views summarize documented response and state-machine behavior. They are not evidence that the DPoP or concurrency suites passed, that Redis is healthy, or that production idempotency is atomic under every failure mode.
+
 ## 2. Framework Security Endpoints (`MapSentinelSecurity`)
 
 Route group: `{prefix}` with tag "Sentinel Security API"; sub-groups `/auth`, `/ssf`. Registered via `SentinelEndpointExtensions.MapSentinelSecurity` → `MapAuthEndpoints`, `MapSsfEndpoints`, `MapTokenExchangeEndpoints`, `MapBackchannelLogoutEndpoints`.
 
 ### 2.1 `POST {prefix}/auth/refresh` — `RefreshToken`
 
-- **Auth**: `AllowAnonymous` (the refresh token is the credential); DPoP header forwarded to the refresh service for sender-constrained rotation.
+- **Auth**: `AllowAnonymous` (the refresh token is the credential); the DPoP header is forwarded to the refresh service. Downstream sender-constrained acceptance is an external Keycloak result and is not established by this local endpoint.
 - **Request**: `{ "refreshToken": "…" }` (`RefreshRequest`).
-- **Success 200**: `{ "access_token": "…", "refresh_token": "…" }` (`TokenResponseDto`; snake_case via `JsonPropertyName`). The rotated refresh token comes from Keycloak (`KeycloakTokenRefreshService` detects `refresh_token` in the response and reports rotation).
+- **Success 200**: the current refresh service treats a 2xx response whose JSON body is a compatible object as successful, extracts optional `access_token`/`refresh_token`, and the endpoint serializes a missing access token as an empty string. A compatible parseable 2xx object without `access_token` can therefore return 200 with an empty access token; malformed JSON or incompatible token-field shapes fail the service path and do not set the reuse flag. The rotated refresh token comes from Keycloak (`KeycloakTokenRefreshService` detects `refresh_token` in the response and reports rotation).
 - **400**: blank refresh token ("Refresh token is required.").
-- **401 `/errors/token-theft-detected`** (title "Session Terminated"): refresh-token **reuse** detected (`result.IsReuseDetected`) — the Keycloak-side revocation of the whole grant is the expected consequence.
+- **401 `/errors/token-theft-detected`** (title "Session Terminated"): refresh-token **reuse detection** (`result.IsReuseDetected`) is surfaced as a token-theft response. The inspected branch does not itself revoke the Keycloak grant or persist a token-family state; provider-side revocation is not established by this endpoint.
 - **401**: "Invalid refresh token".
-- Client IP is privacy-hashed (`SecurityContextHasher.HashIp`) before being passed to the service.
+- **Client IP is privacy-hashed** (`SecurityContextHasher.HashIp`) before being passed to the service; the current refresh service does not consume that argument.
 
 ### 2.2 `POST {prefix}/auth/change-password` — `ChangePassword`
 
@@ -101,11 +108,11 @@ Route group: `{prefix}` with tag "Sentinel Security API"; sub-groups `/auth`, `/
 
 ### 2.9 `POST {prefix}/auth/token-exchange` — `ExchangeExternalToken`
 
-- **Auth**: `AllowAnonymous` (the external token is the credential) — but a **`DPoP` proof header is mandatory**: missing proof ⇒ **400** type `/errors/missing-dpop-proof` ("DPoP proof is required."), so exchanged tokens are sender-constrained from birth.
+- **Auth**: `AllowAnonymous` (the external token is the credential), with a mandatory `DPoP` proof header; missing proof ⇒ **400** type `/errors/missing-dpop-proof` ("DPoP proof is required."). The endpoint requires the field before service invocation; whether the downstream token is accepted as sender-constrained is an external/Keycloak verification result, not established by this local gate alone.
 - **Request**: `{ "externalToken": "…", "providerName": "…", "codeVerifier": "…" }` (`TokenExchangeRequest`); any blank field ⇒ **400**.
 - **Success 200**: `TokenExchangeResponseDto` — `{ "access_token", "refresh_token", "token_type", "expires_in", "scope" }`; `token_type` defaults to `"DPoP"` when the IdP omits it.
 - **401**: exchange produced no access token ("Token exchange failed.").
-- Downstream: `KeycloakTokenExchangeService` posts `grant_type=urn:ietf:params:oauth:grant-type:token-exchange` with `subject_token_type`/`requested_token_type = urn:ietf:params:oauth:token-type:access_token` (externally-confirmed token exchange pattern); the outbound call is signed with a runtime DPoP proof (`KeycloakDpopProofFactory`).
+- The configured outbound `DpopProofDelegatingHandler` preserves a caller-supplied proof or generates one when absent. The generated two-argument factory path does not add `ath`; live end-to-end sender-constrained acceptance and refresh binding are not established by the local gate.
 
 ### 2.10 `POST {prefix}/auth/backchannel-logout` — `BackchannelLogout`
 
@@ -124,10 +131,10 @@ Implements Shared Signals Framework event reception (source cites RFC 8936); `.A
 |---|---|---|
 | Feature flag | `Ssf:Enabled=false` | **404** (clients "should assume SSF not supported") |
 | Webhook auth | `Ssf:RequireAuthToken=true`: `SSF-Auth-Token` header must match `Ssf:AuthToken` via SHA-256-normalized **constant-time** comparison | **404** on mismatch ("Route obfuscation: obfuscating endpoint existence") |
-| Payload | Raw JWT with `Content-Type: application/secevent+jwt`, or JSON `{ "set": "<jwt>" }` | **400** problem "SET token is required…" when absent |
-| Processing | `SsfEventProcessor.ProcessAsync` | **202** on success |
-| Signature/issuer invalid | `result.IsUnauthorized` | **401** type `/errors/ssf-unauthorized` |
-| Event handling failure | fail-closed on any event | **400** type `/errors/ssf-processing-failed` |
+| Payload | Raw JWT with `Content-Type: application/secevent+jwt`, or JSON `{ "set": "<jwt>" }` | **400** problem "SET token is required…" when absent. **Gap:** a present but non-string `set` value makes `JsonElement.GetString()` throw `InvalidOperationException`, which the endpoint's `catch (JsonException)` does not catch — such a payload reaches the host exception handler and surfaces as **5xx** |
+| Processing | `SsfEventProcessor.ProcessAsync` | **202** when the inspected reference-host adapter reports success; unknown or no-op events can still be accepted |
+| Framework validation result | `result.IsUnauthorized` is declared by `SsfEndpoints` | Framework contract **401**; the inspected reference-host adapter maps every non-success `SecurityResult` to `SsfProcessResult.Invalid`, so **401 is not reachable through that adapter** |
+| Processor-reported event/state failure | `IsSuccess=false` | **400** type `/errors/ssf-processing-failed`; this does not cover a Keycloak adapter that returns `false` without throwing because that boolean is discarded |
 
 `SsfEventProcessor` (`src/Sentinel.SSF/SsfEventProcessor.cs`) enforces temporal bounds (`iat` age ≤ `MaxEventAgeSeconds + AllowedClockSkewSeconds`, and not in the future beyond skew; defaults 300 + 300 s) and handles three IANA/CAEP event-type URIs:
 
@@ -137,7 +144,7 @@ Implements Shared Signals Framework event reception (source cites RFC 8936); `.A
 | `https://schemas.openid.net/secevent/caep/event-type/user-status-changed` | Revoke all sessions for subject (payload `{sub?}`) |
 | `https://schemas.openid.net/secevent/caep/event-type/credential-change` | Revoke all sessions for subject (payload `{sub?}`) |
 
-Infrastructure outage propagates (endpoint 5xx) so the upstream IdP retries — "fail-closed revocation guarantee" (any single event failure fails the whole SET).
+The framework contract propagates a processor-reported failure as 400. The inspected reference-host adapter does not catch processor exceptions: it awaits the inner processor and maps only the returned result, so an unexpected exception escapes to the host exception handler and surfaces as a 5xx (the reference host's `UseExceptionHandler` writes a `application/problem+json` 500). The shared **test** adapter is the opposite — it throws `InvalidOperationException` on a processor-reported failure. Returned failures map to 400; uncaught exceptions may reach host exception handling. A Keycloak `RevokeAllSessionsAsync` call that returns `false` without throwing is currently discarded, so that failure mode can still produce 202. The diagram is scoped to the inspected reference-host adapter and the concrete processor/adapters, not every possible `ISsfEventProcessor` implementation.
 
 ## 3. Reference-Host Business Endpoints (`samples/Sentinel.Sample.MinimalApi`)
 
@@ -169,15 +176,18 @@ Authorization policies registered by the host: `ScopeProfile` (`scope=profile`),
 TryAcquireAsync (SET key "IN_PROGRESS" NX EX 5min)
  ├─ Acquired    → execute endpoint
  │                ├─ 2xx   → MarkCompletedAsync(key, {status, contentType, body}, TTL 24h)
- │                └─ non-2xx / exception → ReleaseAsync(key)   (retryable)
+ │                ├─ non-2xx → ReleaseAsync(key)   (retryable)
+ │                └─ exception before IResult → key may remain IN_PROGRESS until TTL; later completion/release failures follow their own path
  ├─ InProgress  → 409 /errors/idempotency-conflict ("A request with this Idempotency-Key is currently running.")
  │                (up to 3 acquisition attempts on read races; contention → auth.idempotency.lock_contention_total)
  └─ Completed   → replay cached response bytes verbatim (status + content-type + body);
                   cached-without-body → 204
-Store outage    → 503 /errors/idempotency-unavailable (fail-closed; Critical log)
+Acquire outage → 503 /errors/idempotency-unavailable (filter catch; Critical log)
+Later outage   → completion/release errors are rethrown; outer middleware/host handling
+                 determines the final response (response bytes are copied in finally)
 ```
 
-Concurrency proof: `tests/Sentinel.Tests.Concurrency/IdempotencyConcurrencyTests.cs` (Coyote systematic scheduling, 1000 iterations in CI).
+Concurrency-oriented unit evidence: `tests/Sentinel.Tests.Concurrency/IdempotencyConcurrencyTests.cs` exercises `InMemoryIdempotencyStore` acquisition/release/completion transitions with Coyote scheduling. It does **not** exercise Redis, `IdempotencyFilter`, HTTP response execution, distributed failure modes, or production atomicity; a current passing test run is not established by this review.
 
 ## 5. Rate-Limit Contract
 

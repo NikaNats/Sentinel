@@ -2,7 +2,7 @@
 
 ## Security Commitment
 
-Sentinel is a high-assurance, FAPI 2.0-compliant security gateway enforcing
+Sentinel is a high-assurance, FAPI 2.0-oriented security gateway enforcing
 sender-constrained token validation (DPoP per RFC 9449, mTLS binding, replay
 protection, and strict JWT validation). Security is a core design principle:
 the service fails closed on dependency or validation failures, and all

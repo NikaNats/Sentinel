@@ -18,7 +18,7 @@
 | `auth.redis.degraded_mode_activations` | `auth_redis_degraded_mode_activations_total` | Counter | Transitions into node-local replay protection (Redis degradation) |
 | `auth.dpop.nonce_mismatch_total` | `auth_dpop_nonce_mismatch_total` | Counter | Nonce mismatch / stale presentation / failed atomic compare-delete |
 | `auth.idempotency.lock_contention_total` | `auth_idempotency_lock_contention_total` | Counter | Idempotency SET NX collisions/retries under concurrency |
-| `crypto.jwks.refresh_total` | `crypto_jwks_refresh_total` | Counter | JWKS refresh requested after kid-miss |
+| `crypto.jwks.refresh_total` | `crypto_jwks_refresh_total` | Counter | Reference-host kid-miss callback records a refresh counter; it does not call `RequestRefresh` or prove a refresh/retry |
 | `crypto.jwks.kid_miss_total` (tag `kid`) | `crypto_jwks_kid_miss_total{kid}` | Counter | Signing-key lookup miss during JWT validation |
 | `crypto.tls.cert_days_remaining` | `crypto_tls_cert_days_remaining` (gauge, unit `days`) | Observable gauge | Updated by `KestrelCertificateReloader` on every (re)load |
 | `crypto.lazy_rewraps_total` (tag `key_id`) | `crypto_lazy_rewraps_total{key_id}` | Counter | Envelope ciphertexts re-encrypted under the active key during decryption |
@@ -74,8 +74,8 @@ The system **never** silently degrades security checks. Expected client-visible 
 | 401 `/errors/unauthorized` spike + `TokenValidationCriticalFailure` (3003) | Session blacklist store outage | Re-auth loops | Same as above; verify `HybridSessionBlacklistCache` L2/L3 health (Postgres reachable) |
 | 401 with `WWW-Authenticate: DPoP error="use_dpop_nonce"` en masse, `auth_dpop_nonce_mismatch_total` rising | Clients ignoring `DPoP-Nonce` rotation, or Redis key-prefix collision between environments | Clients fail until they fix nonce handling | Confirm prefix isolation (`sentinel_prod:` vs `staging:`), inspect client SDK behavior |
 | `auth_jti_replays_total` > 0 (`TokenReplayDetected`) | Token theft/replay attempt **or** client retrying a consumed single-use token | 401 | Triage via `SecurityEventEmitter` replay events (hashed jti/sub/IP + correlation id); if theft suspected, trigger subject revocation (`POST /auth/logout-all` equivalent via Keycloak admin) |
-| `crypto_jwks_kid_miss_total{kid}` spikes | Keycloak signing-key rotation ahead of client cache | Transient 401s | Usually self-heals (JWKS refresh counter rises); if persistent, check Keycloak realm key status |
-| `crypto_tls_cert_days_remaining` < 30 (`WarningDaysThreshold`) | Certificate expiry approaching | — | Renew cert; hot-reload picks it up without restart (`KestrelCertificateReloader`), gauge updates on reload |
+| `crypto_jwks_kid_miss_total{kid}` spikes | Keycloak signing-key rotation or signing-key lookup failure | 401s / validation failures | The inspected reference callback records kid-miss and increments a refresh counter but performs no `RequestRefresh` or retry; do not treat the counter as proof of self-healing. Check Keycloak realm state and the host configuration manager separately. |
+| `crypto_tls_cert_days_remaining` < 30 (`WarningDaysThreshold`) | Certificate expiry approaching | — | Renew the cert; use an `IOptionsMonitor` configuration change or restart to trigger `KestrelCertificateReloader`. The inspected file watcher is disabled, so file replacement alone is not an established reload path. |
 | `crypto_keyring_active_key_mismatch` sustained | Key-ring rotated without updating `ActiveKeyId`, or legacy data | — | Follow §4 rotation runbook |
 | Process refuses to start: "CRITICAL SECURITY INVARIANT VIOLATED…" | Production config drift (in-memory idempotency store / EF-backed nonce or jti stores) | Deploy blocked | Fix DI registrations to Redis-backed stores; this guard is intentional (`SecurityInvariantsStartupFilter`) |
 | ML-DSA critical log 4002 | Host OS lacks native FIPS 204 support | PQC proofs rejected (fail-closed) | Move workloads to a platform where `MLDsa.IsSupported` is true, or remove `ML-DSA-*` from `DPoP:AllowedAlgorithms` until then |
@@ -92,21 +92,22 @@ Per `AesGcmEncryptionService` mechanics and `docs/CRYPTO_LIFECYCLE_RUNBOOK.md`:
    Update via the config store consumed by IOptionsMonitor<CryptographyOptions>
    (K8s: update the secret/configmap; the service rebuilds state OnChange — no restart).
 3. Monitor: crypto_lazy_rewraps_total should climb as old ciphertexts are read;
-   crypto_keyring_active_key_mismatch should decay to zero as the ring converges.
-4. After all V0/legacy reads cease (no LegacyMasterKey hits in logs), remove
-   LegacyMasterKey; after the old key stops appearing in mismatch metrics, retire it
-   from the ring per retention policy (NIST SP 800-57 key lifecycle, per options doc-comment).
+   crypto_keyring_active_key_mismatch should decay toward zero.
+4. These counters count re-encryption attempts/decrypt paths, not successful persistence
+   by a caller. Remove `LegacyMasterKey` or retire an old key only after verified storage
+   convergence or an offline migration, following the retention policy.
 ```
 
 ### 4.2 TLS serving certificate
 
-1. Replace the file at `Kestrel:CertificateReloader:Path` (atomic write recommended; the watcher debounces 500 ms against partial writes).
-2. `KestrelCertificateReloader` swaps the certificate via Kestrel's `ServerCertificateSelector` without restart; `CertificateReloaded` event fires; `crypto.tls.cert_days_remaining` updates.
-3. Verify: `curl -vk https://host:8080/healthz 2>&1 | grep -i "notAfter"` and the gauge value.
+1. Replace the file at `Kestrel:CertificateReloader:Path` using an atomic write.
+2. Trigger the actual reload path: change the certificate-reloader options/config (or restart the host). The inspected `FileSystemWatcher` has `EnableRaisingEvents = false`; file replacement alone does not invoke `OnFileChanged`.
+3. After a reload, `KestrelCertificateReloader` can swap the certificate via Kestrel's `ServerCertificateSelector`; `CertificateReloaded` may fire and `crypto.tls.cert_days_remaining` updates.
+4. Verify the actual served certificate and gauge; do not infer reload from the file mtime alone.
 
 ### 4.3 Keycloak signing keys (JWKS)
 
-Rotation is IdP-side; Sentinel reacts via kid-miss → JWKS refresh (`crypto.jwks.refresh_total`). E2E proof: `JwksRotationIntegrationTests` with `RotatingJwksServer` (CI Gate 10). Operator steps: rotate in Keycloak, watch kid-miss/refresh counters return to baseline; no API restart needed.
+Rotation is IdP-side. The inspected reference-host `OnAuthenticationFailed` callback records `crypto.jwks.kid_miss_total` and increments `crypto.jwks.refresh_total`, but it does not call `RequestRefresh` or retry validation. The separate `KeycloakConfigurationManager` typed client has one-hour discovery caching, but no production consumer was found. E2E tests document rotation behavior; the counters alone do not prove a refresh or self-heal.
 
 ## 5. Routine Operations
 

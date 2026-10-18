@@ -23,7 +23,7 @@ Sentinel protects API access using high-performance, sender-constrained tokens, 
 
 1.  **Access and Refresh Tokens:** Cryptographically bound bearer credentials.
 2.  **DPoP Proof Integrity:** Ephemeral signatures and proof private-key binding semantics (`cnf.jkt`).
-3.  **Session Blacklist & Replay Records:** PostgreSQL/Redis-backed multi-tier state cache.
+3.  **Session Blacklist & Replay Records:** Redis-backed security state, with PostgreSQL only as an optional hybrid session-blacklist adapter when explicitly registered.
 4.  **SSF Event Trust Decisions:** Webhook signature and SHARED token verification secrets.
 5.  **Authorization Detail Constraints:** Signed transaction bounds (RFC 9396) for financial transfers.
 6.  **Security Telemetry & Metrics:** Anonymous diagnostics and correlation trace IDs (W3C).
@@ -49,7 +49,7 @@ Sentinel protects API access using high-performance, sender-constrained tokens, 
 | **T-05** | SSF forgery or stale event replay | Spoofing | High | Medium | Signature/issuer/timing checks + constant-time webhook auth token compare. |
 | **T-06** | **Timing Side-Channel Attacks (Timing Oracle)** | Info Leak | High | Low | **Constant-Time Failure Padding** + **Cryptographic Jitter Injection (0-15ms)** in DPoP middleware ($p\text{-value} > 0.05$). |
 | **T-07** | **Denial of Service (DoS) via Malformed Tokens** | Availability | High | Medium | **Localized Exception Shielding** on JWT/JSON parsers preventing process-crashing unhandled exceptions. |
-| **T-08** | **Concurrency / Lock Races on Sliding Nonces** | Tampering | High | Low | **Systematic Concurrency Testing** via Microsoft Coyote (1000+ thread interleaving iterations). |
+| **T-08** | Concurrency / Lock Races on Sliding Nonces | Tampering | High | Low | **Concurrency test shape** via Microsoft Coyote (1000+ thread interleaving iterations); this is not a proof that every race is absent. |
 | **T-09** | Telemetry privacy leakage via naive IP logging | Info Leak | Medium | Low | HMAC-SHA256 based `SecurityContextHasher` for privacy-hardened pseudonymization. |
 | **T-10** | Cache outage on security-critical checks | Availability | High | Medium | **Fail-closed semantics** on Redis/DB timeouts. Volatile caches (Nonces, JTIs) immediately fail closed. Session blacklisting uses `HybridSessionBlacklistCache` (PostgreSQL write-through + Redis fast-path) to preserve revocation states across cache-restart events. |
 | **T-11** | **Future Quantum Cryptanalysis (Key Decryption)** | Spoofing | High | Low | **FIPS 204 Native ML-DSA** signature validation (`MlDsaSignatureVerifier.cs`) preventing classical key extraction by future quantum adversaries. |
@@ -59,20 +59,19 @@ Sentinel protects API access using high-performance, sender-constrained tokens, 
 
 ### 5.1 DPoP, Replay, and Post-Quantum Protection
 - **DPoP Proof Validation:** Strict signature, type (`dpop+jwt`), `htm`, `htu`, and `iat` window (±60s) validation in `DpopProofValidator.cs`.
-- **Post-Quantum Cryptography (FIPS 204):** Native .NET 10 `MLDsa` lattice-based signature verification (`MlDsaSignatureVerifier.cs`) with platform-level `IsSupported` safety gates, protecting transitively against quantum-level cryptanalysis.
-- **Constant-Time Failure Padding:** All failed requests in `DpopValidationMiddleware` are padded up to a minimum floor (100ms) and randomized with **0-15ms of cryptographic jitter** to fully wash out sub-millisecond cryptographic execution deltas.
+- **Post-Quantum Cryptography (FIPS 204):** Native .NET 10 `MLDsa` lattice-based signature verification (`MlDsaSignatureVerifier.cs`) with platform-level `IsSupported` safety gates; repository tests provide implementation evidence, but this review did not rerun them or establish live cryptographic proof.
+- **Constant-Time Failure Padding:** Failed requests in `DpopValidationMiddleware` are padded and randomized; the intended mitigation is to reduce timing variance, while the repository's historical timing test is not current execution evidence.
 - **Exception Shielding:** Localized `try-catch` blocks on JSON/JWT parsing entries (specifically `TryExtractProofDetails`) catch `ArgumentException` and `SecurityTokenException` and return `null`, preventing process-crashing DoS exploits on malformed headers.
 
 ### 5.2 Session and Revocation
 - **Continuous Session Blacklisting:** In-request authorization paths check `ISessionBlacklistCache`. SSF webhooks and local logout paths converge on session invalidation.
-- **Hybrid Write-Through Caching:** The `HybridSessionBlacklistCache` writes session revocations to both PostgreSQL (durable anchor) and Redis (fast-path) in parallel. On Redis cache misses or outages, it safely falls back to PostgreSQL (Read-Through) to verify session revocation status, preserving 100% security coverage across cache-restart boundaries.
+- **Hybrid Write-Through Caching:** `HybridSessionBlacklistCache` is an optional adapter for hybrid session-blacklist persistence; when registered, it writes session revocations to PostgreSQL and Redis in parallel and can read through PostgreSQL after Redis misses or outages. The inspected reference host does not visibly register this decorator, so this is not proof that the production path uses PostgreSQL for session revocation.
 - **Fail-Closed State Boundaries:** If all distributed state stores timeout or fail, the system throws `SessionBlacklistUnavailableException` or `ReplayCacheUnavailableException` and immediately fails closed, rejecting requests with formatted `ProblemDetails` via RFC 7807 serialization.
 
 ### 5.3 SSF Integrity & Concurrency Verification
-- **Constant-Time Ingress Authentication:** Webhook authentication tokens are validated using `CryptographicOperations.FixedTimeEquals` to prevent timing side-channel exploits.
-- **Coyote Systematic Verification:** Thread-scheduling concurrency races (such as parallel nonce consumption) are systematically tested 1000-fold using Microsoft Coyote to mathematically prove the absence of race conditions.
-- **Toxiproxy Chaos Verification:** Network latencies, packet losses, and timeouts are simulated in integration environments using Testcontainers to verify pipeline resilience.
-- **Automated Reqnroll E2E Acceptance Testing:** End-to-end scenarios (such as financial wire transfers and CAEP session revocations) are executed continuously to mathematically verify that the deployed infrastructure behaves exactly as defined by the security models, preventing any drift in compliance.
+- **SSF reference-host outcome boundary:** The framework endpoint declares 401 for `IsUnauthorized`, but the inspected reference-host adapter maps non-success `SecurityResult` values to `SsfProcessResult.Invalid`, yielding 400. Processor exceptions are also mapped to 400; Keycloak adapter methods that return `false` without throwing are currently discarded, so a provider-side failure can still yield 202. Treat live webhook acceptance and effective revocation as a verification item.
+- **Concurrency test shape:** The CI matrix includes a Coyote-rewritten VSTest path for the Concurrency leg; this describes the test shape, not proof that every race or deadlock is absent.
+- **Automated Reqnroll E2E acceptance workflow:** End-to-end scenarios (such as financial wire transfers and CAEP session revocations) are implemented; a run against a live host requires separate execution evidence.
 
 
 ## 6. Fail-Closed Expectations
@@ -81,7 +80,7 @@ The following are **mandatory, non-negotiable** security behaviors:
 
 1.  **Replay or Blacklist state unavailable:** Reject request immediately (return 503/500).
 2.  **Invalid/stale/malformed DPoP proof:** Reject request immediately (return 401).
-3.  **Invalid SSF token or signature:** Reject webhook processing (return 401).
+3.  **SSF validation boundary:** Reject invalid/stale/malformed SETs. The framework declares 401, but the inspected reference-host adapter maps validation failure to a 400 processor result; verify the deployed host mapping.
 4.  **Missing/invalid required Nonce:** Challenge immediately with a fresh Nonce (return 401), do not bypass.
 
 
@@ -117,9 +116,10 @@ Review and update this threat model:
 
 ## 10. Dynamic Verification (DAST) Mapping
 
-The automated DAST gate (`.github/workflows/dast-release-gate.yml`) exercises the
-live stack through the test-only DPoP Signing Proxy (`infra/dast/auth-proxy`) —
-scanners remain DPoP-unaware while the real FAPI 2.0 pipeline is verified. See
+The DAST workflow documents a test-only DPoP signing proxy
+(`infra/dast/auth-proxy`) and a planned live-stack verification path. The
+current review did not execute that workflow; a passing DAST or external FAPI
+result requires separate evidence. See
 `docs/DAST_AND_PENTEST_PROGRAM.md` for tooling, posture, and exceptions.
 
 | T-ID | Dynamic verification that must run before release | Gate evidence |

@@ -13,7 +13,7 @@
 | `Sentinel:Redis` | `RedisOptions` | `AddRedisSecurityCaches(section)` | Redis/Sentinel-HA connection |
 | `Keycloak` | `KeycloakOptions` | `KeycloakServiceExtensions.Configure<KeycloakOptions>` | Authority, audience, session TTL |
 | `Sentinel:Keycloak` | `KeycloakOptions` (+ `KeycloakClientOptions` for admin) | `AddKeycloakIntegration(section)` (`BindConfiguration`) | Module-scoped Keycloak config |
-| `Cryptography` | `CryptographyOptions` | `SentinelModuleBuilderExtensions` (`BindConfiguration`, hot-reload via `IOptionsMonitor`) | AES-GCM envelope key ring |
+| `Cryptography` | `CryptographyOptions` | `SentinelModuleBuilderExtensions` (`BindConfiguration`, options-change reload via `IOptionsMonitor`) | AES-GCM envelope key ring |
 | `Ssf` | `SsfOptions` | Host responsibility; consumed via `IOptionsMonitor<SsfOptions>` in `SsfEndpoints` | SSF endpoint flag + webhook auth |
 | `Sentinel:Ssf` | `SsfProcessingOptions` | `AddSsfProcessing(configuration)` | SET processing bounds |
 | `SdJwt` | `SdJwtOptions` | Host responsibility (constant declared) | SD-JWT feature flag |
@@ -24,7 +24,7 @@
 | `Sentinel:Rar` | `RarValidationOptions` | `AddRarValidation(configuration)` | RAR matcher policy |
 | `SocialFederation` | `SocialFederationOptions` | `KeycloakModuleBuilderExtensions` | Social IdP federation |
 | `Registration` | `RegistrationOptions` | `SentinelModuleBuilderExtensions` | Email verification base URL |
-| `Kestrel:CertificateReloader` | `KestrelCertificateReloaderOptions` | `AddKestrelCertificateReloader(configuration)` (activated only when `:Path` exists) | TLS cert hot-reload |
+| `Kestrel:CertificateReloader` | `KestrelCertificateReloaderOptions` | `AddKestrelCertificateReloader(configuration)` (activated only when `:Path` exists) | TLS initial/options-change reload; inspected file watcher is disabled |
 | `FeatureFlags:Auth` | raw `IConfiguration` reads | `TokenValidationService` (`JtiReplayEnforcement`), host (`DpopFlow`) | Feature toggles |
 | `Security` | raw reads | Sample host | `TrustedRootCaPath`, `TestPublicKey`, `ExpectedDevCertificateThumbprint` |
 | `Cors:AllowedOrigins` | raw read | Sample host | CORS allow-list |
@@ -94,7 +94,7 @@ Key space produced (§ prefix + store pattern): `{p}jti:{jti}`, `{p}nonce:{thumb
 | `KeyRing` | `Dictionary<string,string>` | `{}` | keyId → base64 32-byte AES-256 key (setter required: "init-only setters are silently skipped by the NativeAOT configuration binder") |
 | `LegacyMasterKey` | string? | `null` | Decrypts pre-versioning V0 ciphertexts |
 
-Hot-reloadable (`IOptionsMonitor.OnChange` → volatile state swap). Reference: `publish-output/appsettings.Cryptography.example.jsonc`. **Never ship the placeholder key** `AAAA…=` present in `publish-output/appsettings.json`/`appsettings.Development.json` — it is a 32-byte all-zero key for local bootstrapping only.
+Options-change reload (`IOptionsMonitor.OnChange` → volatile state swap). Reference: `publish-output/appsettings.Cryptography.example.jsonc`. **Never ship the placeholder key** `AAAA…=` present in `publish-output/appsettings.json`/`appsettings.Development.json` — it is a 32-byte all-zero key for local bootstrapping only.
 
 ### 2.7 `Ssf` (`SsfOptions`) and `Sentinel:Ssf` (`SsfProcessingOptions`)
 

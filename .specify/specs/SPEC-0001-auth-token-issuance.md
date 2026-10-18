@@ -41,7 +41,7 @@ Without this, any network-level attacker or compromised intermediate service can
 
 ### 1.2 Proposed Solution Summary
 
-Implement a complete FAPI 2.0-compliant authentication flow using Keycloak 26+ as the Authorization Server. The flow combines Pushed Authorization Requests (PAR) to protect the authorization request itself, PKCE S256 to prevent authorization code interception, DPoP (Demonstrating Proof-of-Possession) to bind tokens to the client's ephemeral key pair, and WebAuthn/Passkey as the phishing-resistant authenticator. The .NET Web API validates every incoming request by checking the JWT signature, claims, DPoP proof, and `jti` replay state before any business logic executes.
+Implement a FAPI 2.0-oriented authentication flow using Keycloak 26+ as the Authorization Server. The flow combines Pushed Authorization Requests (PAR) to protect the authorization request itself, PKCE S256 to prevent authorization code interception, DPoP (Demonstrating Proof-of-Possession) to bind tokens to the client's ephemeral key pair, and WebAuthn/Passkey as the phishing-resistant authenticator. The .NET Web API validates every incoming request by checking the JWT signature, claims, DPoP proof, and `jti` replay state before any business logic executes.
 
 ### 1.3 Out of Scope
 
@@ -399,7 +399,7 @@ Trust Boundaries:
 {
   "clientId": "fortressapi-gov-client",
   "name": "FortressAPI Government Client",
-  "description": "FAPI 2.0 compliant government employee client",
+  "description": "FAPI 2.0-oriented government employee client",
   "clientAuthenticatorType": "client-jwt",
   "protocol": "openid-connect",
   "publicClient": false,

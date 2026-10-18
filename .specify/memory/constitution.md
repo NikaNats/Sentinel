@@ -384,7 +384,7 @@ Pragma: no-cache
 - **AppArmor / SELinux** profiles enforced
 
 ### V.2 Supply Chain Security
-- All container images signed with **Sigstore Cosign** — signature verified at admission control
+- All container images must be signed with **Sigstore Cosign**, and signatures must be verified at admission control. This is a normative governance requirement; the current `security-pipeline.yml` does not implement or verify this control, and no current image-signing result is established here.
 - **SBOM** (Software Bill of Materials) generated per build (SPDX format)
 - Dependency vulnerability scanning: **OWASP Dependency-Check + Trivy** in CI — build fails on CRITICAL/HIGH CVEs
 - **Reproducible builds**: deterministic build hashes; `lock` files committed

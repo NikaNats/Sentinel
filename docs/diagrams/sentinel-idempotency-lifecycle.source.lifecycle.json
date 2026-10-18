@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Sentinel Idempotency Lifecycle",
+    "output": "sentinel-idempotency-lifecycle.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1080,
+      640
+    ]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Successful request"
+    },
+    {
+      "id": "terminal",
+      "label": "Store / execution outcomes"
+    }
+  ],
+  "states": [
+    {
+      "id": "accepted",
+      "type": "start",
+      "label": "Request accepted",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "tag": "validated key"
+    },
+    {
+      "id": "acquire",
+      "type": "decision",
+      "label": "Try acquire",
+      "sublabel": "SET NX",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "atomic gate"
+    },
+    {
+      "id": "execute",
+      "type": "active",
+      "label": "Execute endpoint",
+      "sublabel": "protected work",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "business logic"
+    },
+    {
+      "id": "completed",
+      "type": "success",
+      "label": "COMPLETED",
+      "sublabel": "response cached",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "tag": "24 hour TTL"
+    },
+    {
+      "id": "replay",
+      "type": "success",
+      "label": "Replay response",
+      "sublabel": "status + bytes",
+      "lane": "main",
+      "col": 4,
+      "step": "05",
+      "tag": "idempotent retry"
+    },
+    {
+      "id": "contention",
+      "type": "failure",
+      "label": "409 contention",
+      "sublabel": "in-progress; plan retry",
+      "lane": "terminal",
+      "col": 0,
+      "tag": "retry later"
+    },
+    {
+      "id": "acquire-outage",
+      "type": "failure",
+      "label": "503 acquire error",
+      "sublabel": "filter catch",
+      "lane": "terminal",
+      "col": 2,
+      "tag": "acquisition only"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "accepted-acquire",
+      "from": "accepted",
+      "to": "acquire",
+      "variant": "emphasis"
+    },
+    {
+      "id": "acquire-execute",
+      "from": "acquire",
+      "to": "execute",
+      "variant": "security"
+    },
+    {
+      "id": "execute-completed",
+      "from": "execute",
+      "to": "completed",
+      "variant": "emphasis"
+    },
+    {
+      "id": "completed-replay",
+      "from": "completed",
+      "to": "replay",
+      "variant": "emphasis"
+    },
+    {
+      "id": "acquire-contention",
+      "from": "acquire",
+      "to": "contention",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "bottom-channel",
+      "channelY": 392
+    },
+    {
+      "id": "acquire-outage",
+      "from": "acquire",
+      "to": "acquire-outage",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "bottom-channel",
+      "channelY": 392
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Successful mutation",
+      "items": [
+        "Acquire IN_PROGRESS; 2xx caches response bytes",
+        "Replay returns cached status, content, and body; the client must serialize retries per key"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Release boundary",
+      "items": [
+        "Non-2xx IResult execution releases; endpoint invocation that throws before returning IResult can leave IN_PROGRESS until TTL",
+        "Deferred IResult faults attempt release; the original exception is rethrown"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "503 boundary",
+      "items": [
+        "Only acquisition-time IdempotencyStoreUnavailableException is converted to /errors/idempotency-unavailable",
+        "Completion/release outages are rethrown and follow outer middleware/host handling; response bytes are copied in finally"
+      ]
+    }
+  ]
+}

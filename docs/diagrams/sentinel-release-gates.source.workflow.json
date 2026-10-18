@@ -1,0 +1,217 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Sentinel CI and Release Gates",
+    "output": "sentinel-release-gates.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1220,
+      786
+    ]
+  },
+  "lanes": [
+    {
+      "id": "intake",
+      "label": "Change intake"
+    },
+    {
+      "id": "quality",
+      "label": "Quality gates"
+    },
+    {
+      "id": "build-gates",
+      "label": "Build-only gates"
+    },
+    {
+      "id": "contract-gates",
+      "label": "Contract-gated jobs"
+    },
+    {
+      "id": "release",
+      "label": "Release path"
+    }
+  ],
+  "phases": [
+    {
+      "id": "intake",
+      "label": "Intake",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "verify",
+      "label": "Verify",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "security"
+    },
+    {
+      "id": "publish",
+      "label": "Publish",
+      "fromCol": 4,
+      "toCol": 4,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "change",
+    "build",
+    "contract",
+    "tests",
+    "publish"
+  ],
+  "semanticChecks": {
+    "requiredEdges": [
+      {
+        "from": "change",
+        "to": "build"
+      },
+      {
+        "from": "build",
+        "to": "contract"
+      },
+      {
+        "from": "contract",
+        "to": "tests"
+      },
+      {
+        "from": "build",
+        "to": "specialized"
+      },
+      {
+        "from": "contract",
+        "to": "contract-specialized"
+      },
+      {
+        "from": "tests",
+        "to": "publish"
+      }
+    ],
+    "allowedTerminals": [
+      "specialized",
+      "contract-specialized",
+      "publish"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "change",
+      "lane": "intake",
+      "col": 0,
+      "type": "external",
+      "label": "Push / PR",
+      "width": 180
+    },
+    {
+      "id": "build",
+      "lane": "intake",
+      "col": 1,
+      "type": "backend",
+      "label": "Build + scans",
+      "width": 132
+    },
+    {
+      "id": "contract",
+      "lane": "quality",
+      "col": 1,
+      "type": "database",
+      "label": "Contract gate",
+      "width": 160
+    },
+    {
+      "id": "tests",
+      "lane": "quality",
+      "col": 2,
+      "type": "backend",
+      "label": "Test matrix",
+      "width": 132
+    },
+    {
+      "id": "specialized",
+      "lane": "build-gates",
+      "col": 3,
+      "type": "security",
+      "label": "Build-gated jobs",
+      "width": 210
+    },
+    {
+      "id": "contract-specialized",
+      "lane": "contract-gates",
+      "col": 3,
+      "type": "security",
+      "label": "Contract-gated jobs",
+      "width": 210
+    },
+    {
+      "id": "publish",
+      "lane": "release",
+      "col": 4,
+      "type": "security",
+      "label": "Publish NuGet",
+      "width": 140
+    }
+  ],
+  "edges": [
+    {
+      "id": "change-build",
+      "from": "change",
+      "to": "build",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "id": "build-contract",
+      "from": "build",
+      "to": "contract",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "id": "contract-tests",
+      "from": "contract",
+      "to": "tests",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "id": "build-specialized",
+      "from": "build",
+      "to": "specialized",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "contract-specialized-edge",
+      "from": "contract",
+      "to": "contract-specialized",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "tests-publish",
+      "from": "tests",
+      "to": "publish",
+      "variant": "emphasis",
+      "role": "main"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Gate dependencies",
+      "items": [
+        "build-scan → contract-gate → test-suites; build-gated jobs require build-scan",
+        "contract-gated jobs require build-scan + contract-gate; FAPI: workflow_dispatch or PR run-fapi label (dispatch not declared)"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Release/evidence boundary",
+      "items": [
+        "publish-nuget: release/** or v*; NuGet plus 90d archive step",
+        "archive is inside publish-nuget; no CI/publication/conformance/AOT proof"
+      ]
+    }
+  ]
+}

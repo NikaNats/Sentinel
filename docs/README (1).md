@@ -11,7 +11,7 @@
 
 | # | Document | Audience | Contents |
 |---|----------|----------|----------|
-| 01 | [System Overview](./01-SYSTEM-OVERVIEW.md) | All | Product definition, solution topology, module inventory, technology stack, packaging model |
+| 01 | **System Overview (not present in this checkout)** | All | The index entry is retained for suite completeness; this repository snapshot has no `01-SYSTEM-OVERVIEW.md` file, so do not treat the link as available evidence. |
 | 02 | [Architecture](./02-ARCHITECTURE.md) | Architects, Engineers | Hexagonal module topology, request pipeline, middleware ordering, composition root, fail-closed design principles, architectural invariants |
 | 03 | [Security & Cryptography](./03-SECURITY-AND-CRYPTOGRAPHY.md) | Security, Auditors | DPoP validation state machine, ML-DSA (FIPS 204) PQC path, mTLS binding (RFC 8705), AES-256-GCM envelope encryption, key-ring rotation, timing-attack mitigations, algorithm governance |
 | 04 | [API Reference](./04-API-REFERENCE.md) | Client Developers | Endpoint catalog, status-code matrix, RFC 7807 error type URIs, `WWW-Authenticate` challenge grammar, DPoP client integration walkthrough, SSF/backchannel-logout/token-exchange contracts, idempotency & rate-limit semantics |
@@ -57,4 +57,4 @@ The solution file `Sentinel.slnx` enumerates **15 `src/` projects**, **1 sample 
 
 1. `Makefile` content was not machine-readable in the provided snapshot (recorded as binary). Make targets documented in this suite are quoted from the "Make Targets" section of the repository `README.md`.
 2. `Sentinel.public.snk` is present in the snapshot as a binary blob; the strong-name signing *model* is documented from `Directory.Build.props` and `README.md`.
-3. Test-count figures (496 tests across 8 suites) are reported per the repository `README.md` "Implementation Status" table; this suite could not execute the suites (no .NET SDK in the documentation environment). Suite *structure* is verified from the `tests/` tree and CI matrix.
+3. The 496-test/8-suite/100% figure is a historical repository-reported snapshot. The seven-assembly VSTest batch run during this review returned exit 1 for every inner suite; record actual suite results before making a pass claim.

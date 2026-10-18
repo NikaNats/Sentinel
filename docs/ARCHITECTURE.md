@@ -1,7 +1,7 @@
 # Sentinel Architecture Specification
 
 > **Document ID**: ARC-0001
-> **Status**: APPROVED
+> **Status**: DOCUMENTATION REVIEW / APPROVED PROCEDURE (execution evidence is separate)
 > **Runtime Baseline**: .NET 10.0 (LTS Ready)
 > **Architecture Model**: Decoupled Hexagonal (Ports & Adapters) with High-Assurance Hardening
 
@@ -115,7 +115,7 @@ To prevent timing side-channel attacks (where attackers measure sub-millisecond 
 - All failed request paths are intercepted by `EnforceConstantTimeFailureAsync`.
 - If the request processing time is below `TargetFailureFloorMs` (e.g. 100ms), it is padded.
 - Additionally, a cryptographically secure random delay of **0-15 milliseconds** (`RandomNumberGenerator.GetInt32(0, 16)`) is added to every failure.
-- This high-entropy noise completely washes out sub-millisecond cryptographic execution deltas, making statistical timing attacks (Welch's T-Test verified: $p\text{-value} > 0.05$) mathematically impossible.
+- This high-entropy noise is intended to reduce measurable sub-millisecond timing differences; the repository records a Welch's T-test result, but this review did not rerun that experiment. This document is not a claim that the current test suites, live Keycloak, conformance suite, Native AOT host, or production deployment passed.
 
 ### 4.2 Exception Shielding (DoS Prevention)
 All token and proof parsers are wrapped in strict, localized exception filters. Any corrupted or malformed token (e.g. invalid Base64Url strings that cause `ReadJsonWebToken` to throw `ArgumentException`) is caught and handled gracefully (returning `null`). This prevents unhandled exception escapes that could trigger a `500 Internal Server Error` and destabilize the Kestrel web server under malicious automated scanning.
@@ -133,7 +133,7 @@ Redis and database backends are treated as part of the security boundary. If the
 - **Decision:** Replaced all legacy MVC Controllers with Minimal API group mappings using explicit JSON Source Generation contexts (`JsonSerializerContext`).
 - **Option A (Pure NuGet Framework):** Sentinel ships as a decoupled NuGet library framework (`NikaNats.Sentinel.*`); consuming applications provide their own host composition root. `samples/Sentinel.Sample.MinimalApi` is a non-shipping reference host and test harness only.
 - **Consequences:**
-  - *Positive:* Faster startup times (<50ms), an 82% reduction in memory footprint, and compile-time trim-safety.
+  - **Positive:** The design is intended to support faster startup and a smaller runtime footprint; any historical benchmark figures below are not current execution evidence.
   - *Negative:* Increased build-time code generation complexity; all custom DTOs must be explicitly annotated.
 
 ### ADR-2026-002: Pure Decoupled Hexagonal Architecture
@@ -143,7 +143,7 @@ Redis and database backends are treated as part of the security boundary. If the
 - **Consequences:**
   - *Positive:* Clean Hexagonal adapter boundaries - `Sentinel.Infrastructure` no longer compile-time couples to concrete storage adapters; the L2 cache behind the hybrid store is fully substitutable at the Composition Root.
   - *Negative:* The host application must explicitly reference the storage adapters it activates, and pass environment namespacing (KeyPrefix) explicitly when wiring the hybrid cache.
-- **Composition Wiring (first-class):** `Sentinel.EntityFrameworkCore.Extensions.AddHybridSessionBlacklistCache()` decorates the registered L2 adapter with PostgreSQL write-through + L1 fail-closed caching. Registration-order contract (validated eagerly, fail-fast at startup):
+- **Opt-in composition example (not reference-host wiring):** `Sentinel.EntityFrameworkCore.Extensions.AddHybridSessionBlacklistCache()` decorates the registered L2 adapter with PostgreSQL write-through + L1 fail-closed caching when a host explicitly supplies the required L2 and L3 registrations. The inspected reference host registers Redis-backed ports but does not visibly register this decorator or `SentinelSecurityDbContext`; do not infer an active PostgreSQL path from this example. Registration-order contract (validated eagerly, fail-fast at startup):
 
   ```csharp
   builder.Services.AddRedisSecurityCaches(builder.Configuration.GetSection("Sentinel:Redis"));   // L2
@@ -157,7 +157,7 @@ Redis and database backends are treated as part of the security boundary. If the
 - **Context:** Sub-millisecond execution deltas (0.8ms) between syntax checks and cryptographic signature verifications leak internal state, creating a timing oracle. Standard `Task.Delay` is bypassed by OS thread scheduling quantum jitter (15.6ms on Windows).
 - **Decision:** Introduced a high-resolution `Stopwatch` padding of 100ms combined with a cryptographically secure random delay of 0-15ms (`RandomNumberGenerator.GetInt32(0, 16)`) on all failed paths.
 - **Consequences:**
-  - *Positive:* Mathematically destroys the timing side-channel ($p\text{-value} > 0.05$ under Welch's T-Test). Slows down automated brute-force attacks.
+  - *Positive:* The intended mitigation reduces measurable timing variance; the repository records a Welch's T-test result, but this review did not rerun that experiment.
   - *Negative:* Failed requests are intentionally delayed by a maximum of 115ms (imperceptible to humans, but measurable).
 
 ### ADR-2026-004: Safe Exception Shielding
@@ -178,7 +178,7 @@ Redis and database backends are treated as part of the security boundary. If the
 ## 6. Testing Strategy & Verifications
 
 The Sentinel framework undergoes four levels of advanced testing:
-1.  **Systematic Concurrency Testing (Microsoft Coyote):** Programmatic xUnit tests that systematically explore all thread-scheduling interleavings to mathematically prove the absence of race conditions or deadlocks in our sliding Nonce and Idempotency stores under extreme concurrent load.
-2.  **Generative Fuzz Testing (SharpFuzz):** An automated, coverage-guided fuzzing harness executing over **2.4 Million iterations per second** (RyuJIT AVX2 optimized) to ensure our JSON and cryptographic parsers never crash on corrupted inputs.
-3.  **Real-world Chaos Engineering (Testcontainers & Toxiproxy):** Docker-based integration tests simulating network latency jitter, packet loss, and database timeouts to verify graceful degradation and fail-closed state boundaries under real-world cloud network anomalies.
-4.  **High-Assurance Acceptance Testing (Reqnroll BDD):** Automated Gherkin acceptance tests running against a fully composited Docker network to mathematically verify real-world FAPI 2.0 financial transfer validations, RAR constraints, and continuous CAEP session revocations.
+1.  **Systematic Concurrency Testing (Microsoft Coyote):** The Concurrency matrix entry skips the ordinary Build/Test steps, performs the Coyote IL-rewrite, and runs the rewritten DLL through VSTest. This describes the implemented test path; it is not a claim that every race or deadlock is absent.
+2.  **Generative Fuzz Testing (SharpFuzz):** The repository contains coverage-guided fuzz harnesses. Any reported iteration rate is a historical benchmark claim, not current execution evidence from this documentation review.
+3.  **Real-world Chaos Engineering (Testcontainers & Toxiproxy):** Docker-based integration tests simulate network latency jitter, packet loss, and database timeouts; successful execution in a particular run is not inferred here.
+4.  **High-Assurance Acceptance Testing (Reqnroll BDD):** Automated Gherkin scenarios cover FAPI 2.0 financial-transfer validation, RAR constraints, and CAEP session revocations in the documented acceptance workflow; that workflow is not proof of deployed production behavior or external conformance.

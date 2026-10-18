@@ -68,7 +68,13 @@ Weak algorithms (`RS256`, `HS256`, `none`) are structurally impossible to config
 | 21 | Proof `jti` unused: `TryMarkUsedAsync($"dpop:{jti}", iat + ProofLifetimeSeconds + skew)` | `jti_replay_detected` | atomic SET NX; TTL covers lifetime + skew |
 | — | Any `JsonException`/`SecurityTokenException`/`CryptographicException`/`FormatException`/`ArgumentException`/`InvalidOperationException` | `validation_error` | exception shielding |
 
-On success the validator returns a fresh **rotated nonce** (32 CSPRNG bytes, base64url) and the JWK thumbprint (`DpopValidationSuccess(newNonce, thumbprint)`).
+On success the validator returns a candidate rotated nonce (32 CSPRNG bytes, base64url) and the JWK thumbprint (`DpopValidationSuccess(newNonce, thumbprint)`). The middleware only consumes an existing expected nonce, and it stages a candidate replacement nonce for a later 2xx/3xx response; the success result alone does not prove persistence or response-header emission.
+
+### Archify interactive view
+
+- [Sentinel DPoP proof lifecycle](diagrams/sentinel-dpop-validation-lifecycle.html)
+
+This view summarizes the documented success path and the documented alternative outcomes. It is not a passing DPoP-suite result, a live conformance result, or a Native AOT execution claim.
 
 > **`ValidateLifetime=false` is correct, not a finding.** Both the validator and the middleware carry explicit comments plus `nosemgrep` suppressions: RFC 9449 proofs carry `iat/jti/htm/htu/nonce` and **no `exp`**; freshness is enforced by check #17 and single-use by check #21. Enabling lifetime validation "would reject every valid proof."
 
@@ -90,9 +96,9 @@ sentinel_prod:jti:<access-token-jti>        value "1", TTL = remaining lifetime 
 3. `L1AntiFloodCache.IsTemporarilyBlacklisted(thumbprint)` → immediate 401 (`l1_anti_flood_blocked`).
 4. Signature pre-check (same pinning as the validator) plus `oct`/private-key confusion blocks; failure feeds `RecordFailedAttempt(thumbprint)` (3-s blacklist window).
 5. Full `IDpopProofValidator.ValidateAsync` with the expected nonce from the store; failure feeds the anti-flood cache and, for `use_dpop_nonce`, issues a challenge nonce (§3).
-6. On success with a stored expected nonce: **atomic consumption** via `ConsumeNonceIfMatchesAsync`; a lost race yields a retry nonce + 401 `use_dpop_nonce` (never a silent pass).
+6. On success, an expected nonce is **atomically consumed** via `ConsumeNonceIfMatchesAsync`; a lost race yields a retry nonce + 401 `use_dpop_nonce` (never a silent pass). If neither `RequireNonce` nor an expected nonce applies, success does not consume a nonce.
 7. `context.Items["dpop.jkt"] = thumbprint` — the *only* signal by which `MtlsBindingMiddleware` accepts a DPoP-bound token presented with the DPoP scheme.
-8. Nonce rotation for the *next* request is staged in `Response.OnStarting` and only persisted/emitted when the final status is 2xx–3xx (`StatusCode is < 200 or >= 400` ⇒ skip), preventing nonce churn on failed responses.
+8. After downstream execution, nonce rotation for the *next* request is staged in `Response.OnStarting` and attempted only for final 2xx–3xx responses (`StatusCode is < 200 or >= 400` ⇒ skip). The callback suppresses cancellation and `SecurityInfrastructureException`; therefore rotation is best-effort, and a 2xx/3xx can complete without a persisted or emitted next nonce.
 
 ### 2.3 Client-visible challenge grammar (exact strings)
 
@@ -153,15 +159,25 @@ sequenceDiagram
     M->>N: GetNonceAsync → expected
     M->>M: full proof validation (nonce equality, Ordinal)
     M->>N: ConsumeNonceIfMatchesAsync (Lua CAS-delete)
-    alt consumed
-        M-->>C: 2xx + DPoP-Nonce: <rotated value> (stored OnStarting, 2xx/3xx only)
+    alt expected nonce consumed
+        M-->>C: downstream result; 2xx/3xx attempts best-effort candidate DPoP-Nonce
+    else no expected nonce
+        M-->>C: downstream result; no nonce consumption
     else race lost
         M->>N: TryStoreNonceAsync(retryNonce)
         M-->>C: 401 use_dpop_nonce + DPoP-Nonce: <retryNonce>
     end
 ```
 
-If storing a challenge nonce fails (key exists), the middleware re-reads the stored nonce and emits *that* value, so the client always receives the authoritative nonce. Nonces are 32 bytes from `RandomNumberGenerator.Fill`, base64url-encoded (both middleware `GenerateNonce()` and validator `GenerateNewNonce()`).
+> **Rotation is best-effort.** The 2xx/3xx `OnStarting` callback suppresses `OperationCanceledException` and `SecurityInfrastructureException`. A successful downstream response can therefore complete without a persisted or emitted candidate nonce; synchronous validation/replay-store paths remain fail-closed with 503, while the later callback failure does not retroactively change that response.
+
+### Archify interactive view
+
+- [Sentinel security data flow — state and evidence](diagrams/sentinel-security-dataflow.html)
+
+The diagram shows the actual request-to-state flow. Validation code emits selected structured-log and metric signals; Redis state is not shown as producing an evidence event, and an OTel export depends on host telemetry configuration. This is a navigation aid, not evidence that the test suites, conformance services, or Native AOT host have passed.
+
+With the present `TryStoreNonceAsync` interface, a successful call returns `true`; a store outage propagates `NonceStoreUnavailableException`. The `stored == false` fallback in `DpopValidationMiddleware` is therefore not reachable with the current extension and production stores. Nonces are 32 bytes from `RandomNumberGenerator.Fill`, base64url-encoded (both middleware `GenerateNonce()` and validator `GenerateNewNonce()`).
 
 ## 4. JWK Thumbprint (RFC 7638)
 
@@ -265,8 +281,8 @@ offset  size      field
 
 Rotation mechanics:
 
-- **Zero-downtime**: `IOptionsMonitor<CryptographyOptions>.OnChange` rebuilds an immutable `CryptoState` swapped through a `volatile` field — no restart, no lock on the hot path.
-- **Lazy re-wrap**: decrypting under a non-active keyring key transparently re-encrypts under the active key and increments `crypto.lazy_rewraps_total{key_id}`; decryptions whose key ≠ active also increment `crypto.keyring.active_key_mismatch` (rotation-drift alerting signal — see `AuthTelemetry` comments and `docs/CRYPTO_LIFECYCLE_RUNBOOK.md`).
+- **Implementation path:** `IOptionsMonitor<CryptographyOptions>.OnChange` rebuilds an immutable `CryptoState` and swaps it through a `volatile` field. This options-change path is present; production `IEnvelopeEncryptionService` registration and caller-owned persistence are unresolved in the inspected integration, and TLS file-watch hot reload is not established because `EnableRaisingEvents = false`.
+- **Lazy re-wrap contract:** decrypting under a non-active keyring key returns a rewrapped payload and increments `crypto.lazy_rewraps_total{key_id}`; decryptions whose key differs from the active key also increment `crypto.keyring.active_key_mismatch`. The inspected production caller set did not establish persistence of the rewrapped bytes, so these counters do not prove storage convergence.
 - Reference configs: `publish-output/appsettings.Cryptography.example.jsonc`; rotation tests: `tests/Sentinel.Tests.Integration/Integration/Cryptography/JwksRotationIntegrationTests.cs` (+ `RotatingJwksServer`), CI "Gate 10 — Cryptographic Lifecycle & Rotation Tests".
 
 ### 8.3 Privacy keys
@@ -303,7 +319,7 @@ Rotation mechanics:
 | Outbound backchannels | Shared `SocketsHttpHandler` with `EnabledSslProtocols = SslProtocols.Tls13`, `PooledConnectionLifetime=2min`, `X509RevocationMode.Online` (NoCheck only in Development), optional custom root trust (`X509ChainTrustMode.CustomRootTrust` + `DisableCertificateDownloads`) or dev-thumbprint pinning (`Security:ExpectedDevCertificateThumbprint`) | sample `Program.cs`; `SecureHttpHandlerFactory` |
 | Redis | Optional TLS (`RedisOptions.UseSsl` → `ConfigurationOptions.Ssl`) | `src/Sentinel.Redis/RedisConnectionProvider.cs` |
 | Captcha | Cloudflare Turnstile siteverify over HTTPS; TLS enforcement tested (`CaptchaTlsEnforcementTests`) | `src/Sentinel.Infrastructure/Auth/CloudflareTurnstileCaptchaService.cs` |
-| Certificate lifecycle | Hot-reload + `crypto.tls.cert_days_remaining` gauge; staging provisioning scripts `infra/staging/provision-staging-tls.sh` | §8, [02 §8](./02-ARCHITECTURE.md) |
+| Certificate lifecycle | Initial/options-change reload paths + `crypto.tls.cert_days_remaining` gauge; staging provisioning scripts `infra/staging/provision-staging-tls.sh`; inspected file watcher is disabled | §8, [02 §8](./02-ARCHITECTURE.md) |
 | DAST verification | `infra/dast/nuclei/templates/tls-version.yaml` asserts forbidden TLS versions in the release gate | `infra/dast/*` |
 
 ## 12. Redis Client Hardening
@@ -335,10 +351,10 @@ _options.CommandMap = CommandMap.Create(new Dictionary<string, string?>
 
 ## 14. Client-Side Proof Generation (outbound DPoP)
 
-`KeycloakDpopProofFactory` (`src/Sentinel.Keycloak/Dpop/KeycloakDpopProofFactory.cs`) signs Sentinel's *own* token-endpoint calls (client_credentials, UMA ticket, token exchange, refresh), because the realm client policy requires a DPoP proof on every token request:
+`KeycloakDpopProofFactory` (`src/Sentinel.Keycloak/Dpop/KeycloakDpopProofFactory.cs`) generates Sentinel's own token-endpoint proofs (client_credentials, UMA ticket, token exchange, refresh), and the configured outbound handler ensures a proof is present or preserves a caller-supplied proof. Downstream sender-constrained acceptance is an external Keycloak result; the local gate alone does not establish it.
 
-- One **static per-process RSA-2048 key** (`private static readonly RSA ProofKey = RSA.Create(2048)`) — comment: "the same key must sign every token-endpoint call for the same client" (keeps refresh-token binding valid).
-- Proof: `typ=dpop+jwt`, `alg=PS256` ("the FAPI 2.0 baseline algorithm"), JWK `{kty:RSA, n, e, alg:PS256, use:sig}`, payload `{htm, htu, jti: GUID, iat}`; on refresh, `ath = base64url(SHA-256(UTF-8(access token)))` per RFC 9449 §4.1.
+- One **static per-process RSA-2048 key** (`private static readonly RSA ProofKey = RSA.Create(2048)`) — the source comment says the same key should sign every token-endpoint call for the same client; the current generated-proof path omits `ath`, so live refresh-token binding is not established.
+- Proof: `typ=dpop+jwt`, `alg=PS256` ("the FAPI 2.0 baseline algorithm"), JWK `{kty:RSA, n, e, alg:PS256, use:sig}`, payload `{htm, htu, jti: GUID, iat}`. The factory supports an optional `ath = base64url(SHA-256(UTF-8(access token)))` argument, but the current `DpopProofDelegatingHandler` calls the two-argument path and therefore does not add `ath` to generated refresh proofs.
 - Signature: RSA-PSS (`RSASignaturePadding.Pss`, SHA-256).
 - Attached by `DpopProofDelegatingHandler` on outbound Keycloak `HttpClient` calls.
 
@@ -352,6 +368,6 @@ _options.CommandMap = CommandMap.Create(new Dictionary<string, string?>
 | Nonce races (TOCTOU) | **Mitigated** | Lua CAS-delete; lost race ⇒ explicit 401 retry path |
 | Timing side channels | **Mitigated** | 120 ms floor + 0–15 ms CSPRNG jitter; FixedTimeEquals; SHA-256-normalized constant-time header-token compare; statistical tests in CI |
 | PQC readiness | **Verify-only, fail-closed** | Native FIPS 204 ML-DSA; platform-support gate; fail-closed default verifier; signing deliberately unsupported |
-| Data at rest | **AES-256-GCM envelope, rotating** | Versioned envelopes, lazy re-wrap, drift telemetry |
+| Data at rest | **Implementation present; production wiring/persistence unresolved** | Versioned envelopes and drift telemetry exist; the inspected `IEnvelopeEncryptionService` factory registration and caller-owned persistence path require source-level remediation or verified host integration |
 | DoS at parser boundaries | **Bounded** | 8 KiB proof cap, 10 KiB body cap, L1 flood cache (50 k cap, FIFO), typed exception shielding |
 | Findings | 3 logged | F-01 sample pepper, F-02 `EdDSA` allow-listed but OKP thumbprint unsupported, F-03 MFA endpoints 501 stubs — see [09 §4](./09-COMPLIANCE-AND-TRACEABILITY.md) |

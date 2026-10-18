@@ -1,22 +1,19 @@
 # Container Build Readiness
 
 > **Document ID**: CBR-0001
-> **Status**: RELEASE-READY (100% HARDENED & COMPLIANT)
+> **Status**: Documentation baseline; image scan, signing, and production-readiness claims are not established by this document.
 > **Runtime Baseline**: .NET 10.0 (LTS Ready)
 > **Deployment Model**: Multi-stage, Rootless, and Distroless-Ready
 
 
 ## 1. Current Reality
 
-The Sentinel repository contains a production-grade, highly secure, and optimized multi-stage `Dockerfile` located at:
-`src/Sentinel.AspNetCore/Dockerfile`
-
-The container builds reproducibly using lock-files, runs under a dedicated unprivileged user, and is fully integrated with the local development stack via `docker-compose.yml`. All previous compilation, dependency, and routing gaps have been successfully resolved.
+The Sentinel repository contains a hardened, rootless multi-stage Dockerfile for the reference sample at `samples/Sentinel.Sample.MinimalApi/Dockerfile`. That file is explicitly marked as a test-harness image, not a shipping product artifact. The current documentation review did not build or scan the image, so the following hardening items describe source structure rather than executed release evidence.
 
 
 ## 2. Baseline Inputs
 
-- **Runtime Target:** .NET 10.0 ASP.NET Runtime (`mcr.microsoft.com/dotnet/aspnet:10.0.10-noble-chiseled`)
+- **Runtime Target:** .NET 10.0 ASP.NET Runtime (`mcr.microsoft.com/dotnet/aspnet:10.0.11-noble-chiseled`)
 - **SDK Target:** .NET 10.0 SDK (`mcr.microsoft.com/dotnet/sdk:10.0.302-noble`)
 - **Compose Services:** postgres (v17-alpine), keycloak (v26.6.4), redis (v7.4-alpine), sentinel-api (net10.0)
 
@@ -25,9 +22,9 @@ The container builds reproducibly using lock-files, runs under a dedicated unpri
 
 | Area | Status | Notes |
 |---|---|---|
-| **Build Spec in Compose** | Implemented | `docker-compose.yml` successfully references the correct Dockerfile and build context. |
-| **Dockerfile Existence** | Implemented | Hardened `Dockerfile` exists at `src/Sentinel.AspNetCore/Dockerfile`. |
-| **Runtime Image Hardening** | Implemented | Production base image uses minimal size, and `DOTNET_EnableDiagnostics=0` is set to prevent profiling exploits. |
+| **Build Spec in Compose** | Implemented | `docker-compose.yml` references `samples/Sentinel.Sample.MinimalApi/Dockerfile`; the image is a test harness, not a shipping product artifact. |
+| **Dockerfile Existence** | Implemented | Hardened `samples/Sentinel.Sample.MinimalApi/Dockerfile` exists in the repository. |
+| **Runtime Image Hardening** | Implemented in the reference test-harness image | `samples/Sentinel.Sample.MinimalApi/Dockerfile` uses a minimal runtime and sets `DOTNET_EnableDiagnostics=0`; this is not executed image evidence. |
 | **Multi-Stage Build Flow** | Implemented | Clear separation between build stage (heavy SDK) and runtime stage (lightweight ASP.NET runtime). |
 | **Non-Root Execution** | Implemented | Runs under the chiseled base image's unprivileged user `app` (UID 1654), mitigating container-escape vulnerabilities. |
 | **Locked Restore Posture** | Implemented | Uses `dotnet restore --locked-mode` in build stage to guarantee reproducible binaries. |
@@ -44,7 +41,9 @@ The container builds reproducibly using lock-files, runs under a dedicated unpri
 
 ## 5. Deployed Dockerfile Reference
 
-File path: `src/Sentinel.AspNetCore/Dockerfile`
+File path: `samples/Sentinel.Sample.MinimalApi/Dockerfile`
+
+This is the repository's reference test-harness Dockerfile, not a shipping product artifact. The source uses the following structure:
 
 ```dockerfile
 # syntax=docker/dockerfile:1.7
@@ -85,7 +84,7 @@ RUN dotnet publish samples/Sentinel.Sample.MinimalApi/Sentinel.Sample.MinimalApi
 # ==========================================
 # Stage 2: High-Assurance Secure Runtime (Chiseled)
 # ==========================================
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.10-noble-chiseled AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.11-noble-chiseled AS runtime
 WORKDIR /app
 
 ENV ASPNETCORE_URLS=http://+:8080
@@ -111,7 +110,7 @@ ENTRYPOINT ["dotnet", "Sentinel.Sample.MinimalApi.dll"]
 
 1.  **Build the hardened image:**
     ```bash
-    docker build -f src/Sentinel.AspNetCore/Dockerfile -t sentinel-api:local .
+    docker build -f samples/Sentinel.Sample.MinimalApi/Dockerfile -t sentinel-api:local .
     ```
 2.  **Verify Non-Root execution and Health check:**
     ```bash
@@ -124,18 +123,20 @@ ENTRYPOINT ["dotnet", "Sentinel.Sample.MinimalApi.dll"]
     ```bash
     trivy image --severity HIGH,CRITICAL sentinel-api:local
     ```
-    > CI: enforced as **Gate 9** in `.github/workflows/security-pipeline.yml` (`build-scan` job) — blocks the build on HIGH/CRITICAL findings and uploads `artifacts/trivy-image.sarif`.
+    > This is an operator procedure. The current `security-pipeline.yml` Gate 9 is deterministic NuGet compilation and package verification; it does not run an image scan or upload an image-scan artifact.
 4.  **Integrated Stack Verification (Docker Compose):**
     ```bash
     docker-compose up --build -d
     ```
 
+**Release boundary:** The current workflow is package-oriented: it produces package SBOM/provenance and archives NuGet packages; it has no container-image signing job.
+
 ## 7. Release Gate Sign-Off
 
-The container build readiness has passed all quality gates and is marked **READY FOR PRODUCTION**:
-- [x] Hardened Dockerfile exists and compiles reproducibly.
-- [x] Container boots successfully and passes TCP health checks.
-- [x] Verified running under unprivileged user `app` (UID 1654).
-- [x] Zero critical/high CVEs found in base images (enforced by Trivy Gate 9 in `security-pipeline.yml`).
-- [x] Full docker-compose stack boots cleanly with sentinel-api enabled.
-- [x] Container images are signed with Sigstore/cosign (keyless, Fulcio) on release branches and the SPDX SBOM is attached as a cosign attestation (`sign-publish` job) — signature identity is verified before sign-off.
+These are implementation/procedure claims unless separately executed and evidenced:
+- [x] Hardened Dockerfile exists in the repository.
+- [x] The Dockerfile defines locked restore, a multi-stage build, non-root execution, and a minimal runtime image.
+- [ ] A current image build and health check passed (not executed in this documentation review).
+- [ ] Zero critical/high CVEs found in base images (the operator Trivy procedure has not been evidenced here).
+- [ ] Full docker-compose stack boots cleanly with sentinel-api enabled.
+- [ ] Container image signing and SBOM attachment are implemented by the current `security-pipeline.yml` (they are not; the release job is package-oriented).

@@ -81,8 +81,15 @@ sequenceDiagram
     MT->>AC: cnf.x5t#S256 vs presented certificate (or DPoP-bound pass-through)
     AC->>ID: acr claim presence enforced for authenticated requests
     ID->>EP: Idempotency-Key state machine (Redis SET NX)
-    EP-->>C: 2xx + rotated DPoP-Nonce (OnStarting callback, 2xx/3xx only)
+    EP-->>C: downstream result; 2xx/3xx attempts best-effort DPoP-Nonce rotation
 ```
+
+### Archify interactive views
+
+- [Sentinel architecture — runtime and state boundaries](diagrams/sentinel-architecture.html)
+- [Sentinel request lifecycle — authenticated API call](diagrams/sentinel-request-flow.html)
+
+The diagrams are authored documentation views. Their compact source anchors were checked against repository paths and ranges at the pinned review revision and in the current working tree where line stability was available; the untracked diagram JSON/HTML files themselves are not artifacts from that commit. They supplement the Mermaid trace above; the source and test files remain the authority for implementation and runtime claims.
 
 ## 3. Middleware Responsibilities (implementation-level)
 
@@ -125,7 +132,7 @@ Configured in the sample host (`Program.cs`):
 - `OnMessageReceived` strips the `DPoP ` scheme prefix so DPoP-scheme requests authenticate with the embedded access token.
 - `OnTokenValidated` re-materializes `exp`, `sid`, `sub`, `acr`, `scope` claims onto the identity, then delegates to `TokenValidationService.ValidateAsync` (expiry re-check, subject+session blacklist, optional jti single-use enforcement — see [03 §6](./03-SECURITY-AND-CRYPTOGRAPHY.md)).
 - `OnChallenge` returns `401` + `WWW-Authenticate: Bearer error="invalid_token", error_description="Authentication required"` + problem type `/errors/unauthorized`; the detail string is sanitized with `Regex.Replace(detailedError, @"[\r\n\t\x00-\x1F\x7F]", "")` (header/response-splitting and control-character scrubbing).
-- `OnAuthenticationFailed` counts `SecurityTokenSignatureKeyNotFoundException` as JWKS kid-miss telemetry (`crypto.jwks.kid_miss_total`, `crypto.jwks.refresh_total`).
+- `OnAuthenticationFailed` counts `SecurityTokenSignatureKeyNotFoundException` as JWKS kid-miss telemetry (`crypto.jwks.kid_miss_total`, `crypto.jwks.refresh_total`); the inspected callback records counters only and does not call `RequestRefresh` or retry validation.
 - Backchannel: shared `SocketsHttpHandler` pinned to **TLS 1.3** (`EnabledSslProtocols = SslProtocols.Tls13`), `PooledConnectionLifetime = 2 min`, custom root-trust chain when `Security:TrustedRootCaPath` is configured, online revocation checking outside Development.
 
 ### 3.5 MtlsBindingMiddleware (RFC 8705)
@@ -211,7 +218,7 @@ Two DbContexts, separated by concern:
 - `HybridSessionBlacklistCache` (`src/Sentinel.EntityFrameworkCore/Stores/HybridSessionBlacklistCache.cs`) is the tiered design for session revocation:
   - **L1** (node-local MemoryCache): stores *only confirmed revocations* — the class comment marks this a "SECURITY INVARIANT (P0)": L1 never caches a positive "session is active" decision; absence of an L1 entry never means valid.
   - **L2**: any `ISessionBlacklistCache` accelerator (typically Redis), never a concrete Redis type (drop-in replaceable).
-  - **L3**: PostgreSQL via `IDbContextFactory<SentinelSecurityDbContext>` (source of truth).
+  - **L3**: PostgreSQL via `IDbContextFactory<SentinelSecurityDbContext>` as an optional host-registered backing adapter for hybrid session revocation; the reference host visibly registers Redis-backed ports, not this decorator.
   - Revocations write-through all tiers and are **proactively broadcast** over Redis Pub/Sub to pre-populate other nodes' L1 (missed broadcasts are harmless — L2/L3 still protect).
   - When L2 is unavailable, a strict **1-second degraded-mode marker** (`DegradedActiveTtl = TimeSpan.FromSeconds(1)`) bounds any fail-open window to 1 s and prevents a request storm from collapsing PostgreSQL.
   - Key prefixes keep environments sharing one Redis cluster isolated (comment: "staging: vs prod:").
@@ -231,9 +238,9 @@ From `samples/Sentinel.Sample.MinimalApi/Program.cs`:
 | `MinResponseDataRate` | 100 bytes/s with 10 s grace |
 | `KeepAliveTimeout` | 2 minutes |
 | Client certificates (Development) | `ClientCertificateMode.DelayCertificate` |
-| Certificate hot-reload | `AddKestrelCertificateReloader`/`UseKestrelCertificateReloader` when `Kestrel:CertificateReloader:Path` exists |
+| Certificate reload | `AddKestrelCertificateReloader`/`UseKestrelCertificateReloader` when `Kestrel:CertificateReloader:Path` exists; initial and options-change paths |
 
-`KestrelCertificateReloader` (`src/Sentinel.AspNetCore/Infrastructure/KestrelCertificateReloader.cs`) watches the configured PEM/PFX file (debounce 500 ms; startup timeout 30 s; `WarningDaysThreshold` 30 days), atomically swaps the served certificate without restart, and publishes remaining lifetime to the observable gauge `crypto.tls.cert_days_remaining` (`AuthTelemetry.TlsCertDaysRemaining`). PFX loads use `X509KeyStorageFlags.MachineKeySet | EphemeralKeySet`.
+`KestrelCertificateReloader` (`src/Sentinel.AspNetCore/Infrastructure/KestrelCertificateReloader.cs`) performs an initial load and reloads on `IOptionsMonitor` changes. Its `FileSystemWatcher` is constructed with `EnableRaisingEvents = false`, so active file-watch hot reload is not established; a file replacement alone must not be treated as a reload trigger. The selector and observable gauge remain runtime paths when a reload actually occurs. PFX loads use `X509KeyStorageFlags.MachineKeySet | EphemeralKeySet`.
 
 ## 9. Cross-Cutting Design Principles (evidenced in code)
 
@@ -242,7 +249,7 @@ From `samples/Sentinel.Sample.MinimalApi/Program.cs`:
 3. **Allocation discipline on hot paths.** `LoggerMessage.Define` compiled delegates everywhere (event-ID catalog in [08-OPERATIONS-RUNBOOK.md](./08-OPERATIONS-RUNBOOK.md)); `stackalloc`/`ArrayPool` in mTLS and hashing paths; `FrozenDictionary` for the ML-DSA algorithm map; STJ source-generated contexts in every module (`*JsonContext.cs`), enforced by `JsonSerializerIsReflectionEnabledByDefault=false`.
 4. **Allow-lists, never deny-lists.** Signature algorithms (global set of six), disclosure hash algorithms (`["sha-256"]`), Kestrel TLS via TLS 1.3-only outbound handler, Keycloak container `KC_HTTPS_PROTOCOLS: TLSv1.3` and `KC_HTTP_ENABLED: "false"` (`docker-compose.yml`).
 5. **Defense against resource-exhaustion at the parser boundary.** 8 192-char DPoP header cap; 10 KiB request-body cap; 50 000-entry L1 flood cache; `MaxAuthorizationDetailsCount = 100` for RAR; certificate-header multi-value rejection; exception shielding (`try/catch` typed filters) around all token parsers — the code comments label these "Exception Shielding (DoS Prevention)" (`docs/ARCHITECTURE.md` §4.2).
-6. **Privacy by construction in telemetry.** IPs, JTIs, session IDs and user IDs are hashed with a daily-rotating derived key (`PrivacyPreservingHasher`) before logging/emitting; `SecurityContextHasher.HashIp` is the canonical entry point used by `TokenValidationService` replay events.
+6. **Partial privacy in security telemetry, not privacy by construction everywhere.** `SecurityEventEmitter` hashes JTI, subject, client ID, thumbprint, and session ID before its structured events; `SecurityContextHasher.HashIp` is the canonical IP-hash entry point used by `TokenValidationService` replay events. However, the Redis nonce/JTI stores log raw thumbprints/JTIs on their success paths, so identifier hashing does not cover the full logging surface.
 
 ## 10. Deployment Topology (logical)
 

@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Sentinel SSF / CAEP Event Lifecycle",
+    "output": "sentinel-ssf-event-lifecycle.html",
+    "quality_profile": "showcase",
+    "viewBox": [1080, 640]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Event intake and processing"
+    },
+    {
+      "id": "terminal",
+      "label": "Ingress and processing outcomes"
+    }
+  ],
+  "states": [
+    {
+      "id": "webhook",
+      "type": "start",
+      "label": "SSF webhook",
+      "sublabel": "SET request",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "tag": "anonymous route"
+    },
+    {
+      "id": "intake",
+      "type": "active",
+      "label": "Route intake",
+      "sublabel": "flag · token · payload",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "404 / 400 gate"
+    },
+    {
+      "id": "validate",
+      "type": "decision",
+      "label": "Validate SET",
+      "sublabel": "signature · issuer · time",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "source validator"
+    },
+    {
+      "id": "events",
+      "type": "active",
+      "label": "Process events",
+      "sublabel": "CAEP event types",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "tag": "stateful actions"
+    },
+    {
+      "id": "accepted",
+      "type": "success",
+      "label": "202 / success",
+      "sublabel": "reference-host result",
+      "lane": "main",
+      "col": 4,
+      "step": "05",
+      "tag": "processing result"
+    },
+    {
+      "id": "intake-failure",
+      "type": "failure",
+      "label": "404 / 400 intake",
+      "sublabel": "gate · missing SET",
+      "lane": "terminal",
+      "col": 0,
+      "tag": "intake failure"
+    },
+    {
+      "id": "validation-failure",
+      "type": "failure",
+      "label": "400 SET",
+      "sublabel": "invalid or temporal",
+      "lane": "terminal",
+      "col": 1,
+      "tag": "validation failure"
+    },
+    {
+      "id": "processing-failure",
+      "type": "failure",
+      "label": "400 reported",
+      "sublabel": "processor failure",
+      "lane": "terminal",
+      "col": 2,
+      "tag": "processor failure"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "webhook-intake",
+      "from": "webhook",
+      "to": "intake",
+      "variant": "emphasis"
+    },
+    {
+      "id": "intake-validate",
+      "from": "intake",
+      "to": "validate",
+      "variant": "security"
+    },
+    {
+      "id": "validate-events",
+      "from": "validate",
+      "to": "events",
+      "variant": "security"
+    },
+    {
+      "id": "events-accepted",
+      "from": "events",
+      "to": "accepted",
+      "variant": "emphasis"
+    },
+    {
+      "id": "intake-failure",
+      "from": "intake",
+      "to": "intake-failure",
+      "variant": "security",
+      "route": "auto",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [250, 360],
+      "label": "gate fails"
+    },
+    {
+      "id": "validation-failure",
+      "from": "validate",
+      "to": "validation-failure",
+      "variant": "security",
+      "route": "auto",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [480, 350],
+      "label": "SET fails"
+    },
+    {
+      "id": "processing-failure",
+      "from": "events",
+      "to": "processing-failure",
+      "variant": "security",
+      "route": "auto",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [680, 350],
+      "label": "processor reports failure"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Event routing",
+      "items": [
+        "sid → local blacklist",
+        "subject-only → logout attempt",
+        "neither → no-op"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Outcome boundary",
+      "items": [
+        "202 = reference-host adapter success",
+        "400 = intake or processor failure",
+        "401 is framework-declared; host maps to 400",
+        "Uncaught throws → 5xx",
+        "Keycloak false may still yield 202"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Evidence",
+      "items": [
+        "Sample wiring; host-specific",
+        "Full anchors: docs/diagrams/README.md"
+      ]
+    }
+  ]
+}

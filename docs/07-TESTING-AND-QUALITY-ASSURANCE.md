@@ -10,7 +10,7 @@
 | `Sentinel.Tests.DPoP` | xUnit unit | `DpopProofValidatorTests` (full check matrix), `DpopThumbprintComputerTests` (RFC 7638 vectors), helpers `TestJwtBuilder`, `FakeJtiReplayCache` |
 | `Sentinel.Tests.Session` | xUnit unit | `SessionManagerTests`, `SessionContextTests` (fail-closed revocation) |
 | `Sentinel.Tests.SSF` | xUnit unit | `SsfEventProcessorTests` + mocks (validator/revocation/blacklist) |
-| `Sentinel.Tests.Concurrency` | xUnit + **Microsoft.Coyote** | `IdempotencyConcurrencyTests` — systematic concurrency proof; CI runs "Coyote Systematic Concurrency Proof (1000 iterations, IL-rewritten)" |
+| `Sentinel.Tests.Concurrency` | xUnit + **Microsoft.Coyote** | `IdempotencyConcurrencyTests`; the CI Concurrency matrix leg uses a Coyote IL rewrite and VSTest replacement path (1000 iterations in the workflow step name) |
 | `Sentinel.Tests.Integration` | xUnit + Testcontainers (Keycloak/PostgreSQL/Redis/Toxiproxy) | Auth flows, change-password, EF stores, hybrid blacklist, real-Keycloak flows, Redis provider, SD-JWT flows, security scenarios, SSF, TLS enforcement, Vault (provider + rotation), migration suites (`ComprehensiveMigrationTests`, `CrossVersionCompatibilityTests`, `MigrationChaosTests`, `MigrationResilienceTests`), crypto lifecycle (`JwksRotationIntegrationTests` + `RotatingJwksServer`), federation E2E (`RealParPkceDpopFlowTests` with Playwright, `TokenExchangeWithRealKeycloakTests`, `WebAuthnAal3CeremonyTests`, `WebAuthnBruteForceTests`, `WebAuthnMds3Tests`), observability contracts |
 | `Sentinel.Tests.Security` | xUnit adversarial | Timing (`DpopTimingSideChannelTests`, `TimingAttackTests`), algorithm/downgrade (`AlgorithmResilienceTests`, `CompositeAuthDowngradeTests`), property-based FsCheck (`DpopAndRarPropertyTests`, `RarPropertyTests`, `PasswordStrengthPropertyTests`), fuzz-style protocol attacks (`ProtocolFuzzTests`), rate-limit bypass attempts, temporal boundary conditions, weak keys, chaos (`RedisResilienceTests`, `RedisResilienceChaosTests` with `ChaosSentinelApiFactory`), architecture rules (ArchUnitNET), AOT compatibility (`AotCompatibilityTests`), `TokenPoisoner` helper |
 | `Sentinel.Contracts` | contract/schema | **OpenAPI**: endpoint availability, request/response schema compatibility, security schemes vs `Baselines/v1-baseline.json`; **Keycloak**: discovery document, JWKS key, token response, admin user, backchannel logout token — validated against JSON Schemas (`Schemas/*.schema.json`, JsonSchema.Net 9.4.0); **Postgres**: concurrency semantics, `ExecuteDelete` semantics, migration compatibility, unique constraints; **Redis**: JTI SET-NX semantics, nonce Lua script, TTL precision, key isolation, email-token store |
@@ -22,7 +22,7 @@
 | `tests/load/**` | **k6 / xk6** | `sentinel-sre-core.js` (scenarios: spike → `SPIKE_MAX_RPS`, capacity ramp 2 000→12 000+ RPS in 2-min steps, soak `constant-arrival-rate`), `sentinel-sre-suite(-xk6).js`, `keycloak-token-load.js`, `chaos-load-test.js`, adversarial scripts under `Sentinel.LoadTests/k6-scripts/`; custom Go extension `xk6-dpop` (DPoP proof signing inside k6, with its own `dpop_test.go`); DPoP pool minting `mint-dpop-pool.mjs` + `test-pool.json` |
 | `tests/chaos/**` | **LitmusChaos** | `redis-pod-kill.yaml` (PodChaos), `postgres-network-partition.yaml` (NetworkChaos), `dns-latency-keycloak.yaml` (DNSChaos), `cascade-failure.yaml` (Workflow composing PodChaos + NetworkChaos) |
 
-README-reported totals: **496 tests / 8 suites** (Unit 290, Contracts 77, Security 63, Integration 46, DPoP 29, Session 22, SSF 7, Concurrency 3), 100% pass.
+The 496-test/8-suite/100% figure is a historical repository-reported snapshot. The seven-assembly VSTest batch run during this review returned exit 1 for every inner suite; record actual suite results before making a pass claim.
 
 ## 2. CI Pipeline — `security-pipeline.yml` ("Sentinel Core CI")
 
@@ -34,11 +34,17 @@ flowchart LR
     BS --> SF["schemathesis-fuzzing<br/>(v4.23.0 vs OPENAPI_3_1.yaml)"]
     BS --> AOT["native-aot-gate<br/>(AOT publish + endpoint sweep)"]
     CG --> OG["observability-gate<br/>(Layer-2 E2E)"]
-    BS --> FP["fapi-local-preflight"]
+    BS --> FP["fapi-local-preflight<br/>(PR run-fapi label; workflow_dispatch not declared)"]
     CG --> AE["acceptance-e2e<br/>(Reqnroll, FAPI + CAEP evidence)"]
-    BS --> SP["sign-publish<br/>(release/* only: cosign keyless + SBOM)"]
-    TS --> SP
+    BS --> PU["publish-nuget<br/>(release/** branches or v* tags; 90d archive step inside job)"]
+    TS --> PU
 ```
+
+### Archify interactive view
+
+- [Sentinel CI and release gates](diagrams/sentinel-release-gates.html)
+
+This workflow view shows the documented push/PR triggers, conditional FAPI branch, job dependencies, and release-artifact paths in `security-pipeline.yml`. It is not a record of a passing CI run, release publication, conformance result, or Native AOT execution.
 
 ### 2.1 Gates inside `build-scan` (exact names from the workflow)
 
@@ -49,22 +55,21 @@ flowchart LR
 | Gate 3 — NuGet Dependency Audit | `dotnet` restore audit | Vulnerable packages blocked (see SSH.NET CVE-2026-48798 pin) |
 | Gate 4 — Build & Generate OpenAPI Contract | build `AdversarialTestHost`, run it, fetch live schema | Contract is generated from the running host, not hand-written |
 | Gate 5 — OpenAPI Schema Drift Audit | `tests/infrastructure-openapi-audit.sh` (Node) | Diff vs committed baseline — breaking changes fail CI |
-| Gate 6/7 — SBOM | `anchore/sbom-action@v0.17.9` → artifact `sentinel-sbom` (SPDX) | Supply-chain transparency; later attached to the image with cosign |
+| Gate 6/7 — SBOM | `anchore/sbom-action@v0.17.9` → artifact `sentinel-sbom` (SPDX) | Supply-chain transparency for the repository scan; the release job separately creates a package SBOM |
 | Gate 8 — IaC Security Scan | `bridgecrewio/checkov-action` | Terraform/K8s/Dockerfile policy (repo `.dockerignore`/Dockerfile annotations align) |
-| Gate 9 — Container Image Scan | `aquasecurity/trivy-action@v0.36.0` + SARIF upload (`.trivyignore` policy: entries require expiry + ticket, currently empty) | Image CVE gate |
-| Gate 10 — Cryptographic Lifecycle & Rotation Tests | `dotnet test --filter "FullyQualifiedName~JwksRotation|KestrelCertificateHotReload|MtlsCertificateRotation|EnvelopeRewrap"` (Integration + Unit) | Key/cert rotation regressions are release-blocking |
+| Gate 9 — Deterministic NuGet Compilation & Package Verification | `dotnet build` + `dotnet pack` in `build-scan` | Deterministic package compilation and `.nupkg` verification; this is not a container image scan |
+| Gate 10 — Cryptographic Lifecycle & Rotation Tests | `dotnet vstest` with `JwksRotation`, `MtlsCertificateCache`, and `AesGcmEncryptionService` filters (Integration + Unit) | Key/cert rotation regressions are release-blocking |
 
 ### 2.2 Test matrix job (`test-suites`)
 
-Matrix over: Unit, Integration, Security, DPoP, Session, SSF, Concurrency projects. Notable steps: locked-mode restore; `generate-certs.sh` for Testcontainers fixtures; pre-pull of Testcontainers images; Playwright Chromium install for browser-mediated FAPI 2.0 E2E; **Coyote systematic concurrency proof (1000 iterations, IL-rewritten)** after the Concurrency suite.
+Matrix over: Unit, Integration, Security, DPoP, Session, SSF, Concurrency projects. Notable steps: locked-mode restore; `generate-certs.sh` for Testcontainers fixtures; pre-pull of Testcontainers images; Playwright Chromium install for browser-mediated FAPI 2.0 E2E. For the Concurrency entry, the normal `Build` and `Test` steps are skipped; the workflow instead performs the Coyote IL-rewrite build and runs the rewritten DLL through VSTest.
 
 ### 2.3 Specialized gates
 
-- **schemathesis-fuzzing**: boots `AdversarialTestHost` on `:5000`, waits for `/healthz`, runs `schemathesis run docs/OPENAPI_3_1.yaml --phases coverage --checks not_a_server_error --workers 2`, uploads JUnit report.
-- **native-aot-gate**: installs clang/zlib, runs `tests/scripts/validate-native-aot.sh linux-x64` (AOT publish + endpoint matrix sweep); host log uploaded on failure.
-- **observability-gate**: `tests/scripts/validate-observability.sh` — full Layer-2 stack E2E proving metric/log/trace signal paths (uses the Prometheus rules in `infra/observability/prometheus/alerts.yml` as the assertion surface: `HighDPoPFailures`, `TokenReplayDetected` must fire end-to-end).
-- **acceptance-e2e**: Reqnroll suite ("FAPI + CAEP Evidence").
-- **sign-publish** (release branches): cosign keyless signing + SBOM attach + verification (see [06 §9](./06-DEPLOYMENT-AND-INFRASTRUCTURE.md)).
+- **Schemathesis:** the workflow runs the command against the live host at `http://localhost:5000`; the command must retain that `--url` and the report path must match `artifacts/fuzz-results.xml`.
+- **Native AOT:** the workflow invokes `tests/scripts/validate-native-aot.sh linux-x64`; Native AOT execution and success are not asserted by the documentation set.
+- **Coyote:** the Concurrency matrix entry skips the ordinary Build/Test steps, then builds with `-p:RunCoyoteRewrite=true` and runs the rewritten DLL through VSTest; the proof is the matrix leg's replacement path, not a step that runs after the ordinary Concurrency suite.
+- **publish-nuget** (release branches or `v*` tags): packages, package SBOM/SLSA provenance, publication, and a 90-day artifact archive **inside the same job**; archive is not a separate workflow job. The workflow view is not evidence that any publication ran.
 
 ### 2.4 Sibling gate workflows
 
@@ -136,4 +141,4 @@ Stack and templates described in [06 §7](./06-DEPLOYMENT-AND-INFRASTRUCTURE.md)
 | Load | k6 + xk6 (custom DPoP extension), k6-operator CRDs |
 | Chaos | LitmusChaos (PodChaos/NetworkChaos/DNSChaos/Workflow), Toxiproxy |
 | DAST | OWASP ZAP (automation plan + policies), Nuclei (10 templates) |
-| Supply chain | TruffleHog, Semgrep, Trivy (+SARIF), Checkov, Anchore SBOM (SPDX), cosign keyless signing, locked-mode restores |
+| Supply chain | TruffleHog, Semgrep, Checkov, Anchore SBOM (SPDX), package provenance attestations, locked-mode restores; the current `security-pipeline.yml` has no container-image scan or signing step |

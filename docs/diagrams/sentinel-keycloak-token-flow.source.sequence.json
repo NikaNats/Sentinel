@@ -1,0 +1,239 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Sentinel Keycloak Token Operations",
+    "subtitle": "Alternative refresh and token-exchange paths",
+    "output": "sentinel-keycloak-token-flow.html",
+    "quality_profile": "showcase",
+    "viewBox": [1000, 590],
+    "column_fit": "spread"
+  },
+  "participants": [
+    {
+      "id": "client",
+      "type": "external",
+      "label": "Client",
+      "sublabel": "credential / proof"
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "Sentinel API",
+      "sublabel": "endpoint"
+    },
+    {
+      "id": "service",
+      "type": "backend",
+      "label": "Token service",
+      "sublabel": "refresh / exchange"
+    },
+    {
+      "id": "handler",
+      "type": "security",
+      "label": "DPoP handler",
+      "sublabel": "outbound pipeline"
+    },
+    {
+      "id": "keycloak",
+      "type": "security",
+      "label": "Keycloak",
+      "sublabel": "token endpoint"
+    }
+  ],
+  "segments": [
+    {
+      "from": 145,
+      "to": 345,
+      "label": "Refresh alternative"
+    },
+    {
+      "from": 360,
+      "to": 530,
+      "label": "Exchange alternative"
+    }
+  ],
+  "messages": [
+    {
+      "id": "request",
+      "from": "client",
+      "to": "api",
+      "y": 170,
+      "label": "choose one alternative",
+      "variant": "emphasis"
+    },
+    {
+      "id": "refresh-route",
+      "from": "api",
+      "to": "service",
+      "y": 198,
+      "label": "refresh alternative",
+      "variant": "emphasis"
+    },
+    {
+      "id": "refresh-proof",
+      "from": "service",
+      "to": "handler",
+      "y": 226,
+      "label": "caller proof optional; handler fills",
+      "variant": "security"
+    },
+    {
+      "id": "refresh-outbound",
+      "from": "handler",
+      "to": "keycloak",
+      "y": 254,
+      "label": "POST token endpoint + outbound DPoP",
+      "variant": "security"
+    },
+    {
+      "id": "refresh-response",
+      "from": "keycloak",
+      "to": "service",
+      "y": 282,
+      "label": "2xx compatible JSON / provider error / malformed or incompatible 2xx",
+      "variant": "return"
+    },
+    {
+      "id": "refresh-result",
+      "from": "service",
+      "to": "api",
+      "y": 310,
+      "label": "result; refresh 400 invalid_grant → reuse flag",
+      "variant": "return"
+    },
+    {
+      "id": "refresh-api-response",
+      "from": "api",
+      "to": "client",
+      "y": 338,
+      "label": "200 / 400 / 401; gate 400 has no Keycloak traffic",
+      "variant": "return"
+    },
+    {
+      "id": "exchange-route",
+      "from": "api",
+      "to": "service",
+      "y": 366,
+      "label": "exchange gate: required fields + caller DPoP",
+      "variant": "emphasis"
+    },
+    {
+      "id": "exchange-proof",
+      "from": "service",
+      "to": "handler",
+      "y": 394,
+      "label": "caller DPoP forwarded",
+      "variant": "security"
+    },
+    {
+      "id": "exchange-outbound",
+      "from": "handler",
+      "to": "keycloak",
+      "y": 422,
+      "label": "POST token endpoint; body fields + grant + DPoP",
+      "variant": "security"
+    },
+    {
+      "id": "exchange-response",
+      "from": "keycloak",
+      "to": "service",
+      "y": 450,
+      "label": "2xx result / provider error / parse failure",
+      "variant": "return"
+    },
+    {
+      "id": "exchange-result",
+      "from": "service",
+      "to": "api",
+      "y": 478,
+      "label": "result or null",
+      "variant": "return"
+    },
+    {
+      "id": "exchange-response-api",
+      "from": "api",
+      "to": "client",
+      "y": 506,
+      "label": "200 / 400 / 401; gate 400 has no Keycloak traffic",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "api",
+      "from": 170,
+      "to": 338,
+      "type": "backend"
+    },
+    {
+      "participant": "service",
+      "from": 198,
+      "to": 310,
+      "type": "backend"
+    },
+    {
+      "participant": "handler",
+      "from": 226,
+      "to": 282,
+      "type": "security"
+    },
+    {
+      "participant": "keycloak",
+      "from": 254,
+      "to": 282,
+      "type": "security"
+    },
+    {
+      "participant": "api",
+      "from": 366,
+      "to": 506,
+      "type": "backend"
+    },
+    {
+      "participant": "service",
+      "from": 366,
+      "to": 506,
+      "type": "backend"
+    },
+    {
+      "participant": "handler",
+      "from": 394,
+      "to": 450,
+      "type": "security"
+    },
+    {
+      "participant": "keycloak",
+      "from": 422,
+      "to": 450,
+      "type": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Refresh alternative",
+      "items": [
+        "Blank refresh token → 400 before Keycloak; caller DPoP is optional and the handler fills an absent proof",
+        "Malformed or incompatible 2xx fails; compatible JSON without access_token can yield 200 with an empty token"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Exchange alternative",
+      "items": [
+        "API gate requires external token, provider, code verifier, and DPoP before service invocation",
+        "No reuse flag; null, provider error, or 2xx without access_token → 401"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Evidence boundary",
+      "items": [
+        "Generated refresh proof omits ath",
+        "Handler preserves supplied DPoP or fills an absent one",
+        "clientIpHash is passed to refresh handling but unused"
+      ]
+    }
+  ]
+}

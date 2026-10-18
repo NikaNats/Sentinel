@@ -21,9 +21,7 @@ The SOC and SRE teams track and alert on the following security-critical metrics
 * `crypto.tls.cert_days_remaining` (Observable Gauge)
   * Alerting Threshold: < 30 days (Warning), < 7 days (Critical)
   * Severity: **Sev-1 / Sev-2** (TLS certificate nearing expiration)
-* `crypto.tls.cert_reload_total{success="false"}` (Counter)
-  * Alerting Threshold: > 0 failures
-  * Severity: **Sev-1** (Kestrel hot-reload failed on new certificate bundle)
+* `KestrelCertificateReloader` will perform the initial load and reload on certificate-reloader options changes; the inspected `FileSystemWatcher` is disabled, so file modification alone is not an established zero-downtime hot-reload trigger.
 
 ### Tier-2 Operational & Protocol Degradation Alerts
 * `auth.dpop.failures` (Counter)
@@ -185,7 +183,7 @@ In the event of data corruption or disaster recovery:
 
 ---
 
-## 7. Runbook: Cryptographic Key Ring Drift & TLS Hot-Reload Alert
+## 7. Runbook: Cryptographic Key Ring Drift & TLS Certificate Reload Alert
 
 ### 7.1 Alert: `crypto.tls.cert_days_remaining < 30`
 * **Action**:
@@ -199,23 +197,23 @@ In the event of data corruption or disaster recovery:
      kubectl create secret tls sentinel-api-tls -n sentinel-prod \
        --cert=tls.crt --key=tls.key --dry-run=client -o yaml | kubectl apply -f -
      ```
-  3. `KestrelCertificateReloader` will detect file system modification, debounce for 500ms, and swap the active certificate in Kestrel's `ServerCertificateSelector` with zero downtime.
+  3. `KestrelCertificateReloader` performs an initial load and reloads on options changes; the inspected file watcher is disabled, so verify the actual served certificate after a restart or configuration change rather than relying on file mtime.
 
 ### 7.2 Alert: `crypto.keyring.active_key_mismatch` Surge
 * **Meaning**: Records in the database were encrypted with a retired key and are triggering lazy re-wraps (`DecryptEnvelope`).
 * **Action**:
   1. Check if an scheduled key retirement window has concluded.
   2. Monitor `crypto.lazy_rewraps_total` counter.
-  3. Once lazy re-wraps settle to 0, the retired key can safely be removed from `Cryptography:KeyRing` in configuration.
+  3. Once lazy re-wraps settle to 0, verify that the caller persisted each returned rewrapped ciphertext (or complete an offline migration) before removing the retired key; counters alone do not prove storage convergence.
 
 ---
 
 ## 8. Post-Incident Automated Validation Checklist
 
-After resolving any infrastructure outage, failover, or security incident, run the following command battery to mathematically prove full-system recovery before declaring the incident resolved:
+After resolving any infrastructure outage, failover, or security incident, run the following command battery to collect recovery evidence. A command's presence is not proof that the incident is resolved; retain its exit status, logs, and relevant service-health evidence. The test-count/pass-status labels below are historical commands, not current results:
 
 ```powershell
-# 1. Full Unit, Protocol & Concurrency Suite (666 tests, 100% green)
+# 1. Full Unit, Protocol & Concurrency Suite (historical 666-test label; execute and retain the result)
 dotnet test Sentinel.slnx -c Release
 
 # 2. Native AOT & Trim Safety Verification

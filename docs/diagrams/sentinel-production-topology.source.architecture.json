@@ -1,0 +1,336 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Sentinel Production Topology — Runtime and Dependencies",
+    "output": "sentinel-production-topology.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1360,
+      600
+    ],
+    "repository": {
+      "url": "https://github.com/NikaNats/Sentinel.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "b4c63a86cdf9dab593d5556868f62b83953c304a"
+    }
+  },
+  "components": [
+    {
+      "id": "client",
+      "type": "external",
+      "label": "API client",
+      "sublabel": "public caller",
+      "pos": [
+        40,
+        270
+      ],
+      "size": [
+        140,
+        62
+      ],
+      "tag": "request edge",
+      "sources": [
+        {
+          "path": "docs/06-DEPLOYMENT-AND-INFRASTRUCTURE.md",
+          "line": 44,
+          "end_line": 44,
+          "label": "production API deployment"
+        }
+      ]
+    },
+    {
+      "id": "ingress",
+      "type": "cloud",
+      "label": "Ingress",
+      "sublabel": "TLS termination",
+      "pos": [
+        230,
+        270
+      ],
+      "size": [
+        140,
+        62
+      ],
+      "tag": "platform",
+      "sources": [
+        {
+          "path": "infra/helm/sentinel/templates/api-ingress.yaml",
+          "line": 1,
+          "end_line": 39,
+          "label": "Helm ingress template"
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "Sentinel API",
+      "sublabel": "HPA 3–10 pods",
+      "pos": [
+        430,
+        270
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "tag": "runtime",
+      "sources": [
+        {
+          "path": "infra/helm/sentinel/values.prod.yaml",
+          "line": 5,
+          "end_line": 6,
+          "label": "production replica baseline"
+        },
+        {
+          "path": "infra/helm/sentinel/values.prod.yaml",
+          "line": 52,
+          "end_line": 64,
+          "label": "production HPA, PDB, and network policy"
+        },
+        {
+          "path": "infra/helm/sentinel/templates/api-deployment.yaml",
+          "line": 8,
+          "end_line": 80,
+          "label": "autoscaling, probes, TLS, and secrets"
+        }
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis",
+      "sublabel": "Redis Sentinel HA",
+      "pos": [
+        700,
+        100
+      ],
+      "size": [
+        140,
+        62
+      ],
+      "tag": "bundled production state",
+      "sources": [
+        {
+          "path": "infra/helm/sentinel/values.prod.yaml",
+          "line": 66,
+          "end_line": 76,
+          "label": "bundled service enablement boundaries"
+        }
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "optional L3",
+      "pos": [
+        700,
+        440
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "tag": "external optional dependency",
+      "sources": [
+        {
+          "path": "infra/helm/sentinel/values.prod.yaml",
+          "line": 71,
+          "end_line": 72,
+          "label": "managed PostgreSQL boundary"
+        }
+      ]
+    },
+    {
+      "id": "keycloak",
+      "type": "security",
+      "label": "Keycloak",
+      "sublabel": "dedicated OIDC and JWKS",
+      "pos": [
+        940,
+        100
+      ],
+      "size": [
+        145,
+        62
+      ],
+      "tag": "external identity provider",
+      "sources": [
+        {
+          "path": "infra/helm/sentinel/values.prod.yaml",
+          "line": 19,
+          "end_line": 23,
+          "label": "production Keycloak authority"
+        },
+        {
+          "path": "infra/helm/sentinel/values.prod.yaml",
+          "line": 73,
+          "end_line": 74,
+          "label": "dedicated Keycloak deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "collector",
+      "type": "messagebus",
+      "label": "OTel collector",
+      "sublabel": "OTLP traces and metrics",
+      "pos": [
+        940,
+        440
+      ],
+      "size": [
+        145,
+        62
+      ],
+      "tag": "telemetry ingress",
+      "sources": [
+        {
+          "path": "infra/k8s/otel-config.yaml",
+          "line": 68,
+          "end_line": 108,
+          "label": "production OTLP/SIEM export"
+        },
+        {
+          "path": "infra/helm/sentinel/values.prod.yaml",
+          "line": 75,
+          "end_line": 76,
+          "label": "OTel collector bundling boundary"
+        }
+      ]
+    },
+    {
+      "id": "observability",
+      "type": "cloud",
+      "label": "SIEM OTLP gateway",
+      "sublabel": "security observability",
+      "pos": [
+        1150,
+        270
+      ],
+      "size": [
+        180,
+        62
+      ],
+      "tag": "external export target",
+      "sources": [
+        {
+          "path": "infra/k8s/otel-config.yaml",
+          "line": 68,
+          "end_line": 74,
+          "label": "SIEM OTLP endpoint"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Sentinel API edge and workload",
+      "wraps": [
+        "ingress",
+        "api"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Bundled production state",
+      "wraps": [
+        "redis"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Security observability export",
+      "wraps": [
+        "collector",
+        "observability"
+      ],
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-ingress",
+      "from": "client",
+      "to": "ingress",
+      "label": "HTTPS",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ingress-api",
+      "from": "ingress",
+      "to": "api",
+      "label": "backend HTTPS",
+      "variant": "emphasis",
+      "labelDy": 55
+    },
+    {
+      "id": "api-redis",
+      "from": "api",
+      "to": "redis",
+      "label": "JTI / nonce",
+      "variant": "security"
+    },
+    {
+      "id": "api-postgres",
+      "from": "api",
+      "to": "postgres",
+      "label": "optional host adapter",
+      "variant": "dashed"
+    },
+    {
+      "id": "api-keycloak",
+      "from": "api",
+      "to": "keycloak",
+      "label": "OIDC / JWKS",
+      "variant": "security"
+    },
+    {
+      "id": "api-collector",
+      "from": "api",
+      "to": "collector",
+      "label": "OTLP",
+      "variant": "dashed"
+    },
+    {
+      "id": "collector-observability",
+      "from": "collector",
+      "to": "observability",
+      "label": "export",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Documented deployment",
+      "items": [
+        "Production overlay sets an HPA minimum of three API replicas and TLS ingress",
+        "Helm production values enable HPA 3–10, PDB, and a scoped network policy"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Dependency boundary",
+      "items": [
+        "Production overlay enables bundled Redis Sentinel HA; PostgreSQL and Keycloak remain external",
+        "The API-to-PostgreSQL edge is an optional adapter path, not active reference-host wiring or proof of hybrid EF Core registration",
+        "The Helm production overlay does not bundle the OTel collector; its standalone manifest supplies the production export path"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Evidence boundary",
+      "items": [
+        "The production OTel collector manifest exports traces and metrics to the SIEM OTLP gateway; the Helm production overlay does not bundle the collector, and local compose targets are not the production endpoint",
+        "Manifests and workflow files are repository evidence, not live-cluster proof"
+      ]
+    }
+  ]
+}

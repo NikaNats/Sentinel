@@ -1,17 +1,17 @@
 # Sentinel.Sample.MinimalApi - The Ultimate 2026 Sample Application
 
-**Author's Note:** This sample represents how a real enterprise team in 2026 consumed the Sentinel Framework: completely eliminating legacy MVC controllers, achieving microsecond startup times, and proving Native AOT compatibility.
+**Author's Note:** This sample is a repository example of how a team integrated Sentinel Framework security layers. Its performance and compatibility statements are claims from the sample text, not results rerun for this documentation review.
 
 ---
 
 ## 🎯 Purpose
 
-This sample demonstrates a production-ready Minimal API application built entirely with Sentinel Framework's new zero-reflection endpoints. It serves as:
+This sample is a reference host and test harness for integration and documentation work. It is not a shipping product artifact, and its repository-reported metrics are not evidence of current runtime, conformance, or production readiness.
 
 1. **Integration Guide** - How to register and consume Sentinel's security layers
 2. **Best Practices Reference** - Endpoint architecture, DTO patterns, filter chains
-3. **AOT Proof** - Native AOT compatibility (no dynamic code, no reflection)
-4. **RFC Compliance Showcase** - RFC 7807/8693/8936/9413/9110 implementations
+3. **AOT-oriented design reference** — the host is configured for Native AOT, but the AOT gate and runtime behavior were not executed by this documentation review.
+4. **Standards implementation reference** — endpoint examples cover several standards; external conformance is not established by these examples.
 
 ---
 
@@ -22,9 +22,9 @@ This sample demonstrates a production-ready Minimal API application built entire
 | **Lines of Code** | 450+ (endpoints + filters) |
 | **MVC Controllers** | 0 (pure Minimal APIs) |
 | **Startup Time** | < 50ms (before first request) |
-| **Native AOT** | ✅ Compatible (`<PublishAot>true</PublishAot>`) |
-| **Reflection Usage** | 0 (achieved through IEndpointFilter) |
-| **Test Coverage** | 662 automated tests across 8 suites (100% pass rate) |
+| **Native AOT** | Configured for AOT in the sample project; no current AOT execution result is claimed here |
+| **Reflection Usage** | 0 (claimed in the repository sample text; verify in the current build) |
+| **Test Coverage** | Repository-reported historical figure; not a current result from this review |
 
 ---
 
@@ -92,12 +92,14 @@ app.MapDelete("/v1/documents/{id:guid}", DeleteDocument)
     .RequireIdempotency();
 ```
 
-**Security Guarantees:**
-- ✅ All requests must have DPoP proof (RFC 9449)
-- ✅ POST deduplication prevents duplicate document creation
-- ✅ Content encrypted at rest using `IEncryptionService.Encrypt()`
-- ✅ V1 Envelope prepended (algorithm metadata, keyId, timestamp)
-- ✅ AES-256-GCM with authenticated encryption
+**Documented endpoint protections (verify with current tests and deployment evidence):**
+- DPoP-bound requests are shown in the integration examples
+- Idempotency keys are shown for duplicate-request handling
+- The sample demonstrates envelope encryption and authenticated AES-GCM usage
+- A V1 envelope is prepended in the example flow
+- AES-256-GCM is used by the demonstrated encryption service
+
+The examples describe intended request shapes and endpoint policies; they do not by themselves establish deployed security, conformance, or production behavior.
 
 **Usage Example:**
 
@@ -246,7 +248,7 @@ public async ValueTask<object?> InvokeAsync(
 - ✅ Access to typed endpoint arguments (request DTO)
 - ✅ No reflection required (compiles to IL)
 - ✅ Per-route granularity (not global)
-- ✅ Native AOT compatible
+- AOT-oriented design is shown here; verify the current build and AOT gate separately
 
 ### Pattern 3: DTOs for Explicit Security Boundaries
 
@@ -387,13 +389,15 @@ This sample proves compliance with modern security standards:
 
 ---
 
-## 🎯 Key Takeaways
+### Key Takeaways
+
+The following are implementation/design claims from the repository sample text, not independent execution evidence from this review:
 
 ### For Architects
-- ✅ **Zero-Reflection Architecture** - Native AOT proven
-- ✅ **Host Controls Routing** - Framework endpoints namespaced by consumer
-- ✅ **Explicit Security Layers** - IEndpointFilter per domain
-- ✅ **100% RFC Compliance** - Industry standards proven
+- **Zero-reflection design direction** — the sample uses source-generated/AOT-oriented patterns; verify the current build and AOT gate separately.
+- **Host controls routing** — framework endpoints are namespaced by consumer
+- **Explicit security layers** — `IEndpointFilter` per domain
+- **Standards implementation examples** — several standards are represented in the sample; external conformance remains unverified.
 
 ### For Developers
 - ✅ **Clean Separation of Concerns** - Framework vs. Business logic
@@ -402,19 +406,19 @@ This sample proves compliance with modern security standards:
 - ✅ **Single Source of Truth** - One endpoint definition = Route + Metadata
 
 ### For DevOps
-- ✅ **Microsecond Startup** - 5.5x faster cold starts
-- ✅ **82% Less Memory** - Serverless-friendly
-- ✅ **AOT-Ready** - Production self-contained binaries
-- ✅ **No Dependencies** - Zero reflection, zero dynamic code
+- **Microsecond startup** is a repository-reported performance claim; no benchmark was rerun for this documentation review.
+- **82% less memory** is a repository-reported performance claim; no benchmark was rerun for this documentation review.
+- **AOT-ready** is a design/configuration statement; verify the current build and AOT gate separately.
+- **No dependencies** is a repository sample claim; verify the resulting project and deployment artifacts.
 
 ---
 
 ## 🔗 Related Files
 
-- [Sentinel Framework Overview](../docs/ARCHITECTURE.md)
-- [Sample Implementation Report](../../SAMPLE_IMPLEMENTATION_COMPLETE.md)
-- [Security Tests](../tests/Sentinel.Tests.Unit/)
-- [Endpoint Implementations](../src/Sentinel.AspNetCore/Endpoints/)
+- [Sentinel Framework Overview](../../docs/ARCHITECTURE.md)
+- [Sample Implementation Report](../../docs/SAMPLE_IMPLEMENTATION_COMPLETE.md)
+- [Security Tests](../../tests/Sentinel.Tests.Unit/)
+- [Endpoint Implementations](../../src/Sentinel.AspNetCore/Endpoints/)
 
 ---
 

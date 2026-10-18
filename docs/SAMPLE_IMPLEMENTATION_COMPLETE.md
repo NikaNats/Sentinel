@@ -114,13 +114,13 @@ flowchart TD
 
 ### 2.2 Reference Host (composition root)
 
-`samples/Sentinel.Sample.MinimalApi/Program.cs` is the canonical wiring example and the artifact containerized by `src/Sentinel.AspNetCore/Dockerfile` (`ENTRYPOINT ["dotnet", "Sentinel.Sample.MinimalApi.dll"]`). `src/Sentinel.AspNetCore/Program.cs` is an intentional stub — its header comment states it "exists solely to support test infrastructure and WebApplicationFactory" and is "not used in production scenarios".
+`samples/Sentinel.Sample.MinimalApi/Program.cs` is the canonical wiring example and the artifact containerized by `samples/Sentinel.Sample.MinimalApi/Dockerfile` (`ENTRYPOINT ["dotnet", "Sentinel.Sample.MinimalApi.dll"]`). The Dockerfile is explicitly a test-harness image, not a shipping product artifact. `src/Sentinel.AspNetCore/Program.cs` is an intentional stub — its header comment states it "exists solely to support test infrastructure and WebApplicationFactory" and is "not used in production scenarios".
 
 The host composes: Kestrel hardening → OpenTelemetry (metrics/tracing/logs) → CORS → ForwardedHeaders → JWT Bearer authentication (Keycloak authority) → Sentinel module registrations (`AddRedisSecurityCaches`, `AddApplicationLayer`, `AddSsfProcessing`, `AddRarValidation`, `AddKeycloakIntegration`, `AddInfrastructureLayer`) → authorization policies (`ScopeProfile`, `ScopeDocumentsRead`, `ScopeDocumentsWrite`) → dual-partition global rate limiter → `AddSentinelAspNetCore().AddAll().ConfigureAcrRanking()` → middleware pipeline → endpoints (`/`, `/healthz`, `MapSentinelSecurity("v1")`, documents, finance, showcase) → `MapOpenApi()`, `MapPrometheusScrapingEndpoint()`, `MapScalarApiReference("/docs")`.
 
 ## 3. Technology Stack (pinned versions)
 
-From `Directory.Packages.props` (Central Package Management, `ManagePackageVersionsCentrally=true`, `CentralPackageTransitivePinningEnabled=true`), `global.json`, `docker-compose.yml`, `src/Sentinel.AspNetCore/Dockerfile`:
+From `Directory.Packages.props` (Central Package Management, `ManagePackageVersionsCentrally=true`, `CentralPackageTransitivePinningEnabled=true`), `global.json`, `docker-compose.yml`, `samples/Sentinel.Sample.MinimalApi/Dockerfile`:
 
 | Component | Pinned version | Evidence |
 |---|---|---|
@@ -135,8 +135,8 @@ From `Directory.Packages.props` (Central Package Management, `ManagePackageVersi
 | Keycloak (container) | `quay.io/keycloak/keycloak:26.6.4` | `docker-compose.yml` |
 | Redis (container) | `redis:7.4-alpine`, started with `--save "" --appendonly no` | `docker-compose.yml` |
 | PostgreSQL (container) | `postgres:17-alpine` | `docker-compose.yml` |
-| Runtime base image | `mcr.microsoft.com/dotnet/aspnet:10.0.11-noble-chiseled` | `src/Sentinel.AspNetCore/Dockerfile` |
-| Build base image | `mcr.microsoft.com/dotnet/sdk:10.0.302-noble` | `src/Sentinel.AspNetCore/Dockerfile` |
+| Runtime base image | `mcr.microsoft.com/dotnet/aspnet:10.0.11-noble-chiseled` | `samples/Sentinel.Sample.MinimalApi/Dockerfile` |
+| Build base image | `mcr.microsoft.com/dotnet/sdk:10.0.302-noble` | `samples/Sentinel.Sample.MinimalApi/Dockerfile` |
 | xUnit | `xunit.v3` 3.2.2 | `Directory.Packages.props` |
 | Testcontainers | 4.13.0 (Keycloak, PostgreSql, Redis, Toxiproxy) | `Directory.Packages.props` |
 | Property-based testing | FsCheck 3.3.3 | `Directory.Packages.props` |
@@ -169,9 +169,9 @@ From `Directory.Build.props`:
 
 - Specification: `.specify/specs/SPEC-0001-auth-token-issuance.md`; plan `.specify/plans/PLAN-0001-auth-implementation.md`; tasks `.specify/tasks/TASK-0001-auth-implementation.md`; governance constitution `.specify/memory/constitution.md`.
 - Machine-readable API contract: `docs/OPENAPI_3_1.yaml` (`info.version: 2026-08-20`, title "Sentinel API Contract (Framework + Reference Host)"), with a committed baseline `tests/Sentinel.Contracts/OpenApi/Baselines/v1-baseline.json` and a generator `scripts/generate_openapi_baseline.py`.
-- Container: built from `src/Sentinel.AspNetCore/Dockerfile`; release images pushed to `ghcr.io/${{ github.repository }}/sentinel-api`, tagged by commit SHA, signed keyless with cosign and SBOM-attached (`sign-publish` job in `.github/workflows/security-pipeline.yml`).
+- Container: built from `samples/Sentinel.Sample.MinimalApi/Dockerfile` (the repository's test-harness image). The current `security-pipeline.yml` release job is `publish-nuget`; it publishes and archives NuGet packages with package SBOM/provenance steps. No current `security-pipeline.yml` container-image publishing or signing job is present, so image publication, scanning, signing, and SBOM attachment remain unverified here.
 - Helm chart: `infra/helm/sentinel` (default image repository `ghcr.io/nikanats/sentinel-api`).
 
 ## 6. Implementation Status (as reported by the repository)
 
-Per the README "Implementation Status" table: API host & middleware pipeline, JWT validation & policy authorization, DPoP proof validation, replay protection, DPoP nonce management, mTLS token binding, rate limiting, idempotency enforcement, session management, OpenTelemetry/metrics, and testing are all **Implemented**; full OAuth PAR/PKCE orchestration endpoint set is **Planned/Externalized** (Keycloak-driven). The same table reports **496 tests across 8 suites** (Unit 290, Contracts 77, Security 63, Integration 46, DPoP 29, Session 22, SSF 7, Concurrency 3) at 100% pass rate.
+Per the repository "Implementation Status" table, the API host, security middleware, protocol validation, replay and nonce handling, token binding, rate limiting, idempotency, sessions, telemetry, and tests are reported as implemented. The full OAuth PAR/PKCE orchestration endpoint set remains planned or externalized to Keycloak. The repository's historical 496-test statement is retained below for traceability, but it is not current execution evidence; the seven-assembly VSTest batch in this review returned exit 1 for every inner suite.

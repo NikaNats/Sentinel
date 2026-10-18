@@ -1,0 +1,456 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Sentinel Architecture — Runtime and State Boundaries",
+    "output": "sentinel-architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/NikaNats/Sentinel.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "b4c63a86cdf9dab593d5556868f62b83953c304a"
+    }
+  },
+  "components": [
+    {
+      "id": "client",
+      "type": "external",
+      "label": "Client",
+      "sublabel": "API caller",
+      "pos": [
+        40,
+        260
+      ],
+      "size": [
+        120,
+        60
+      ],
+      "tag": "untrusted edge",
+      "sources": [
+        {
+          "path": "docs/02-ARCHITECTURE.md",
+          "line": 18,
+          "label": "documented request path"
+        }
+      ]
+    },
+    {
+      "id": "host",
+      "type": "backend",
+      "label": "Host",
+      "sublabel": "Minimal API",
+      "pos": [
+        220,
+        260
+      ],
+      "size": [
+        140,
+        60
+      ],
+      "tag": "application owner",
+      "sources": [
+        {
+          "path": "docs/02-ARCHITECTURE.md",
+          "line": 7,
+          "label": "host composition root",
+          "end_line": 12
+        }
+      ]
+    },
+    {
+      "id": "pre_auth",
+      "type": "security",
+      "label": "Pre-auth security",
+      "sublabel": "headers · correlation · DPoP",
+      "pos": [
+        430,
+        260
+      ],
+      "size": [
+        160,
+        60
+      ],
+      "tag": "before authentication",
+      "sources": [
+        {
+          "path": "docs/02-ARCHITECTURE.md",
+          "line": 27,
+          "label": "pre-auth ordering"
+        }
+      ]
+    },
+    {
+      "id": "jwt_auth",
+      "type": "security",
+      "label": "JWT authentication",
+      "sublabel": "issuer · audience · lifetime",
+      "pos": [
+        660,
+        260
+      ],
+      "size": [
+        160,
+        60
+      ],
+      "tag": "token gate",
+      "sources": [
+        {
+          "path": "docs/02-ARCHITECTURE.md",
+          "line": 31,
+          "label": "JwtBearer authentication"
+        }
+      ]
+    },
+    {
+      "id": "post_auth",
+      "type": "security",
+      "label": "Post-auth security",
+      "sublabel": "mTLS binding · ACR",
+      "pos": [
+        890,
+        260
+      ],
+      "size": [
+        160,
+        60
+      ],
+      "tag": "authenticated principal",
+      "sources": [
+        {
+          "path": "docs/02-ARCHITECTURE.md",
+          "line": 33,
+          "end_line": 35,
+          "label": "post-auth ordering"
+        }
+      ]
+    },
+    {
+      "id": "ports",
+      "type": "backend",
+      "label": "Security ports",
+      "sublabel": "interfaces · options",
+      "pos": [
+        430,
+        80
+      ],
+      "size": [
+        160,
+        60
+      ],
+      "tag": "Sentinel.Security.Abstractions",
+      "sources": [
+        {
+          "path": "docs/02-ARCHITECTURE.md",
+          "line": 9,
+          "label": "port contracts"
+        }
+      ]
+    },
+    {
+      "id": "engines",
+      "type": "security",
+      "label": "Protocol engines",
+      "sublabel": "DPoP/SSF/RAR/SD-JWT/Session",
+      "pos": [
+        660,
+        80
+      ],
+      "size": [
+        170,
+        60
+      ],
+      "tag": "stateless libraries",
+      "sources": [
+        {
+          "path": "docs/02-ARCHITECTURE.md",
+          "line": 10,
+          "label": "protocol engines"
+        }
+      ]
+    },
+    {
+      "id": "adapters",
+      "type": "backend",
+      "label": "Adapters",
+      "sublabel": "Redis · EF · Keycloak · Vault",
+      "pos": [
+        900,
+        80
+      ],
+      "size": [
+        180,
+        60
+      ],
+      "tag": "concrete technologies",
+      "sources": [
+        {
+          "path": "docs/02-ARCHITECTURE.md",
+          "line": 11,
+          "label": "adapter implementations"
+        }
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis",
+      "sublabel": "JTI · nonce · idempotency",
+      "pos": [
+        660,
+        440
+      ],
+      "size": [
+        160,
+        60
+      ],
+      "tag": "security state",
+      "sources": [
+        {
+          "path": "src/Sentinel.Redis/Extensions/RedisServiceExtensions.cs",
+          "line": 57,
+          "end_line": 71,
+          "label": "Reference host Redis security-state registration"
+        }
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "optional L3",
+      "pos": [
+        900,
+        440
+      ],
+      "size": [
+        160,
+        60
+      ],
+      "tag": "optional session adapter",
+      "sources": [
+        {
+          "path": "src/Sentinel.EntityFrameworkCore/Stores/HybridSessionBlacklistCache.cs",
+          "line": 16,
+          "end_line": 26,
+          "label": "Optional L3 implementation contract"
+        },
+        {
+          "path": "samples/Sentinel.Sample.MinimalApi/Program.cs",
+          "line": 467,
+          "end_line": 473,
+          "label": "Reference host registration boundary"
+        },
+        {
+          "path": "src/Sentinel.EntityFrameworkCore/Extensions/HybridSessionBlacklistCacheExtensions.cs",
+          "line": 48,
+          "end_line": 70,
+          "label": "Optional hybrid decorator contract"
+        }
+      ]
+    },
+    {
+      "id": "keycloak",
+      "type": "security",
+      "label": "Keycloak",
+      "sublabel": "OIDC · JWKS",
+      "pos": [
+        1140,
+        440
+      ],
+      "size": [
+        160,
+        60
+      ],
+      "tag": "identity provider",
+      "sources": [
+        {
+          "path": "docs/02-ARCHITECTURE.md",
+          "line": 274,
+          "label": "JWKS / exchange / refresh edge"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Sentinel runtime",
+      "wraps": [
+        "host",
+        "pre_auth",
+        "jwt_auth",
+        "post_auth",
+        "ports",
+        "engines",
+        "adapters"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "security-group",
+      "label": "Security boundary",
+      "wraps": [
+        "pre_auth",
+        "jwt_auth",
+        "post_auth",
+        "engines"
+      ],
+      "pad": 14
+    },
+    {
+      "kind": "security-group",
+      "label": "External identity provider",
+      "wraps": [
+        "keycloak"
+      ],
+      "pad": 14
+    },
+    {
+      "kind": "region",
+      "label": "Active security state",
+      "wraps": [
+        "redis"
+      ],
+      "pad": 14
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-host",
+      "from": "client",
+      "to": "host",
+      "label": "HTTPS",
+      "variant": "emphasis"
+    },
+    {
+      "id": "host-preauth",
+      "from": "host",
+      "to": "pre_auth",
+      "label": "invoke",
+      "variant": "security"
+    },
+    {
+      "id": "preauth-jwt",
+      "from": "pre_auth",
+      "to": "jwt_auth",
+      "label": "proof",
+      "variant": "security"
+    },
+    {
+      "id": "jwt-postauth",
+      "from": "jwt_auth",
+      "to": "post_auth",
+      "label": "principal",
+      "variant": "security"
+    },
+    {
+      "id": "engines-ports",
+      "from": "engines",
+      "to": "ports",
+      "label": "uses ports",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "right",
+      "route": "straight",
+      "labelAt": [
+        625,
+        110
+      ]
+    },
+    {
+      "id": "adapters-ports",
+      "from": "adapters",
+      "to": "ports",
+      "label": "implements ports",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "route": "orthogonal-h",
+      "via": [
+        [
+          990,
+          180
+        ],
+        [
+          510,
+          180
+        ]
+      ],
+      "labelAt": [
+        750,
+        180
+      ]
+    },
+    {
+      "id": "jwt-redis",
+      "from": "jwt_auth",
+      "to": "redis",
+      "label": "JTI / sessions",
+      "variant": "security",
+      "labelDx": -150,
+      "labelDy": 24
+    },
+    {
+      "id": "redis-postgres",
+      "from": "redis",
+      "to": "postgres",
+      "label": "opt-in host decorator",
+      "variant": "dashed",
+      "labelDy": 84
+    },
+    {
+      "id": "jwt-keycloak",
+      "from": "jwt_auth",
+      "to": "keycloak",
+      "label": "OIDC / JWKS",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "orthogonal-v",
+      "via": [
+        [
+          740,
+          400
+        ],
+        [
+          1220,
+          400
+        ]
+      ],
+      "labelAt": [
+        980,
+        400
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Runtime path",
+      "items": [
+        "Client request enters the host-owned pipeline",
+        "Pre-auth checks precede JWT authentication",
+        "Post-auth binding uses the authenticated principal"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Dependency inversion",
+      "items": [
+        "Ports define stable security contracts",
+        "Protocol engines use ports; adapters implement them",
+        "The host selects concrete adapters at the composition root"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "State ownership",
+      "items": [
+        "Redis is the distributed security-state layer",
+        "PostgreSQL is opt-in L3 for hybrid session revocation: a host must register the EF factory, TimeProvider, and final AddHybridSessionBlacklistCache decorator; the inspected reference host registers Redis-backed ports only",
+        "Keycloak owns identity-provider state"
+      ]
+    }
+  ]
+}
