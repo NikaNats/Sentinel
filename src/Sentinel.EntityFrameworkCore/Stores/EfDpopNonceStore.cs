@@ -37,11 +37,11 @@ internal sealed class EfDpopNonceStore : IDpopNonceStore
 
             if (entry == null)
             {
-                _logger.LogInformation("No valid nonce found for thumbprint: {Thumbprint}", thumbprint);
+                _logger.LogInformation("No valid nonce found");
                 return null;
             }
 
-            _logger.LogInformation("Nonce retrieved for thumbprint: {Thumbprint}", thumbprint);
+            _logger.LogInformation("Nonce retrieved");
             return entry.Nonce;
         }
         catch (Exception ex)
@@ -80,7 +80,7 @@ internal sealed class EfDpopNonceStore : IDpopNonceStore
             context.DpopNonceStore.Add(entry);
             await context.SaveChangesAsync(cancellationToken);
 
-            _logger.LogInformation("Nonce set for thumbprint: {Thumbprint}", thumbprint);
+            _logger.LogInformation("Nonce set");
         }
         catch (Exception ex)
         {
@@ -137,12 +137,11 @@ internal sealed class EfDpopNonceStore : IDpopNonceStore
 
             if (wasConsumed)
             {
-                _logger.LogInformation("DPoP nonce atomically consumed for thumbprint: {Thumbprint}", thumbprint);
+                _logger.LogInformation("DPoP nonce atomically consumed");
             }
             else
             {
-                _logger.LogWarning("Atomic nonce consumption failed (mismatch or expired) for thumbprint: {Thumbprint}",
-                    thumbprint);
+                _logger.LogWarning("Atomic nonce consumption failed (mismatch or expired)");
             }
 
             return wasConsumed;

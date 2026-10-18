@@ -197,7 +197,7 @@ In the event of data corruption or disaster recovery:
      kubectl create secret tls sentinel-api-tls -n sentinel-prod \
        --cert=tls.crt --key=tls.key --dry-run=client -o yaml | kubectl apply -f -
      ```
-  3. `KestrelCertificateReloader` performs an initial load and reloads on options changes; the inspected file watcher is disabled, so verify the actual served certificate after a restart or configuration change rather than relying on file mtime.
+  3. `KestrelCertificateReloader` performs an initial load and reloads on options changes and on certificate-directory file events (debounced); verify the actual served certificate after rotation rather than relying on file mtime.
 
 ### 7.2 Alert: `crypto.keyring.active_key_mismatch` Surge
 * **Meaning**: Records in the database were encrypted with a retired key and are triggering lazy re-wraps (`DecryptEnvelope`).

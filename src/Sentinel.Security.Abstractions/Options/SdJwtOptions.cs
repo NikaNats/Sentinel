@@ -13,10 +13,10 @@ public sealed class SdJwtOptions
     /// <summary>
     ///     Gets or sets whether SD-JWT processing is enabled.
     /// </summary>
-    public bool Enabled { get; init; } = true;
+    public bool Enabled { get; set; } = true;
 
     /// <summary>
     ///     Gets or sets whether key binding is required for presentations.
     /// </summary>
-    public bool RequireKeyBindingNonce { get; init; }
+    public bool RequireKeyBindingNonce { get; set; }
 }

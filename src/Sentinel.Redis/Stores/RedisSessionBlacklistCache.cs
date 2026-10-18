@@ -51,7 +51,7 @@ public sealed class RedisSessionBlacklistCache : ISessionBlacklistCache
 
             await db.StringSetAsync(redisKey, "revoked", ttl);
 
-            _logger.LogTrace("Session blacklisted: {SessionId}", sessionId);
+            _logger.LogTrace("Session blacklisted");
         }
         catch (Exception ex)
         {
@@ -78,7 +78,7 @@ public sealed class RedisSessionBlacklistCache : ISessionBlacklistCache
             var redisKey = $"{_keyPrefix}session:{sessionId}";
             var exists = await db.KeyExistsAsync(redisKey);
 
-            _logger.LogTrace("Blacklist check for {SessionId}: {IsBlacklisted}", sessionId, exists);
+            _logger.LogTrace("Blacklist check: {IsBlacklisted}", exists);
             return exists;
         }
         catch (Exception ex)

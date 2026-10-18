@@ -54,7 +54,7 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
             var redisKey = $"{_keyPrefix}nonce:{thumbprint}";
             var value = await db.StringGetAsync(redisKey);
 
-            _logger.LogInformation("DPoP nonce retrieved for thumbprint: {Thumbprint}", thumbprint);
+            _logger.LogDebug("DPoP nonce retrieved.");
             return value.IsNullOrEmpty ? null : value.ToString();
         }
         catch (Exception ex)
@@ -86,7 +86,7 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
             if (string.IsNullOrWhiteSpace(nonce))
             {
                 await db.KeyDeleteAsync(redisKey);
-                _logger.LogTrace("DPoP nonce cleared for thumbprint: {Thumbprint}", thumbprint);
+                _logger.LogTrace("DPoP nonce cleared.");
                 return;
             }
 
@@ -98,7 +98,7 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
             }
 
             await db.StringSetAsync(redisKey, nonce, timeToLive);
-            _logger.LogTrace("DPoP nonce set for thumbprint: {Thumbprint}", thumbprint);
+            _logger.LogTrace("DPoP nonce set.");
         }
         catch (Exception ex)
         {
@@ -158,15 +158,14 @@ public sealed class RedisDpopNonceStore : IDpopNonceStore
 
             if (wasConsumed)
             {
-                _logger.LogInformation("DPoP nonce atomically consumed for thumbprint: {Thumbprint}", thumbprint);
+                _logger.LogDebug("DPoP nonce atomically consumed.");
             }
             else
             {
                 // Emit SRE/SIEM OpenTelemetry signal for nonce mismatch or concurrent consumption race.
                 AuthTelemetry.DpopNonceMismatches.Add(1);
 
-                _logger.LogWarning("Atomic nonce consumption failed (mismatch or expired) for thumbprint: {Thumbprint}",
-                    thumbprint);
+                _logger.LogWarning("Atomic nonce consumption failed (mismatch or expired).");
             }
 
             return wasConsumed;

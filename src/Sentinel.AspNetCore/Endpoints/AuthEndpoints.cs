@@ -135,10 +135,11 @@ internal static class AuthEndpoints
         var ipHash = SecurityContextHasher.HashIp(context);
         var result = await refreshService.RefreshTokenAsync(request.RefreshToken, dpop, ipHash, ct);
 
-        if (result.IsSuccess)
+        // A 2xx from the IdP without an access token is not a successful refresh; never emit 200 with "".
+        if (result.IsSuccess && !string.IsNullOrWhiteSpace(result.AccessToken))
         {
             return TypedResults.Ok(new TokenResponseDto(
-                result.AccessToken ?? string.Empty,
+                result.AccessToken,
                 result.RefreshToken));
         }
 
@@ -220,7 +221,7 @@ internal static class AuthEndpoints
         // 5. Security purge
         // a) Revoke all other sessions
         // This protects the user if their account was accessed from another device
-        _ = await revocationService.RevokeAllSessionsAsync(sub, ct);
+        var otherSessionsRevoked = await revocationService.RevokeAllSessionsAsync(sub, ct);
 
         // b) Add current session to blacklist
         // After changing the password, the user must re-authenticate with the new password
@@ -229,6 +230,16 @@ internal static class AuthEndpoints
         {
             var ttl = optionsMonitor.CurrentValue.ResolveSessionBlacklistTtl();
             await blacklistCache.BlacklistSessionAsync(sid, ttl, ct);
+        }
+
+        // Fail closed: never report success while sessions an attacker may hold are still live.
+        if (!otherSessionsRevoked)
+        {
+            return TypedResults.Problem(
+                type: ErrorCodes.InternalServerError,
+                title: "Operation partially failed",
+                detail: "Password was updated, but other sessions could not be revoked. Retry global logout.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
 
         return TypedResults.NoContent();
@@ -373,8 +384,15 @@ internal static class AuthEndpoints
             await blacklistCache.BlacklistSessionAsync(sid, keycloakOptions.ResolveSessionBlacklistTtl(), ct);
         }
 
-        // Revoke all other sessions
-        _ = await revocationService.RevokeAllSessionsAsync(sub, ct);
+        // Revoke all other sessions. Fail closed before deleting: once the account is gone a retry
+        // can no longer reach its still-live sessions.
+        if (!await revocationService.RevokeAllSessionsAsync(sub, ct))
+        {
+            return TypedResults.Problem(
+                type: ErrorCodes.InternalServerError,
+                title: "Failed to revoke sessions before account deletion.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
 
         // Perform soft delete
         var deleted = await revocationService.DeleteAccountAsync(sub, ct);

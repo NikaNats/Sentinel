@@ -52,7 +52,7 @@ public sealed class SessionManager : ISessionManager
         try
         {
             await _blacklist.BlacklistSessionAsync(sessionId, expiresAt, cancellationToken);
-            _logger.LogInformation("Session {SessionId} successfully revoked and blacklisted.", sessionId);
+            _logger.LogInformation("Session successfully revoked and blacklisted.");
 
             return SecurityResult.CreateSuccess();
         }

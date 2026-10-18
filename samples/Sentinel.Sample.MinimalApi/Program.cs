@@ -28,6 +28,7 @@ using Scalar.AspNetCore;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Application.Auth.Models;
 using Sentinel.Application.DependencyInjection;
+using Sentinel.AspNetCore.Authentication;
 using Sentinel.AspNetCore.Endpoints;
 using Sentinel.AspNetCore.Extensions;
 using Sentinel.AspNetCore.Infrastructure;
@@ -347,121 +348,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             options.ConfigurationManager = null;
         }
 
-        options.Events = new JwtBearerEvents
-        {
-            OnMessageReceived = context =>
-            {
-                var authHeader = context.Request.Headers.Authorization.ToString();
-                if (authHeader.StartsWith("DPoP ", StringComparison.OrdinalIgnoreCase))
-                {
-                    context.Token = authHeader["DPoP ".Length..].Trim();
-                }
-
-                return Task.CompletedTask;
-            },
-            OnTokenValidated = async context =>
-            {
-                var jwt = (JsonWebToken)context.SecurityToken;
-                var identity = (ClaimsIdentity)context.Principal!.Identity!;
-
-                var expClaim = jwt.Claims.FirstOrDefault(c => c.Type == "exp")?.Value
-                               ?? new DateTimeOffset(jwt.ValidTo).ToUnixTimeSeconds().ToString();
-                var sidClaim = jwt.Claims.FirstOrDefault(c => c.Type == "sid")?.Value;
-                var subClaim = jwt.Subject ?? jwt.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
-                var acrClaim = jwt.Claims.FirstOrDefault(c => c.Type == "acr")?.Value;
-                var scopeClaim = jwt.Claims.FirstOrDefault(c => c.Type == "scope")?.Value;
-
-                if (!identity.HasClaim(c => c.Type == "exp"))
-                {
-                    identity.AddClaim(new Claim("exp", expClaim));
-                }
-
-                if (!identity.HasClaim(c => c.Type == "sid") && !string.IsNullOrEmpty(sidClaim))
-                {
-                    identity.AddClaim(new Claim("sid", sidClaim));
-                }
-
-                if (!identity.HasClaim(c => c.Type == "sub") && !string.IsNullOrEmpty(subClaim))
-                {
-                    identity.AddClaim(new Claim("sub", subClaim));
-                }
-
-                if (!identity.HasClaim(c => c.Type == "acr") && !string.IsNullOrEmpty(acrClaim))
-                {
-                    identity.AddClaim(new Claim("acr", acrClaim));
-                }
-
-                if (!identity.HasClaim(c => c.Type == "scope") && !string.IsNullOrEmpty(scopeClaim))
-                {
-                    identity.AddClaim(new Claim("scope", scopeClaim));
-                }
-
-                var validationService = context.HttpContext.RequestServices.GetRequiredService<TokenValidationService>();
-                var outcome = await validationService.ValidateAsync(context.Principal!, context.HttpContext, context.HttpContext.RequestAborted);
-                if (!outcome.IsSuccess)
-                {
-                    context.Fail(outcome.FailureException ?? new SecurityTokenException(outcome.FailureReason ?? "Token validation failed."));
-                }
-            },
-            OnChallenge = async context =>
-            {
-                context.HandleResponse();
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                context.Response.ContentType = "application/problem+json; charset=utf-8";
-
-                var detailedError = !string.IsNullOrWhiteSpace(context.ErrorDescription)
-                    ? context.ErrorDescription
-                    : context.AuthenticateFailure?.Message;
-
-                if (string.IsNullOrWhiteSpace(detailedError))
-                {
-                    detailedError = "Missing or invalid token";
-                }
-
-                context.Response.Headers.Append("WWW-Authenticate",
-                    "Bearer error=\"invalid_token\", error_description=\"Authentication required\"");
-
-                var problem = new ProblemDetails
-                {
-                    Type = "/errors/unauthorized",
-                    Title = "Authentication required",
-                    Status = StatusCodes.Status401Unauthorized,
-                    Detail = Regex.Replace(detailedError, @"[\r\n\t\x00-\x1F\x7F]", "")
-                };
-
-                var json = JsonSerializer.Serialize(problem, SampleJsonContext.Default.ProblemDetails);
-                await context.Response.WriteAsync(json);
-            },
-            OnAuthenticationFailed = context =>
-            {
-                if (context.Exception is SecurityTokenSignatureKeyNotFoundException)
-                {
-                    try
-                    {
-                        var kid = "unknown";
-                        var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
-                        if (!string.IsNullOrWhiteSpace(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var token = authHeader["Bearer ".Length..].Trim();
-                            var jwt = new JsonWebToken(token);
-                            kid = jwt.Kid ?? "unknown";
-                        }
-                        var tags = new TagList { { "kid", kid } };
-                        AuthTelemetry.JwksKidMisses.Add(1, tags);
-                        AuthTelemetry.JwksRefreshRequests.Add(1);
-                    }
-#pragma warning disable CA1031
-                    catch
-                    {
-                        AuthTelemetry.JwksKidMisses.Add(1, new TagList { { "kid", "unknown" } });
-                        AuthTelemetry.JwksRefreshRequests.Add(1);
-                    }
-#pragma warning restore CA1031
-                }
-
-                return Task.CompletedTask;
-            }
-        };
+        // Library-provided handlers: DPoP-scheme extraction, TokenValidationService (session blacklist +
+        // jti single use), sanitized RFC 9457 401 challenge and JWKS kid-miss telemetry.
+        options.Events = SentinelJwtBearerEvents.Create();
     });
 
 builder.Services
@@ -510,12 +399,7 @@ builder.Services.AddSingleton<ISsfTokenValidator>(sp =>
         sp.GetService<IConfigurationManager<OpenIdConnectConfiguration>>()
     ));
 
-builder.Services.AddScoped<Sentinel.Security.Abstractions.Security.IAuthRevocationService, SecurityAuthRevocationServiceAdapter>();
-builder.Services.AddScoped<Sentinel.Application.Auth.Interfaces.ISsfEventProcessor, SecuritySsfEventProcessorAdapter>();
-builder.Services.AddSingleton<Sentinel.Application.Common.Abstractions.ISessionBlacklistCache>(sp =>
-    new SampleSessionBlacklistCacheAdapter(
-        sp.GetRequiredService<Sentinel.Security.Abstractions.Session.ISessionBlacklistCache>(),
-        sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddSentinelHostBridges();
 
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("ScopeProfile", policy =>
@@ -717,33 +601,3 @@ internal sealed class DefaultPrivacyKeyManager : IPrivacyKeyManager
 internal sealed record SampleInfoResponse(string Service, string Docs, EndpointMap Endpoints);
 internal sealed record EndpointMap(string Health, string Security, string Documents, string Finance, string Showcase);
 internal sealed record HealthResponse(string Status, DateTimeOffset Utc);
-
-internal sealed class SecurityAuthRevocationServiceAdapter(
-    IAuthRevocationService inner) : Sentinel.Security.Abstractions.Security.IAuthRevocationService
-{
-    public Task RevokeAllSessionsAsync(string subject, CancellationToken cancellationToken = default) =>
-        inner.RevokeAllSessionsAsync(subject, cancellationToken);
-}
-
-internal sealed class SecuritySsfEventProcessorAdapter(
-    ISsfEventProcessor inner) : Sentinel.Application.Auth.Interfaces.ISsfEventProcessor
-{
-    public async Task<SsfProcessResult> ProcessAsync(string setToken, CancellationToken ct)
-    {
-        var result = await inner.ProcessAsync(setToken, ct);
-        return result.IsSuccess
-            ? SsfProcessResult.Success()
-            : SsfProcessResult.Invalid(result.ErrorMessage ?? "SSF processing failed");
-    }
-}
-
-internal sealed class SampleSessionBlacklistCacheAdapter(
-    Sentinel.Security.Abstractions.Session.ISessionBlacklistCache inner,
-    TimeProvider timeProvider) : Sentinel.Application.Common.Abstractions.ISessionBlacklistCache
-{
-    public Task BlacklistSessionAsync(string sessionId, TimeSpan ttl, CancellationToken ct) =>
-        inner.BlacklistSessionAsync(sessionId, timeProvider.GetUtcNow() + ttl, ct);
-
-    public ValueTask<bool> IsSessionBlacklistedAsync(string sessionId, CancellationToken ct) =>
-        new(inner.IsBlacklistedAsync(sessionId, ct));
-}

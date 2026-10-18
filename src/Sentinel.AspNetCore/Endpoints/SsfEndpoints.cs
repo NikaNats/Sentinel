@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Sentinel.Application.Auth.Interfaces;
 using Sentinel.Security.Abstractions.Options;
@@ -34,7 +35,6 @@ internal static class SsfEndpoints
 
     private static async Task<IResult> ReceiveEventAsync(
         HttpRequest request,
-        [FromServices] ISsfEventProcessor processor,
         [FromServices] IOptionsMonitor<SsfOptions> optionsMonitor,
         [FromServices] ILoggerFactory loggerFactory,
         CancellationToken ct)
@@ -63,6 +63,9 @@ internal static class SsfEndpoints
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
+        // Resolved only after the feature flag and webhook auth checks: a disabled or unauthenticated
+        // receiver must answer 404 even when the SSF processing graph is not registered.
+        var processor = request.HttpContext.RequestServices.GetRequiredService<ISsfEventProcessor>();
         var result = await processor.ProcessAsync(setToken, ct);
         if (result.IsSuccess)
         {
@@ -132,16 +135,33 @@ internal static class SsfEndpoints
     /// </summary>
     private static async Task<string?> ReadSecurityEventTokenAsync(HttpRequest request, CancellationToken ct)
     {
+        // Bound the unauthenticated body before buffering it (DoS prevention). A SET is a compact JWS;
+        // anything larger than the cap is rejected as "no token" (400) rather than read into memory.
+        if (request.ContentLength > MaxSetBodyBytes)
+        {
+            return null;
+        }
+
+        var body = await ReadBoundedBodyAsync(request.Body, ct);
+        if (body is null)
+        {
+            return null;
+        }
+
         if (request.ContentType?.Contains("application/secevent+jwt", StringComparison.OrdinalIgnoreCase) == true)
         {
-            using var reader = new StreamReader(request.Body);
-            return (await reader.ReadToEndAsync(ct)).Trim();
+            return Encoding.UTF8.GetString(body).Trim();
         }
 
         try
         {
-            using var payload = await JsonDocument.ParseAsync(request.Body, cancellationToken: ct);
-            if (payload.RootElement.TryGetProperty("set", out var setProp))
+            using var payload = JsonDocument.Parse(body);
+
+            // Exception shielding: TryGetProperty throws on a non-object root and GetString throws on a
+            // non-string value. Both are client errors and must surface as 400, never as a host 5xx.
+            if (payload.RootElement.ValueKind == JsonValueKind.Object
+                && payload.RootElement.TryGetProperty("set", out var setProp)
+                && setProp.ValueKind == JsonValueKind.String)
             {
                 return setProp.GetString();
             }
@@ -152,5 +172,25 @@ internal static class SsfEndpoints
         {
             return null;
         }
+    }
+
+    private const int MaxSetBodyBytes = 64 * 1024;
+
+    private static async Task<byte[]?> ReadBoundedBodyAsync(Stream body, CancellationToken ct)
+    {
+        using var buffer = new MemoryStream();
+        var chunk = new byte[8192];
+        int read;
+        while ((read = await body.ReadAsync(chunk, ct)) > 0)
+        {
+            if (buffer.Length + read > MaxSetBodyBytes)
+            {
+                return null;
+            }
+
+            await buffer.WriteAsync(chunk.AsMemory(0, read), ct);
+        }
+
+        return buffer.ToArray();
     }
 }

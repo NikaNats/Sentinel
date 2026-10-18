@@ -75,7 +75,7 @@ The system **never** silently degrades security checks. Expected client-visible 
 | 401 with `WWW-Authenticate: DPoP error="use_dpop_nonce"` en masse, `auth_dpop_nonce_mismatch_total` rising | Clients ignoring `DPoP-Nonce` rotation, or Redis key-prefix collision between environments | Clients fail until they fix nonce handling | Confirm prefix isolation (`sentinel_prod:` vs `staging:`), inspect client SDK behavior |
 | `auth_jti_replays_total` > 0 (`TokenReplayDetected`) | Token theft/replay attempt **or** client retrying a consumed single-use token | 401 | Triage via `SecurityEventEmitter` replay events (hashed jti/sub/IP + correlation id); if theft suspected, trigger subject revocation (`POST /auth/logout-all` equivalent via Keycloak admin) |
 | `crypto_jwks_kid_miss_total{kid}` spikes | Keycloak signing-key rotation or signing-key lookup failure | 401s / validation failures | The inspected reference callback records kid-miss and increments a refresh counter but performs no `RequestRefresh` or retry; do not treat the counter as proof of self-healing. Check Keycloak realm state and the host configuration manager separately. |
-| `crypto_tls_cert_days_remaining` < 30 (`WarningDaysThreshold`) | Certificate expiry approaching | — | Renew the cert; use an `IOptionsMonitor` configuration change or restart to trigger `KestrelCertificateReloader`. The inspected file watcher is disabled, so file replacement alone is not an established reload path. |
+| `crypto_tls_cert_days_remaining` < 30 (`WarningDaysThreshold`) | Certificate expiry approaching | — | Renew the cert; replacing the file (or the Kubernetes secret) triggers `KestrelCertificateReloader` after the debounce interval. Confirm the gauge moved. |
 | `crypto_keyring_active_key_mismatch` sustained | Key-ring rotated without updating `ActiveKeyId`, or legacy data | — | Follow §4 rotation runbook |
 | Process refuses to start: "CRITICAL SECURITY INVARIANT VIOLATED…" | Production config drift (in-memory idempotency store / EF-backed nonce or jti stores) | Deploy blocked | Fix DI registrations to Redis-backed stores; this guard is intentional (`SecurityInvariantsStartupFilter`) |
 | ML-DSA critical log 4002 | Host OS lacks native FIPS 204 support | PQC proofs rejected (fail-closed) | Move workloads to a platform where `MLDsa.IsSupported` is true, or remove `ML-DSA-*` from `DPoP:AllowedAlgorithms` until then |
@@ -101,7 +101,7 @@ Per `AesGcmEncryptionService` mechanics and `docs/CRYPTO_LIFECYCLE_RUNBOOK.md`:
 ### 4.2 TLS serving certificate
 
 1. Replace the file at `Kestrel:CertificateReloader:Path` using an atomic write.
-2. Trigger the actual reload path: change the certificate-reloader options/config (or restart the host). The inspected `FileSystemWatcher` has `EnableRaisingEvents = false`; file replacement alone does not invoke `OnFileChanged`.
+2. Replace the certificate file (or update the mounted secret); the directory watcher triggers a debounced reload. An options change or restart also reloads.
 3. After a reload, `KestrelCertificateReloader` can swap the certificate via Kestrel's `ServerCertificateSelector`; `CertificateReloaded` may fire and `crypto.tls.cert_days_remaining` updates.
 4. Verify the actual served certificate and gauge; do not infer reload from the file mtime alone.
 

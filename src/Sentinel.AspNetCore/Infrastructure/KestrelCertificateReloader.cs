@@ -77,32 +77,42 @@ public sealed class KestrelCertificateReloader : IDisposable
 
         optionsMonitor.OnChange(opts => _ = ReloadAsync(opts));
 
+        // Watch the whole directory, not just the file name: Kubernetes secret/cert-manager mounts rotate
+        // by atomically re-pointing a "..data" symlink (a rename), which never touches the file name itself.
+        // Events are debounced, so sibling writes (e.g. the key file) collapse into one reload.
         _watcher = new FileSystemWatcher
         {
             Path = System.IO.Path.GetDirectoryName(_options.Path!) ?? ".",
-            Filter = System.IO.Path.GetFileName(_options.Path!),
-            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
-            EnableRaisingEvents = false
+            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime
+                           | NotifyFilters.FileName | NotifyFilters.DirectoryName
         };
         _watcher.Changed += OnFileChanged;
+        _watcher.Created += OnFileChanged;
+        _watcher.Renamed += OnFileChanged;
 
         // Initial load
         _ = LoadCertificateAsync(_options);
+
+        _watcher.EnableRaisingEvents = true;
     }
 
     private void OnFileChanged(object sender, FileSystemEventArgs e)
     {
-        _debounceCts.Cancel();
-        _debounceCts = new CancellationTokenSource();
+        // Watcher events arrive concurrently on thread-pool threads; capture this burst's token locally.
+        var cts = new CancellationTokenSource();
+        var previous = Interlocked.Exchange(ref _debounceCts, cts);
+        previous.Cancel();
+        previous.Dispose();
 
-        Task.Delay(_options.DebounceInterval, _debounceCts.Token)
-            .ContinueWith(_ =>
+        var token = cts.Token;
+        Task.Delay(_options.DebounceInterval, token)
+            .ContinueWith(t =>
             {
-                if (!_debounceCts.Token.IsCancellationRequested)
+                if (!t.IsCanceled)
                 {
                     _ = ReloadAsync(_options);
                 }
-            }, TaskScheduler.Default);
+            }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
     }
 
     private async Task ReloadAsync(KestrelCertificateReloaderOptions options)

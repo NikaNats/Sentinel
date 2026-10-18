@@ -240,7 +240,7 @@ From `samples/Sentinel.Sample.MinimalApi/Program.cs`:
 | Client certificates (Development) | `ClientCertificateMode.DelayCertificate` |
 | Certificate reload | `AddKestrelCertificateReloader`/`UseKestrelCertificateReloader` when `Kestrel:CertificateReloader:Path` exists; initial and options-change paths |
 
-`KestrelCertificateReloader` (`src/Sentinel.AspNetCore/Infrastructure/KestrelCertificateReloader.cs`) performs an initial load and reloads on `IOptionsMonitor` changes. Its `FileSystemWatcher` is constructed with `EnableRaisingEvents = false`, so active file-watch hot reload is not established; a file replacement alone must not be treated as a reload trigger. The selector and observable gauge remain runtime paths when a reload actually occurs. PFX loads use `X509KeyStorageFlags.MachineKeySet | EphemeralKeySet`.
+`KestrelCertificateReloader` (`src/Sentinel.AspNetCore/Infrastructure/KestrelCertificateReloader.cs`) performs an initial load and reloads on `IOptionsMonitor` changes. Its `FileSystemWatcher` monitors the certificate's directory (change, create and rename events, which covers Kubernetes `..data` symlink swaps), debounces bursts, and swaps the served certificate without restart; the selector and observable gauge update on each reload. PFX loads use `X509KeyStorageFlags.MachineKeySet | EphemeralKeySet`.
 
 ## 9. Cross-Cutting Design Principles (evidenced in code)
 
@@ -249,7 +249,7 @@ From `samples/Sentinel.Sample.MinimalApi/Program.cs`:
 3. **Allocation discipline on hot paths.** `LoggerMessage.Define` compiled delegates everywhere (event-ID catalog in [08-OPERATIONS-RUNBOOK.md](./08-OPERATIONS-RUNBOOK.md)); `stackalloc`/`ArrayPool` in mTLS and hashing paths; `FrozenDictionary` for the ML-DSA algorithm map; STJ source-generated contexts in every module (`*JsonContext.cs`), enforced by `JsonSerializerIsReflectionEnabledByDefault=false`.
 4. **Allow-lists, never deny-lists.** Signature algorithms (global set of six), disclosure hash algorithms (`["sha-256"]`), Kestrel TLS via TLS 1.3-only outbound handler, Keycloak container `KC_HTTPS_PROTOCOLS: TLSv1.3` and `KC_HTTP_ENABLED: "false"` (`docker-compose.yml`).
 5. **Defense against resource-exhaustion at the parser boundary.** 8 192-char DPoP header cap; 10 KiB request-body cap; 50 000-entry L1 flood cache; `MaxAuthorizationDetailsCount = 100` for RAR; certificate-header multi-value rejection; exception shielding (`try/catch` typed filters) around all token parsers — the code comments label these "Exception Shielding (DoS Prevention)" (`docs/ARCHITECTURE.md` §4.2).
-6. **Partial privacy in security telemetry, not privacy by construction everywhere.** `SecurityEventEmitter` hashes JTI, subject, client ID, thumbprint, and session ID before its structured events; `SecurityContextHasher.HashIp` is the canonical IP-hash entry point used by `TokenValidationService` replay events. However, the Redis nonce/JTI stores log raw thumbprints/JTIs on their success paths, so identifier hashing does not cover the full logging surface.
+6. **Partial privacy in security telemetry, not privacy by construction everywhere.** `SecurityEventEmitter` hashes JTI, subject, client ID, thumbprint, and session ID before its structured events; `SecurityContextHasher.HashIp` is the canonical IP-hash entry point used by `TokenValidationService` replay events. The Redis, EF Core, session and Keycloak modules log no raw JTIs, thumbprints, session IDs or subjects; correlation for those identifiers goes through the hashed security events.
 
 ## 10. Deployment Topology (logical)
 

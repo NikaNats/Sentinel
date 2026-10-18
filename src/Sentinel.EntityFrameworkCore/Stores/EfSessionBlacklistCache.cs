@@ -41,13 +41,13 @@ internal sealed class EfSessionBlacklistCache : ISessionBlacklistCache
             context.SessionBlacklist.Add(entry);
             await context.SaveChangesAsync(cancellationToken);
 
-            _logger.LogInformation("Session blacklisted in database: {SessionId}", sessionId);
+            _logger.LogInformation("Session blacklisted");
         }
         catch (DbUpdateException)
         {
             // Provider-agnostic UNIQUE constraint violation detection.
             // The SessionId column has a unique constraint; if we reach here, it's already blacklisted.
-            _logger.LogInformation("Session already blacklisted: {SessionId}", sessionId);
+            _logger.LogInformation("Session already blacklisted");
         }
         catch (Exception ex)
         {
@@ -71,8 +71,7 @@ internal sealed class EfSessionBlacklistCache : ISessionBlacklistCache
                 .Where(e => e.SessionId == sessionId && e.ExpiresAt > DateTimeOffset.UtcNow)
                 .AnyAsync(cancellationToken);
 
-            _logger.LogInformation("Session blacklist check for: {SessionId}, blacklisted: {IsBlacklisted}", sessionId,
-                isBlacklisted);
+            _logger.LogInformation("Session blacklist check, blacklisted: {IsBlacklisted}", isBlacklisted);
             return isBlacklisted;
         }
         catch (Exception ex)

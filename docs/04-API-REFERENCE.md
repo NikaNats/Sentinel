@@ -64,7 +64,7 @@ Route group: `{prefix}` with tag "Sentinel Security API"; sub-groups `/auth`, `/
 
 - **Auth**: `AllowAnonymous` (the refresh token is the credential); the DPoP header is forwarded to the refresh service. Downstream sender-constrained acceptance is an external Keycloak result and is not established by this local endpoint.
 - **Request**: `{ "refreshToken": "…" }` (`RefreshRequest`).
-- **Success 200**: the current refresh service treats a 2xx response whose JSON body is a compatible object as successful, extracts optional `access_token`/`refresh_token`, and the endpoint serializes a missing access token as an empty string. A compatible parseable 2xx object without `access_token` can therefore return 200 with an empty access token; malformed JSON or incompatible token-field shapes fail the service path and do not set the reuse flag. The rotated refresh token comes from Keycloak (`KeycloakTokenRefreshService` detects `refresh_token` in the response and reports rotation).
+- **Success 200**: returned only when the refresh service succeeds **and** yields a non-empty `access_token`. A 2xx IdP response without an access token is treated as a failed refresh (401), never as 200 with an empty token; malformed JSON or incompatible token-field shapes fail the service path and do not set the reuse flag. The rotated refresh token comes from Keycloak (`KeycloakTokenRefreshService` detects `refresh_token` in the response and reports rotation).
 - **400**: blank refresh token ("Refresh token is required.").
 - **401 `/errors/token-theft-detected`** (title "Session Terminated"): refresh-token **reuse detection** (`result.IsReuseDetected`) is surfaced as a token-theft response. The inspected branch does not itself revoke the Keycloak grant or persist a token-family state; provider-side revocation is not established by this endpoint.
 - **401**: "Invalid refresh token".
@@ -74,7 +74,7 @@ Route group: `{prefix}` with tag "Sentinel Security API"; sub-groups `/auth`, `/
 
 - **Auth**: required + `.RequireAcrStepUp("acr3", 5 min)` + `.RequireIdempotency()`.
 - **Request**: `{ "newPassword": "…" }` (`ChangePasswordRequest`).
-- **204** on success; **400** invalid payload; **401** step-up challenge (`/errors/insufficient-acr` or `/errors/session-too-old` + `WWW-Authenticate`); **409** idempotency in-progress; **503** idempotency store unavailable. (`Produces` metadata: 204/400/401/409/503.)
+- **204** on success; **400** invalid payload; **401** step-up challenge (`/errors/insufficient-acr` or `/errors/session-too-old` + `WWW-Authenticate`); **409** idempotency in-progress; **503** idempotency store unavailable; **500** ("Operation partially failed") when the password changed but other sessions could not be revoked — the current session is still blacklisted, and the client should retry global logout. (`Produces` metadata: 204/400/401/409/503.)
 
 ### 2.3 `POST {prefix}/auth/logout` — `Logout`
 
@@ -99,7 +99,7 @@ Route group: `{prefix}` with tag "Sentinel Security API"; sub-groups `/auth`, `/
 ### 2.7 `DELETE {prefix}/auth/account` — `DeleteAccount`
 
 - **Auth**: required + idempotency.
-- Behavior: blacklists the current `sid`; revokes all sessions (result intentionally discarded); then **soft-deletes** the account via `IAuthRevocationService.DeleteAccountAsync(sub)` (Keycloak adapter issues `DELETE users/{sub}`).
+- Behavior: blacklists the current `sid`; revokes all sessions and returns **500** ("Failed to revoke sessions before account deletion.") without deleting if that fails; then **soft-deletes** the account via `IAuthRevocationService.DeleteAccountAsync(sub)` (Keycloak adapter issues `DELETE users/{sub}`).
 - **204** on success; **500 `/errors/internal-server-error`** ("Failed to delete account.") when the delete reports failure; **401/409/503** as above.
 
 ### 2.8 MFA surface (stubs)
@@ -129,9 +129,9 @@ Implements Shared Signals Framework event reception (source cites RFC 8936); `.A
 
 | Step | Behavior | Response |
 |---|---|---|
-| Feature flag | `Ssf:Enabled=false` | **404** (clients "should assume SSF not supported") |
+| Feature flag | `Ssf:Enabled` (default **false**; bound by `AddSentinelAspNetCore()`) | **404** (clients "should assume SSF not supported"), checked before any SSF service is resolved |
 | Webhook auth | `Ssf:RequireAuthToken=true`: `SSF-Auth-Token` header must match `Ssf:AuthToken` via SHA-256-normalized **constant-time** comparison | **404** on mismatch ("Route obfuscation: obfuscating endpoint existence") |
-| Payload | Raw JWT with `Content-Type: application/secevent+jwt`, or JSON `{ "set": "<jwt>" }` | **400** problem "SET token is required…" when absent. **Gap:** a present but non-string `set` value makes `JsonElement.GetString()` throw `InvalidOperationException`, which the endpoint's `catch (JsonException)` does not catch — such a payload reaches the host exception handler and surfaces as **5xx** |
+| Payload | Raw JWT with `Content-Type: application/secevent+jwt`, or JSON `{ "set": "<jwt>" }` | **400** problem "SET token is required…" when absent, when `set` is not a string, when the JSON root is not an object, or when the body exceeds 64 KiB (bounded read before parsing) |
 | Processing | `SsfEventProcessor.ProcessAsync` | **202** when the inspected reference-host adapter reports success; unknown or no-op events can still be accepted |
 | Framework validation result | `result.IsUnauthorized` is declared by `SsfEndpoints` | Framework contract **401**; the inspected reference-host adapter maps every non-success `SecurityResult` to `SsfProcessResult.Invalid`, so **401 is not reachable through that adapter** |
 | Processor-reported event/state failure | `IsSuccess=false` | **400** type `/errors/ssf-processing-failed`; this does not cover a Keycloak adapter that returns `false` without throwing because that boolean is discarded |
@@ -144,7 +144,7 @@ Implements Shared Signals Framework event reception (source cites RFC 8936); `.A
 | `https://schemas.openid.net/secevent/caep/event-type/user-status-changed` | Revoke all sessions for subject (payload `{sub?}`) |
 | `https://schemas.openid.net/secevent/caep/event-type/credential-change` | Revoke all sessions for subject (payload `{sub?}`) |
 
-The framework contract propagates a processor-reported failure as 400. The inspected reference-host adapter does not catch processor exceptions: it awaits the inner processor and maps only the returned result, so an unexpected exception escapes to the host exception handler and surfaces as a 5xx (the reference host's `UseExceptionHandler` writes a `application/problem+json` 500). The shared **test** adapter is the opposite — it throws `InvalidOperationException` on a processor-reported failure. Returned failures map to 400; uncaught exceptions may reach host exception handling. A Keycloak `RevokeAllSessionsAsync` call that returns `false` without throwing is currently discarded, so that failure mode can still produce 202. The diagram is scoped to the inspected reference-host adapter and the concrete processor/adapters, not every possible `ISsfEventProcessor` implementation.
+The framework contract propagates a processor-reported failure as 400. The inspected reference-host adapter does not catch processor exceptions: it awaits the inner processor and maps only the returned result, so an unexpected exception escapes to the host exception handler and surfaces as a 5xx (the reference host's `UseExceptionHandler` writes a `application/problem+json` 500). The shared **test** adapter is the opposite — it throws `InvalidOperationException` on a processor-reported failure. Returned failures map to 400; uncaught exceptions may reach host exception handling. The library bridge registered by `AddSentinelHostBridges()` turns a Keycloak `RevokeAllSessionsAsync` result of `false` into an exception, so the processor fails closed and the endpoint does not return 202 for an unrevoked subject. The diagram is scoped to the reference-host wiring and the concrete processor/adapters, not every possible `ISsfEventProcessor` implementation.
 
 ## 3. Reference-Host Business Endpoints (`samples/Sentinel.Sample.MinimalApi`)
 
@@ -177,7 +177,7 @@ TryAcquireAsync (SET key "IN_PROGRESS" NX EX 5min)
  ├─ Acquired    → execute endpoint
  │                ├─ 2xx   → MarkCompletedAsync(key, {status, contentType, body}, TTL 24h)
  │                ├─ non-2xx → ReleaseAsync(key)   (retryable)
- │                └─ exception before IResult → key may remain IN_PROGRESS until TTL; later completion/release failures follow their own path
+ │                └─ exception → ReleaseAsync(key, CancellationToken.None), then rethrow (retryable; release survives client abort)
  ├─ InProgress  → 409 /errors/idempotency-conflict ("A request with this Idempotency-Key is currently running.")
  │                (up to 3 acquisition attempts on read races; contention → auth.idempotency.lock_contention_total)
  └─ Completed   → replay cached response bytes verbatim (status + content-type + body);

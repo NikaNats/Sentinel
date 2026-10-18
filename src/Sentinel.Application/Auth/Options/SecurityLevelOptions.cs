@@ -16,11 +16,11 @@ public sealed record SecurityLevelOptions
     ///     Default minimum ACR (Authentication Context Class Reference) required
     ///     for authenticated users accessing elevated resources.
     /// </summary>
-    public string RequiredAcr { get; init; } = "acr3";
+    public string RequiredAcr { get; set; } = "acr3";
 
     /// <summary>
     ///     Security clearance levels that grant access to elevated resources.
     ///     Examples: "top-secret", "classified", "secret".
     /// </summary>
-    public string[] ElevatedClearanceLevels { get; init; } = ["top-secret", "classified"];
+    public string[] ElevatedClearanceLevels { get; set; } = ["top-secret", "classified"];
 }

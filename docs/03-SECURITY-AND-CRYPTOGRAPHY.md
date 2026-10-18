@@ -281,7 +281,7 @@ offset  size      field
 
 Rotation mechanics:
 
-- **Implementation path:** `IOptionsMonitor<CryptographyOptions>.OnChange` rebuilds an immutable `CryptoState` and swaps it through a `volatile` field. This options-change path is present; production `IEnvelopeEncryptionService` registration and caller-owned persistence are unresolved in the inspected integration, and TLS file-watch hot reload is not established because `EnableRaisingEvents = false`.
+- **Implementation path:** `IOptionsMonitor<CryptographyOptions>.OnChange` rebuilds an immutable `CryptoState` and swaps it through a `volatile` field. This options-change path is present; production `IEnvelopeEncryptionService` registration and caller-owned persistence are unresolved in the inspected integration. TLS certificates reload through the directory file watcher (see [02 §8](./02-ARCHITECTURE.md)).
 - **Lazy re-wrap contract:** decrypting under a non-active keyring key returns a rewrapped payload and increments `crypto.lazy_rewraps_total{key_id}`; decryptions whose key differs from the active key also increment `crypto.keyring.active_key_mismatch`. The inspected production caller set did not establish persistence of the rewrapped bytes, so these counters do not prove storage convergence.
 - Reference configs: `publish-output/appsettings.Cryptography.example.jsonc`; rotation tests: `tests/Sentinel.Tests.Integration/Integration/Cryptography/JwksRotationIntegrationTests.cs` (+ `RotatingJwksServer`), CI "Gate 10 — Cryptographic Lifecycle & Rotation Tests".
 
@@ -319,7 +319,7 @@ Rotation mechanics:
 | Outbound backchannels | Shared `SocketsHttpHandler` with `EnabledSslProtocols = SslProtocols.Tls13`, `PooledConnectionLifetime=2min`, `X509RevocationMode.Online` (NoCheck only in Development), optional custom root trust (`X509ChainTrustMode.CustomRootTrust` + `DisableCertificateDownloads`) or dev-thumbprint pinning (`Security:ExpectedDevCertificateThumbprint`) | sample `Program.cs`; `SecureHttpHandlerFactory` |
 | Redis | Optional TLS (`RedisOptions.UseSsl` → `ConfigurationOptions.Ssl`) | `src/Sentinel.Redis/RedisConnectionProvider.cs` |
 | Captcha | Cloudflare Turnstile siteverify over HTTPS; TLS enforcement tested (`CaptchaTlsEnforcementTests`) | `src/Sentinel.Infrastructure/Auth/CloudflareTurnstileCaptchaService.cs` |
-| Certificate lifecycle | Initial/options-change reload paths + `crypto.tls.cert_days_remaining` gauge; staging provisioning scripts `infra/staging/provision-staging-tls.sh`; inspected file watcher is disabled | §8, [02 §8](./02-ARCHITECTURE.md) |
+| Certificate lifecycle | Initial/options-change reload paths + `crypto.tls.cert_days_remaining` gauge; staging provisioning scripts `infra/staging/provision-staging-tls.sh`; directory file watcher with debounce | §8, [02 §8](./02-ARCHITECTURE.md) |
 | DAST verification | `infra/dast/nuclei/templates/tls-version.yaml` asserts forbidden TLS versions in the release gate | `infra/dast/*` |
 
 ## 12. Redis Client Hardening

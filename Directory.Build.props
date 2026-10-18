@@ -32,7 +32,7 @@
 
         <!-- NuGet 2025+ Metadata -->
         <PackageReadmeFile>README.md</PackageReadmeFile>
-        <PackageIcon Condition="Exists('icon.png')">icon.png</PackageIcon>
+        <PackageIcon>icon.png</PackageIcon>
 
         <!-- Build Determinism -->
         <ContinuousIntegrationBuild Condition="'$(CI)' == 'true' or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
@@ -106,11 +106,15 @@
         <PackageReference Include="Nerdbank.GitVersioning" PrivateAssets="all" />
     </ItemGroup>
 
-    <ItemGroup>
-        <None Include="$(MSBuildThisFileDirectory)README.md"
+    <!-- Package README/icon: a NuGet-specific README (absolute links render on nuget.org) and a 128px icon. -->
+    <ItemGroup Condition="'$(IsPackable)' == 'true'">
+        <None Include="$(MSBuildThisFileDirectory)src/README.nuget.md"
               Pack="true"
-              PackagePath="\"
-              Link="README.md"
-              Condition="Exists('$(MSBuildThisFileDirectory)README.md')" />
+              PackagePath="README.md"
+              Visible="false" />
+        <None Include="$(MSBuildThisFileDirectory)Logo/icon.png"
+              Pack="true"
+              PackagePath="icon.png"
+              Visible="false" />
     </ItemGroup>
 </Project>

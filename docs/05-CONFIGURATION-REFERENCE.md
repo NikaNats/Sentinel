@@ -14,7 +14,7 @@
 | `Keycloak` | `KeycloakOptions` | `KeycloakServiceExtensions.Configure<KeycloakOptions>` | Authority, audience, session TTL |
 | `Sentinel:Keycloak` | `KeycloakOptions` (+ `KeycloakClientOptions` for admin) | `AddKeycloakIntegration(section)` (`BindConfiguration`) | Module-scoped Keycloak config |
 | `Cryptography` | `CryptographyOptions` | `SentinelModuleBuilderExtensions` (`BindConfiguration`, options-change reload via `IOptionsMonitor`) | AES-GCM envelope key ring |
-| `Ssf` | `SsfOptions` | Host responsibility; consumed via `IOptionsMonitor<SsfOptions>` in `SsfEndpoints` | SSF endpoint flag + webhook auth |
+| `Ssf` | `SsfOptions` | `AddSentinelAspNetCore()` (`BindConfiguration`, `ValidateOnStart`); consumed in `SsfEndpoints` | SSF endpoint flag (default off) + webhook auth |
 | `Sentinel:Ssf` | `SsfProcessingOptions` | `AddSsfProcessing(configuration)` | SET processing bounds |
 | `SdJwt` | `SdJwtOptions` | Host responsibility (constant declared) | SD-JWT feature flag |
 | `SessionManagement` | `SessionManagementOptions` | `AddSentinelSessionManagement(configure)` + startup validator | Session lifetime policy |
@@ -24,7 +24,7 @@
 | `Sentinel:Rar` | `RarValidationOptions` | `AddRarValidation(configuration)` | RAR matcher policy |
 | `SocialFederation` | `SocialFederationOptions` | `KeycloakModuleBuilderExtensions` | Social IdP federation |
 | `Registration` | `RegistrationOptions` | `SentinelModuleBuilderExtensions` | Email verification base URL |
-| `Kestrel:CertificateReloader` | `KestrelCertificateReloaderOptions` | `AddKestrelCertificateReloader(configuration)` (activated only when `:Path` exists) | TLS initial/options-change reload; inspected file watcher is disabled |
+| `Kestrel:CertificateReloader` | `KestrelCertificateReloaderOptions` | `AddKestrelCertificateReloader(configuration)` (activated only when `:Path` exists) | TLS reload on file change (directory watcher, debounced) and options change |
 | `FeatureFlags:Auth` | raw `IConfiguration` reads | `TokenValidationService` (`JtiReplayEnforcement`), host (`DpopFlow`) | Feature toggles |
 | `Security` | raw reads | Sample host | `TrustedRootCaPath`, `TestPublicKey`, `ExpectedDevCertificateThumbprint` |
 | `Cors:AllowedOrigins` | raw read | Sample host | CORS allow-list |

@@ -63,7 +63,7 @@ Kestrel:
 ### 3.2 Reload Procedure
 
 1. Write new PEM to `Path` (atomic write: write to temp + rename).
-2. Change the certificate-reloader options/config (or restart); the inspected `FileSystemWatcher` is constructed with `EnableRaisingEvents = false`, so file replacement alone does not establish a watcher-triggered reload.
+2. Replace the certificate file or mounted secret; the directory `FileSystemWatcher` triggers a debounced reload. An options change or restart also reloads.
 3. On a successful reload, `AuthTelemetry.TlsCertDaysRemaining` updates and `CertificateReloaded` may fire.
 4. In-flight handshakes complete with the old cert; new connections use the newly selected cert after the swap.
 

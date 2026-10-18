@@ -65,7 +65,18 @@ public sealed class IdempotencyFilter(
                 });
             }
 
-            var result = await next(context);
+            object? result;
+            try
+            {
+                result = await next(context);
+            }
+            catch
+            {
+                // Release the lock so the client can retry immediately instead of receiving 409 until the
+                // 5-minute acquisition TTL expires. CancellationToken.None: an aborted request must still release.
+                await TryReleaseAsync(idempotencyStore, storeKey, logger);
+                throw;
+            }
 
             if (result is IResult iresult)
             {
@@ -82,6 +93,18 @@ public sealed class IdempotencyFilter(
                 type: "/errors/idempotency-unavailable",
                 title: "Idempotency service unavailable",
                 statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    internal static async Task TryReleaseAsync(IIdempotencyStore store, string storeKey, ILogger logger)
+    {
+        try
+        {
+            await store.ReleaseAsync(storeKey, CancellationToken.None);
+        }
+        catch (IdempotencyStoreUnavailableException ex)
+        {
+            logger.LogWarning(ex, "Idempotency lock release failed; the key expires with its acquisition TTL.");
         }
     }
 }
@@ -137,13 +160,7 @@ internal sealed class IdempotencySaveResult(
         catch (Exception ex)
         {
             logger.LogError(ex, "Error executing idempotent result");
-            try
-            {
-                await store.ReleaseAsync(storeKey, httpContext.RequestAborted);
-            }
-            catch (IdempotencyStoreUnavailableException)
-            {
-            }
+            await IdempotencyFilter.TryReleaseAsync(store, storeKey, logger);
 
             throw;
         }

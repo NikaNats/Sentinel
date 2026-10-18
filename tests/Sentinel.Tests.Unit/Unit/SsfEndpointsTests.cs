@@ -145,6 +145,40 @@ public sealed class SsfEndpointsTests : IClassFixture<SsfEndpointsTests.LocalTes
         body.Should().Contain("Invalid SET signature.");
     }
 
+    [Theory(DisplayName = "🔴 SSF: Malformed JSON shapes return 400, never a host 5xx")]
+    [InlineData("""{"set": 42}""")]
+    [InlineData("""{"set": {"nested": true}}""")]
+    [InlineData("""["not", "an", "object"]""")]
+    [InlineData("\"just-a-string\"")]
+    public async Task ReceiveEvent_WithNonStringOrNonObjectPayload_Returns400(string json)
+    {
+        using var client = _factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/ssf/events");
+        request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+        request.Headers.Add("SSF-Auth-Token", ValidAuthToken);
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _factory.ProcessorMock.Verify(x => x.ProcessAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact(DisplayName = "🔴 SSF: Oversized body is rejected without being processed")]
+    public async Task ReceiveEvent_WithOversizedBody_Returns400()
+    {
+        using var client = _factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/ssf/events");
+        request.Content = new StringContent(new string('a', 65 * 1024), Encoding.UTF8, "application/secevent+jwt");
+        request.Headers.Add("SSF-Auth-Token", ValidAuthToken);
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _factory.ProcessorMock.Verify(x => x.ProcessAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     // --- Isolated WebApplicationFactory ---
     public sealed class LocalTestFactory : WebApplicationFactory<Program>
     {

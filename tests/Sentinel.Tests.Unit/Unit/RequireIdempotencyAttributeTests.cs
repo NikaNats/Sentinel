@@ -111,6 +111,29 @@ public sealed class RequireIdempotencyAttributeTests
             Times.Once);
     }
 
+    [Fact(DisplayName = "✓ Endpoint exception releases the lock so retries are not blocked by 409")]
+    public async Task InvokeAsync_WhenEndpointThrows_ReleasesLockAndRethrows()
+    {
+        var store = new Mock<IIdempotencyStore>();
+        store.Setup(x => x.TryAcquireAsync(
+                It.IsAny<string>(),
+                It.IsAny<TimeSpan>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IdempotencyAcquireResult.Acquired, (CachedHttpResponse?)null));
+
+        var filter = CreateFilter(store);
+        var context = CreateContext();
+        context.HttpContext.Request.Headers["Idempotency-Key"] = "6f836f95-7f22-4eb9-b854-8e8be2df40e8";
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await filter.InvokeAsync(context, _ => throw new InvalidOperationException("endpoint failure")));
+
+        store.Verify(x => x.ReleaseAsync(
+                "idempotency:user-1:6f836f95-7f22-4eb9-b854-8e8be2df40e8",
+                CancellationToken.None),
+            Times.Once);
+    }
+
     private static IdempotencyFilter CreateFilter(Mock<IIdempotencyStore> store)
         => new(store.Object, NullLogger<IdempotencyFilter>.Instance);
 

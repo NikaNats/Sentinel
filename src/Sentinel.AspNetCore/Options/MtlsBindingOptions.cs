@@ -12,18 +12,18 @@ public sealed class MtlsBindingOptions
     /// <summary>
     ///     If enabled, the system will allow direct connections to Kestrel.
     /// </summary>
-    public bool AllowDirectConnection { get; init; }
+    public bool AllowDirectConnection { get; set; }
 
     /// <summary>
     ///     Validation filter. Should always be true in production.
     ///     Disabled in test environments because test certificates lack a real trust chain.
     /// </summary>
-    public bool ValidateChain { get; init; } = true;
+    public bool ValidateChain { get; set; } = true;
 
     /// <summary>
     ///     Priority list of headers where cloud proxies place the client certificate.
     /// </summary>
-    public string[] CertificateHeaders { get; init; } =
+    public string[] CertificateHeaders { get; set; } =
     [
         "X-Client-Cert",
         "X-SSL-Client-Cert",
@@ -35,5 +35,5 @@ public sealed class MtlsBindingOptions
     ///     List of trusted Ingress/proxy CIDR ranges.
     /// </summary>
     [Required]
-    public string[] TrustedProxies { get; init; } = ["127.0.0.1/32", "::1/128"];
+    public string[] TrustedProxies { get; set; } = ["127.0.0.1/32", "::1/128"];
 }

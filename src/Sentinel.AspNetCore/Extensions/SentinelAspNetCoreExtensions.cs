@@ -43,6 +43,14 @@ public static class SentinelAspNetCoreExtensions
             options.JsonSerializerOptions.TypeInfoResolverChain.Insert(0, AspNetCoreJsonContext.Default);
         });
 
+        // The SSF receiver (MapSentinelSecurity) reads "Ssf". It is off unless enabled, and an enabled receiver
+        // that requires webhook auth must have a token configured, or the host refuses to start.
+        services.AddOptions<SsfOptions>()
+            .BindConfiguration(SsfOptions.SectionName)
+            .Validate(o => !o.Enabled || !o.RequireAuthToken || !string.IsNullOrWhiteSpace(o.AuthToken),
+                "Ssf:RequireAuthToken is true but Ssf:AuthToken is empty.")
+            .ValidateOnStart();
+
         return new SentinelAspNetCoreBuilder(services);
     }
 

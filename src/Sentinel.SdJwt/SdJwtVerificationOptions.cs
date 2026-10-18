@@ -11,25 +11,25 @@ public sealed class SdJwtVerificationOptions
     ///     Helping prevent replay of old key binding proofs.
     ///     Default: 60 seconds (1 minute).
     /// </summary>
-    public int KeyBindingMaxAgeSeconds { get; init; } = 60;
+    public int KeyBindingMaxAgeSeconds { get; set; } = 60;
 
     /// <summary>
     ///     Gets or sets a value indicating whether key binding nonce validation is required.
     ///     When enabled, the key binding JWT must contain a matching nonce claim.
     ///     Default: true (secure-by-default: prevents replay attacks).
     /// </summary>
-    public bool RequireKeyBindingNonce { get; init; } = true;
+    public bool RequireKeyBindingNonce { get; set; } = true;
 
     /// <summary>
     ///     Gets or sets the allowed clock skew in seconds for key binding token iat validation.
     ///     Helps accommodate minor time synchronization differences between systems.
     ///     Default: 0 seconds (strict validation).
     /// </summary>
-    public int AllowedClockSkewSeconds { get; init; }
+    public int AllowedClockSkewSeconds { get; set; }
 
     /// <summary>
     ///     Gets or sets the allowed disclosure hash algorithms.
     ///     By default, only "sha-256" is supported per RFC 9901.
     /// </summary>
-    public string[] AllowedDisclosureHashAlgorithms { get; init; } = ["sha-256"];
+    public string[] AllowedDisclosureHashAlgorithms { get; set; } = ["sha-256"];
 }

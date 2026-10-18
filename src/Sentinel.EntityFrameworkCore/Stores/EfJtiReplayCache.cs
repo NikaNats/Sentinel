@@ -41,14 +41,14 @@ internal sealed class EfJtiReplayCache : IJtiReplayCache
             context.JtiReplayCache.Add(entry);
             await context.SaveChangesAsync(cancellationToken);
 
-            _logger.LogInformation("JTI marked as used in database: {Jti}", jti);
+            _logger.LogInformation("JTI marked as used");
             return true;
         }
         catch (DbUpdateException)
         {
             // Provider-agnostic UNIQUE constraint violation detection.
             // The JTI column has a unique constraint; if we reach here, it's a replay attempt.
-            _logger.LogWarning("JTI replay detected: {Jti}", jti);
+            _logger.LogWarning("JTI replay detected");
             return false;
         }
         catch (Exception ex)

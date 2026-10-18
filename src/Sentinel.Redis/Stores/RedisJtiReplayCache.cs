@@ -58,7 +58,7 @@ public sealed class RedisJtiReplayCache : IJtiReplayCache
             var result = await db.StringSetAsync(redisKey, "1", timeToLive, When.NotExists);
 
             // ✅ FIX: Downgraded from Information to Trace to prevent I/O logging saturation on hot path
-            _logger.LogTrace("JTI replay cache operation succeeded for jti: {Jti}", jti);
+            _logger.LogTrace("JTI replay cache operation succeeded.");
             return result;
         }
         catch (Exception ex)
