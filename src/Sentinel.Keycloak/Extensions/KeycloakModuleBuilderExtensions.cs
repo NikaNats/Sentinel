@@ -30,8 +30,7 @@ public static class KeycloakModuleBuilderExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        _ = builder.Services.AddOptions<KeycloakOptions>()
-            .BindConfiguration(KeycloakOptions.SectionName)
+        _ = builder.Services.AddKeycloakOptions()
             .ValidateDataAnnotations()
             .ValidateOnStart();
 

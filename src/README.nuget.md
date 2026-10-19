@@ -74,7 +74,6 @@ Startup fails closed (`OptionsValidationException`) until these are set:
 {
   "Keycloak":  { "Authority": "https://idp.example.com/realms/app", "Audience": "my-api" },
   "Sentinel": {
-    "Keycloak": { "Authority": "https://idp.example.com/realms/app", "Audience": "my-api" },
     "Redis":    { "EndPoint": "redis:6379", "UseSsl": true },
     "Security": { "Captcha": { "SecretKey": "<from secret store>" } }
   },
@@ -83,7 +82,15 @@ Startup fails closed (`OptionsValidationException`) until these are set:
 }
 ```
 
-`Keycloak` and `Sentinel:Keycloak` are both read by different modules today; keep them identical.
+Every Keycloak registration (`AddKeycloak`, `AddKeycloakIntegration`, `AddInfrastructureLayer`) reads the
+`Keycloak` section. `Sentinel:Keycloak` is a deprecated fallback: its keys are used only where `Keycloak` leaves
+them unset.
+
+## Metrics export
+
+`AddSecurityTelemetry()` registers Sentinel's activity source and meter but no exporter. Add the exporter in the
+host, e.g. `AddOtlpExporter()` from `OpenTelemetry.Exporter.OpenTelemetryProtocol` (already a dependency), or a
+Prometheus scrape endpoint via the prerelease `OpenTelemetry.Exporter.Prometheus.AspNetCore` package.
 
 ## Shared Signals (SSF) receiver
 

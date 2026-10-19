@@ -10,6 +10,10 @@ namespace Sentinel.Security.Diagnostics.Extensions;
 /// </summary>
 public static class SecurityDiagnosticsBuilderExtensions
 {
+    /// <summary>
+    ///     Registers the Sentinel activity source and meter with OpenTelemetry. Exporters are host-owned:
+    ///     add <c>AddOtlpExporter()</c>, a Prometheus exporter or any other exporter in the host.
+    /// </summary>
     public static ISentinelSecurityBuilder AddSecurityTelemetry(this ISentinelSecurityBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -20,8 +24,7 @@ public static class SecurityDiagnosticsBuilderExtensions
                 .AddSource(AuthTelemetry.SourceName))
             .WithMetrics(m => m
                 .AddAspNetCoreInstrumentation()
-                .AddMeter(AuthTelemetry.MeterName)
-                .AddPrometheusExporter());
+                .AddMeter(AuthTelemetry.MeterName));
 
         return builder;
     }

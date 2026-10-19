@@ -11,8 +11,8 @@
 | `Sentinel:SecurityLevels` | `SecurityLevelOptions` | `ApplicationServiceCollectionExtensions` | Required ACR + clearance levels |
 | `Sentinel:Mtls` | `MtlsBindingOptions` | `AddMtlsBinding()` | RFC 8705 binding, proxy trust |
 | `Sentinel:Redis` | `RedisOptions` | `AddRedisSecurityCaches(section)` | Redis/Sentinel-HA connection |
-| `Keycloak` | `KeycloakOptions` | `KeycloakServiceExtensions.Configure<KeycloakOptions>` | Authority, audience, session TTL |
-| `Sentinel:Keycloak` | `KeycloakOptions` (+ `KeycloakClientOptions` for admin) | `AddKeycloakIntegration(section)` (`BindConfiguration`) | Module-scoped Keycloak config |
+| `Keycloak` | `KeycloakOptions` | `AddKeycloak()` / `AddKeycloakIntegration()` (shared `KeycloakOptionsRegistration`; `AddKeycloak` adds `ValidateOnStart`) | Authority, audience, session TTL, admin client |
+| `Sentinel:Keycloak` | `KeycloakOptions` | Same binding, applied first | **Deprecated fallback**: used only for keys `Keycloak` leaves unset |
 | `Cryptography` | `CryptographyOptions` | `SentinelModuleBuilderExtensions` (`BindConfiguration`, options-change reload via `IOptionsMonitor`) | AES-GCM envelope key ring |
 | `Ssf` | `SsfOptions` | `AddSentinelAspNetCore()` (`BindConfiguration`, `ValidateOnStart`); consumed in `SsfEndpoints` | SSF endpoint flag (default off) + webhook auth |
 | `Sentinel:Ssf` | `SsfProcessingOptions` | `AddSsfProcessing(configuration)` | SET processing bounds |
@@ -74,7 +74,11 @@ Consumers: `AcrAuthorizationHandler` (user rank ≥ required rank), `AcrStepUpAu
 
 Key space produced (§ prefix + store pattern): `{p}jti:{jti}`, `{p}nonce:{thumbprint}`, `{p}session:{sid}`; idempotency keys are passed through fully formed (`idempotency:{sub}:{uuid}`).
 
-### 2.5 `Keycloak` / `Sentinel:Keycloak` (`KeycloakOptions`, `KeycloakAdminOptions`, `KeycloakClientOptions`)
+### 2.5 `Keycloak` (`KeycloakOptions`, `KeycloakAdminOptions`, `KeycloakClientOptions`)
+
+All Keycloak registrations bind the one `Keycloak` section from the host `IConfiguration`. The legacy
+`Sentinel:Keycloak` section (`KeycloakOptions.LegacySectionName`) is bound first and then overridden key by key,
+so existing deployments keep working; move its keys to `Keycloak`.
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
@@ -213,7 +217,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.observability.svc.cluster.loca
 OTEL_SERVICE_NAME=sentinel-api
 ConnectionStrings__Redis / ConnectionStrings__Postgres        # secretKeyRef: sentinel-runtime-secrets
 Keycloak__Authority / Keycloak__Audience / Keycloak__RequireHttpsMetadata
-Sentinel__Keycloak__Authority / __Audience / __RequireHttpsMetadata / __ClientSecret
+Sentinel__Keycloak__*                                 # deprecated fallback; only fills keys unset under Keycloak__
 Sentinel__Redis__EndPoint=redis:6379
 Sentinel__Redis__EnableInMemoryFallback=false        # compose: explicit fail-closed
 Security__TrustedRootCaPath=/var/run/sentinel/ca/ca.crt

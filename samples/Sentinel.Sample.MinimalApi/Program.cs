@@ -358,7 +358,7 @@ builder.Services
     .AddApplicationLayer()
     .AddSsfProcessing(builder.Configuration)
     .AddRarValidation(builder.Configuration)
-    .AddKeycloakIntegration(builder.Configuration.GetSection("Sentinel:Keycloak"))
+    .AddKeycloakIntegration(builder.Configuration)
     .AddInfrastructureLayer(builder.Configuration);
 
 builder.Services.AddSingleton<IPrivacyKeyManager>(new DefaultPrivacyKeyManager());

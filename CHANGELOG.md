@@ -21,6 +21,18 @@ the version is set in `version.json` (Nerdbank.GitVersioning) and must be bumped
   `RequireAuthToken`/`AuthToken`. Startup fails if auth is required but no token is configured.
 - The SSF endpoint returns 404 when disabled even if the SSF processing services are not registered (was 500).
 - Options classes use `set` instead of `init`, so the Native AOT configuration binder populates them.
+- **One Keycloak section:** `AddKeycloak`, `AddKeycloakIntegration` and `AddInfrastructureLayer` all bind
+  `KeycloakOptions` from `Keycloak`. `AddKeycloakIntegration` previously read `Keycloak` *under the section it was
+  passed* (so `GetSection("Sentinel:Keycloak")` bound nothing). `Sentinel:Keycloak` is now a deprecated fallback
+  that fills only keys unset under `Keycloak`.
+- `AddSecurityTelemetry()` no longer adds a Prometheus exporter; exporters are host-owned (OTLP shown in the
+  package README).
+
+### Removed
+- `OpenTelemetry.Exporter.Prometheus.AspNetCore` dependency of `Sentinel.Security.Diagnostics` (prerelease-only,
+  NU5104), which forced a prerelease package on every consumer. Hosts that want `/metrics` add it themselves.
+  NU5104 is an error again for all packages.
+- The public, empty `Sentinel.AspNetCore.Program` class (a test-only stub).
 
 ### Security
 - SSF receiver: non-object JSON, non-string `set` values and bodies over 64 KiB now return 400 instead of a 5xx
