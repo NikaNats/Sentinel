@@ -3,7 +3,7 @@
 All notable changes to the `NikaNats.Sentinel.*` packages. Versions follow [SemVer](https://semver.org/);
 the version is set in `version.json` (Nerdbank.GitVersioning) and must be bumped before each release.
 
-## [1.0.0] - Unreleased
+## [1.0.0] - 2026-10-20
 
 ### Added
 - `AddSentinelJwtBearer(authority, audience, configure)` and `SentinelJwtBearerEvents.Create()`: strict JwtBearer

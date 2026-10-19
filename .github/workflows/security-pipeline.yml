@@ -618,17 +618,31 @@ jobs:
 
       - name: Build with Strong-Name Signing
         run: |
-          dotnet build Sentinel.slnx -c Release --no-restore \
-            -p:SignSentinelRelease=true \
-            -p:ContinuousIntegrationBuild=true
+          # PublicRelease=true: this job only runs for release/** branches and v* tags. Nerdbank.GitVersioning
+          # does not treat tag refs as public releases, so without it a v1.0.0 tag would publish 1.0.0-g<sha>.
+          # Only the shippable src/ projects are built and signed. Test, sample and infra projects rely on
+          # unsigned InternalsVisibleTo and cannot compile against strong-named assemblies.
+          for project in src/*/*.csproj; do
+            dotnet build "$project" -c Release --no-restore \
+              -p:SignSentinelRelease=true \
+              -p:PublicRelease=true \
+              -p:ContinuousIntegrationBuild=true
+          done
 
       - name: Create Packed NuGet Artifacts
         run: |
           mkdir -p ./artifacts/nuget
-          dotnet pack Sentinel.slnx -c Release --no-build \
-            -p:SignSentinelRelease=true \
-            -p:ContinuousIntegrationBuild=true \
-            --output ./artifacts/nuget
+          for project in src/*/*.csproj; do
+            dotnet pack "$project" -c Release --no-build \
+              -p:SignSentinelRelease=true \
+              -p:PublicRelease=true \
+              -p:ContinuousIntegrationBuild=true \
+              --output ./artifacts/nuget
+          done
+          test "$(ls ./artifacts/nuget/*.nupkg | wc -l)" -eq 15 || { echo "::error::Expected 15 packages"; exit 1; }
+          if ls ./artifacts/nuget/*.nupkg | grep -qE '[0-9]-[a-z]'; then
+            echo "::error::Prerelease-versioned package in a release build"; exit 1
+          fi
 
       - name: Generate CycloneDX / SPDX SBOM for Packages
         uses: anchore/sbom-action@v0.17.9

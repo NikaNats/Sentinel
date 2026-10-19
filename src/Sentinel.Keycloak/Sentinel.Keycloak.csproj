@@ -20,7 +20,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Sentinel.Tests.Unit" />
+    <InternalsVisibleTo Include="Sentinel.Tests.Unit" Condition="'$(SignAssembly)' != 'true'" />
   </ItemGroup>
 
   <ItemGroup>

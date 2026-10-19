@@ -19,8 +19,9 @@
 
   <!-- FIX: Correct MSBuild syntax for InternalsVisibleTo (must be ItemGroup, not PropertyGroup) -->
   <ItemGroup>
-    <InternalsVisibleTo Include="Sentinel.AspNetCore" />
-    <InternalsVisibleTo Include="Sentinel.Presentation" />
+    <InternalsVisibleTo Include="Sentinel.AspNetCore" Condition="'$(SignAssembly)' != 'true'" />
+    <InternalsVisibleTo Include="Sentinel.AspNetCore" Key="$(SentinelPublicKey)" Condition="'$(SignAssembly)' == 'true'" />
+    <InternalsVisibleTo Include="Sentinel.Presentation" Condition="'$(SignAssembly)' != 'true'" />
   </ItemGroup>
 
   <ItemGroup>

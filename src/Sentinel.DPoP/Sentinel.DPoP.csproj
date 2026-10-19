@@ -20,9 +20,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Sentinel.Tests.DPoP" />
-    <InternalsVisibleTo Include="Sentinel.Tests.Security" />
-    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+    <InternalsVisibleTo Include="Sentinel.Tests.DPoP" Condition="'$(SignAssembly)' != 'true'" />
+    <InternalsVisibleTo Include="Sentinel.Tests.Security" Condition="'$(SignAssembly)' != 'true'" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" Condition="'$(SignAssembly)' != 'true'" />
   </ItemGroup>
 
   <ItemGroup>
