@@ -38,7 +38,7 @@ The simplest consumer integration possible:
 // 1. Register framework layers
 builder.Services
     .AddApplicationLayer()
-    .AddKeycloakIntegration(builder.Configuration.GetSection("Sentinel:Keycloak"))
+    .AddKeycloakIntegration(builder.Configuration)
     .AddInfrastructureLayer(builder.Configuration);
 
 // 2. Mount endpoints (HOST controls the prefix!)

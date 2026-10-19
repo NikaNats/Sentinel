@@ -55,7 +55,16 @@ public sealed record KeycloakClientOptions
 /// </summary>
 public sealed class KeycloakOptions
 {
+    /// <summary>
+    ///     Configuration section read by every Keycloak registration (<c>AddKeycloak</c>,
+    ///     <c>AddKeycloakIntegration</c>, <c>AddInfrastructureLayer</c>).
+    /// </summary>
     public const string SectionName = "Keycloak";
+
+    /// <summary>
+    ///     Deprecated fallback section. Its keys are used only where <see cref="SectionName" /> leaves them unset.
+    /// </summary>
+    public const string LegacySectionName = "Sentinel:Keycloak";
 
     [Required] [Url] public string Authority { get; set; } = string.Empty;
 
