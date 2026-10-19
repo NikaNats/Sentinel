@@ -12,7 +12,7 @@
 #
 # For EKS/AKS: push to a registry (e.g. ghcr.io/<org>/k6-dpop) and point the
 # CRD runner.image + imagePullPolicy: Always at it.
-FROM golang:1.24 AS builder
+FROM golang:1.27 AS builder
 
 ARG XK6_VERSION=v1.4.9
 
