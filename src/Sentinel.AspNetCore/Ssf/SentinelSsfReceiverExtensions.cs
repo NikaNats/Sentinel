@@ -84,7 +84,9 @@ internal sealed class JwksSsfTokenValidator(
                 ValidateAudience = true,
                 ValidAudience = audience,
                 // RFC 8417: a SET need not carry exp; freshness is bounded by the processor's iat age check.
+                // nosemgrep: csharp.lang.security.ad.jwt-tokenvalidationparameters-no-expiry-validation.jwt-tokenvalidationparameters-no-expiry-validation
                 ValidateLifetime = false,
+                // nosemgrep: csharp.lang.security.ad.jwt-tokenvalidationparameters-no-expiry-validation.jwt-tokenvalidationparameters-no-expiry-validation
                 RequireExpirationTime = false,
                 RequireSignedTokens = true,
                 ValidateIssuerSigningKey = true,
