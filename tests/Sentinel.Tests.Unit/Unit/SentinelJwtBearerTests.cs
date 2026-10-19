@@ -49,6 +49,25 @@ public sealed class SentinelJwtBearerTests
         body.Should().NotContain("IDX");
     }
 
+    [Fact(DisplayName = "✅ JwtBearer: Sentinel's own rejection reason reaches the client")]
+    public async Task SentinelRejection_ReasonIsEchoed()
+    {
+        var blacklist = new Mock<ISessionBlacklistCache>();
+        blacklist.Setup(x => x.IsBlacklistedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var host = await StartHostAsync(blacklist.Object, key);
+        using var client = host.GetTestClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/protected");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", SignToken(key));
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        body.Should().Contain("User account has been globally revoked or locked.");
+    }
+
     [Fact(DisplayName = "✅ AddSentinelJwtBearer applies strict validation defaults")]
     public async Task Defaults_AreStrict()
     {
@@ -64,17 +83,33 @@ public sealed class SentinelJwtBearerTests
         options.TokenValidationParameters.ValidAlgorithms.Should().BeEquivalentTo("PS256", "ES256");
     }
 
-    private static async Task<IHost> StartHostAsync()
+    private static string SignToken(ECDsa key) =>
+        new Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+        {
+            Issuer = "https://idp.example.test/realms/sentinel",
+            Audience = "sentinel-api",
+            Subject = new System.Security.Claims.ClaimsIdentity(
+            [
+                new System.Security.Claims.Claim("sub", "user-1"),
+                new System.Security.Claims.Claim("sid", "session-1")
+            ]),
+            Expires = DateTime.UtcNow.AddMinutes(5),
+            SigningCredentials = new SigningCredentials(new ECDsaSecurityKey(key) { KeyId = "k" },
+                SecurityAlgorithms.EcdsaSha256)
+        });
+
+    private static async Task<IHost> StartHostAsync(ISessionBlacklistCache? blacklist = null, ECDsa? key = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
-        builder.Services.AddSingleton(Mock.Of<ISessionBlacklistCache>());
+        builder.Services.AddSingleton(blacklist ?? Mock.Of<ISessionBlacklistCache>());
         builder.Services.AddAuthentication()
             .AddSentinelJwtBearer("https://idp.example.test/realms/sentinel/", "sentinel-api", options =>
             {
                 // No network: validate against a local key instead of fetching discovery metadata.
                 options.ConfigurationManager = null;
-                options.TokenValidationParameters.IssuerSigningKey = new ECDsaSecurityKey(ECDsa.Create());
+                options.TokenValidationParameters.IssuerSigningKey =
+                    new ECDsaSecurityKey(key ?? ECDsa.Create()) { KeyId = "k" };
             });
         builder.Services.AddAuthorization();
 

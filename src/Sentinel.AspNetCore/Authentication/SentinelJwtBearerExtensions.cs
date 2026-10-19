@@ -121,8 +121,12 @@ public static class SentinelJwtBearerEvents
             context.HttpContext.RequestAborted);
         if (!outcome.IsSuccess)
         {
-            context.Fail(outcome.FailureException
-                         ?? new SecurityTokenException(outcome.FailureReason ?? "Token validation failed."));
+            // Sentinel-authored reasons (fixed strings such as "Session has been terminated.") are safe to show
+            // clients. An infrastructure exception may carry internals, so it is passed through unchanged and
+            // the challenge handler reports it generically.
+            context.Fail(outcome.FailureReason is not null
+                ? new SentinelTokenRejectedException(outcome.FailureReason)
+                : outcome.FailureException ?? new SecurityTokenException("Token validation failed."));
         }
     }
 
@@ -139,6 +143,7 @@ public static class SentinelJwtBearerEvents
         var detail = context.AuthenticateFailure switch
         {
             null => "Missing or invalid token",
+            SentinelTokenRejectedException rejected => rejected.Message,
             SecurityTokenExpiredException => "The access token has expired",
             _ => "The access token is invalid"
         };
@@ -199,3 +204,9 @@ public static class SentinelJwtBearerEvents
         }
     }
 }
+
+/// <summary>
+///     A token rejected by Sentinel's own post-signature checks. Its message is a fixed, Sentinel-authored reason
+///     and is the only exception text a 401 challenge may echo to the client.
+/// </summary>
+internal sealed class SentinelTokenRejectedException(string reason) : SecurityTokenException(reason);
